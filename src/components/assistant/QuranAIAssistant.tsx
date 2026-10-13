@@ -66,6 +66,16 @@ import { hashPassword } from '../../utils/security';
 import { exportToExcel } from '../../lib/excelExport';
 import { ApiConfig } from '../../lib/apiConfig';
 
+export function stripFaceEmojis(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F910}-\u{1F92F}\u{1F970}-\u{1F978}\u{1F9D0}-\u{1F9DF}\u{263A}\u{FE0F}]/gu, '')
+    .replace(/[\u{1F466}-\u{1F478}\u{1F9D1}\u{1F473}\u{1F468}\u{1F469}]/gu, '')
+    .replace(/[😀😃😄😁😆😅🤣😂🙂🙃😉😊😇🥰😍🤩😘😗😚😙😋😛😜🤪😝🤑🤗🤭🤫🤔🤐🤨😐😑😶😏😒🙄😬🤥😌😔😪🤤😴😷🤒🤕🤢🤮🤧🥵🥶🥴😵🤯🤠🥳🥸😎🤓🧐😕😟🙁☹️😮😯😲😳🥺😦😧😨😰😥😢😭😱😖😣😞😓😩😫🥱😤😡😠🤬]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 interface QuranAIAssistantProps {
   currentUser: {
     username: string;
@@ -235,8 +245,12 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   // Developer Platform-Wide / Complex Scope Selection
   const [developerScopeComplexId, setDeveloperScopeComplexId] = useState<string>('all');
 
-  // Multi-style Chart view tabs per message: 'circle' | 'bars' | 'tracking' | 'diagnostic'
-  const [chartActiveTabs, setChartActiveTabs] = useState<Record<string, 'circle' | 'bars' | 'tracking' | 'diagnostic'>>({});
+  // Multi-style Chart view tabs per message: 'circle' | 'bars' | 'tracking' | 'diagnostic' | 'table'
+  const [chartActiveTabs, setChartActiveTabs] = useState<Record<string, 'circle' | 'bars' | 'tracking' | 'diagnostic' | 'table'>>({});
+
+  // Dynamic In-Table Search & Sorting states per message
+  const [tableSearchQueries, setTableSearchQueries] = useState<Record<string, string>>({});
+  const [tableSortConfigs, setTableSortConfigs] = useState<Record<string, { key: string; order: 'asc' | 'desc' }>>({});
 
   // Certificate Generator States
   const [certSelectedStudents, setCertSelectedStudents] = useState<Record<string, Student[]>>({});
@@ -1597,6 +1611,46 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             </tbody>
           </table>
         `;
+      } else if (tableType === 'smart_custom_table') {
+        tableHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 35px; text-align: center;">#</th>
+                <th>اسم الطالب</th>
+                <th>الحلقة</th>
+                <th style="text-align: center;">المستوى</th>
+                <th>موضع الحفظ</th>
+                <th>الحفظ الجديد</th>
+                <th>المراجعة والتثبيت</th>
+                <th style="text-align: center;">الأوجه</th>
+                <th style="text-align: center;">نسبة الحضور</th>
+                <th style="text-align: center;">النقاط</th>
+                <th>ملاحظات المعلم</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (r, idx) => `
+                <tr>
+                  <td style="text-align: center; color: #065f46; font-weight: bold;">${r.rank || idx + 1}</td>
+                  <td style="font-weight: 700;">${r.name || r.studentName || ''}</td>
+                  <td>${r.halaqahName || ''}</td>
+                  <td style="text-align: center;"><span class="level-badge">${r.level || 'متوسط'}</span></td>
+                  <td>${r.currentPosition || r.currentSurah || '-'}</td>
+                  <td style="color: #047857; font-weight: 600;">${r.newMemorization || '-'}</td>
+                  <td style="color: #0369a1;">${r.reviewAchieved || '-'}</td>
+                  <td style="text-align: center;"><span class="level-badge">${r.facesLabel || `${r.totalFaces || 0} وجه`}</span></td>
+                  <td style="text-align: center; font-weight: bold; color: #047857;">${r.attendanceRate || '100%'}</td>
+                  <td style="text-align: center; font-weight: bold; color: #b45309;">+${r.totalPoints ?? r.points ?? 0}</td>
+                  <td style="color: #475569; font-size: 11px;">${r.teacherNotes || '-'}</td>
+                </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `;
       } else {
         tableHtml = `
           <table>
@@ -1853,6 +1907,33 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
           title: r.title || r.role || 'معلم ومحفظ',
           phone: r.phone || '-',
         }));
+      } else if (tableType === 'smart_custom_table') {
+        cols = [
+          { header: 'الرقم / المركز', key: 'rank' },
+          { header: 'اسم الطالب', key: 'name' },
+          { header: 'الحلقة', key: 'halaqahName' },
+          { header: 'الفئة / المستوى', key: 'level' },
+          { header: 'السورة وموضع الحفظ', key: 'currentPosition' },
+          { header: 'الحفظ الجديد', key: 'newMemorization' },
+          { header: 'المراجعة والتثبيت', key: 'reviewAchieved' },
+          { header: 'الأوجه المسمعة', key: 'facesLabel' },
+          { header: 'نسبة الحضور', key: 'attendanceRate' },
+          { header: 'النقاط', key: 'totalPoints' },
+          { header: 'ملاحظات المعلم', key: 'teacherNotes' },
+        ];
+        mappedData = rows.map((r, i) => ({
+          rank: r.rank || i + 1,
+          name: r.name || r.studentName || '',
+          halaqahName: r.halaqahName || '',
+          level: r.level || 'متوسط',
+          currentPosition: r.currentPosition || r.currentSurah || '-',
+          newMemorization: r.newMemorization || '-',
+          reviewAchieved: r.reviewAchieved || '-',
+          facesLabel: r.facesLabel || `${r.totalFaces || 0} وجه`,
+          attendanceRate: r.attendanceRate || '100%',
+          totalPoints: r.totalPoints ?? r.points ?? 0,
+          teacherNotes: r.teacherNotes || '-',
+        }));
       } else {
         cols = [
           { header: 'المركز / الرقم', key: 'rank' },
@@ -1868,9 +1949,13 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
           name: r.name || '',
           halaqahName: r.halaqahName || '',
           level: r.level || 'متوسط',
-          currentSurah: r.currentSurah || '-',
-          dailyTarget: r.dailyTarget || 'نصف وجه',
-          totalPoints: r.totalPoints || 0,
+          currentPosition: r.currentPosition || r.currentSurah || '-',
+          newMemorization: r.newMemorization || '-',
+          reviewAchieved: r.reviewAchieved || '-',
+          facesLabel: r.facesLabel || `${r.totalFaces || 0} وجه`,
+          attendanceRate: r.attendanceRate || '100%',
+          totalPoints: r.totalPoints ?? r.points ?? 0,
+          teacherNotes: r.teacherNotes || '-',
         }));
       }
 
@@ -3278,10 +3363,119 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
                             {/* 1. Table View */}
                             {(tableViewModes[msg.id] || 'table') === 'table' ? (
-                              <div className="max-h-64 overflow-y-auto">
-                                <table className="w-full text-right border-collapse text-[11px]">
-                                  <thead>
-                                    <tr className="bg-black/60 text-amber-200 border-b border-emerald-800 sticky top-0 z-10">
+                              (() => {
+                                const baseRows: any[] = msg.action.data?.students || msg.action.data?.rows || [];
+                                const sQuery = (tableSearchQueries[msg.id] || '').trim().toLowerCase();
+                                const sSort = tableSortConfigs[msg.id];
+
+                                const filteredRows = baseRows.filter((r: any) => {
+                                  if (!sQuery) return true;
+                                  const text = `${r.name || ''} ${r.studentName || ''} ${r.teacherName || ''} ${r.halaqahName || ''} ${r.level || ''} ${r.currentPosition || ''} ${r.currentSurah || ''} ${r.newMemorization || ''} ${r.reviewAchieved || ''} ${r.teacherNotes || ''}`.toLowerCase();
+                                  return text.includes(sQuery);
+                                });
+
+                                const sortedRows = [...filteredRows].sort((a: any, b: any) => {
+                                  if (!sSort) return 0;
+                                  const { key, order } = sSort;
+                                  if (key === 'totalPoints') {
+                                    const valA = Number(a.totalPoints ?? a.points ?? 0);
+                                    const valB = Number(b.totalPoints ?? b.points ?? 0);
+                                    return order === 'asc' ? valA - valB : valB - valA;
+                                  }
+                                  if (key === 'attendanceRate') {
+                                    const valA = parseFloat(String(a.attendanceRate || '0').replace('%', '')) || 0;
+                                    const valB = parseFloat(String(b.attendanceRate || '0').replace('%', '')) || 0;
+                                    return order === 'asc' ? valA - valB : valB - valA;
+                                  }
+                                  if (key === 'name') {
+                                    const valA = String(a.name || a.studentName || '');
+                                    const valB = String(b.name || b.studentName || '');
+                                    return order === 'asc' ? valA.localeCompare(valB, 'ar') : valB.localeCompare(valA, 'ar');
+                                  }
+                                  return 0;
+                                });
+
+                                return (
+                                  <>
+                                    {/* Search & Sort Toolbar */}
+                                    <div className="px-3 py-1.5 bg-black/45 border-b border-emerald-900/50 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                      <div className="flex items-center gap-1.5 flex-1 min-w-[130px] max-w-xs bg-black/60 px-2 py-1 rounded-lg border border-emerald-800/60">
+                                        <Search className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                        <input
+                                          type="text"
+                                          placeholder="بحث فوري في الكشف والطلاب..."
+                                          value={tableSearchQueries[msg.id] || ''}
+                                          onChange={e => setTableSearchQueries(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                                          className="bg-transparent text-white text-[11px] placeholder:text-emerald-400/50 focus:outline-none w-full"
+                                        />
+                                        {tableSearchQueries[msg.id] && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setTableSearchQueries(prev => ({ ...prev, [msg.id]: '' }))}
+                                            className="text-slate-400 hover:text-white"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1 text-[10px]">
+                                        <span className="text-emerald-300/80">ترتيب:</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTableSortConfigs(prev => ({
+                                            ...prev,
+                                            [msg.id]: prev[msg.id]?.key === 'totalPoints' && prev[msg.id]?.order === 'desc'
+                                              ? { key: 'totalPoints', order: 'asc' }
+                                              : { key: 'totalPoints', order: 'desc' }
+                                          }))}
+                                          className={`px-2 py-0.5 rounded cursor-pointer transition-all border ${
+                                            sSort?.key === 'totalPoints'
+                                              ? 'bg-amber-400/20 text-amber-300 border-amber-400/60 font-bold'
+                                              : 'bg-black/40 text-emerald-200/80 border-emerald-800/60 hover:text-white'
+                                          }`}
+                                        >
+                                          النقاط {sSort?.key === 'totalPoints' ? (sSort.order === 'desc' ? '↓' : '↑') : ''}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTableSortConfigs(prev => ({
+                                            ...prev,
+                                            [msg.id]: prev[msg.id]?.key === 'attendanceRate' && prev[msg.id]?.order === 'desc'
+                                              ? { key: 'attendanceRate', order: 'asc' }
+                                              : { key: 'attendanceRate', order: 'desc' }
+                                          }))}
+                                          className={`px-2 py-0.5 rounded cursor-pointer transition-all border ${
+                                            sSort?.key === 'attendanceRate'
+                                              ? 'bg-amber-400/20 text-amber-300 border-amber-400/60 font-bold'
+                                              : 'bg-black/40 text-emerald-200/80 border-emerald-800/60 hover:text-white'
+                                          }`}
+                                        >
+                                          الحضور {sSort?.key === 'attendanceRate' ? (sSort.order === 'desc' ? '↓' : '↑') : ''}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTableSortConfigs(prev => ({
+                                            ...prev,
+                                            [msg.id]: prev[msg.id]?.key === 'name' && prev[msg.id]?.order === 'asc'
+                                              ? { key: 'name', order: 'desc' }
+                                              : { key: 'name', order: 'asc' }
+                                          }))}
+                                          className={`px-2 py-0.5 rounded cursor-pointer transition-all border ${
+                                            sSort?.key === 'name'
+                                              ? 'bg-amber-400/20 text-amber-300 border-amber-400/60 font-bold'
+                                              : 'bg-black/40 text-emerald-200/80 border-emerald-800/60 hover:text-white'
+                                          }`}
+                                        >
+                                          أبجدياً {sSort?.key === 'name' ? (sSort.order === 'asc' ? 'أ-ي' : 'ي-أ') : ''}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="max-h-64 overflow-y-auto">
+                                      <table className="w-full text-right border-collapse text-[11px]">
+                                        <thead>
+                                          <tr className="bg-black/60 text-amber-200 border-b border-emerald-800 sticky top-0 z-10">
                                       {msg.action.tableType === 'violations' ? (
                                         <>
                                           <th className="p-2">#</th>
@@ -3342,6 +3536,20 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                           <th className="p-2">الورد اليومي</th>
                                           <th className="p-2 text-center">النقاط</th>
                                         </>
+                                      ) : msg.action.tableType === 'smart_custom_table' ? (
+                                        <>
+                                          <th className="p-2 text-center">#</th>
+                                          <th className="p-2">اسم الطالب</th>
+                                          <th className="p-2">الحلقة</th>
+                                          <th className="p-2 text-center">الفئة / المستوى</th>
+                                          <th className="p-2">السورة وموضع الحفظ</th>
+                                          <th className="p-2">ما سمعه (الحفظ الجديد)</th>
+                                          <th className="p-2">المراجعة والتثبيت</th>
+                                          <th className="p-2 text-center">الأوجه</th>
+                                          <th className="p-2 text-center">نسبة الحضور</th>
+                                          <th className="p-2 text-center">النقاط</th>
+                                          <th className="p-2">ملاحظات المعلم</th>
+                                        </>
                                       ) : (
                                         <>
                                           <th className="p-2">#</th>
@@ -3356,14 +3564,14 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {(msg.action.data?.students || msg.action.data?.rows || []).length === 0 ? (
+                                    {sortedRows.length === 0 ? (
                                       <tr>
-                                        <td colSpan={8} className="p-6 text-center text-amber-200/90 font-medium">
-                                          لم يتم العثور على طلاب مطابقين لمعايير البحث في نطاق صلاحياتك المعتمدة
+                                        <td colSpan={11} className="p-6 text-center text-amber-200/90 font-medium">
+                                          {sQuery ? 'لا توجد نتائج مطابقة لبحثك في هذا الكشف' : 'لم يتم العثور على طلاب مطابقين لمعايير البحث في نطاق صلاحياتك المعتمدة'}
                                         </td>
                                       </tr>
                                     ) : null}
-                                    {(msg.action.data?.students || msg.action.data?.rows || []).map((s: any, idx: number) => (
+                                    {sortedRows.map((s: any, idx: number) => (
                                       <tr
                                         key={s.id || idx}
                                         className="border-b border-white/5 hover:bg-white/5 transition-colors"
@@ -3469,7 +3677,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                           <>
                                             <td className="p-2 text-emerald-400 font-bold text-center">{idx + 1}</td>
                                             <td className="p-2 font-bold text-white flex items-center gap-1.5">
-                                              <span>👳‍♂️</span>
+                                              <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                                               <span>{s.name || s.teacherName}</span>
                                             </td>
                                             <td className="p-2 text-emerald-200/90">{s.halaqahName || 'الحلقة القرآنية'}</td>
@@ -3480,6 +3688,31 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                                 نشط ومفعل
                                               </span>
                                             </td>
+                                          </>
+                                        ) : msg.action?.tableType === 'smart_custom_table' ? (
+                                          <>
+                                            <td className="p-2 text-emerald-400 font-bold text-center">{s.rank || idx + 1}</td>
+                                            <td className="p-2 font-bold text-white flex items-center gap-1.5">
+                                              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+                                              <span>{s.name || s.studentName}</span>
+                                            </td>
+                                            <td className="p-2 text-emerald-200/90">{s.halaqahName}</td>
+                                            <td className="p-2 text-center">
+                                              <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-amber-300 border border-emerald-700/60 text-[10px] font-bold">
+                                                {s.level || 'متوسط'}
+                                              </span>
+                                            </td>
+                                            <td className="p-2 text-amber-200">{s.currentPosition || s.currentSurah || '-'}</td>
+                                            <td className="p-2 text-white font-medium">{s.newMemorization || '-'}</td>
+                                            <td className="p-2 text-emerald-300/90 truncate max-w-[130px]">{s.reviewAchieved || '-'}</td>
+                                            <td className="p-2 text-center">
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold text-[10px] border border-amber-400/40">
+                                                {s.facesLabel || `${s.totalFaces ?? 0} وجه`}
+                                              </span>
+                                            </td>
+                                            <td className="p-2 text-center font-bold text-emerald-300">{s.attendanceRate || '100%'}</td>
+                                            <td className="p-2 text-center font-bold text-amber-300 font-mono">+{s.totalPoints ?? s.points ?? 0}</td>
+                                            <td className="p-2 text-slate-300 truncate max-w-[120px]">{s.teacherNotes || '-'}</td>
                                           </>
                                         ) : (
                                           <>
@@ -3501,7 +3734,10 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                   </tbody>
                                 </table>
                               </div>
-                            ) : (
+                            </>
+                          );
+                        })()
+                      ) : (
                               /* 2. Visual Graphical Charts View */
                               <div className="p-3 space-y-3 bg-black/25">
                                 {msg.action.tableType === 'attendance' ? (

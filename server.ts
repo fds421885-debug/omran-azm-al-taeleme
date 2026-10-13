@@ -1908,6 +1908,17 @@ function parseRequestedStudentCount(
   return { count: 0, isAll: false, isExplicit: false };
 }
 
+// Strict face emoji sanitizer to keep responses solemn and Quranic without smileys
+export function stripFaceEmojis(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F910}-\u{1F92F}\u{1F970}-\u{1F978}\u{1F9D0}-\u{1F9DF}\u{263A}\u{FE0F}]/gu, '')
+    .replace(/[\u{1F466}-\u{1F478}\u{1F9D1}\u{1F473}\u{1F468}\u{1F469}]/gu, '')
+    .replace(/[😀😃😄😁😆😅🤣😂🙂🙃😉😊😇🥰😍🤩😘😗😚😙😋😛😜🤪😝🤑🤗🤭🤫🤔🤐🤨😐😑😶😏😒🙄😬🤥😌😔😪🤤😴😷🤒🤕🤢🤮🤧🥵🥶🥴😵🤯🤠🥳🥸😎🤓🧐😕😟🙁☹️😮😯😲😳🥺😦😧😨😰😥😢😭😱😖😣😞😓😩😫🥱😤😡😠🤬]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // Full Platform Assistant Route with Real Gemini AI, Role Enforcement & Interactive Actions
 app.post("/api/gemini/assistant", async (req, res) => {
   try {
@@ -2365,8 +2376,30 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("كشف نقاط") ||
       normUserMessage.includes("جدول نقاط"));
 
+    const hasExplicitTableKeyword =
+      /(?:جدول|كشف|بيان|قائمة|سجل|تقرير|شيت|اكسل)/i.test(message) ||
+      normUserMessage.includes("اعمل جدول") ||
+      normUserMessage.includes("اعمل لي جدول") ||
+      normUserMessage.includes("اعملي جدول") ||
+      normUserMessage.includes("سو جدول") ||
+      normUserMessage.includes("سوي جدول") ||
+      normUserMessage.includes("انشئ جدول") ||
+      normUserMessage.includes("اعمل كشف") ||
+      normUserMessage.includes("اعمل لي كشف") ||
+      normUserMessage.includes("اعملي كشف");
+
+    const hasStudentsDirective =
+      normUserMessage.includes("اعمل لي الطلاب") ||
+      normUserMessage.includes("اعملي الطلاب") ||
+      normUserMessage.includes("اعمل الطلاب") ||
+      normUserMessage.includes("طلع لي الطلاب") ||
+      normUserMessage.includes("طلع الطلاب") ||
+      normUserMessage.includes("هات لي الطلاب") ||
+      normUserMessage.includes("هات الطلاب") ||
+      normUserMessage.includes("اعرض لي الطلاب") ||
+      normUserMessage.includes("اعرض الطلاب");
+
     const hasGeneralTableIntent =
-      !isExplicitRecitationInquiry &&
       !hasTeachersTableIntent &&
       !hasPointsTableIntent &&
       !hasAttendanceTableIntent &&
@@ -2375,6 +2408,10 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !hasLowPointsIntent &&
       !hasAnyDeleteIntent &&
       (
+        hasExplicitTableKeyword ||
+        hasStudentsDirective ||
+        (Boolean(studentResolution.detectedLevel) && (hasExplicitTableKeyword || normUserMessage.includes("طلاب") || normUserMessage.includes("فئة"))) ||
+        (studentResolution.requestedNames.length > 0 && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("مع") || normUserMessage.includes("حفظهم") || normUserMessage.includes("جديد") || normUserMessage.includes("مراجعة"))) ||
         /(?:كشف|جدول|قائمة|بيان|سجل)\s+(?:الطلاب|طلاب|الطلبة|الاسماء|الأسماء|البيانات|المسجلين|الحلقة|حلقة)/i.test(message) ||
         normUserMessage.includes("كشف الطلاب") ||
         normUserMessage.includes("جدول الطلاب") ||
@@ -2562,9 +2599,21 @@ app.post("/api/gemini/assistant", async (req, res) => {
       lowerMsg.includes("اعمدة") ||
       lowerMsg.includes("تتبع") ||
       lowerMsg.includes("مخطط بياني") ||
+      lowerMsg.includes("مخطط") ||
       lowerMsg.includes("شارت") ||
       lowerMsg.includes("بيانيا") ||
       lowerMsg.includes("بيانياً") ||
+      lowerMsg.includes("احصائيات") ||
+      lowerMsg.includes("إحصائيات") ||
+      lowerMsg.includes("احصائيه") ||
+      lowerMsg.includes("إحصائية") ||
+      lowerMsg.includes("رسومات بيانية") ||
+      lowerMsg.includes("رسومات بيانيه") ||
+      lowerMsg.includes("رسم الانسب") ||
+      lowerMsg.includes("الرسم الانسب") ||
+      lowerMsg.includes("الرسم الأنسب") ||
+      lowerMsg.includes("وش الانسب") ||
+      lowerMsg.includes("ايش الانسب") ||
       lowerMsg.includes("احصائيات بيانية");
 
     const hasRecitationInquiryIntent =
@@ -3497,15 +3546,18 @@ app.post("/api/gemini/assistant", async (req, res) => {
       lowerMsg.includes("افضل") ||
       lowerMsg.includes("الأول") ||
       lowerMsg.includes("اوائل") ||
-      hasSpecificStudentsProgressIntent
+      hasSpecificStudentsProgressIntent ||
+      (studentResolution.requestedNames.length > 1)
     ) {
       preferredChartStyle = "bars";
-    } else if (lowerMsg.includes("تتبع") || lowerMsg.includes("مسار") || lowerMsg.includes("انضباط") || lowerMsg.includes("تطور")) {
+    } else if (lowerMsg.includes("تتبع") || lowerMsg.includes("مسار") || lowerMsg.includes("انضباط") || lowerMsg.includes("تطور") || lowerMsg.includes("تقدم") || lowerMsg.includes("أيام") || lowerMsg.includes("ايام")) {
       preferredChartStyle = "tracking";
-    } else if (lowerMsg.includes("تشخيص") || lowerMsg.includes("أداء") || lowerMsg.includes("كفاءة") || lowerMsg.includes("شامل")) {
+    } else if (lowerMsg.includes("فئة") || lowerMsg.includes("فئات") || lowerMsg.includes("مستوى") || lowerMsg.includes("مستويات") || lowerMsg.includes("دوائر") || lowerMsg.includes("دائري") || lowerMsg.includes("حلقي") || lowerMsg.includes("توزيع") || lowerMsg.includes("نسبة") || lowerMsg.includes("نسب") || lowerMsg.includes("حضور وغياب")) {
+      preferredChartStyle = "circle";
+    } else if (lowerMsg.includes("تشخيص") || lowerMsg.includes("أداء") || lowerMsg.includes("كفاءة") || lowerMsg.includes("شامل") || lowerMsg.includes("مؤشر")) {
       preferredChartStyle = "diagnostic";
     } else {
-      preferredChartStyle = "circle";
+      preferredChartStyle = studentResolution.requestedNames.length > 0 ? "bars" : "circle";
     }
 
     // 2.14 Any Custom Table Request by Programmer
@@ -3653,7 +3705,11 @@ ${studentsSummary || "لا يوجد طلاب مسجلون بعد"}
 8. [قاعدة سجلات التسميع وتاريخ ومسيرة الطالب]:
    - إذا سأل المستخدم عن ما سمّعه الطالب طوال مسيرته، أو أعلى شهر سمّع فيه، أو ماذا سمّع في يوم وتاريخ محدد: اعتمد على الإحصائيات الدقيقة وسجلات التسميع المرفقة بالأسفل وقدم له الأوجه المسمعة وتفاصيل الحفظ والمراجعة وملاحظات المعلم بدقة.
 9. إذا طلب تسجيل طالب، رحّب وأكد له أن استبيان التسجيل متاح أمامه لإكمال التفاصيل واختيار الحلقة.
-10. إذا طلب رسالة الحضور للواتساب، زوّده بكلمات طيبة وأخبره بأن تقرير الواتساب جاهز بالأسفل للنسخ والمشاركة فوراً.${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
+10. إذا طلب رسالة الحضور للواتساب، زوّده بكلمات طيبة وأخبره بأن تقرير الواتساب جاهز بالأسفل للنسخ والمشاركة فوراً.
+11. [حظر الوجوه التعبيرية والابتسامات - صارم وحاسم 100%]:
+    ممنوع منعاً باتاً ومطلقاً استخدام أي وجوه تعبيرية أو إيموجي وجوه وابتسامات (مثل 😀 😃 😅 🤣 😂 🙂 😉 😊 😇 😋 😎 😞 😔 😢 😭 وغيرها من إيموجي الوجوه والابتسامات). المنصة وقورة ورسمية وقرآنية. استبدلها بلغة قرآنية أدبية راقية، وتنسيق رسمي منظم بالنقاط والأسطر بدون أي وجوه تعبيرية.
+12. [المرونة والذكاء التام في التقارير والجداول والرسومات البيانية]:
+    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
 
 ⚠️ توجيه استثنائي وإلزامي حول استفسار الحضور والغياب للطالب "${studentTargetForStats.name}":
 - المستخدم يسأل خصيصاً ومباشرة عن نسبة وحضور وغياب هذا الطالب تحديداً لهذا الأسبوع!
@@ -4603,39 +4659,87 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         ? studentResolution.matchedStudents
         : (matchedHalaqah && halaqahStudentsCohort.length > 0
             ? halaqahStudentsCohort
-            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
-                ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
-                : studentsList));
+            : (studentResolution.detectedLevel
+                ? studentsList.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
+                : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                    ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+                    : studentsList)));
 
       let sortedGen = [...genBasePool];
-      if (isSortAlpha) {
+      if (isSortAlpha || studentResolution.detectedSort === 'alpha') {
         sortedGen.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '', 'ar'));
-      } else if (isSortPointsDesc) {
+      } else if (isSortPointsAsc || studentResolution.detectedSort === 'points_asc') {
+        sortedGen.sort((a: any, b: any) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0));
+      } else if (isSortPointsDesc || studentResolution.detectedSort === 'points_desc') {
         sortedGen.sort((a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0));
+      } else if (studentResolution.detectedSort === 'attendance_desc') {
+        sortedGen.sort((a: any, b: any) => (Number(b.attendanceRate) || 0) - (Number(a.attendanceRate) || 0));
       }
+
+      const tableTitle = studentResolution.detectedLevel
+        ? `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${complexName}`
+        : (hasSpecificMatched
+            ? `كشف بيانات ومسار الطلاب (${sortedGen.map(s => s.name).join(" - ")})`
+            : (matchedHalaqah
+                ? `كشف طلاب حلقة ${matchedHalaqah.name} - ${complexName}`
+                : `كشف وبيان طلاب المنظومة - ${complexName}`));
 
       action = {
         type: "SHOW_DATA_TABLE",
-        tableType: "general",
-        title: hasSpecificMatched
-          ? `كشف بيانات الطلاب المحددين (${sortedGen.map(s => s.name).join(" - ")}) - ${complexName}`
-          : matchedHalaqah
-          ? `كشف بيانات وطلاب حلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف بيانات ونقاط طلاب المنظومة - ${complexName}`,
+        tableType: "smart_custom_table",
+        title: tableTitle,
         data: {
           complexName,
           halaqahName: detectedHalaqahName,
+          detectedLevel: studentResolution.detectedLevel,
           totalStudents: sortedGen.length,
-          students: sortedGen.map((s: any, idx: number) => ({
-            id: s.id,
-            rank: idx + 1,
-            name: s.name,
-            halaqahName: s.halaqahName || detectedHalaqahName || "عامة",
-            level: s.level || "متوسط",
-            currentSurah: s.currentSurahName || "الفاتحة",
-            dailyTarget: s.dailyNewTarget || "نصف وجه",
-            totalPoints: Number(s.totalPoints ?? s.points) || 0,
-          })),
+          students: sortedGen.map((s: any, idx: number) => {
+            const studentMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+            const studentEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+            const latestEval = studentEvals[studentEvals.length - 1];
+            const evDetails = latestEval?.recitationDetails || {};
+
+            const newSurah = evDetails.newMemorizationAchieved ||
+              (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر'));
+
+            const revSurah = evDetails.reviewAchieved ||
+              (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0
+                ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join('، ')
+                : 'مراجعة وتثبيت');
+
+            const notes = evDetails.teacherNotes || 'مواظب ومجتهد';
+
+            const facesLabel = studentMetrics.totalFaces === 0.25 ? "ربع وجه"
+              : studentMetrics.totalFaces === 0.5 ? "نصف وجه"
+              : studentMetrics.totalFaces === 0.75 ? "ثلاثة أرباع وجه"
+              : studentMetrics.totalFaces === 1 ? "وجه كامل"
+              : `${studentMetrics.totalFaces} وجه`;
+
+            return {
+              id: s.id,
+              rank: idx + 1,
+              name: s.name,
+              studentName: s.name,
+              halaqahId: s.halaqahId,
+              halaqahName: s.halaqahName || detectedHalaqahName || "الحلقة القرآنية",
+              complexName: s.complexName || complexName,
+              level: s.level || "متوسط",
+              currentSurah: s.currentSurahName || "الفاتحة",
+              currentAyah: s.currentAyah || 1,
+              currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+              newMemorization: newSurah,
+              facesLabel: facesLabel,
+              totalFaces: studentMetrics.totalFaces,
+              reviewAchieved: revSurah,
+              attendanceRate: `${studentMetrics.attendanceRate}%`,
+              presentDays: studentMetrics.presentCount,
+              absentDays: studentMetrics.absentCount,
+              excusedDays: studentMetrics.excusedCount,
+              dailyTarget: s.dailyNewTarget || "نصف وجه",
+              totalPoints: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+              teacherNotes: notes,
+            };
+          }),
         },
       };
     } else if (hasWhatsAppIntent) {
@@ -4730,17 +4834,90 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         halaqahMap[hName].totalPoints += Number(s.totalPoints) || 0;
       });
 
-      const sortedByPoints = [...studentsList].sort(
-        (a: any, b: any) => (Number(b.totalPoints) || 0) - (Number(a.totalPoints) || 0)
-      );
+      const chartBasePool = matchedHalaqah && halaqahStudents.length > 0
+        ? halaqahStudents
+        : studentsList;
+
+      const chartCohortRaw = studentResolution.matchedStudents.length > 0
+        ? studentResolution.matchedStudents
+        : (studentResolution.detectedLevel
+            ? chartBasePool.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
+            : (matchedHalaqah && halaqahStudents.length > 0 ? halaqahStudents : sortedByPoints.slice(0, 8)));
+
+      const enrichedCohort = chartCohortRaw.map((s: any, idx: number) => {
+        const evDetails = extractStudentRecitationDetails(s.id);
+        const studentMetrics = calculateSingleStudentDetailedMetrics(s.id);
+        const newSurah = evDetails.newMemorizationAchieved ||
+          (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر'));
+        const revSurah = evDetails.reviewAchieved ||
+          (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0
+            ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join('، ')
+            : 'مراجعة وتثبيت');
+        const notes = evDetails.teacherNotes || 'مواظب ومجتهد';
+        const facesLabel = studentMetrics.totalFaces === 0.25 ? "ربع وجه"
+          : studentMetrics.totalFaces === 0.5 ? "نصف وجه"
+          : studentMetrics.totalFaces === 0.75 ? "ثلاثة أرباع وجه"
+          : studentMetrics.totalFaces === 1 ? "وجه كامل"
+          : `${studentMetrics.totalFaces} وجه`;
+
+        return {
+          id: s.id,
+          rank: idx + 1,
+          name: s.name,
+          studentName: s.name,
+          halaqahId: s.halaqahId,
+          halaqahName: s.halaqahName || detectedHalaqahName || "الحلقة القرآنية",
+          complexName: s.complexName || complexName,
+          level: s.level || "متوسط",
+          currentSurah: s.currentSurahName || "الفاتحة",
+          currentAyah: s.currentAyah || 1,
+          currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+          newMemorization: newSurah,
+          facesLabel: facesLabel,
+          totalFaces: studentMetrics.totalFaces,
+          reviewAchieved: revSurah,
+          attendanceRate: `${studentMetrics.attendanceRate}%`,
+          presentDays: studentMetrics.presentCount,
+          absentDays: studentMetrics.absentCount,
+          excusedDays: studentMetrics.excusedCount,
+          dailyTarget: s.dailyNewTarget || "نصف وجه",
+          points: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+          totalPoints: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+          teacherNotes: notes,
+        };
+      });
+
+      const dynamicChartTitle = studentResolution.detectedLevel
+        ? `الإحصائيات والتشخيص البياني لطلاب فئة (${studentResolution.detectedLevel})${detectedHalaqahName ? ` - ${detectedHalaqahName}` : ''} - ${complexName}`
+        : (studentResolution.matchedStudents.length > 0
+            ? `مقارنة وتشخيص بياني للطلاب (${enrichedCohort.map(s => s.name).join(' - ')})`
+            : (matchedHalaqah
+                ? `الإحصائيات والتشخيص البياني لـ (${detectedHalaqahName}) - ${complexName}`
+                : `التشخيص البياني والإحصائي الشامل - ${complexName}`));
 
       action = {
         type: "SHOW_CHART",
         chartType: preferredChartStyle,
-        title: "التشخيص البياني والإحصائي الشامل",
+        title: dynamicChartTitle,
+        tableType: "smart_custom_table",
         data: {
           preferredStyle: preferredChartStyle,
           metrics,
+          students: enrichedCohort,
+          studentsComparison: enrichedCohort.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            points: Number(s.totalPoints ?? s.points) || 0,
+            totalPoints: Number(s.totalPoints ?? s.points) || 0,
+            halaqahName: s.halaqahName || "الحلقة",
+            level: s.level || "متوسط",
+            facesLabel: s.facesLabel,
+            totalFaces: s.totalFaces,
+            newMemorization: s.newMemorization,
+            reviewAchieved: s.reviewAchieved,
+            currentPosition: s.currentPosition,
+            attendanceRate: s.attendanceRate,
+          })),
           attendance: {
             present: metrics.presentCount,
             absent: metrics.absentCount,
@@ -4788,7 +4965,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
       };
     }
 
-    return res.json({ reply: geminiReply, action });
+    return res.json({ reply: stripFaceEmojis(geminiReply), action });
   } catch (error: any) {
     console.error("Gemini assistant error:", error);
     res.json({
