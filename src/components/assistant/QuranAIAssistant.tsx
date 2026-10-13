@@ -43,7 +43,12 @@ import {
   Play,
   RotateCcw,
   CheckSquare,
-  ExternalLink
+  ExternalLink,
+  Trophy,
+  TrendingDown,
+  Calendar,
+  Headphones,
+  UserPlus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { jsPDF } from 'jspdf';
@@ -513,7 +518,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   const getInitialWelcomeMessage = (): ChatMessage => ({
     id: `welcome_${Date.now()}`,
     sender: 'assistant',
-    text: `السلام عليكم ورحمة الله وبركاته يا أخي ${userFirstName} 🌿\n\nأهلاً بك في منصة عُمْرَان المباركة! أنا مساعدك القرآني الذكي، مربوط مباشرة ببيانات مجمعك وحلقتك الحية ولديك تحكم كامل بالمنصة.\n\nيسعدني خدمتك في أي شيء:\n• 📋 كشف الطلاب الحاضرين والغائبين بجدول منظم مع استخراج PDF أو Google Sheets\n• 📖 كشف حفظ الطلاب ومستوياتهم وإحصائيات التسميع\n• 📲 تجهيز رسالة تقرير الحضور والغياب اليومية للواتساب فوراً\n• ➕ تسجيل طالب جديد باسمه الرباعي وحلقته بدقة متناهية\n• 🗑️ إدارة وحذف الطلاب والحلقات بالتأكيد المباشر التفاعلي\n\nكيف يمكنني التيسير عليك اليوم؟`,
+    text: `السلام عليكم ورحمة الله وبركاته يا أخي ${userFirstName}.\n\nأهلاً بك في منصة عُمْرَان لإدارة المجمعات والحلقات القرآنية. أنا رفيقك ومساعدك التنفيذي الذكي، مربوط مباشرة بكافة بيانات مجمعكم وحلقاتكم الحية.\n\nيسعدني خدمتك بمرونة تامة في كل ما تحتاج إليه:\n- إنشاء وتنسيق أي جدول تطلبه لأي عدد من الطلاب أو أي فئة أو حلقة مع حفظهم الجديد ومراجعتهم وسورهم ونقاطهم.\n- استخراج الرسوم البيانية والإحصائيات الذكية المناسبة تلقائياً لأداء الطلاب والحلقات والمجمع.\n- تقييم التسميع، تحضير رسائل الواتساب، إصدار الشهادات، وتصدير التقارير إلى Excel و PDF فوراً.\n\nكيف يمكنني التيسير عليك اليوم؟`,
     timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
   });
 
@@ -1037,7 +1042,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       const assistantMsg: ChatMessage = {
         id: `ai_${Date.now()}`,
         sender: 'assistant',
-        text: data.reply || 'أهلاً بك يا أخي، تم استلام طلبك.',
+        text: stripFaceEmojis(data.reply || 'أهلاً بك يا أخي، تم استلام طلبك.'),
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         action: data.action || undefined,
       };
@@ -1050,10 +1055,11 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       const fallbackMsg: ChatMessage = {
         id: `ai_fallback_${Date.now()}`,
         sender: 'assistant',
-        text:
+        text: stripFaceEmojis(
           messages.length > 1
             ? `معذرة يا أخي ${userFirstName}، حدث تعذر لحظي في معالجة الرد. تفضل بتأكيد ما ترغب به وسأواصل معك فوراً.`
-            : `أهلاً بك يا أخي ${userFirstName} في منصة عُمْرَان. أنا في خدمتك، كيف يمكنني مساعدتك؟`,
+            : `أهلاً بك يا أخي ${userFirstName} في منصة عُمْرَان. أنا في خدمتك، كيف يمكنني مساعدتك؟`
+        ),
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
       };
       const finalMessages = [...updatedWithUser, fallbackMsg];
@@ -2659,18 +2665,18 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     }
   };
 
-  // Quick Action Buttons
-  const quickActions = [
-    { label: '📜 صنع شهادات تكريم', query: 'اعملي شهادة تكريم للمتفوقين' },
-    { label: '📊 رسم وتشخيص بياني', query: 'اعرض لي رسم بياني وتشخيص بياني شامل للمجمع' },
-    { label: '🎨 إنشاء قالب شهادة', query: 'اعملي قالب جديد للشهادات واكتب فيه شكر وتقدير' },
-    { label: '🎧 تقييم وتسميع اليوم', query: 'ماذا سمع الطلاب اليوم وما هو مقرر الغد؟' },
-    { label: '🥇 كشف أول 5 بالنقاط', query: 'اعمل لي كشف لأول خمس طلاب في النقاط' },
-    { label: '⚠️ كشف الطلاب الأقل نقاطاً', query: 'اعمل لي كشف أسوأ الطلاب في النقاط الأكثر حاجة للمتابعة' },
-    { label: '🚨 كشف التنبيهات والمخالفات', query: 'اعمل لي كشف الطلاب اللي عليهم تنبيهات ومخالفات' },
-    { label: '📋 كشف الحضور والغياب', query: 'اعرض لي كشف الحضور والغياب اليومي' },
-    { label: '📖 وين وصلوا في الحفظ؟', query: 'وين وصلوا في الحفظ؟ اعطني كشف مستويات حفظ الطلاب' },
-    { label: '➕ تسجيل طالب جديد', query: 'أريد تسجيل طالب جديد' },
+  // Quick Action Buttons (Duolingo styled with Lucide SVG vectors, zero emojis)
+  const quickActions: Array<{ label: string; query: string; icon: string }> = [
+    { label: 'صنع شهادات تكريم', query: 'اعملي شهادة تكريم للمتفوقين', icon: 'award' },
+    { label: 'رسم وتشخيص بياني', query: 'اعرض لي رسم بياني وتشخيص بياني شامل للمجمع', icon: 'chart' },
+    { label: 'إنشاء قالب شهادة', query: 'اعملي قالب جديد للشهادات واكتب فيه شكر وتقدير', icon: 'palette' },
+    { label: 'تقييم وتسميع اليوم', query: 'ماذا سمع الطلاب اليوم وما هو مقرر الغد؟', icon: 'headphones' },
+    { label: 'كشف أول 5 بالنقاط', query: 'اعمل لي كشف لأول خمس طلاب في النقاط', icon: 'trophy' },
+    { label: 'كشف الطلاب الأقل نقاطاً', query: 'اعمل لي كشف أسوأ الطلاب في النقاط الأكثر حاجة للمتابعة', icon: 'trendDown' },
+    { label: 'كشف التنبيهات والمخالفات', query: 'اعمل لي كشف الطلاب اللي عليهم تنبيهات ومخالفات', icon: 'alert' },
+    { label: 'كشف الحضور والغياب', query: 'اعرض لي كشف الحضور والغياب اليومي', icon: 'calendar' },
+    { label: 'مستويات حفظ الطلاب', query: 'وين وصلوا في الحفظ؟ اعطني كشف مستويات حفظ الطلاب', icon: 'book' },
+    { label: 'تسجيل طالب جديد', query: 'أريد تسجيل طالب جديد', icon: 'userPlus' },
   ];
 
   return (
@@ -3074,7 +3080,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                         </div>
 
                         {/* Text Body */}
-                        <div className="text-white/95 leading-normal">{msg.text}</div>
+                        <div className="text-white/95 leading-normal">{stripFaceEmojis(msg.text)}</div>
 
                         {/* ---------------------------------------------------- */}
                         {/* 1. Interactive Student Registration Survey Card      */}
@@ -4733,272 +4739,484 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                         {/* ---------------------------------------------------- */}
                         {/* 7. Visual Multi-Style Statistics & Diagnostic Charts */}
                         {/* ---------------------------------------------------- */}
-                        {msg.action?.type === 'SHOW_CHART' && (
-                          <div
-                            style={{
-                              backgroundColor: `${primaryColor}F8`,
-                              borderColor: `${accentColor}80`,
-                            }}
-                            className="mt-3 p-3.5 rounded-2xl border text-xs text-emerald-100 space-y-3 shadow-xl"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-2">
-                              <span className="font-bold flex items-center gap-1.5" style={{ color: accentColor }}>
-                                <BarChart3 className="w-4 h-4" />
-                                <span>{msg.action.title || 'التشخيص البياني والإحصائي المباشر'}</span>
-                              </span>
+                        {msg.action?.type === 'SHOW_CHART' && (() => {
+                          const recommendedStyle = msg.action?.chartType || 'bars';
+                          const activeStyle = chartActiveTabs[msg.id] || recommendedStyle;
+                          const cohortStudents = (Array.isArray(msg.action.data?.students) && msg.action.data.students.length > 0)
+                            ? msg.action.data.students
+                            : (Array.isArray(msg.action.data?.studentsComparison) && msg.action.data.studentsComparison.length > 0
+                                ? msg.action.data.studentsComparison
+                                : scopedStudents);
 
-                              {/* Smart Automatic Chart Badge - No manual clicking required */}
-                              {(() => {
-                                const activeStyle = msg.action?.chartType || 'circle';
-                                const badgeLabel =
-                                  activeStyle === 'bars'
-                                    ? '📊 أعمدة بيانية (مقارنة الإنجاز والنقاط)'
-                                    : activeStyle === 'tracking'
-                                    ? '📈 مسار تتبع الانضباط والتقدم'
-                                    : activeStyle === 'diagnostic'
-                                    ? '⚡ مؤشر التشخيص الحيوي للمجمع'
-                                    : '🍩 مخطط بياني دائري (توزيع النسب)';
-                                return (
-                                  <div className="flex items-center gap-1.5 bg-black/50 px-2.5 py-1 rounded-xl border border-emerald-700/60 text-[10px] font-bold text-amber-300 shadow-sm">
-                                    <Sparkles className="w-3 h-3 text-amber-400" />
-                                    <span>{badgeLabel}</span>
-                                  </div>
-                                );
-                              })()}
-                            </div>
+                          const chartSearch = (tableSearchQueries[msg.id] || '').trim().toLowerCase();
+                          const chartSort = tableSortConfigs[msg.id] || { key: 'totalPoints', order: 'desc' };
 
-                            {/* 1. Circle / Donut Style View */}
-                            {((msg.action?.chartType === 'circle' || msg.action?.chartType === 'attendance_breakdown' || msg.action?.chartType === 'recitation_breakdown' || !msg.action?.chartType || (chartActiveTabs[msg.id] === 'circle' && !msg.action?.chartType))) && (
-                              <div className="space-y-3 pt-1">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                  {/* Attendance Donut */}
-                                  <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/70 flex flex-col items-center">
-                                    <div className="text-[11px] font-bold text-amber-300 mb-2">معدل الحضور والغياب اليومي</div>
-                                    <div className="relative w-28 h-28 flex items-center justify-center">
-                                      {(() => {
-                                        const tot = Math.max(1, (msg.action.data?.attendance?.total || platformMetrics.totalStudents || 1));
-                                        const p = (msg.action.data?.attendance?.present || platformMetrics.presentCount || 0);
-                                        const a = (msg.action.data?.attendance?.absent || platformMetrics.absentCount || 0);
-                                        const e = (msg.action.data?.attendance?.excused || platformMetrics.excusedCount || 0);
-                                        const pPct = Math.round((p / tot) * 100);
-                                        const aPct = Math.round((a / tot) * 100);
-                                        return (
-                                          <>
-                                            <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                                              <path
-                                                className="text-emerald-950/80"
-                                                strokeWidth="4"
-                                                stroke="currentColor"
-                                                fill="none"
-                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                              />
-                                              <path
-                                                className="text-emerald-400"
-                                                strokeDasharray={`${pPct}, 100`}
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                                stroke="currentColor"
-                                                fill="none"
-                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                              />
-                                              {aPct > 0 && (
+                          const filteredCohort = cohortStudents.filter((s: any) => {
+                            if (!chartSearch) return true;
+                            const name = (s.name || s.studentName || '').toLowerCase();
+                            const halaqah = (s.halaqahName || '').toLowerCase();
+                            const level = (s.level || '').toLowerCase();
+                            return name.includes(chartSearch) || halaqah.includes(chartSearch) || level.includes(chartSearch);
+                          });
+
+                          const sortedCohort = [...filteredCohort].sort((a: any, b: any) => {
+                            const ord = chartSort.order === 'asc' ? 1 : -1;
+                            if (chartSort.key === 'name') {
+                              return ((a.name || a.studentName || '').localeCompare(b.name || b.studentName || '', 'ar')) * ord;
+                            }
+                            if (chartSort.key === 'attendanceRate') {
+                              const aRate = parseFloat(a.attendanceRate) || 0;
+                              const bRate = parseFloat(b.attendanceRate) || 0;
+                              return (aRate - bRate) * ord;
+                            }
+                            const aPts = Number(a.totalPoints ?? a.points) || 0;
+                            const bPts = Number(b.totalPoints ?? b.points) || 0;
+                            return (aPts - bPts) * ord;
+                          });
+
+                          return (
+                            <div
+                              style={{
+                                backgroundColor: `${primaryColor}F8`,
+                                borderColor: `${accentColor}80`,
+                              }}
+                              className="mt-3 p-3.5 rounded-2xl border text-xs text-emerald-100 space-y-3.5 shadow-xl"
+                            >
+                              {/* Header & Style Toolbar */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold flex items-center gap-1.5" style={{ color: accentColor }}>
+                                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                                    <span>{msg.action.title || 'التشخيص البياني والإحصائي المباشر'}</span>
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3 text-amber-300" />
+                                    <span>
+                                      الأنسب: {
+                                        recommendedStyle === 'bars' ? 'أعمدة بيانية' :
+                                        recommendedStyle === 'tracking' ? 'مسار التتبع' :
+                                        recommendedStyle === 'diagnostic' ? 'التشخيص الحيوي' : 'مخطط حلقي'
+                                      }
+                                    </span>
+                                  </span>
+                                </div>
+
+                                {/* View Switcher Buttons */}
+                                <div className="flex items-center gap-1 bg-black/50 p-1 rounded-xl border border-emerald-700/60 text-[10px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => setChartActiveTabs(prev => ({ ...prev, [msg.id]: 'bars' }))}
+                                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      activeStyle === 'bars'
+                                        ? 'bg-[#58cc02] text-[#131f24] shadow-sm'
+                                        : 'text-emerald-200/80 hover:text-white'
+                                    }`}
+                                  >
+                                    <BarChart3 className="w-3 h-3" />
+                                    <span>أعمدة</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChartActiveTabs(prev => ({ ...prev, [msg.id]: 'circle' }))}
+                                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      activeStyle === 'circle' || activeStyle === 'attendance_breakdown' || activeStyle === 'recitation_breakdown'
+                                        ? 'bg-[#58cc02] text-[#131f24] shadow-sm'
+                                        : 'text-emerald-200/80 hover:text-white'
+                                    }`}
+                                  >
+                                    <PieChart className="w-3 h-3" />
+                                    <span>دائري</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChartActiveTabs(prev => ({ ...prev, [msg.id]: 'tracking' }))}
+                                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      activeStyle === 'tracking'
+                                        ? 'bg-[#58cc02] text-[#131f24] shadow-sm'
+                                        : 'text-emerald-200/80 hover:text-white'
+                                    }`}
+                                  >
+                                    <TrendingUp className="w-3 h-3" />
+                                    <span>مسار</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChartActiveTabs(prev => ({ ...prev, [msg.id]: 'diagnostic' }))}
+                                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      activeStyle === 'diagnostic'
+                                        ? 'bg-[#58cc02] text-[#131f24] shadow-sm'
+                                        : 'text-emerald-200/80 hover:text-white'
+                                    }`}
+                                  >
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>تشخيص</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChartActiveTabs(prev => ({ ...prev, [msg.id]: 'table' }))}
+                                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                                      activeStyle === 'table'
+                                        ? 'bg-[#ffc800] text-[#131f24] shadow-sm'
+                                        : 'text-amber-200/80 hover:text-white'
+                                    }`}
+                                  >
+                                    <FileSpreadsheet className="w-3 h-3" />
+                                    <span>الجدول</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 1. Circle / Donut Style View */}
+                              {(activeStyle === 'circle' || activeStyle === 'attendance_breakdown' || activeStyle === 'recitation_breakdown') && (
+                                <div className="space-y-3 pt-1">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {/* Attendance Donut */}
+                                    <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/70 flex flex-col items-center">
+                                      <div className="text-[11px] font-bold text-amber-300 mb-2">معدل الحضور والغياب اليومي</div>
+                                      <div className="relative w-28 h-28 flex items-center justify-center">
+                                        {(() => {
+                                          const tot = Math.max(1, (msg.action.data?.attendance?.total || platformMetrics.totalStudents || 1));
+                                          const p = (msg.action.data?.attendance?.present || platformMetrics.presentCount || 0);
+                                          const a = (msg.action.data?.attendance?.absent || platformMetrics.absentCount || 0);
+                                          const e = (msg.action.data?.attendance?.excused || platformMetrics.excusedCount || 0);
+                                          const pPct = Math.round((p / tot) * 100);
+                                          const aPct = Math.round((a / tot) * 100);
+                                          return (
+                                            <>
+                                              <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                                                 <path
-                                                  className="text-red-500"
-                                                  strokeDasharray={`${aPct}, 100`}
-                                                  strokeDashoffset={`-${pPct}`}
+                                                  className="text-emerald-950/80"
+                                                  strokeWidth="4"
+                                                  stroke="currentColor"
+                                                  fill="none"
+                                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                />
+                                                <path
+                                                  className="text-[#58cc02]"
+                                                  strokeDasharray={`${pPct}, 100`}
                                                   strokeWidth="4"
                                                   strokeLinecap="round"
                                                   stroke="currentColor"
                                                   fill="none"
                                                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                                                 />
-                                              )}
-                                            </svg>
-                                            <div className="absolute flex flex-col items-center">
-                                              <span className="text-base font-black text-amber-300 font-mono">{pPct}%</span>
-                                              <span className="text-[9px] text-emerald-200">حاضرون</span>
-                                            </div>
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-                                    <div className="flex gap-2 text-[10px] mt-2">
-                                      <span className="text-emerald-300 flex items-center gap-1">🟢 {msg.action.data?.attendance?.present || platformMetrics.presentCount} حاضر</span>
-                                      <span className="text-red-300 flex items-center gap-1">🔴 {msg.action.data?.attendance?.absent || platformMetrics.absentCount} غائب</span>
-                                      <span className="text-amber-300 flex items-center gap-1">🟡 {msg.action.data?.attendance?.excused || platformMetrics.excusedCount} عذر</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Recitation Breakdown Donut */}
-                                  <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/70 flex flex-col items-center">
-                                    <div className="text-[11px] font-bold text-emerald-300 mb-2">توزيع الأوجه (حفظ ومراجعة)</div>
-                                    <div className="relative w-28 h-28 flex items-center justify-center">
-                                      {(() => {
-                                        const tot = Math.max(1, (msg.action.data?.recitation?.totalPages || platformMetrics.totalRecitedPagesToday || 1));
-                                        const n = (msg.action.data?.recitation?.newPages || platformMetrics.totalNewPagesToday || 0);
-                                        const r = (msg.action.data?.recitation?.reviewPages || platformMetrics.totalReviewPagesToday || 0);
-                                        const nPct = Math.round((n / tot) * 100);
-                                        return (
-                                          <>
-                                            <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                                              <path
-                                                className="text-emerald-950/80"
-                                                strokeWidth="4"
-                                                stroke="currentColor"
-                                                fill="none"
-                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                              />
-                                              <path
-                                                className="text-amber-400"
-                                                strokeDasharray={`${nPct}, 100`}
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                                stroke="currentColor"
-                                                fill="none"
-                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                              />
-                                              <path
-                                                className="text-cyan-400"
-                                                strokeDasharray={`${100 - nPct}, 100`}
-                                                strokeDashoffset={`-${nPct}`}
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                                stroke="currentColor"
-                                                fill="none"
-                                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                              />
-                                            </svg>
-                                            <div className="absolute flex flex-col items-center">
-                                              <span className="text-base font-black text-amber-200 font-mono">{tot}</span>
-                                              <span className="text-[9px] text-emerald-200">وجه مسمع</span>
-                                            </div>
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-                                    <div className="flex gap-2 text-[10px] mt-2">
-                                      <span className="text-amber-300">🟡 حفظ جديد: {msg.action.data?.recitation?.newPages || platformMetrics.totalNewPagesToday}</span>
-                                      <span className="text-cyan-300">🔵 مراجعة: {msg.action.data?.recitation?.reviewPages || platformMetrics.totalReviewPagesToday}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* 2. Bars Style View */}
-                            {((msg.action?.chartType === 'bars' || chartActiveTabs[msg.id] === 'bars')) && (
-                              <div className="space-y-2.5 pt-1">
-                                <div className="text-[11px] font-bold text-amber-300">
-                                  {msg.action.data?.studentsComparison ? 'مقارنة إنجاز الطلاب المحددين (أعمدة بيانية):' : 'أعلى الطلاب في إجمالي النقاط (أعمدة بيانية):'}
-                                </div>
-                                <div className="space-y-1.5">
-                                  {(msg.action.data?.studentsComparison && msg.action.data.studentsComparison.length > 0
-                                    ? msg.action.data.studentsComparison.map((s: any) => ({
-                                        name: s.name,
-                                        points: s.totalPoints ?? s.points ?? 0,
-                                        halaqahName: s.halaqahName || 'الحلقة',
-                                        extraLabel: s.facesLabel
-                                      }))
-                                    : msg.action.data?.topPoints && msg.action.data.topPoints.length > 0
-                                    ? msg.action.data.topPoints
-                                    : scopedStudents.slice(0, 5).map(s => ({ name: s.name, points: s.totalPoints || 0, halaqahName: s.halaqahName }))
-                                  ).map((item: any, idx: number) => {
-                                    const allItems = msg.action.data?.studentsComparison || msg.action.data?.topPoints || scopedStudents.slice(0, 5);
-                                    const maxP = Math.max(1, ...allItems.map((x: any) => Number(x.points ?? x.totalPoints) || 0));
-                                    const pct = Math.min(100, Math.round(((Number(item.points) || 0) / maxP) * 100));
-                                    return (
-                                      <div key={idx} className="space-y-0.5">
-                                        <div className="flex justify-between text-[11px]">
-                                          <span className="font-bold flex items-center gap-1 text-emerald-100">
-                                            <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎖️'}</span>
-                                            <span>{item.name}</span>
-                                            <span className="text-[9px] text-emerald-400">({item.halaqahName || 'الحلقة'})</span>
-                                            {item.extraLabel && (
-                                              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-normal">
-                                                {item.extraLabel}
-                                              </span>
-                                            )}
-                                          </span>
-                                          <span className="font-black text-amber-300 font-mono">{item.points} نقطة</span>
-                                        </div>
-                                        <div className="w-full bg-black/40 h-2.5 rounded-full overflow-hidden border border-emerald-900/60">
-                                          <div
-                                            style={{
-                                              width: `${pct}%`,
-                                              background: idx === 0 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #10b981, #34d399)',
-                                            }}
-                                            className="h-full rounded-full transition-all duration-700"
-                                          />
-                                        </div>
+                                                {aPct > 0 && (
+                                                  <path
+                                                    className="text-[#ff4b4b]"
+                                                    strokeDasharray={`${aPct}, 100`}
+                                                    strokeDashoffset={`-${pPct}`}
+                                                    strokeWidth="4"
+                                                    strokeLinecap="round"
+                                                    stroke="currentColor"
+                                                    fill="none"
+                                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                  />
+                                                )}
+                                              </svg>
+                                              <div className="absolute flex flex-col items-center">
+                                                <span className="text-base font-black text-amber-300 font-mono">{pPct}%</span>
+                                                <span className="text-[9px] text-emerald-200">حاضرون</span>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
+                                      <div className="flex gap-2 text-[10px] mt-2">
+                                        <span className="text-emerald-300 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full bg-[#58cc02] inline-block" />
+                                          <span>{msg.action.data?.attendance?.present || platformMetrics.presentCount} حاضر</span>
+                                        </span>
+                                        <span className="text-red-300 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full bg-[#ff4b4b] inline-block" />
+                                          <span>{msg.action.data?.attendance?.absent || platformMetrics.absentCount} غائب</span>
+                                        </span>
+                                        <span className="text-amber-300 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full bg-[#ffc800] inline-block" />
+                                          <span>{msg.action.data?.attendance?.excused || platformMetrics.excusedCount} عذر</span>
+                                        </span>
+                                      </div>
+                                    </div>
 
-                            {/* 3. Tracking Style View */}
-                            {((chartActiveTabs[msg.id] || msg.action?.chartType) === 'tracking') && (
-                              <div className="space-y-2.5 pt-1">
-                                <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/80 space-y-2">
-                                  <div className="flex justify-between text-[11px]">
-                                    <span className="font-bold text-amber-200">مسار انضباط حضور الطلاب:</span>
-                                    <span className="font-bold text-emerald-300">
-                                      {platformMetrics.totalStudents > 0
-                                        ? Math.round((platformMetrics.presentCount / platformMetrics.totalStudents) * 100)
-                                        : 100}% مكتمل
-                                    </span>
-                                  </div>
-                                  <div className="w-full bg-emerald-950 h-3 rounded-full overflow-hidden border border-emerald-800">
-                                    <div
-                                      style={{
-                                        width: `${platformMetrics.totalStudents > 0 ? (platformMetrics.presentCount / platformMetrics.totalStudents) * 100 : 100}%`,
-                                        backgroundColor: accentColor,
-                                      }}
-                                      className="h-full rounded-full transition-all duration-700"
-                                    />
+                                    {/* Recitation Breakdown Donut */}
+                                    <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/70 flex flex-col items-center">
+                                      <div className="text-[11px] font-bold text-emerald-300 mb-2">توزيع الأوجه (حفظ ومراجعة)</div>
+                                      <div className="relative w-28 h-28 flex items-center justify-center">
+                                        {(() => {
+                                          const tot = Math.max(1, (msg.action.data?.recitation?.totalPages || platformMetrics.totalRecitedPagesToday || 1));
+                                          const n = (msg.action.data?.recitation?.newPages || platformMetrics.totalNewPagesToday || 0);
+                                          const nPct = Math.round((n / tot) * 100);
+                                          return (
+                                            <>
+                                              <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                                <path
+                                                  className="text-emerald-950/80"
+                                                  strokeWidth="4"
+                                                  stroke="currentColor"
+                                                  fill="none"
+                                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                />
+                                                <path
+                                                  className="text-[#ffc800]"
+                                                  strokeDasharray={`${nPct}, 100`}
+                                                  strokeWidth="4"
+                                                  strokeLinecap="round"
+                                                  stroke="currentColor"
+                                                  fill="none"
+                                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                />
+                                                <path
+                                                  className="text-[#1cb0f6]"
+                                                  strokeDasharray={`${100 - nPct}, 100`}
+                                                  strokeDashoffset={`-${nPct}`}
+                                                  strokeWidth="4"
+                                                  strokeLinecap="round"
+                                                  stroke="currentColor"
+                                                  fill="none"
+                                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                />
+                                              </svg>
+                                              <div className="absolute flex flex-col items-center">
+                                                <span className="text-base font-black text-amber-200 font-mono">{tot}</span>
+                                                <span className="text-[9px] text-emerald-200">وجه مسمع</span>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                      <div className="flex gap-2 text-[10px] mt-2">
+                                        <span className="text-amber-300 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full bg-[#ffc800] inline-block" />
+                                          <span>حفظ جديد: {msg.action.data?.recitation?.newPages || platformMetrics.totalNewPagesToday}</span>
+                                        </span>
+                                        <span className="text-cyan-300 flex items-center gap-1.5">
+                                          <span className="w-2 h-2 rounded-full bg-[#1cb0f6] inline-block" />
+                                          <span>مراجعة: {msg.action.data?.recitation?.reviewPages || platformMetrics.totalReviewPagesToday}</span>
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
+                              )}
 
-                                <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/80 space-y-2">
-                                  <div className="flex justify-between text-[11px]">
-                                    <span className="font-bold text-cyan-200">متوسط الإنجاز اليومي للورد:</span>
-                                    <span className="font-bold text-cyan-300">{platformMetrics.avgDailyNewTarget}</span>
+                              {/* 2. Bars Style View */}
+                              {activeStyle === 'bars' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="text-[11px] font-bold text-amber-300">
+                                    مقارنة إنجاز الطلاب المحددين (أعمدة بيانية):
                                   </div>
-                                  <div className="w-full bg-cyan-950 h-3 rounded-full overflow-hidden border border-cyan-800">
-                                    <div className="h-full bg-cyan-400 rounded-full w-4/5" />
+                                  <div className="space-y-1.5">
+                                    {sortedCohort.map((item: any, idx: number) => {
+                                      const maxP = Math.max(1, ...sortedCohort.map((x: any) => Number(x.points ?? x.totalPoints) || 0));
+                                      const currentPoints = Number(item.points ?? item.totalPoints) || 0;
+                                      const pct = Math.min(100, Math.round((currentPoints / maxP) * 100));
+                                      return (
+                                        <div key={item.id || idx} className="space-y-1 bg-black/30 p-2 rounded-xl border border-emerald-900/60">
+                                          <div className="flex justify-between text-[11px]">
+                                            <span className="font-bold flex items-center gap-1.5 text-emerald-100">
+                                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                                idx === 0 ? 'bg-[#ffc800] text-[#131f24]' :
+                                                idx === 1 ? 'bg-slate-300 text-[#131f24]' :
+                                                idx === 2 ? 'bg-amber-700 text-white' :
+                                                'bg-emerald-800 text-emerald-200'
+                                              }`}>
+                                                {idx + 1}
+                                              </span>
+                                              <span>{item.name || item.studentName}</span>
+                                              <span className="text-[9px] text-emerald-400">({item.halaqahName || 'الحلقة'})</span>
+                                              {item.level && (
+                                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-normal">
+                                                  {item.level}
+                                                </span>
+                                              )}
+                                              {item.facesLabel && (
+                                                <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-normal">
+                                                  {item.facesLabel}
+                                                </span>
+                                              )}
+                                            </span>
+                                            <span className="font-black text-amber-300 font-mono">{currentPoints} نقطة</span>
+                                          </div>
+                                          <div className="w-full bg-black/60 h-2.5 rounded-full overflow-hidden border border-emerald-900/60">
+                                            <div
+                                              style={{
+                                                width: `${Math.max(5, pct)}%`,
+                                                background: idx === 0 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #58cc02, #22c55e)',
+                                              }}
+                                              className="h-full rounded-full transition-all duration-700"
+                                            />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {/* 4. Diagnostic Style View */}
-                            {((chartActiveTabs[msg.id] || msg.action?.chartType) === 'diagnostic') && (
-                              <div className="space-y-2.5 pt-1">
-                                <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-700/80 flex items-center justify-between">
-                                  <div>
-                                    <div className="text-xs font-bold text-amber-300">مؤشر الحيوية القرآنية للمجمع</div>
-                                    <div className="text-[10px] text-emerald-200 mt-0.5">بناءً على قياس الحضور والتسميع والنقاط الحية</div>
+                              {/* 3. Tracking Style View */}
+                              {activeStyle === 'tracking' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/80 space-y-2">
+                                    <div className="flex justify-between text-[11px]">
+                                      <span className="font-bold text-amber-200">مسار انضباط حضور الطلاب:</span>
+                                      <span className="font-bold text-emerald-300">
+                                        {platformMetrics.totalStudents > 0
+                                          ? Math.round((platformMetrics.presentCount / platformMetrics.totalStudents) * 100)
+                                          : 100}% مكتمل
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-emerald-950 h-3 rounded-full overflow-hidden border border-emerald-800">
+                                      <div
+                                        style={{
+                                          width: `${platformMetrics.totalStudents > 0 ? (platformMetrics.presentCount / platformMetrics.totalStudents) * 100 : 100}%`,
+                                          backgroundColor: accentColor,
+                                        }}
+                                        className="h-full rounded-full transition-all duration-700"
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="text-xl font-black text-amber-300 font-mono bg-black/40 px-3 py-1 rounded-xl border border-amber-400/30">
-                                    96%
-                                  </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                                  <div className="p-2 rounded-lg bg-black/30 border border-emerald-800/60">
-                                    <span className="text-amber-300 font-bold block mb-1">🌟 نقاط القوة:</span>
-                                    <span>مواظبة عالية على المراجعة والتثبيت وتنافس مميز بين الطلاب.</span>
-                                  </div>
-                                  <div className="p-2 rounded-lg bg-black/30 border border-emerald-800/60">
-                                    <span className="text-cyan-300 font-bold block mb-1">🎯 توجيه تربوي:</span>
-                                    <span>متابعة الغائبين بالرسائل اليومية لتحفيزهم على الحضور غداً.</span>
+                                  <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/80 space-y-2">
+                                    <div className="flex justify-between text-[11px]">
+                                      <span className="font-bold text-cyan-200">متوسط الإنجاز اليومي للورد:</span>
+                                      <span className="font-bold text-cyan-300">{platformMetrics.avgDailyNewTarget}</span>
+                                    </div>
+                                    <div className="w-full bg-cyan-950 h-3 rounded-full overflow-hidden border border-cyan-800">
+                                      <div className="h-full bg-cyan-400 rounded-full w-4/5" />
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                              )}
+
+                              {/* 4. Diagnostic Style View */}
+                              {activeStyle === 'diagnostic' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-700/80 flex items-center justify-between">
+                                    <div>
+                                      <div className="text-xs font-bold text-amber-300">مؤشر الحيوية القرآنية للمجمع</div>
+                                      <div className="text-[10px] text-emerald-200 mt-0.5">بناءً على قياس الحضور والتسميع والنقاط الحية</div>
+                                    </div>
+                                    <div className="text-xl font-black text-amber-300 font-mono bg-black/40 px-3 py-1 rounded-xl border border-amber-400/30">
+                                      96%
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                    <div className="p-2.5 rounded-lg bg-black/30 border border-emerald-800/60">
+                                      <span className="text-amber-300 font-bold flex items-center gap-1 mb-1">
+                                        <Sparkles className="w-3 h-3 text-amber-400" />
+                                        <span>نقاط القوة:</span>
+                                      </span>
+                                      <span>مواظبة عالية على المراجعة والتثبيت وتنافس مميز بين الطلاب.</span>
+                                    </div>
+                                    <div className="p-2.5 rounded-lg bg-black/30 border border-emerald-800/60">
+                                      <span className="text-cyan-300 font-bold flex items-center gap-1 mb-1">
+                                        <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                                        <span>توجيه تربوي:</span>
+                                      </span>
+                                      <span>متابعة الغائبين بالرسائل اليومية لتحفيزهم على الحضور غداً.</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* 5. Cohort Table View with Search, Sort & Export */}
+                              {activeStyle === 'table' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="px-3 py-1.5 bg-black/45 rounded-xl border border-emerald-900/50 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-[130px] max-w-xs bg-black/60 px-2 py-1 rounded-lg border border-emerald-800/60">
+                                      <Search className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                      <input
+                                        type="text"
+                                        placeholder="بحث فوري في الكشف والطلاب..."
+                                        value={tableSearchQueries[msg.id] || ''}
+                                        onChange={e => setTableSearchQueries(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                                        className="bg-transparent text-white text-[11px] placeholder:text-emerald-400/50 focus:outline-none w-full"
+                                      />
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          exportToExcel(
+                                            sortedCohort.map((s: any, idx: number) => ({
+                                              '#': idx + 1,
+                                              'اسم الطالب': s.name || s.studentName,
+                                              'الحلقة': s.halaqahName || 'الحلقة',
+                                              'المستوى': s.level || 'متوسط',
+                                              'الحفظ الجديد': s.newMemorization || s.facesLabel || 'حفظ مقرر',
+                                              'المراجعة': s.reviewAchieved || 'مراجعة وتثبيت',
+                                              'نسبة الحضور': s.attendanceRate || '100%',
+                                              'النقاط': Number(s.totalPoints ?? s.points) || 0,
+                                            })),
+                                            `كشف_${msg.action.title || 'الطلاب'}`
+                                          );
+                                          showToast('تم تصدير ملف الإكسل بنجاح ✓');
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      >
+                                        <FileSpreadsheet className="w-3 h-3 text-emerald-300" />
+                                        <span>Excel</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          window.print();
+                                          showToast('جارٍ تجهيز ملف الطباعة PDF ✓');
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      >
+                                        <Printer className="w-3 h-3 text-amber-300" />
+                                        <span>طباعة / PDF</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-64 overflow-y-auto rounded-xl border border-emerald-900/60">
+                                    <table className="w-full text-right border-collapse text-[11px]">
+                                      <thead>
+                                        <tr className="bg-black/60 text-amber-200 border-b border-emerald-800 sticky top-0 z-10">
+                                          <th className="p-2 text-center">#</th>
+                                          <th className="p-2">اسم الطالب</th>
+                                          <th className="p-2">الحلقة</th>
+                                          <th className="p-2 text-center">المستوى</th>
+                                          <th className="p-2">الحفظ الجديد</th>
+                                          <th className="p-2">المراجعة والتثبيت</th>
+                                          <th className="p-2 text-center">نسبة الحضور</th>
+                                          <th className="p-2 text-center">النقاط</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {sortedCohort.length === 0 ? (
+                                          <tr>
+                                            <td colSpan={8} className="p-4 text-center text-amber-200/80">
+                                              لا توجد بيانات مطابقة للبحث
+                                            </td>
+                                          </tr>
+                                        ) : sortedCohort.map((s: any, idx: number) => (
+                                          <tr key={s.id || idx} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                            <td className="p-2 text-center font-bold text-amber-300/90">{idx + 1}</td>
+                                            <td className="p-2 font-bold text-white">{s.name || s.studentName}</td>
+                                            <td className="p-2 text-emerald-200">{s.halaqahName || 'الحلقة'}</td>
+                                            <td className="p-2 text-center">
+                                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
+                                                {s.level || 'متوسط'}
+                                              </span>
+                                            </td>
+                                            <td className="p-2 text-amber-200">{s.newMemorization || s.facesLabel || 'حفظ مقرر'}</td>
+                                            <td className="p-2 text-cyan-200">{s.reviewAchieved || 'مراجعة وتثبيت'}</td>
+                                            <td className="p-2 text-center font-mono text-emerald-300">{s.attendanceRate || '100%'}</td>
+                                            <td className="p-2 text-center font-bold font-mono text-amber-300">{Number(s.totalPoints ?? s.points) || 0}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* ---------------------------------------------------- */}
                         {/* 8. Generate Certificates With Live Preview & Export */}
@@ -6117,18 +6335,32 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
                 {/* Quick Suggestion Chips Bar */}
                 <div className="p-2 border-t border-white/10 bg-black/35 overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
-                  {quickActions.map((action, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSendMessage(action.query)}
-                      style={{
-                        borderColor: `${accentColor}40`,
-                      }}
-                      className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border shrink-0 transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                    >
-                      <span>{action.label}</span>
-                    </button>
-                  ))}
+                  {quickActions.map((action, idx) => {
+                    const IconComp =
+                      action.icon === 'award' ? Award :
+                      action.icon === 'chart' ? BarChart3 :
+                      action.icon === 'palette' ? Palette :
+                      action.icon === 'headphones' ? Headphones :
+                      action.icon === 'trophy' ? Trophy :
+                      action.icon === 'trendDown' ? TrendingDown :
+                      action.icon === 'alert' ? AlertTriangle :
+                      action.icon === 'calendar' ? Calendar :
+                      action.icon === 'book' ? BookOpen :
+                      UserPlus;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSendMessage(action.query)}
+                        style={{
+                          borderColor: `${accentColor}40`,
+                        }}
+                        className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                      >
+                        <IconComp className="w-3.5 h-3.5 text-amber-300" />
+                        <span>{action.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Message Input Form */}

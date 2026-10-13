@@ -161,20 +161,26 @@ export function cleanNameToken(token: string): string {
   if (!token) return '';
   let cleaned = token.trim();
 
-  // 1. Remove introductory conversational greetings, action requests & table commands
-  cleaned = cleaned
-    .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم|وعليكم\s+السلام|هلا|يا\s+اخي|يا\s+أخي)\s+/gi, '')
-    .replace(/^(?:اعمل|سو|سوي|انشئ|أنشئ|اصنع|طلع|طلعلي|هات|اعطني|أعطني|عطني|جيب|ورني|وريني|عرض|اعرض|اظهر|أظهر|أريد|اريد|ودي|ودنا|ابغى|أبغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله)\s+(?:لي\s+|لنا\s+)?/gi, '')
-    .replace(/^(?:جدول|كشف|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|شارت|مخطط)\s+(?:لـ|ل|عن|في|حق)?\s*/gi, '')
-    .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)\s+(?:عن\s+)?/gi, '')
-    .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|ما\s+هو\s+مقرر|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s+(?:عن\s+)?/gi, '')
-    .replace(/^(?:الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه)\s+/gi, '');
+  // Multi-pass iterative stripping of introductory conversational greetings, commands, and entity descriptors
+  let prevCleaned = '';
+  while (cleaned !== prevCleaned) {
+    prevCleaned = cleaned;
+    cleaned = cleaned
+      .replace(/^[و]\s*/, '')
+      .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم|وعليكم\s+السلام|هلا|يا\s+اخي|يا\s+أخي)\s+/gi, '')
+      .replace(/^(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?/gi, '')
+      .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
+      .replace(/^(?:الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه)\s+/gi, '')
+      .trim();
+  }
 
   // 2. Remove halaqah suffix clauses
   cleaned = cleaned.replace(/\s+(?:في|الي|إلى|مع|ب)\s+(?:حلقة|احلققة|احلققه|احلقة|احلقه|مجموعة|مجموعه).*$/gi, '');
 
   // 3. Remove trailing context phrases like "مع حفظهم ومراجعتهم", "وحفظهم الجديد", "ودرجاتهم", etc.
-  cleaned = cleaned.replace(/\s+(?:مع|و|مع\s+بيانات|مع\s+تفاصيل|مع\s+كشف)?\s*(?:حفظهم\s+الجديد\s+والمراجعة|حفظهم\s+الجديد|الحفظ\s+الجديد|حفظهم\s+ومراجعتهم|حفظهم\s+والمراجعة|حفظهم|حفظ|مراجعتهم|المراجعة|المراجعه|مراجعة|مراجعه|تسميعهم|تسميع|حضورهم|غيابهم|نقاطهم|درجاتهم|مستواهم|مستوياتهم|سلوكهم|تنبيهاتهم|مخالفاتهم|أوجههم|اوجههم|بياناتهم|تقاريرهم|جدولهم|كشفهم|تفاصيلهم).*$/gi, '');
+  cleaned = cleaned.replace(/\s+(?:مع|و|مع\s+بيانات|مع\s+تفاصيل|مع\s+كشف)?\s*(?:حفظهم\s+الجديد\s+والمراجعة|حفظهم\s+الجديد|الحفظ\s+الجديد|حفظهم\s+ومراجعتهم|حفظهم\s+والمراجعة|حفظهم|حفظ|مراجعتهم|المراجعة|المراجعه|مراجعة|مراجعه|تسميعهم|تسميع|حضورهم|غيابهم|نقاطهم|درجاتهم|مستواهم|مستوياتهم|سلوكهم|تنبيهاتهم|مخالفاتهم|أوجههم|اوجههم|بياناتهم|تقاريرهم|جدولهم|كشفهم|تفاصيلهم|جديد\s+ومراجعة|جديد\s+ومراجعه|جديد|مراجعة|مراجعه|سورهم\s+وحفظهم|سورهم|حفظهم).*$/gi, '');
   cleaned = cleaned.replace(/\s+(?:في|من|ضمن)\s+(?:فئة|مستوى|حلقة|مجمع).*$/gi, '');
   cleaned = cleaned.replace(/\s+(?:مرتب|مرتبين|ترتيب)\s+(?:حسب|تنازلي|تصاعدي|بالنقاط|ابجديا|أبجدياً).*$/gi, '');
 
@@ -186,10 +192,10 @@ export function cleanNameToken(token: string): string {
 
   // 6. Remove day names, dates, temporal adverbs from ANYWHERE in the token (NOT just end)
   cleaned = cleaned.replace(/(?:^|\s+)(?:يوم\s+)?(?:الاحد|الأحد|احد|أحد|الاثنين|الإثنين|اثنين|إثنين|اثنيين|الثلاثاء|ثلاثاء|ثلثاء|الاربعاء|الأربعاء|اربعاء|أربعاء|الخميس|خميس|الجمعة|جمعة|جمعه|السبت|سبت)(?:\s+|$)/gi, ' ');
-  cleaned = cleaned.replace(/(?:^|\s+)(?:اليوم|أمس|امس|البارحة|البارحه|بارحة|بارحه|غداً|غدا|بكرة|قبل\s+أمس|قبل\s+امس|منذ\s+يومين|هذا\s+الاسبوع|هذا\s+الشهر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرره)(?:\s+|$)/gi, ' ');
+  cleaned = cleaned.replace(/(?:^|\s+)(?:اليوم|أمس|امس|البارحة|البارحه|بارحة|بارحه|غداً|غدا|الغد|بكرة|قبل\s+أمس|قبل\s+امس|منذ\s+يومين|هذا\s+الاسبوع|هذا\s+الشهر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرره)(?:\s+|$)/gi, ' ');
 
   // 7. Remove system entity terms
-  cleaned = cleaned.replace(/(?:^|\s+)(?:رسم\s+بياني|تشخيص\s+بياني|مخطط\s+بياني|مخطط|شارت|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه)(?:\s+|$)/gi, ' ');
+  cleaned = cleaned.replace(/(?:^|\s+)(?:رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|مخطط\s+بياني|مخطط|شارت|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه|شامل)(?:\s+|$)/gi, ' ');
 
   // 8. Clean punctuation and digits
   cleaned = cleaned.replace(/[\d٠-٩،,:\-–—؛.!?\(\)\[\]"'\?؟]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -201,8 +207,8 @@ const GENERIC_STUDENT_WORDS = [
   'الكل', 'المجموعة', 'الحلقة', 'الحلقه', 'حلقة', 'حلقه', 'القائمة', 'القائمه',
   'الجميع', 'الاولاد', 'الأولاد', 'الاطفال', 'الأطفال', 'الحلقات',
   'السجلات', 'سجلات', 'كشف', 'بيانات', 'تقرير', 'درجات', 'نقاط',
-  'رسم بياني', 'تشخيص بياني', 'بياني', 'مخطط', 'مخططات', 'شارت', 'شامل للمجمع', 'للمجمع', 'المجمع', 'مجمع',
-  'مقرر الغد', 'مقرر اليوم', 'ما هو مقرر الغد', 'ما هو مقرر اليوم', 'مقرر', 'الورد', 'غدا', 'غداً', 'اليوم', 'أمس', 'امس',
+  'رسم بياني', 'تشخيص بياني', 'بياني', 'مخطط', 'مخططات', 'شارت', 'شامل للمجمع', 'للمجمع', 'المجمع', 'مجمع', 'شامل',
+  'مقرر الغد', 'مقرر اليوم', 'ما هو مقرر الغد', 'ما هو مقرر اليوم', 'مقرر', 'الورد', 'غدا', 'غداً', 'الغد', 'اليوم', 'أمس', 'امس',
   'طيب', 'حسنا', 'تمام', 'اوكي', 'شكرا', 'عفوا', 'السلام عليكم', 'وعليكم السلام', 'مرحبا', 'هلا', 'أهلاً', 'اهلاً',
   'ماذا سمعوا', 'ماذا سمعو', 'وش سمعوا', 'وش سمعو', 'ايش سمعوا', 'ايش سمعو', 'شو سمعوا', 'شو سمعو',
   'ماذا سمع الطلاب', 'تسميع الطلاب', 'حفظ الطلاب', 'حضور الطلاب', 'غياب الطلاب', 'كشف الطلاب', 'جدول الطلاب',
@@ -300,7 +306,10 @@ export function isQueryRequestingAllStudents(query: string): boolean {
 /**
  * Extract targeted individual student name tokens from conversational message
  */
-export function extractCandidateNamesFromMessage(message: string): string[] {
+export function extractCandidateNamesFromMessage(
+  message: string,
+  contextFilters?: { halaqahName?: string; complexName?: string; level?: string }
+): string[] {
   if (!message) return [];
 
   // If user explicitly asks for all students, do not extract names
@@ -308,32 +317,51 @@ export function extractCandidateNamesFromMessage(message: string): string[] {
 
   // If the query is specifically targeting a category/level and doesn't contain an explicit single student designator
   const isExplicitSingleStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو)\s+[^\s,،\.\?!]+/i.test(message);
-  if (!isExplicitSingleStudentQuery) {
-    if (detectCategoryOrLevel(message)) {
-      const strippedCategory = message
-        .replace(/(?:اعمل|سو|سوي|انشئ|أنشئ|طلع|هات|اعرض|جدول|كشف|بيان|قائمة|سجل|تقرير|احصائيات|رسم\s+بياني|لي|لنا)?\s*(?:طلاب|الطلاب)?\s*(?:فئة|مستوى)?\s*(?:ضعيف|الضعاف|ضعاف|المتعثرين|متعثرين|متوسط|المتوسطين|متقدم|المتقدمين|قوي|الأقوياء|الاقوياء|ممتاز|الممتازين|متميز|متفوق|مبتدئ|المبتدئين|خاتم|الخاتمين)/gi, '')
-        .trim();
-      if (!strippedCategory || strippedCategory.length < 3) {
-        return [];
-      }
+  if (!isExplicitSingleStudentQuery && detectCategoryOrLevel(message)) {
+    const strippedCategory = message
+      .replace(/(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|اعرضلي|اعرضي|اعرض|عرض|جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|لي|لنا)?\s*(?:طلاب|الطلاب)?\s*(?:فئة|مستوى)?\s*(?:ضعيف|الضعاف|ضعاف|المتعثرين|متعثرين|متوسط|المتوسطين|متقدم|المتقدمين|قوي|الأقوياء|الاقوياء|ممتاز|الممتازين|متميز|متفوق|مبتدئ|المبتدئين|خاتم|الخاتمين)/gi, '')
+      .trim();
+    if (!strippedCategory || strippedCategory.length < 3) {
+      return [];
     }
-    for (const pat of NON_STUDENT_INTENT_PATTERNS) {
-      if (pat.test(message)) {
+  }
+
+  // If query is a collective chart/diagnostic/recitation inquiry without explicit single student designator
+  if (!isExplicitSingleStudentQuery) {
+    const isChartQuery = /(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط|شارت|احصائيات|إحصائيات)/i.test(message);
+    const isPluralRecitation = /(?:ماذا\s+سمع\s+الطلاب|ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|ايش\s+سمعوا|تسميع\s+الطلاب|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم)/i.test(message);
+    if (isChartQuery || isPluralRecitation) {
+      const strippedNonStudent = message
+        .replace(/[\?؟!\.،,]/g, ' ')
+        .replace(/(?:اعرض\s+لي|اعرض|اعمل\s+لي|اعمللي|اعملي|اعمل|سو\s+لي|سوي\s+لي|سوي|سو|هات\s+لي|هات|طلع\s+لي|طلع|أريد|اريد|ابغى|أبغى|ممكن)\s+/gi, ' ')
+        .replace(/(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط\s+بياني|مخطط|شارت|احصائيات|إحصائيات|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه|شامل)/gi, ' ')
+        .replace(/(?:ماذا\s+سمع\s+الطلاب|ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|تسميع\s+الطلاب|حفظ\s+الطلاب|حضور\s+الطلاب|غياب\s+الطلاب)/gi, ' ')
+        .replace(/(?:وما\s+هو\s+مقرر\s+الغد|ما\s+هو\s+مقرر\s+الغد|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرر|الورد|الغد|اليوم|أمس|امس)/gi, ' ')
+        .replace(/(?:الطلاب|طلاب|الطلبة|طلبة)/gi, ' ')
+        .trim();
+      if (!strippedNonStudent || strippedNonStudent.length < 3) {
         return [];
       }
     }
   }
 
   let cleaned = message.trim();
-  cleaned = cleaned
-    .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم)\s+/gi, '')
-    .replace(/^(?:اعمل|سو|سوي|انشئ|أنشئ|اصنع|طلع|طلعلي|هات|اعطني|أعطني|عطني|جيب|ورني|وريني|عرض|اعرض|اظهر|أظهر|أريد|اريد|ودي|ودنا|ابغى|أبغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله)\s+(?:لي\s+|لنا\s+)?/gi, '')
-    .replace(/^(?:جدول|كشف|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|شارت|مخطط)\s+(?:لـ|ل|عن|في|حق)?\s*/gi, '')
-    .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم)\s+(?:عن\s+)?/gi, '')
-    .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ)\s+(?:عن\s+)?/gi, '');
+  let prevClean = '';
+  while (cleaned !== prevClean) {
+    prevClean = cleaned;
+    cleaned = cleaned
+      .replace(/^[و]\s*/, '')
+      .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم|وعليكم\s+السلام|هلا|يا\s+اخي|يا\s+أخي)\s+/gi, '')
+      .replace(/^(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?/gi, '')
+      .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
+      .replace(/^(?:الطلاب|طلاب|الطلبة|طلبة|طالب|الطالب|طالبا|طالباً|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه)\s+/gi, '')
+      .trim();
+  }
 
-  // Strip trailing context clauses before tokenizing (e.g. "مع حفظهم الجديد والمراجعة", "وحفظهم ومراجعتهم", etc.)
-  cleaned = cleaned.replace(/\s+(?:مع|و|مع\s+بيانات|مع\s+تفاصيل|مع\s+كشف)?\s*(?:حفظهم\s+الجديد\s+والمراجعة|حفظهم\s+الجديد|الحفظ\s+الجديد|حفظهم\s+ومراجعتهم|حفظهم\s+والمراجعة|حفظهم|حفظ|مراجعتهم|المراجعة|المراجعه|مراجعة|مراجعه|تسميعهم|تسميع|حضورهم|غيابهم|نقاطهم|درجاتهم|مستواهم|مستوياتهم|سلوكهم|تنبيهاتهم|مخالفاتهم|أوجههم|اوجههم|بياناتهم|تقاريرهم|جدولهم|كشفهم|تفاصيلهم).*$/gi, '');
+  // Strip trailing context clauses before tokenizing
+  cleaned = cleaned.replace(/\s+(?:مع|و|مع\s+بيانات|مع\s+تفاصيل|مع\s+كشف)?\s*(?:حفظهم\s+الجديد\s+والمراجعة|حفظهم\s+الجديد|الحفظ\s+الجديد|حفظهم\s+ومراجعتهم|حفظهم\s+والمراجعة|حفظهم|حفظ|مراجعتهم|المراجعة|المراجعه|مراجعة|مراجعه|تسميعهم|تسميع|حضورهم|غيابهم|نقاطهم|درجاتهم|مستواهم|مستوياتهم|سلوكهم|تنبيهاتهم|مخالفاتهم|أوجههم|اوجههم|بياناتهم|تقاريرهم|جدولهم|كشفهم|تفاصيلهم|جديد\s+ومراجعة|جديد\s+ومراجعه|جديد|مراجعة|مراجعه|سورهم\s+وحفظهم|سورهم|حفظهم).*$/gi, '');
   cleaned = cleaned.replace(/\s+(?:في|من|ضمن)\s+(?:فئة|مستوى|حلقة|مجمع).*$/gi, '');
   cleaned = cleaned.replace(/\s+(?:مرتب|مرتبين|ترتيب)\s+(?:حسب|تنازلي|تصاعدي|بالنقاط|ابجديا|أبجدياً).*$/gi, '');
 
@@ -343,9 +371,18 @@ export function extractCandidateNamesFromMessage(message: string): string[] {
   for (const t of tokens) {
     const c = cleanNameToken(t);
     const normC = normalizeArabicText(c);
+    
+    // Check if token is actually the halaqah or complex or level
+    const isContextFilter = Boolean(
+      (contextFilters?.halaqahName && (normC.includes(normalizeArabicText(contextFilters.halaqahName)) || normalizeArabicText(contextFilters.halaqahName).includes(normC))) ||
+      (contextFilters?.complexName && (normC.includes(normalizeArabicText(contextFilters.complexName)) || normalizeArabicText(contextFilters.complexName).includes(normC))) ||
+      (contextFilters?.level && normC.includes(normalizeArabicText(contextFilters.level)))
+    );
+
     if (
       c &&
       c.length >= 2 &&
+      !isContextFilter &&
       !isQueryRequestingAllStudents(c) &&
       !GENERIC_STUDENT_TERMS.has(c) &&
       !GENERIC_STUDENT_TERMS.has(normC) &&
@@ -739,8 +776,8 @@ export function resolveStudentsQuery(
     };
   }
 
-  // 5. If category/level filter or surah filter or halaqah filter was specified without individual student names:
-  if (filter.levelFilter || filter.surahFilter || (filter.halaqahId && filter.halaqahId !== 'all')) {
+  // 5. If category/level filter or surah filter or halaqah filter or complex filter was specified without individual student names:
+  if (filter.levelFilter || filter.surahFilter || (filter.halaqahId && filter.halaqahId !== 'all') || (filter.complexId && filter.complexId !== 'all')) {
     const limit = filter.limit || 50;
     const paged = scopePool.slice(0, limit);
 
@@ -799,7 +836,48 @@ export function resolveStudentQuery(
 } {
   const normMsg = normalizeArabicText(message || '');
   const isAll = isQueryRequestingAllStudents(normMsg);
-  const names = extractCandidateNamesFromMessage(message || '');
+
+  // Detect Level / Category Filter
+  const detectedLevel = detectCategoryOrLevel(message || '');
+
+  // Detect Surah Filter
+  const detectedSurah = detectSurahFilter(message || '');
+
+  // Find halaqah if mentioned
+  let matchedHalaqahId: string | undefined = undefined;
+  let matchedHalaqahName: string | undefined = undefined;
+  if (Array.isArray(halaqahsList)) {
+    for (const h of halaqahsList) {
+      const normH = normalizeArabicText(h.name || '');
+      const cleanH = normH.replace(/^(?:حلقة|احلقة|احلقه|مجموعة)\s+/, '').trim();
+      if (normH && (normMsg.includes(normH) || (cleanH.length >= 3 && normMsg.includes(cleanH)) || (normH.length >= 4 && normMsg.includes(normH.split(/\s+/).slice(-1)[0])))) {
+        matchedHalaqahId = h.id;
+        matchedHalaqahName = h.name;
+        break;
+      }
+    }
+  }
+
+  // Find complex if mentioned
+  let matchedComplexId: string | undefined = undefined;
+  let matchedComplexName: string | undefined = undefined;
+  if (Array.isArray(contextData?.complexes)) {
+    for (const c of contextData.complexes) {
+      const normC = normalizeArabicText(c.name || '');
+      const cleanC = normC.replace(/^(?:مجمع)\s+/, '').trim();
+      if (normC && (normMsg.includes(normC) || (cleanC.length >= 3 && normMsg.includes(cleanC)))) {
+        matchedComplexId = c.id;
+        matchedComplexName = c.name;
+        break;
+      }
+    }
+  }
+
+  const names = extractCandidateNamesFromMessage(message || '', {
+    halaqahName: matchedHalaqahName,
+    complexName: matchedComplexName,
+    level: detectedLevel || undefined
+  });
 
   // Detect explicit requested count
   const digitMatch = (message || '').match(/(?:لـ\s*|ل\s*|عن\s*|ـ\s*)?(\d+)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب)/);
@@ -816,12 +894,6 @@ export function resolveStudentQuery(
     explicitCount = 5;
   }
 
-  // Detect Level / Category Filter
-  const detectedLevel = detectCategoryOrLevel(message || '');
-
-  // Detect Surah Filter
-  const detectedSurah = detectSurahFilter(message || '');
-
   // Detect Sorting
   let detectedSort: 'points_desc' | 'points_asc' | 'alpha' | 'attendance_desc' | undefined = undefined;
   if (/(?:الاعلى|الأعلى|اعلى|أعلى|تنازلي|المتصدرين|الأوائل|الاوائل)\s*(?:في\s+|بال)?(?:النقاط|نقاط)?/i.test(message) || normMsg.includes('تنازلي') || normMsg.includes('اعلى نقاط')) {
@@ -834,20 +906,6 @@ export function resolveStudentQuery(
     detectedSort = 'attendance_desc';
   }
 
-  // Find halaqah if mentioned
-  let matchedHalaqahId: string | undefined = undefined;
-  let matchedHalaqahName: string | undefined = undefined;
-  if (Array.isArray(halaqahsList)) {
-    for (const h of halaqahsList) {
-      const normH = normalizeArabicText(h.name || '');
-      if (normH && (normMsg.includes(normH) || (normH.length >= 4 && normMsg.includes(normH.split(/\s+/).slice(-1)[0])))) {
-        matchedHalaqahId = h.id;
-        matchedHalaqahName = h.name;
-        break;
-      }
-    }
-  }
-
   const baseResult = resolveStudentsQuery(
     studentsList,
     {
@@ -855,6 +913,8 @@ export function resolveStudentQuery(
       studentNames: names.length > 0 ? names : undefined,
       halaqahId: matchedHalaqahId,
       halaqahName: matchedHalaqahName,
+      complexId: matchedComplexId,
+      complexName: matchedComplexName,
       levelFilter: detectedLevel || undefined,
       surahFilter: detectedSurah || undefined,
       sortCriteria: detectedSort,
@@ -866,7 +926,7 @@ export function resolveStudentQuery(
   );
 
   const isSingle = !isAll && (names.length === 1 || (names.length === 0 && explicitCount === 1));
-  const isMultiple = !isAll && (names.length > 1 || (explicitCount !== null && explicitCount > 1) || Boolean(detectedLevel));
+  const isMultiple = !isAll && (names.length > 1 || (explicitCount !== null && explicitCount > 1) || Boolean(detectedLevel) || Boolean(matchedHalaqahId) || Boolean(matchedComplexId));
   const isCount = explicitCount !== null && explicitCount > 0;
 
   let clarification: string | null = null;
@@ -884,6 +944,7 @@ export function resolveStudentQuery(
     requestedNames: names,
     detectedLevel: detectedLevel || undefined,
     detectedHalaqah: matchedHalaqahName,
+    detectedComplex: matchedComplexName,
     detectedSort,
   };
 }

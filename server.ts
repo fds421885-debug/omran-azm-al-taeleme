@@ -16,6 +16,7 @@ import {
 } from "./src/data/quranPagesData.ts";
 import {
   resolveStudentQuery,
+  matchStudentLevel,
   type StudentResolutionResult,
   type SearchUserContext
 } from "./src/lib/assistantStudentSearch.ts";
@@ -2305,6 +2306,31 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     const normUserMessage = normalizeArabicText(message);
 
+    // Build SearchUserContext for Centralized Resolution Engine
+    const userContext: SearchUserContext = {
+      role: (user.role || "teacher") as any,
+      userId: user.id || user.uid,
+      userName: user.name || user.username || "",
+      complexId: complex.id,
+      complexName: complex.name,
+      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
+      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
+      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
+      childStudentIds: user.childStudentIds || user.studentIds,
+      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
+    };
+
+    const studentResolution = resolveStudentQuery(
+      message,
+      studentsList,
+      halaqahsList,
+      userContext,
+      {
+        complexes: complexesList,
+        attendanceRecords: attendanceList
+      }
+    );
+
     // 2.7.4 Explicit Recitation / Memorization Table Intent (كشف التسميع، ماذا سمعوا، لماذا سمعوا، وش سمعوا، إنجاز الحفظ)
     const isExplicitRecitationInquiry = Boolean(
       normUserMessage.includes("ماذا سمع") ||
@@ -2389,15 +2415,28 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("اعملي كشف");
 
     const hasStudentsDirective =
+      /(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?(?:الطلاب|طلاب|الطلبة|طلبة)/i.test(message) ||
       normUserMessage.includes("اعمل لي الطلاب") ||
       normUserMessage.includes("اعملي الطلاب") ||
       normUserMessage.includes("اعمل الطلاب") ||
+      normUserMessage.includes("اعمل طلاب") ||
+      normUserMessage.includes("اعملي طلاب") ||
+      normUserMessage.includes("سوي طلاب") ||
+      normUserMessage.includes("سو طلاب") ||
+      normUserMessage.includes("سويلي الطلاب") ||
       normUserMessage.includes("طلع لي الطلاب") ||
       normUserMessage.includes("طلع الطلاب") ||
+      normUserMessage.includes("طلع طلاب") ||
       normUserMessage.includes("هات لي الطلاب") ||
       normUserMessage.includes("هات الطلاب") ||
+      normUserMessage.includes("هات طلاب") ||
       normUserMessage.includes("اعرض لي الطلاب") ||
-      normUserMessage.includes("اعرض الطلاب");
+      normUserMessage.includes("اعرض الطلاب") ||
+      normUserMessage.includes("اعرض طلاب") ||
+      normUserMessage.includes("جيب لي الطلاب") ||
+      normUserMessage.includes("جيب الطلاب") ||
+      normUserMessage.includes("ورني الطلاب") ||
+      normUserMessage.includes("وريني الطلاب");
 
     const hasGeneralTableIntent =
       !hasTeachersTableIntent &&
@@ -2407,12 +2446,15 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !hasTopPointsIntent &&
       !hasLowPointsIntent &&
       !hasAnyDeleteIntent &&
+      !hasChartDiagnosticIntent &&
       (
         hasExplicitTableKeyword ||
         hasStudentsDirective ||
-        (Boolean(studentResolution.detectedLevel) && (hasExplicitTableKeyword || normUserMessage.includes("طلاب") || normUserMessage.includes("فئة"))) ||
-        (studentResolution.requestedNames.length > 0 && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("مع") || normUserMessage.includes("حفظهم") || normUserMessage.includes("جديد") || normUserMessage.includes("مراجعة"))) ||
-        /(?:كشف|جدول|قائمة|بيان|سجل)\s+(?:الطلاب|طلاب|الطلبة|الاسماء|الأسماء|البيانات|المسجلين|الحلقة|حلقة)/i.test(message) ||
+        (Boolean(studentResolution.detectedLevel) && (hasExplicitTableKeyword || normUserMessage.includes("طلاب") || normUserMessage.includes("فئة") || normUserMessage.includes("جدول") || normUserMessage.includes("كشف"))) ||
+        (studentResolution.requestedNames.length > 0 && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("مع") || normUserMessage.includes("حفظهم") || normUserMessage.includes("جديد") || normUserMessage.includes("مراجعة") || normUserMessage.includes("بيانات") || normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("سورهم"))) ||
+        (Boolean(studentResolution.detectedHalaqah) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("حلقة"))) ||
+        (Boolean(studentResolution.detectedComplex) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("مجمع"))) ||
+        /(?:كشف|جدول|قائمة|بيان|سجل)\s+(?:الطلاب|طلاب|الطلبة|الاسماء|الأسماء|البيانات|المسجلين|الحلقة|حلقة|المجمع|مجمع)/i.test(message) ||
         normUserMessage.includes("كشف الطلاب") ||
         normUserMessage.includes("جدول الطلاب") ||
         normUserMessage.includes("قائمة الطلاب") ||
@@ -2665,31 +2707,12 @@ app.post("/api/gemini/assistant", async (req, res) => {
       lowerMsg.includes("تقرير الحضور لليوم") ||
       lowerMsg.includes("رسالة اليوم");
 
-    // Build SearchUserContext for Centralized Resolution Engine
-    const userContext: SearchUserContext = {
-      role: (user.role || "teacher") as any,
-      userId: user.id || user.uid,
-      userName: user.name || user.username || "",
-      complexId: complex.id,
-      complexName: complex.name,
-      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
-      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
-      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
-      childStudentIds: user.childStudentIds || user.studentIds,
-      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
-    };
-
-    const studentResolution = resolveStudentQuery(
-      message,
-      studentsList,
-      halaqahsList,
-      userContext
-    );
+    // Student resolution already computed with userContext above
 
     // Guard 1: RBAC Permission Denied - Reject unauthorized queries with polite message
     if (studentResolution.status === "PERMISSION_DENIED") {
       return res.json({
-        reply: studentResolution.clarificationQuestion || `أهلاً بك يا أخي ${firstName}. عذراً، لا تملك الصلاحية للاطلاع على بيانات هذا الطالب بحسب النطاق المخصص لك في الحلقة أو المجمع.`,
+        reply: stripFaceEmojis(studentResolution.clarificationQuestion || `أهلاً بك يا أخي ${firstName}. عذراً، لا تملك الصلاحية للاطلاع على بيانات هذا الطالب بحسب النطاق المخصص لك في الحلقة أو المجمع.`),
         action: null,
       });
     }
@@ -2697,7 +2720,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
     // Guard 2: Ambiguous student query (e.g. multiple "أحمد" without full name)
     if (studentResolution.status === "AMBIGUOUS" && studentResolution.clarificationQuestion) {
       return res.json({
-        reply: studentResolution.clarificationQuestion,
+        reply: stripFaceEmojis(studentResolution.clarificationQuestion),
         action: null,
       });
     }
@@ -2745,13 +2768,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
       if (!process.env.GEMINI_API_KEY) {
         if (closeMatch) {
           return res.json({
-            reply: `أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`,
+            reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`),
             action: null,
           });
         }
 
         return res.json({
-          reply: `أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`,
+          reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`),
           action: null,
         });
       }
@@ -4834,19 +4857,25 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         halaqahMap[hName].totalPoints += Number(s.totalPoints) || 0;
       });
 
-      const chartBasePool = matchedHalaqah && halaqahStudents.length > 0
-        ? halaqahStudents
+      const sortedByPoints = [...studentsList].sort(
+        (a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0)
+      );
+
+      const chartBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
         : studentsList;
 
       const chartCohortRaw = studentResolution.matchedStudents.length > 0
         ? studentResolution.matchedStudents
         : (studentResolution.detectedLevel
             ? chartBasePool.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
-            : (matchedHalaqah && halaqahStudents.length > 0 ? halaqahStudents : sortedByPoints.slice(0, 8)));
+            : (matchedHalaqah && halaqahStudentsCohort.length > 0 ? halaqahStudentsCohort : sortedByPoints.slice(0, 8)));
 
       const enrichedCohort = chartCohortRaw.map((s: any, idx: number) => {
-        const evDetails = extractStudentRecitationDetails(s.id);
-        const studentMetrics = calculateSingleStudentDetailedMetrics(s.id);
+        const studentMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+        const studentEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+        const latestEval = studentEvals[studentEvals.length - 1];
+        const evDetails = latestEval?.recitationDetails || {};
         const newSurah = evDetails.newMemorizationAchieved ||
           (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر'));
         const revSurah = evDetails.reviewAchieved ||
@@ -4969,7 +4998,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
   } catch (error: any) {
     console.error("Gemini assistant error:", error);
     res.json({
-      reply: "أهلاً بك يا أخي الكريم. حدث تعذر عابر في معالجة طلبك، يرجى المحاولة مرة أخرى أو اختيار أحد الأوامر السريعة أدناه.",
+      reply: stripFaceEmojis("أهلاً بك يا أخي الكريم. حدث تعذر عابر في معالجة طلبك، يرجى المحاولة مرة أخرى أو اختيار أحد الأوامر السريعة أدناه."),
       action: null,
     });
   }
