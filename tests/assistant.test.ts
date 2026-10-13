@@ -509,8 +509,53 @@ async function runAllTests() {
     );
   }
 
+  // 21. التحقق من دقة معالجة الاستفسارات الطبيعية ومنع استخراج الكلمات العامة كأسماء طلاب
+  {
+    const q1 = extractCandidateNamesFromMessage('ماذا سمع الطالب يوسف يوم الاحد');
+    assert(
+      q1.length === 1 && q1[0] === 'يوسف',
+      'Scenario 21.1: Recitation on Sunday cleanly extracts student "يوسف" without trailing day',
+      `Got: ${JSON.stringify(q1)}`
+    );
+
+    const q2 = extractCandidateNamesFromMessage('يوسف عدنان واخوه أوس');
+    assert(
+      q2.length === 2 && q2[0] === 'يوسف عدنان' && q2[1] === 'أوس',
+      'Scenario 21.2: Compound query with brother relation cleanly extracts both names',
+      `Got: ${JSON.stringify(q2)}`
+    );
+
+    const q3 = extractCandidateNamesFromMessage('طيب ماذا سمعو يوم الاحد');
+    assert(
+      q3.length === 0,
+      'Scenario 21.3: Plural recitation inquiry extracts 0 individual names',
+      `Got: ${JSON.stringify(q3)}`
+    );
+
+    const q4 = extractCandidateNamesFromMessage('يوسف عدنان ماذا سمع يوم الاحد');
+    assert(
+      q4.length === 1 && q4[0] === 'يوسف عدنان',
+      'Scenario 21.4: Query with name and day cleanly extracts "يوسف عدنان"',
+      `Got: ${JSON.stringify(q4)}`
+    );
+
+    const q5 = extractCandidateNamesFromMessage('اعرض لي رسم بياني وتشخيص بياني شامل للمجمع');
+    assert(
+      q5.length === 0,
+      'Scenario 21.5: Chart and diagnostic query extracts 0 individual student names',
+      `Got: ${JSON.stringify(q5)}`
+    );
+
+    const q6 = extractCandidateNamesFromMessage('ماذا سمع الطلاب اليوم وما هو مقرر الغد؟');
+    assert(
+      q6.length === 0,
+      'Scenario 21.6: Collective today/tomorrow recitation query extracts 0 student names',
+      `Got: ${JSON.stringify(q6)}`
+    );
+  }
+
   console.log(`\n========================================`);
-  console.log(`Test Results: ${passedCount} passed, ${failedCount} failed of 20 mandatory scenarios.`);
+  console.log(`Test Results: ${passedCount} passed, ${failedCount} failed.`);
   console.log(`========================================\n`);
 
   if (failedCount > 0) {

@@ -107,6 +107,27 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Helper to call Gemini with robust multi-model fallback cascade
+async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI, contents: any, config?: any): Promise<string> {
+  const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+  for (const model of models) {
+    try {
+      const resp = await Promise.race([
+        aiInstance.models.generateContent({
+          model,
+          contents,
+          config,
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
+      ]);
+      if (resp?.text) return resp.text.trim();
+    } catch (err: any) {
+      console.warn(`[Gemini Fallback] Model ${model} note:`, err?.status || err?.message?.slice(0, 80));
+    }
+  }
+  return "";
+}
+
 // Helper for realistic fallback when Gemini key is not set or network issue
 function getFallbackPlan(student: any) {
   const surahId = student.currentSurah || student.currentSurahName || 78;
@@ -2532,6 +2553,69 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("هوي") ||
       normUserMessage.includes("كروت");
 
+    // Pre-declare Chart & Recitation Intents so they are never undefined before guards
+    const hasChartDiagnosticIntent =
+      lowerMsg.includes("رسم بياني") ||
+      lowerMsg.includes("تشخيص بياني") ||
+      lowerMsg.includes("دوائر") ||
+      lowerMsg.includes("أعمدة") ||
+      lowerMsg.includes("اعمدة") ||
+      lowerMsg.includes("تتبع") ||
+      lowerMsg.includes("مخطط بياني") ||
+      lowerMsg.includes("شارت") ||
+      lowerMsg.includes("بيانيا") ||
+      lowerMsg.includes("بيانياً") ||
+      lowerMsg.includes("احصائيات بيانية");
+
+    const hasRecitationInquiryIntent =
+      !hasAnyDeleteIntent &&
+      (/(?:ماذا|ايش|شو|كم|ما|هل)\s*(?:سمع|سمّع|حفظ|أنجز|انجز|تسميع|قرأ)\s*(?:الطالب|طالبنا|الطلاب|طلابنا)?/i.test(message) ||
+      /(?:تسميع|حفظ|مقرر|ورد|سجل|تقييم|تسجيل)\s+(?:الطالب|طالبنا|اليوم|التسميع)/i.test(message) ||
+      /(?:ماذا|ايش|شو)\s*(?:سوف|سيسمع|سوف\s+يسمع|سيحفظ|سوف\s+يحفظ|بكرة|غداً|غدا)/i.test(message) ||
+      lowerMsg.includes("سمع اليوم") ||
+      lowerMsg.includes("سمع بكرة") ||
+      lowerMsg.includes("يسمع بكرة") ||
+      lowerMsg.includes("ماذا سمع") ||
+      lowerMsg.includes("ماذا سمعو") ||
+      lowerMsg.includes("ماذا سمعوا") ||
+      lowerMsg.includes("ايش سمع") ||
+      lowerMsg.includes("شو سمع") ||
+      lowerMsg.includes("مقرر الغد") ||
+      lowerMsg.includes("حفظ الغد") ||
+      lowerMsg.includes("تسجيل صوتي") ||
+      lowerMsg.includes("شوف التسجيل") ||
+      lowerMsg.includes("تقييم التسميع") ||
+      lowerMsg.includes("قسم تقيم التسميع") ||
+      lowerMsg.includes("قسم تقييم التسميع"));
+
+    const hasDailyRecitationReviewIntent =
+      lowerMsg.includes("سمع اليوم") ||
+      lowerMsg.includes("سمعوا اليوم") ||
+      lowerMsg.includes("سمع أمس") ||
+      lowerMsg.includes("سمعوا امس") ||
+      lowerMsg.includes("سمعوا أمس") ||
+      lowerMsg.includes("سمع قبل أمس") ||
+      lowerMsg.includes("ماذا سمع الطلاب") ||
+      lowerMsg.includes("ماذا سمّع الطلاب") ||
+      lowerMsg.includes("تسميعات اليوم") ||
+      lowerMsg.includes("تسميع اليوم") ||
+      lowerMsg.includes("تسميع أمس") ||
+      lowerMsg.includes("تسميع قبل أمس") ||
+      lowerMsg.includes("كشف التسميع");
+
+    const hasSpecificStudentsProgressIntent =
+      Boolean(
+        (lowerMsg.includes("وين وصل") || lowerMsg.includes("أين وصل") || lowerMsg.includes("وصلوا") || lowerMsg.includes("مستوى") || lowerMsg.includes("حفظ وحضور") || lowerMsg.includes("الحفظ والحضور") || lowerMsg.includes("الحفظ والغياب")) &&
+        (lowerMsg.includes("طلاب") || lowerMsg.includes("طالب") || lowerMsg.includes("ثلاث") || lowerMsg.includes("3") || lowerMsg.includes("حلقة"))
+      );
+
+    const hasWhatsAppIntent =
+      lowerMsg.includes("رسالة الحضور") ||
+      lowerMsg.includes("رسالة الغياب") ||
+      lowerMsg.includes("رسالة الواتس") ||
+      lowerMsg.includes("تقرير الحضور لليوم") ||
+      lowerMsg.includes("رسالة اليوم");
+
     // Build SearchUserContext for Centralized Resolution Engine
     const userContext: SearchUserContext = {
       role: (user.role || "teacher") as any,
@@ -2570,15 +2654,58 @@ app.post("/api/gemini/assistant", async (req, res) => {
     }
 
     // Guard 3: Explicit student name not found - Never fall back to all students!
+    const hasSpecialIntent =
+      hasChartDiagnosticIntent ||
+      hasAttendanceTableIntent ||
+      hasGeneralTableIntent ||
+      hasTeachersTableIntent ||
+      hasPointsTableIntent ||
+      hasTopPointsIntent ||
+      hasLowPointsIntent ||
+      hasViolationsTableIntent ||
+      hasNavigateIntent ||
+      hasThemeIntent ||
+      hasRegisterIntent ||
+      hasAnyDeleteIntent ||
+      hasWhatsAppIntent ||
+      hasRecitationInquiryIntent ||
+      hasDailyRecitationReviewIntent ||
+      hasSpecificStudentsProgressIntent ||
+      isExplicitRecitationInquiry;
+
+    let unresolvedStudentNote = "";
     if (
+      !hasSpecialIntent &&
       studentResolution.status === "NOT_FOUND" &&
       (studentResolution.isSingleStudentQuery || studentResolution.requestedNames.length > 0)
     ) {
       const namesStr = studentResolution.requestedNames.join(" و ");
-      return res.json({
-        reply: `أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`,
-        action: null,
-      });
+      const singleReqName = studentResolution.requestedNames[0];
+      const firstNameToken = singleReqName ? normalizeArabicText(singleReqName).split(/\s+/)[0] : '';
+      const closeMatch = firstNameToken && firstNameToken.length >= 3
+        ? studentsList.find(s => normalizeArabicText(s.name).split(/\s+/)[0] === firstNameToken)
+        : null;
+
+      if (closeMatch) {
+        unresolvedStudentNote = `المستخدم سأل عن الطالب «${namesStr}»، ولم يُعثر على طالب بهذا الاسم بالكامل، ولكن مسجل لدينا في الحلقة الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).`;
+      } else {
+        unresolvedStudentNote = `المستخدم سأل عن الطالب «${namesStr}»، ولم يتم العثور على طالب مسجل بهذا الاسم في الحلقة أو المجمع. الطلاب المسجلون هم: ${studentsList.slice(0, 8).map(s => s.name).join('، ')}.`;
+      }
+
+      // If Gemini is offline, fallback safely to standard polite response
+      if (!process.env.GEMINI_API_KEY) {
+        if (closeMatch) {
+          return res.json({
+            reply: `أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`,
+            action: null,
+          });
+        }
+
+        return res.json({
+          reply: `أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`,
+          action: null,
+        });
+      }
     }
 
     // Collect students mentioned in current message
@@ -2633,19 +2760,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("تقرير لاربع") ||
       normUserMessage.includes("تقرير لأربع");
 
-    // 2.13 Visual Charts & Diagnostics Intent (دوائر، أعمدة، تتبع، تشخيص بياني)
-    const hasChartDiagnosticIntent =
-      lowerMsg.includes("رسم بياني") ||
-      lowerMsg.includes("تشخيص بياني") ||
-      lowerMsg.includes("دوائر") ||
-      lowerMsg.includes("أعمدة") ||
-      lowerMsg.includes("اعمدة") ||
-      lowerMsg.includes("تتبع") ||
-      lowerMsg.includes("مخطط بياني") ||
-      lowerMsg.includes("شارت") ||
-      lowerMsg.includes("بيانيا") ||
-      lowerMsg.includes("بيانياً") ||
-      lowerMsg.includes("احصائيات بيانية");
 
     // Multi-Student Recitation / Report / ID Cards Inquiry Intent (must NOT hijack teachers, attendance, points, charts, or navigation!)
     const hasMultiStudentRecitationIntent = Boolean(
@@ -2866,33 +2980,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
       });
     }
 
-    // Specific Students Progress Inquiry Intent (وين وصلوا في الحفظ والحضور والغياب)
-    const hasSpecificStudentsProgressIntent =
-      Boolean(
-        !hasMultiStudentRecitationIntent &&
-        (lowerMsg.includes("وين وصل") || lowerMsg.includes("أين وصل") || lowerMsg.includes("وصلوا") || lowerMsg.includes("مستوى") || lowerMsg.includes("حفظ وحضور") || lowerMsg.includes("الحفظ والحضور") || lowerMsg.includes("الحفظ والغياب")) &&
-        (lowerMsg.includes("طلاب") || lowerMsg.includes("طالب") || lowerMsg.includes("ثلاث") || lowerMsg.includes("3") || lowerMsg.includes("حلقة"))
-      );
-
-    // Daily Recitation Review across all students for target date (اليوم، أمس، قبل أمس)
-    const hasDailyRecitationReviewIntent =
-      !hasMultiStudentRecitationIntent &&
-      !hasSpecificStudentsProgressIntent &&
-      (lowerMsg.includes("سمع اليوم") ||
-       lowerMsg.includes("سمعوا اليوم") ||
-       lowerMsg.includes("سمع أمس") ||
-       lowerMsg.includes("سمعوا امس") ||
-       lowerMsg.includes("سمعوا أمس") ||
-       lowerMsg.includes("سمع قبل أمس") ||
-       lowerMsg.includes("ماذا سمع الطلاب") ||
-       lowerMsg.includes("ماذا سمّع الطلاب") ||
-       lowerMsg.includes("تسميعات اليوم") ||
-       lowerMsg.includes("تسميع اليوم") ||
-       lowerMsg.includes("تسميع أمس") ||
-       lowerMsg.includes("تسميع قبل أمس") ||
-       lowerMsg.includes("كشف التسميع") ||
-       (lowerMsg.includes("قسم تقيم التسميع") && !lowerMsg.includes("طالب")));
-
     // 2.10 Certificate Template Creation Intent (طلب إنشاء قالب شهادة جديد)
     const hasCreateCertificateTemplateIntent =
       /(?:اعمل|اعملي|أنشئ|انشئ|صمم|اصنع|سوي)\s+(?:لي\s+|لنا\s+)?(?:قالب|نموذج)\s+(?:جديد|شهادة|شهادات)?/i.test(message) ||
@@ -2947,25 +3034,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
     }
 
     // 2.12 Recitation Evaluation & Listening Logs Inquiry (ماذا سمّع اليوم وماذا سيسمّع بكرة والتسجيلات والتعديل)
-    const hasRecitationInquiryIntent =
-      !hasMultiStudentRecitationIntent &&
-      (/(?:ماذا|ايش|شو|كم|ما|هل)\s*(?:سمع|سمّع|حفظ|أنجز|انجز|تسميع|قرأ)\s*(?:الطالب|طالبنا)?/i.test(message) ||
-      /(?:تسميع|حفظ|مقرر|ورد|سجل|تقييم|تسجيل)\s+(?:الطالب|طالبنا|اليوم|التسميع)/i.test(message) ||
-      /(?:ماذا|ايش|شو)\s*(?:سوف|سيسمع|سوف\s+يسمع|سيحفظ|سوف\s+يحفظ|بكرة|غداً|غدا)/i.test(message) ||
-      lowerMsg.includes("سمع اليوم") ||
-      lowerMsg.includes("سمع بكرة") ||
-      lowerMsg.includes("يسمع بكرة") ||
-      lowerMsg.includes("ماذا سمع") ||
-      lowerMsg.includes("ايش سمع") ||
-      lowerMsg.includes("شو سمع") ||
-      lowerMsg.includes("مقرر الغد") ||
-      lowerMsg.includes("حفظ الغد") ||
-      lowerMsg.includes("تسجيل صوتي") ||
-      lowerMsg.includes("شوف التسجيل") ||
-      lowerMsg.includes("تقييم التسميع") ||
-      lowerMsg.includes("قسم تقيم التسميع") ||
-      lowerMsg.includes("قسم تقييم التسميع"));
-
     let studentForEvaluationInquiry: any = null;
     let studentEvaluationRecord: any = null;
     let tomorrowRecitationAssignment: any = null;
@@ -3456,13 +3524,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !hasChartDiagnosticIntent &&
       (lowerMsg.includes("كشف") || lowerMsg.includes("جدول") || (lowerMsg.includes("تقرير") && !hasStudentReportIntent));
 
-    // 3. Daily Attendance WhatsApp Message Intent
-    const hasWhatsAppIntent =
-      lowerMsg.includes("رسالة الحضور") ||
-      lowerMsg.includes("رسالة الغياب") ||
-      lowerMsg.includes("رسالة الواتس") ||
-      lowerMsg.includes("تقرير الحضور لليوم") ||
-      lowerMsg.includes("رسالة اليوم");
 
     let whatsappText = "";
     if (hasWhatsAppIntent) {
@@ -3637,7 +3698,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
   * ملاحظات المعلم: ${targetEvaluationForQueriedDate.recitationData?.teacherNotes || "مواظب ومجتهد في الحلقة"}
   * مقرر الغد: ${targetEvaluationForQueriedDate.evaluation?.recitationDetails?.tomorrowNewItem ? `${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.surahName} (آيات ${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.fromAyah}-${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.toAyah})` : "متابعة الحفظ"}` : `- تفاصيل التسميع لتاريخ (${queriedSpecificDateLabel}): لم تُسجل جلسة تسميع في هذا اليوم تحديداً للطالب ${candidateStudentForRecitation.name}، ولكن آخر جلسة تسميع مسجلة له كانت بتاريخ (${lastRecordedRecitationDate || "سابقاً"}).`}
 - رصيد نقاط الطالب المعتمد في لوحة الشرف والصدارة: ${typeof candidateStudentForRecitation.points === 'number' ? candidateStudentForRecitation.points : (candidateStudentForRecitation.totalPoints || 0)} نقطة.
-- الالتزام الصارم: اذكر الأرقام والتفاصيل أعلاه بدقة تامة!` : ''}`;
+- الالتزام الصارم: اذكر الأرقام والتفاصيل أعلاه بدقة تامة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
 
     // 5. Cleanly build alternating multi-turn conversation history for Gemini
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
@@ -3692,11 +3753,10 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
     // 6. Call Real Gemini API with Multi-Model Fallback Cascade
     let geminiReply = "";
     if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
-      // Prioritize standard high-availability models
+      // Prioritize high-availability and fast responsive models
       const candidateModels = [
-        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite",
         "gemini-3.8-flash",
-        "gemini-2.5-flash-lite",
         "gemini-flash-latest",
       ];
 
@@ -3710,7 +3770,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
           ]);
 
           if (response?.text) {
@@ -3825,8 +3885,8 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
           geminiReply = `أهلاً بك يا أخي ${firstName}.\n\n📋 نسبة الحضور اليوم هي **${pct}%** (${metrics.presentCount} حاضر من أصل ${metrics.totalStudents} طالب)، والغائبون ${metrics.absentCount} طلاب.\nإليك بطاقة نسب الحضور الموضحة أدناه:`;
         }
       } else if (chatHistoryParts.length > 2) {
-        // Multi-turn context fallback: NEVER reset to the initial greeting!
-        geminiReply = `أتابع معك يا أخي ${firstName} باهتمام. وصلتني إجابتك وسياق حديثنا، وأنا معك لإكمال الخطوة التالية في هذا الأمر.`;
+        // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام. هل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
