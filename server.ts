@@ -14,6 +14,15 @@ import {
   calculateRecitationFractionalFaces,
   getPageOfAyah
 } from "./src/data/quranPagesData.ts";
+import {
+  resolveStudentQuery,
+  type StudentResolutionResult,
+  type SearchUserContext
+} from "./src/lib/assistantStudentSearch.ts";
+import {
+  executeAssistantTool,
+  ASSISTANT_TOOLS_DEFINITIONS
+} from "./src/lib/assistantToolsService.ts";
 
 dotenv.config();
 
@@ -25,6 +34,41 @@ app.use(express.json({ limit: "10mb" }));
 // Health check route
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// Centralized Student Search Endpoint (Strict RBAC & Deterministic Scope)
+app.post("/api/assistant/search-students", (req, res) => {
+  try {
+    const { query = "", students = [], halaqahs = [], user = {}, complex = {}, activeHalaqah = {} } = req.body;
+    const isTeacher = user.role === "teacher";
+    const userContext: SearchUserContext = {
+      role: (user.role || "teacher") as any,
+      userId: user.id || user.uid,
+      userName: user.name || user.username || "",
+      complexId: complex.id,
+      complexName: complex.name,
+      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
+      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
+      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
+      childStudentIds: user.childStudentIds || user.studentIds,
+      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
+    };
+    const result = resolveStudentQuery(query, students, halaqahs, userContext);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Centralized Assistant Tool Execution Endpoint
+app.post("/api/assistant/execute-tool", async (req, res) => {
+  try {
+    const { toolName, params = {}, context = {} } = req.body;
+    const result = await executeAssistantTool(toolName, params, context);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // Google Maps Geocoding Proxy Route (prevents CORS and secures key)
@@ -2488,21 +2532,62 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("هوي") ||
       normUserMessage.includes("كروت");
 
-    // Collect students mentioned in current message
-    const namedStudentsInMessage: any[] = [];
-    for (const s of studentsList) {
-      const normS = normalizeArabicText(s.name);
-      const parts = normS.split(/\s+/).filter(Boolean);
-      const firstTwo = parts.slice(0, 2).join(' ');
-      if (normUserMessage.includes(normS) || (firstTwo.length >= 4 && normUserMessage.includes(firstTwo))) {
-        if (!namedStudentsInMessage.some(ns => ns.id === s.id)) namedStudentsInMessage.push(s);
-      }
+    // Build SearchUserContext for Centralized Resolution Engine
+    const userContext: SearchUserContext = {
+      role: (user.role || "teacher") as any,
+      userId: user.id || user.uid,
+      userName: user.name || user.username || "",
+      complexId: complex.id,
+      complexName: complex.name,
+      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
+      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
+      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
+      childStudentIds: user.childStudentIds || user.studentIds,
+      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
+    };
+
+    const studentResolution = resolveStudentQuery(
+      message,
+      studentsList,
+      halaqahsList,
+      userContext
+    );
+
+    // Guard 1: RBAC Permission Denied - Reject unauthorized queries with polite message
+    if (studentResolution.status === "PERMISSION_DENIED") {
+      return res.json({
+        reply: studentResolution.clarificationQuestion || `أهلاً بك يا أخي ${firstName}. عذراً، لا تملك الصلاحية للاطلاع على بيانات هذا الطالب بحسب النطاق المخصص لك في الحلقة أو المجمع.`,
+        action: null,
+      });
     }
+
+    // Guard 2: Ambiguous student query (e.g. multiple "أحمد" without full name)
+    if (studentResolution.status === "AMBIGUOUS" && studentResolution.clarificationQuestion) {
+      return res.json({
+        reply: studentResolution.clarificationQuestion,
+        action: null,
+      });
+    }
+
+    // Guard 3: Explicit student name not found - Never fall back to all students!
+    if (
+      studentResolution.status === "NOT_FOUND" &&
+      (studentResolution.isSingleStudentQuery || studentResolution.requestedNames.length > 0)
+    ) {
+      const namesStr = studentResolution.requestedNames.join(" و ");
+      return res.json({
+        reply: `أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`,
+        action: null,
+      });
+    }
+
+    // Collect students mentioned in current message
+    const namedStudentsInMessage: any[] = [...studentResolution.matchedStudents];
 
     // Determine targeted cohort with strict precedence:
     let activeCohortStudents: any[] = [];
     if (namedStudentsInMessage.length > 0) {
-      // 1. Explicit student names in message take top priority
+      // 1. Explicit student names/resolution take top absolute priority
       activeCohortStudents = [...namedStudentsInMessage];
     } else if (matchedHalaqah && halaqahStudentsCohort.length > 0) {
       // 2. Explicit halaqah named in message (e.g. "حلقة الزبير") targets ONLY students of this halaqah!
@@ -2573,7 +2658,9 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !hasViolationsTableIntent &&
       !hasChartDiagnosticIntent &&
       !hasNavigateIntent &&
+      !studentResolution.isSingleStudentQuery &&
       (
+        (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 1) ||
         isExplicitRecitationInquiry ||
         (hasExplicitMultiCount && (normUserMessage.includes("تقرير") || normUserMessage.includes("كشف") || normUserMessage.includes("سجل"))) ||
         (hasReferenceToPreviousStudents && (normUserMessage.includes("سمع") || normUserMessage.includes("تسميع") || normUserMessage.includes("تقرير")))
@@ -2583,7 +2670,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const parsedCountObj = parseRequestedStudentCount(message, studentsList.length);
     let requestedMultiCount = parsedCountObj.count;
 
-    if (namedStudentsInMessage.length > 0) {
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      requestedMultiCount = 1;
+    } else if (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) {
+      requestedMultiCount = studentResolution.matchedStudents.length;
+    } else if (studentResolution.isCountQuery && studentResolution.requestedCount) {
+      requestedMultiCount = studentResolution.requestedCount;
+    } else if (namedStudentsInMessage.length > 0) {
       // Rule: When specific student names are mentioned, count is STRICTLY the number of named students!
       requestedMultiCount = namedStudentsInMessage.length;
     } else if (!requestedMultiCount || requestedMultiCount <= 0) {
@@ -2613,205 +2706,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     let multiRecitationData: any[] = [];
     if (hasMultiStudentRecitationIntent) {
-      // Standard rich seed student pool (15 students) to guarantee open-ended requests never miss data
-      const standardSeedStudents: any[] = [
-        {
-          id: 'std-1',
-          name: 'عبد الرحمن أحمد السعيد',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'البقرة',
-          defaultNew: 'سورة البقرة: الآيات (46 - 52)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة النبأ وسورة النازعات كاملتين',
-          defaultNotes: 'تطبيق رائع لأحكام النون الساكنة والتنوين (الإدغام بغنة)',
-          defaultPoints: 15,
-        },
-        {
-          id: 'std-2',
-          name: 'يوسف عمر الكردي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'النبأ',
-          defaultNew: 'سورة النبأ: الآيات (17 - 30)',
-          defaultFaces: 0.5,
-          defaultFacesLabel: 'نصف وجه',
-          defaultReview: 'سورة الإخلاص والفلق والناس وقريش',
-          defaultNotes: 'إتقان أحكام القلقلة (قطب جد) والمد المتصل، بارك الله فيه',
-          defaultPoints: 12,
-        },
-        {
-          id: 'std-3',
-          name: 'بلال خالد القحطاني',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'ضعيف',
-          currentSurahName: 'الضحى',
-          defaultNew: 'سورة الضحى كاملة (الآيات 1 - 11)',
-          defaultFaces: 0.3,
-          defaultFacesLabel: '3 آيات (ربع وجه)',
-          defaultReview: 'سورة الشرح والتين والعلق',
-          defaultNotes: 'تحسن واضح في نطق الحركات والوضوح الصوتي، يستحق وسام التشجيع',
-          defaultPoints: 10,
-        },
-        {
-          id: 'std-4',
-          name: 'عمر عبد العزيز الفهد',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'الكهف',
-          defaultNew: 'سورة الكهف: الآيات (1 - 10)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة مريم كاملة',
-          defaultNotes: 'تلاوة طيبة مع ضبط أحكام الراءات وتفخيمها في مواضعها',
-          defaultPoints: 15,
-        },
-        {
-          id: 'std-5',
-          name: 'حمزة مصطفى الباز',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'آل عمران',
-          defaultNew: 'سورة آل عمران: الآيات (1 - 9)',
-          defaultFaces: 1.2,
-          defaultFacesLabel: 'وجه وربع',
-          defaultReview: 'سورة البقرة: الأرباع الثلاثة الأولى',
-          defaultNotes: 'إتقان عالي لأحكام المدود وأداء صوتي رصين ومتقن',
-          defaultPoints: 18,
-        },
-        {
-          id: 'std-6',
-          name: 'أنس إبراهيم الدوسري',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'الملك',
-          defaultNew: 'سورة الملك: الآيات (1 - 14)',
-          defaultFaces: 0.5,
-          defaultFacesLabel: 'نصف وجه',
-          defaultReview: 'سورة النبأ والنازعات',
-          defaultNotes: 'مواظب ومجتهد على الحفظ والتسميع اليومي',
-          defaultPoints: 12,
-        },
-        {
-          id: 'std-7',
-          name: 'عثمان طارق الشمري',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'النساء',
-          defaultNew: 'سورة النساء: الآيات (1 - 10)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة آل عمران كاملة',
-          defaultNotes: 'إتقان متقدم لأحكام الوقف والابتداء والترتيل المجود',
-          defaultPoints: 16,
-        },
-        {
-          id: 'std-8',
-          name: 'معاذ سعيد الغامدي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'يوسف',
-          defaultNew: 'سورة يوسف: الآيات (1 - 15)',
-          defaultFaces: 0.8,
-          defaultFacesLabel: 'ثلاثة أرباع وجه',
-          defaultReview: 'سورة هود وسورة يونس',
-          defaultNotes: 'تلاوة خاشعة وحضور ذهني متوقد أثناء التسميع',
-          defaultPoints: 14,
-        },
-        {
-          id: 'std-9',
-          name: 'سلمان يحيى العتيبي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'المائدة',
-          defaultNew: 'سورة المائدة: الآيات (1 - 12)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة النساء الأرباع الأخيرة',
-          defaultNotes: 'تميز في مخارج الحروف وصفاتها والمدود المتصلة والمنفصلة',
-          defaultPoints: 17,
-        },
-        {
-          id: 'std-10',
-          name: 'زيد منصور الشهري',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'يس',
-          defaultNew: 'سورة يس: الآيات (1 - 25)',
-          defaultFaces: 0.7,
-          defaultFacesLabel: 'نصف وجه وزيادة',
-          defaultReview: 'سورة الصافات وسورة فاطر',
-          defaultNotes: 'حرص واجتهاد متواصل في الحضور والحفظ اليومي',
-          defaultPoints: 13,
-        },
-        {
-          id: 'std-11',
-          name: 'عبد الله محمد الخالدي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'الإسراء',
-          defaultNew: 'سورة الإسراء: الآيات (1 - 14)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة النحل كاملة',
-          defaultNotes: 'حفظ راسخ ونطق سليم لآيات كتاب الله المبارك',
-          defaultPoints: 15,
-        },
-        {
-          id: 'std-12',
-          name: 'إبراهيم خليل الرفاعي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'الكهف',
-          defaultNew: 'سورة الكهف: الآيات (11 - 20)',
-          defaultFaces: 0.5,
-          defaultFacesLabel: 'نصف وجه',
-          defaultReview: 'سورة مريم وطه',
-          defaultNotes: 'انضباط وحرص على تطبيق ملاحظات المعلم التجويدية',
-          defaultPoints: 12,
-        },
-        {
-          id: 'std-13',
-          name: 'حسان تميم المالكي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'الفرقان',
-          defaultNew: 'سورة الفرقان: الآيات (1 - 15)',
-          defaultFaces: 0.6,
-          defaultFacesLabel: 'أكثر من نصف وجه',
-          defaultReview: 'سورة النور والمؤمنون',
-          defaultNotes: 'تفاعل ممتاز وسمت قرآني مبارك في الحلقة',
-          defaultPoints: 13,
-        },
-        {
-          id: 'std-14',
-          name: 'أسامة رضوان النجدي',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'قوي',
-          currentSurahName: 'النور',
-          defaultNew: 'سورة النور: الآيات (1 - 10)',
-          defaultFaces: 1,
-          defaultFacesLabel: 'وجه كامل',
-          defaultReview: 'سورة الحج والمؤمنون',
-          defaultNotes: 'ترتيل رصين وأداء متمكن لأحكام التجويد',
-          defaultPoints: 16,
-        },
-        {
-          id: 'std-15',
-          name: 'مصعب ناصر العمري',
-          halaqahName: halaqahName || 'حلقة القرآن الكريم',
-          level: 'متوسط',
-          currentSurahName: 'الحجرات',
-          defaultNew: 'سورة الحجرات كاملة (الآيات 1 - 18)',
-          defaultFaces: 0.8,
-          defaultFacesLabel: 'ثلاثة أرباع وجه',
-          defaultReview: 'سورة ق والذاريات',
-          defaultNotes: 'فهم عميق وإتقان لنطق الآيات والوقف الصحيح',
-          defaultPoints: 14,
-        },
-      ];
-
       const weekdayIndexMap: Record<string, number> = {
         'احد': 0, 'أحد': 0,
         'اثنين': 1, 'إثنين': 1, 'اثنيين': 1,
@@ -2826,9 +2720,15 @@ app.post("/api/gemini/assistant", async (req, res) => {
       // Halaqah isolation: If a specific halaqah was requested, isolate its cohort strictly
       const halaqahScopePool = matchedHalaqah
         ? halaqahStudentsCohort
-        : studentsList;
+        : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+            ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+            : studentsList);
 
-      if (activeCohortStudents.length === 0) {
+      const isFixedCohort = studentResolution.isSingleStudentQuery ||
+        (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) ||
+        namedStudentsInMessage.length > 0;
+
+      if (!isFixedCohort && activeCohortStudents.length === 0) {
         if (matchedHalaqah) {
           activeCohortStudents = [...halaqahStudentsCohort];
           if (!hasExplicitMultiCount) {
@@ -2855,7 +2755,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       let chosenStudents = [...activeCohortStudents];
 
       // If more students needed, ONLY pull from the scope pool (never mix other halaqahs if halaqah specified!)
-      if (chosenStudents.length < requestedMultiCount) {
+      if (!isFixedCohort && chosenStudents.length < requestedMultiCount) {
         const remaining = halaqahScopePool.filter(s => !chosenStudents.some(cs => cs.id === s.id));
         
         // Priority 1: Students with evaluations on targetRecitationDate
@@ -2888,19 +2788,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
         chosenStudents.push(...pool.slice(0, requestedMultiCount - chosenStudents.length));
       }
 
-      // If no halaqah was specified and pool still under requestedMultiCount, pull from standard seed students
-      if (!matchedHalaqah && chosenStudents.length < requestedMultiCount) {
-        for (const seed of standardSeedStudents) {
-          if (chosenStudents.length >= requestedMultiCount) break;
-          const exists = chosenStudents.some(
-            cs => cs.id === seed.id || normalizeArabicText(cs.name || "") === normalizeArabicText(seed.name)
-          );
-          if (!exists) {
-            chosenStudents.push(seed);
-          }
-        }
-      }
-
       // Respect user-specified sorting order (بأي ترتيب: تنازلي، تصاعدي، بالنقاط، أبجدياً، بالسورة)
       if (isSortPointsDesc) {
         chosenStudents.sort((a, b) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0));
@@ -2912,9 +2799,11 @@ app.post("/api/gemini/assistant", async (req, res) => {
         chosenStudents.sort((a, b) => (a.currentSurahName || '').localeCompare(b.currentSurahName || '', 'ar'));
       }
 
-      const finalStudents = matchedHalaqah && !hasExplicitMultiCount
+      const finalStudents = isFixedCohort
         ? chosenStudents
-        : chosenStudents.slice(0, requestedMultiCount);
+        : (matchedHalaqah && !hasExplicitMultiCount
+            ? chosenStudents
+            : chosenStudents.slice(0, requestedMultiCount));
 
       multiRecitationData = finalStudents.map((st: any) => {
         const stEvals = evaluationsList
@@ -2926,28 +2815,25 @@ app.post("/api/gemini/assistant", async (req, res) => {
         const rec = ev ? extractEvaluationRecitationData(ev) : null;
 
         const hasActual = Boolean(rec);
-        const seedMatch = standardSeedStudents.find(
-          sd => sd.id === st.id || normalizeArabicText(sd.name) === normalizeArabicText(st.name || "")
-        );
 
         const newRecited = hasActual
           ? rec?.newMemorization
-          : (seedMatch?.defaultNew || (st.currentSurahName ? `سورة ${st.currentSurahName}: متابعة الحفظ المعتمد` : 'متابعة الورد القرآني المعتمد'));
+          : (st.currentSurahName ? `سورة ${st.currentSurahName}: متابعة الحفظ المعتمد` : 'متابعة الورد القرآني المعتمد');
         const newFacesCount = hasActual
           ? (rec?.newFaces || 0)
-          : (seedMatch?.defaultFaces || 0.5);
+          : (st.dailyNewTarget === 'وجه كامل' ? 1 : 0.5);
         const newFacesLbl = hasActual
           ? rec?.newFacesLabel
-          : (seedMatch?.defaultFacesLabel || 'نصف وجه');
+          : (st.dailyNewTarget || 'نصف وجه');
         const revRecited = hasActual
           ? rec?.reviewAchieved
-          : (seedMatch?.defaultReview || 'مراجعة وتثبيت المحفوظ');
+          : 'مراجعة وتثبيت المحفوظ';
         const notes = hasActual
           ? (rec?.teacherNotes || 'طالب متميز ومواظب في الحلقة')
-          : (seedMatch?.defaultNotes || (stEvals[0] ? `آخر تسميع مسجل له كان بتاريخ ${stEvals[0].date}` : 'مواظب ومجتهد على الحفظ والتسميع'));
+          : (stEvals[0] ? `آخر تسميع مسجل له كان بتاريخ ${stEvals[0].date}` : 'مواظب ومجتهد على الحفظ والتسميع');
         const pts = hasActual
           ? (rec?.points || 10)
-          : (seedMatch?.defaultPoints || 10);
+          : (Number(st.points ?? st.totalPoints) || 10);
 
         // Check attendance on target date
         const stAtt = attendanceList.find((a: any) => a.studentId === st.id && a.date === targetRecitationDate);
@@ -3087,8 +2973,10 @@ app.post("/api/gemini/assistant", async (req, res) => {
     let singleStudentRecitationData: any = null;
 
     if (hasRecitationInquiryIntent) {
-      // High-precision student resolution (never defaults arbitrarily to Yusuf or studentsList[0])
-      studentForEvaluationInquiry = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
+      // High-precision student resolution from studentResolution engine
+      studentForEvaluationInquiry = (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1)
+        ? studentResolution.matchedStudents[0]
+        : findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
 
       if (studentForEvaluationInquiry) {
         const studentEvals = evaluationsList
@@ -3150,7 +3038,10 @@ app.post("/api/gemini/assistant", async (req, res) => {
     let candidateStudentForAttendance: any = null;
     let candidateStudentForReport: any = null;
 
-    if (!hasMultiStudentRecitationIntent) {
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      candidateStudentForAttendance = studentResolution.matchedStudents[0];
+      candidateStudentForReport = studentResolution.matchedStudents[0];
+    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery) {
       // Use findBestMatchingStudent directly to guarantee we never pick the wrong student
       const matchedStudentFromMsg = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
       if (matchedStudentFromMsg) {
@@ -3169,15 +3060,21 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("حضوره") ||
       normUserMessage.includes("غيابه");
 
-    // 2.12.6 Student Comprehensive Report Intent (طلب تقرير كامل ومفصل عن طالب بعينه)
+    // 2.12.6 Student Comprehensive Report Intent (طلب تقرير كامل ومفصل أو بيانات طالب بعينه)
     const hasStudentReportIntent =
       !hasMultiStudentRecitationIntent &&
       !isExportableReportRequest &&
       Boolean(
-        (lowerMsg.includes("تقرير") || lowerMsg.includes("ملف") || lowerMsg.includes("بطاقة")) &&
+        candidateStudentForReport &&
         (
+          studentResolution.isSingleStudentQuery ||
+          lowerMsg.includes("تقرير") ||
+          lowerMsg.includes("بيانات") ||
+          lowerMsg.includes("معلومات") ||
+          lowerMsg.includes("ملف") ||
+          lowerMsg.includes("بطاقة") ||
+          lowerMsg.includes("سجل") ||
           (lowerMsg.includes("طالب") && !lowerMsg.includes("طلاب")) ||
-          Boolean(candidateStudentForReport) ||
           lowerMsg.includes("تقرير عن") ||
           lowerMsg.includes("تقرير للطالب") ||
           lowerMsg.includes("تقرير شامل") ||
@@ -3617,10 +3514,28 @@ ${excusedListStr}
     }
 
     // 4. Build Rich Real System Instruction for Gemini
-    const studentsSummary = studentsList.slice(0, 40).map((s: any) => {
+    let studentsSummary = "";
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      const s = studentResolution.matchedStudents[0];
       const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
-      return `• ${s.name} (رصيد نقاطه المعتمد في لوحة الشرف والصدارة: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
-    }).join("\n");
+      studentsSummary = `• الطالب المطلوب حصراً واستفسار المستخدم عنه بدقة: ${s.name} (رصيد نقاطه المعتمد: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})
+⚠️ تنبيه صارم وحاسم للنموذج: المطلوب بيانات هذا الطالب "${s.name}" حصراً! لا تذكر أي طالب آخر من المنظومة مطلقاً، وقدم تقريرك عنه وحده.`;
+    } else if (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) {
+      studentsSummary = `• الطلاب المطلوبون حصراً في هذا الاستفسار (${studentResolution.matchedStudents.length} طلاب):\n` +
+        studentResolution.matchedStudents.map((s: any, idx: number) => {
+          const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+          return `${idx + 1}. ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+        }).join("\n") +
+        `\n⚠️ تنبيه صارم وحاسم للنموذج: التزم بهؤلاء الطلاب الـ (${studentResolution.matchedStudents.length}) المذكورين أعلاه حصراً! لا تضف أي طالب آخر من خارجهم.`;
+    } else {
+      const cohortPool = isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+        ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+        : studentsList;
+      studentsSummary = cohortPool.slice(0, 25).map((s: any) => {
+        const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+        return `• ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+      }).join("\n");
+    }
 
     const halaqahsSummary = halaqahsList.map((h: any) =>
       `• ${h.name} (المعلم: ${h.teacherName || "غير محدد"})`
@@ -4263,52 +4178,18 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
       let targetStudentsCohort: any[] = [];
       const normMsg = normalizeArabicText(message);
 
-      // 1. Check if a specific halaqah is mentioned in the prompt
-      let matchedHalaqah: any = null;
-      for (const h of halaqahsList) {
-        const normH = normalizeArabicText(h.name);
-        if (normMsg.includes(normH) || (normH.length >= 4 && normMsg.includes(normH.split(/\s+/).slice(-1)[0]))) {
-          matchedHalaqah = h;
-          break;
-        }
-      }
-
-      if (matchedHalaqah) {
+      if (studentResolution.matchedStudents.length > 0) {
+        targetStudentsCohort = [...studentResolution.matchedStudents];
+      } else if (matchedHalaqah) {
         targetStudentsCohort = studentsList.filter(
           (s: any) => s.halaqahId === matchedHalaqah.id || s.halaqahName === matchedHalaqah.name
         );
+      } else if (contextStudents.length > 0) {
+        targetStudentsCohort = [...contextStudents];
       } else {
-        // 2. Find students whose names are specifically mentioned
-        for (const s of studentsList) {
-          const normS = normalizeArabicText(s.name);
-          const firstName = normS.split(/\s+/)[0];
-          if (normMsg.includes(normS) || (firstName.length >= 3 && normMsg.includes(firstName))) {
-            if (!targetStudentsCohort.some(x => x.id === s.id)) {
-              targetStudentsCohort.push(s);
-            }
-          }
-        }
-
-        // 2.1 Context fallback: use previously referenced students if none named in message
-        if (targetStudentsCohort.length === 0 && contextStudents.length > 0) {
-          targetStudentsCohort = [...contextStudents];
-        }
-      }
-
-      // 3. Check if a specific student count was requested (open-ended support)
-      const progCountObj = parseRequestedStudentCount(message, studentsList.length);
-      let requestedCount = progCountObj.count;
-
-      if (targetStudentsCohort.length === 0) {
-        const count = requestedCount > 0 ? requestedCount : Math.min(studentsList.length || 6, 6);
+        const progCountObj = parseRequestedStudentCount(message, studentsList.length);
+        const count = progCountObj.count > 0 ? progCountObj.count : Math.min(studentsList.length || 6, 6);
         targetStudentsCohort = studentsList.slice(0, count);
-      } else if (requestedCount > 0 && targetStudentsCohort.length < requestedCount) {
-        for (const s of studentsList) {
-          if (targetStudentsCohort.length >= requestedCount) break;
-          if (!targetStudentsCohort.some(x => x.id === s.id)) {
-            targetStudentsCohort.push(s);
-          }
-        }
       }
 
       action = {
@@ -4657,9 +4538,14 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         },
       };
     } else if (hasGeneralTableIntent) {
-      const genBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
-        ? halaqahStudentsCohort
-        : studentsList;
+      const hasSpecificMatched = studentResolution.matchedStudents.length > 0;
+      const genBasePool = hasSpecificMatched
+        ? studentResolution.matchedStudents
+        : (matchedHalaqah && halaqahStudentsCohort.length > 0
+            ? halaqahStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+                : studentsList));
 
       let sortedGen = [...genBasePool];
       if (isSortAlpha) {
@@ -4671,7 +4557,9 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
       action = {
         type: "SHOW_DATA_TABLE",
         tableType: "general",
-        title: matchedHalaqah
+        title: hasSpecificMatched
+          ? `كشف بيانات الطلاب المحددين (${sortedGen.map(s => s.name).join(" - ")}) - ${complexName}`
+          : matchedHalaqah
           ? `كشف بيانات وطلاب حلقة ${matchedHalaqah.name} - ${complexName}`
           : `كشف بيانات ونقاط طلاب المنظومة - ${complexName}`,
         data: {

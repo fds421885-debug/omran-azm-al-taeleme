@@ -3356,6 +3356,13 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                     </tr>
                                   </thead>
                                   <tbody>
+                                    {(msg.action.data?.students || msg.action.data?.rows || []).length === 0 ? (
+                                      <tr>
+                                        <td colSpan={8} className="p-6 text-center text-amber-200/90 font-medium">
+                                          لم يتم العثور على طلاب مطابقين لمعايير البحث في نطاق صلاحياتك المعتمدة
+                                        </td>
+                                      </tr>
+                                    ) : null}
                                     {(msg.action.data?.students || msg.action.data?.rows || []).map((s: any, idx: number) => (
                                       <tr
                                         key={s.id || idx}
