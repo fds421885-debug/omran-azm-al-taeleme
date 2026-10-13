@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "Complex": {
+      "title": "Complex",
+      "description": "Quranic Complex entity representing an administrative educational institution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "supervisorTeacherId": { "type": "string", "maxLength": 128 },
+        "supervisorTeacherName": { "type": "string", "maxLength": 200 },
+        "themeConfig": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Halaqah": {
+      "title": "Halaqah",
+      "description": "Quran study circle within a complex",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "complexName": { "type": "string", "maxLength": 200 },
+        "primaryTeacherName": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "complexId"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Teacher, supervisor or developer account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "username": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["developer", "supervisor", "teacher"] },
+        "phone": { "type": "string", "maxLength": 50 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "halaqahId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "role"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student enrolled in a halaqah and complex",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "age": { "type": "number" },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "halaqahId": { "type": "string", "maxLength": 128 },
+        "level": { "type": "string", "maxLength": 50 },
+        "currentSurah": { "type": "number" },
+        "currentAyah": { "type": "number" },
+        "dailyNewTarget": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Daily attendance record for a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["حاضر", "غائب", "معتذر", "متأخر", "مستأذن"] },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "halaqahId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["studentId", "date", "status"]
+    },
+    "StudentEvaluation": {
+      "title": "StudentEvaluation",
+      "description": "Daily recitation and memorization evaluation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 20 },
+        "attendanceStatus": { "type": "string" },
+        "criteriaValues": { "type": "object" },
+        "recitationDetails": { "type": "object" },
+        "generalNotes": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["studentId", "date"]
+    },
+    "BehaviorViolation": {
+      "title": "BehaviorViolation",
+      "description": "Pedagogical guidance or behavioral note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 20 },
+        "type": { "type": "string", "maxLength": 100 },
+        "severity": { "type": "string", "maxLength": 50 },
+        "actionTaken": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["studentId", "date", "type"]
+    },
+    "LibraryDocument": {
+      "title": "LibraryDocument",
+      "description": "Exported report, certificate template or curriculum document in platform archive",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 250 },
+        "type": { "type": "string", "maxLength": 50 },
+        "date": { "type": "string", "maxLength": 30 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "fileData": { "type": "string" }
+      },
+      "required": ["title", "type"]
+    }
+  },
+  "firestore": {
+    "/complexes/{complexId}": {
+      "schema": "Complex",
+      "description": "Quranic complexes collection"
+    },
+    "/halaqahs/{halaqahId}": {
+      "schema": "Halaqah",
+      "description": "Halaqahs in complexes"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Teachers accounts"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Students roster"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Attendance history"
+    },
+    "/evaluations/{evaluationId}": {
+      "schema": "StudentEvaluation",
+      "description": "Evaluations and recitations"
+    },
+    "/violations/{violationId}": {
+      "schema": "BehaviorViolation",
+      "description": "Behavioral records"
+    },
+    "/library_docs/{docId}": {
+      "schema": "LibraryDocument",
+      "description": "Library documents and exported archives"
+    }
+  }
+}
