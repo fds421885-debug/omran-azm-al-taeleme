@@ -102,6 +102,16 @@ export function cleanNameToken(token: string): string {
     .trim();
 }
 
+const GENERIC_STUDENT_WORDS = [
+  'الطلاب', 'طلاب', 'طلابي', 'طلابنا', 'الطلبة', 'طلبة', 'طالب', 'الطالب', 'طالبا', 'طالباً',
+  'الكل', 'المجموعة', 'الحلقة', 'الحلقه', 'حلقة', 'حلقه', 'القائمة', 'القائمه',
+  'الجميع', 'الاولاد', 'الأولاد', 'الاطفال', 'الأطفال', 'الحلقات',
+  'السجلات', 'سجلات', 'كشف', 'بيانات', 'تقرير', 'درجات', 'نقاط'
+];
+const GENERIC_STUDENT_TERMS = new Set(
+  GENERIC_STUDENT_WORDS.flatMap(w => [w, normalizeArabicText(w)])
+);
+
 /**
  * Determine if a user query explicitly asks for all students
  */
@@ -142,7 +152,15 @@ export function extractCandidateNamesFromMessage(message: string): string[] {
 
   for (const t of tokens) {
     const c = cleanNameToken(t);
-    if (c && c.length >= 2 && !isQueryRequestingAllStudents(c) && !candidateNames.includes(c)) {
+    const normC = normalizeArabicText(c);
+    if (
+      c &&
+      c.length >= 2 &&
+      !isQueryRequestingAllStudents(c) &&
+      !GENERIC_STUDENT_TERMS.has(c) &&
+      !GENERIC_STUDENT_TERMS.has(normC) &&
+      !candidateNames.includes(c)
+    ) {
       candidateNames.push(c);
     }
   }
@@ -504,9 +522,17 @@ export function resolveStudentsQuery(
     };
   }
 
-  // If no names were specified and no all was requested, return empty or top limit without expanding
-  const limit = Math.min(filter.limit || 10, 10);
-  const paged = scopePool.slice(0, limit);
+  // If no names were specified and no all was requested, return limited slice without expanding
+  let limit = filter.limit;
+  if (!limit && rawQuery) {
+    const numMatch = rawQuery.match(/(?:أول|اول|عرض|هات|أعطني|اعطني)?\s*(\d+)\s*(?:طلاب|طالب|سجلات)/i);
+    if (numMatch && numMatch[1]) {
+      const parsed = parseInt(numMatch[1], 10);
+      if (parsed > 0 && parsed <= 100) limit = parsed;
+    }
+  }
+  const finalLimit = limit ? Math.min(limit, 100) : 10;
+  const paged = scopePool.slice(0, finalLimit);
 
   return {
     status: 'SUCCESS',
