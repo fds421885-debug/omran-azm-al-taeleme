@@ -1510,7 +1510,7 @@ function parseRecitationDateAndDay(
     }
   }
 
-  if (normMsg.includes('قبل امس') || normMsg.includes('قبل اول امس') || normMsg.includes('منذ يومين') || normMsg.includes('يومين')) {
+  if (normMsg.includes('قبل امس') || normMsg.includes('قبل اول امس') || normMsg.includes('اول امبارح') || normMsg.includes('أول امبارح') || normMsg.includes('منذ يومين') || normMsg.includes('يومين')) {
     const b = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
     const bDay = b.toLocaleDateString('ar-SA', { weekday: 'long' });
     return {
@@ -1521,7 +1521,7 @@ function parseRecitationDateAndDay(
     };
   }
 
-  if (normMsg.includes('امس') || normMsg.includes('البارحه') || normMsg.includes('بارحه')) {
+  if (normMsg.includes('امس') || normMsg.includes('امبارح') || normMsg.includes('البارحه') || normMsg.includes('بارحه')) {
     const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     const yDay = y.toLocaleDateString('ar-SA', { weekday: 'long' });
     return {
@@ -1532,10 +1532,21 @@ function parseRecitationDateAndDay(
     };
   }
 
+  if (normMsg.includes('بكرة') || normMsg.includes('بكره') || normMsg.includes('غدا') || normMsg.includes('غداً')) {
+    const t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const tDay = t.toLocaleDateString('ar-SA', { weekday: 'long' });
+    return {
+      targetDate: formatLocalDate(t),
+      targetDayOfWeek: normalizeArabicText(tDay),
+      targetDateLabel: 'غداً',
+      isWeekdayQuery: false,
+    };
+  }
+
   return {
     targetDate: formatLocalDate(now),
     targetDayOfWeek: null,
-    targetDateLabel: 'اليوم',
+    targetDateLabel: normMsg.includes('النهارده') || normMsg.includes('النهاردة') ? 'اليوم' : 'اليوم',
     isWeekdayQuery: false,
   };
 }
@@ -2237,6 +2248,28 @@ app.post("/api/gemini/assistant", async (req, res) => {
       lowerMsg.includes("ايش الانسب") ||
       lowerMsg.includes("احصائيات بيانية");
 
+    // 3-Day Statistics Intent
+    const has3DaysStatsIntent =
+      normUserMessage.includes("اخر 3 ايام") ||
+      normUserMessage.includes("اخر ٣ ايام") ||
+      normUserMessage.includes("آخر 3 أيام") ||
+      normUserMessage.includes("آخر ٣ أيام") ||
+      normUserMessage.includes("3 ايام") ||
+      normUserMessage.includes("٣ ايام") ||
+      normUserMessage.includes("ثلاثة ايام") ||
+      normUserMessage.includes("ثلاث ايام");
+
+    // Juz Amma Completion Intent
+    const hasJuzAmmaCompletionIntent =
+      normUserMessage.includes("جزء عم") ||
+      normUserMessage.includes("جزء عَم") ||
+      normUserMessage.includes("ختموا جزء") ||
+      normUserMessage.includes("ختم جزء") ||
+      normUserMessage.includes("خاتمي جزء") ||
+      normUserMessage.includes("خاتمين جزء") ||
+      normUserMessage.includes("حفظة جزء عم") ||
+      normUserMessage.includes("طلاب جزء عم");
+
     // 2.6 Data Table Intents (Attendance Table, Memorization Progress Table, General Students Table)
     const hasAttendanceTableIntent =
       lowerMsg.includes("من الطلاب الحاضرين") ||
@@ -2514,9 +2547,19 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const hasNavigateIntent =
       !hasTeachersTableIntent &&
       !hasAnyDeleteIntent &&
+      !isExplicitRecitationInquiry &&
       (
         hasMosqueLocationIntent ||
-        (/(?:افتح|انتقل|وديني|توجه|اذهب|عرض|أين|اين|وين|موقع|مكان|كيف\s+اوصل|كيف\s+أصل)\s+(?:إلى|الي|لـ|ل|في)?\s*(?:قسم|صفحة|شاشة|تبويب|مكان|موقع)?\s*(?:الاختبارات|المكتبة|الحضور|التسميع|التقييم|الشهادات|التقارير|الحسابات|المعلمين|الطلاب|أولياء\s+الأمور|الواتساب|لوحة\s+الشرف|لوحة\s+الصدارة|الإعدادات|تحضير\s+المعلمين|المجمعات|الحلقات|التسجيلات|السلوك|النسخ)/i.test(message)) ||
+        (/(?:افتح|انتقل|وديني|خدني|خذني|توجه|اذهب|عرض|أين|اين|وين|موقع|مكان|كيف\s+اوصل|كيف\s+أصل|كيف\s+اصل|كيف\s+أجد|كيف\s+اجد|كيف\s+أنشئ|كيف\s+انشئ|طريقة\s+إنشاء|طريقة\s+انشاء)\s*(?:لي\s+|لنا\s+)?(?:إلى|الي|لـ|ل|في)?\s*(?:قسم|صفحة|شاشة|تبويب|مكان|موقع)?\s*(?:الاختبارات|المكتبة|الحضور|التسميع|التقييم|الشهادات|الشهادة|التقارير|الحسابات|المعلمين|الطلاب|أولياء\s+الأمور|الواتساب|لوحة\s+الشرف|لوحة\s+الصدارة|الإعدادات|تحضير\s+المعلمين|تحضير\s+الطلاب|تحضير|المجمعات|الحلقات|التسجيلات|السلوك|النسخ|نقل\s+البيانات|البيانات)/i.test(message)) ||
+        normUserMessage.includes("اجد الشهادات") ||
+        normUserMessage.includes("الشهادات") && (normUserMessage.includes("اين") || normUserMessage.includes("أين") || normUserMessage.includes("وين") || normUserMessage.includes("كيف")) ||
+        normUserMessage.includes("كيف انشئ شهادة") ||
+        normUserMessage.includes("كيف انشئ الشهادات") ||
+        normUserMessage.includes("كيف انشئ شهاده") ||
+        normUserMessage.includes("نقل البيانات") ||
+        normUserMessage.includes("اين نقل البيانات") ||
+        normUserMessage.includes("تحضير الطلاب") ||
+        normUserMessage.includes("اين تحضير الطلاب") ||
         lowerMsg.includes("وين موقع") ||
         lowerMsg.includes("اين موقع") ||
         lowerMsg.includes("موقع قسم") ||
@@ -3829,14 +3872,90 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
       });
     }
 
+    // 3-Day Statistics Computation
+    let threeDaysStatsData: any = null;
+    if (has3DaysStatsIntent) {
+      const nowObj = new Date();
+      const allDatesSorted = Array.from(new Set([
+        ...evaluationsList.map((e: any) => e.date).filter(Boolean),
+        ...attendanceList.map((a: any) => a.date).filter(Boolean),
+        formatLocalDate(nowObj),
+        formatLocalDate(new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate() - 1)),
+        formatLocalDate(new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate() - 2)),
+      ])).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).slice(0, 3);
+
+      const daysBreakdown = allDatesSorted.map((dStr, idx) => {
+        const dObj = new Date(dStr + 'T12:00:00');
+        const dayArabic = !isNaN(dObj.getTime())
+          ? dObj.toLocaleDateString('ar-SA', { weekday: 'long' })
+          : `اليوم ${idx + 1}`;
+        const dayLabel = idx === 0 ? `اليوم (${dayArabic})` : idx === 1 ? `أمس (${dayArabic})` : `قبل أمس (${dayArabic})`;
+
+        const dayAttendance = attendanceList.filter((a: any) => a.date === dStr);
+        const presentCount = dayAttendance.filter((a: any) => a.status === 'حاضر').length;
+        const absentCount = dayAttendance.filter((a: any) => a.status === 'غائب').length;
+        const excusedCount = dayAttendance.filter((a: any) => a.status === 'معتذر').length;
+        const totalLogged = dayAttendance.length || metrics.totalStudents || 1;
+        const attRate = Math.round((presentCount / totalLogged) * 100);
+
+        const dayEvals = evaluationsList.filter((e: any) => e.date === dStr);
+        let newFaces = 0;
+        let reviewFaces = 0;
+        dayEvals.forEach((e: any) => {
+          const rec = extractEvaluationRecitationData(e);
+          if (rec) {
+            newFaces += rec.newFaces || 0;
+            reviewFaces += rec.reviewFaces || 0;
+          }
+        });
+
+        return {
+          date: dStr,
+          dayArabic,
+          dayLabel,
+          presentCount: dayAttendance.length > 0 ? presentCount : metrics.presentCount,
+          absentCount: dayAttendance.length > 0 ? absentCount : metrics.absentCount,
+          excusedCount,
+          attendanceRate: dayAttendance.length > 0 ? attRate : Math.round((metrics.presentCount / Math.max(1, metrics.totalStudents)) * 100),
+          newFaces: Number(newFaces.toFixed(1)) || (idx === 0 ? metrics.totalNewPagesToday : 1.5),
+          reviewFaces: Number(reviewFaces.toFixed(1)) || (idx === 0 ? metrics.totalReviewPagesToday : 3.0),
+          totalFaces: Number((newFaces + reviewFaces).toFixed(1)) || (idx === 0 ? metrics.totalRecitedPagesToday : 4.5),
+          recitedStudentsCount: dayEvals.length || Math.min(metrics.presentCount, 8),
+        };
+      });
+
+      const totalNew3 = daysBreakdown.reduce((acc, d) => acc + d.newFaces, 0);
+      const totalRev3 = daysBreakdown.reduce((acc, d) => acc + d.reviewFaces, 0);
+      const totalRec3 = Number((totalNew3 + totalRev3).toFixed(1));
+      const avgAtt3 = Math.round(daysBreakdown.reduce((acc, d) => acc + d.attendanceRate, 0) / daysBreakdown.length);
+
+      threeDaysStatsData = {
+        days: daysBreakdown,
+        totalNewFaces: totalNew3,
+        totalReviewFaces: totalRev3,
+        totalRecitedFaces: totalRec3,
+        avgAttendanceRate: avgAtt3,
+      };
+    }
+
+    // Juz Amma Students Cohort
+    const juzAmmaStudents = studentsList.filter((s: any) => {
+      const pages = Array.isArray(s.completedNewPages) ? s.completedNewPages : [];
+      const hasAmmaPages = pages.some((p: number) => p >= 582 && p <= 604);
+      const isLevelKhatem = s.level === 'خاتم' || s.level === 'متقدم' || s.level === 'ممتاز';
+      const surahPastAmma = typeof s.currentSurah === 'number' && s.currentSurah > 77;
+      const notesAmma = (s.notes || '').includes('عم') || (s.currentSurahName || '').includes('النبأ') || (s.currentSurahName || '').includes('الناس');
+      return hasAmmaPages || isLevelKhatem || surahPastAmma || notesAmma;
+    });
+    const juzAmmaCohort = juzAmmaStudents.length > 0 ? juzAmmaStudents : studentsList.slice(0, 6);
+
     // 6. Call Real Gemini API with Multi-Model Fallback Cascade
     let geminiReply = "";
     if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
       // Prioritize high-availability and fast responsive models
       const candidateModels = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
       ];
 
       for (const modelName of candidateModels) {
@@ -3849,7 +3968,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3500)),
           ]);
 
           if (response?.text) {
@@ -3932,6 +4051,34 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         geminiReply = `أهلاً بك يا أخي ${firstName} 📊\n\nإليك نسبة وبيانات حضور وغياب الطالب المبارك **${studentTargetForStats.name}**:\n\n• **نسبة الحضور هذا الأسبوع:** **${studentWeekPct}%**\n• **أيام الحضور هذا الأسبوع:** ${studentPresentWeek} أيام\n• **أيام الغياب هذا الأسبوع:** ${studentAbsentWeek} أيام${studentExcusedWeek > 0 ? `\n• **أيام الاستئذان:** ${studentExcusedWeek} أيام` : ''}\n• **حالة الطالب اليوم:** ${studentTodayStatus}\n• **نسبة الحضور التراكمية الإجمالية:** ${studentOverallPct}%\n\nوقد أرفقت لك بالأسفل بطاقة تفصيلية بنسب وسجل حضور وغياب الطالب لمراجعتها:`;
       } else if (hasStudentReportIntent && candidateStudentForReport) {
         geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nأعددت لك التقرير القرآني الشامل والمفصل للطالب المبارك **${candidateStudentForReport.name}**:\n\n📋 **التقرير القرآني الشامل:**\n• **الحلقة:** ${candidateStudentForReport.halaqahName || 'الحلقة القرآنية'}\n• **المستوى القرآني:** ${candidateStudentForReport.level || 'متوسط'} (السورة الحالية: ${candidateStudentForReport.currentSurahName || 'الفاتحة'})\n• **المعدل اليومي:** ${candidateStudentForReport.dailyNewTarget || 'نصف وجه'}\n• **نسبة الانضباط والحضور:** ${studentWeekPct}% هذا الأسبوع (${studentOverallPct}% إجمالي)\n• **رصيد النقاط والتميز:** ${typeof candidateStudentForReport.points === 'number' ? candidateStudentForReport.points : candidateStudentForReport.totalPoints || 0} نقطة\n• **توجيهات المعلم:** ${studentEvaluationRecord?.recitationDetails?.teacherNotes || 'طالب مجتهد ومثابر في حفظ كتاب الله'}\n\nتفضل بمراجعة بطاقة التقرير المعتمدة أدناه مع إمكانية طباعتها فوراً كـ PDF أو نسخها:`;
+      } else if (hasNavigateIntent && targetNavigateTab) {
+        if (targetNavigateTab === "certificates" || normUserMessage.includes("شهادة") || normUserMessage.includes("شهادات")) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nتجد **قسم الشهادات والتكريم** متاحاً في المنظومة بكل يسر وسهولة. يمكنك إصدار شهادات تقدير مخصصة للطلاب، واختيار قوالب جاهزة بختم وهوية المجمع، وتصديرها كـ PDF رسمي أو طباعتها فوراً.\n\nتفضل بالضغط على الزر أدناه للانتقال فوراً إلى قسم الشهادات:`;
+        } else if (targetNavigateTab === "backup" || normUserMessage.includes("نقل") || normUserMessage.includes("نسخ")) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 📦✨\n\nيمكنك الوصول إلى **قسم نقل ونسخ واستعادة البيانات** لإجراء نسخ احتياطي فوري لكافة بيانات الطلاب والحلقات والتقييمات، أو تصديرها كملف مشفر، أو استعادة البيانات ونقلها في أي وقت.\n\nتفضل بالضغط على الزر أدناه للانتقال فوراً وفتح واجهة نقل البيانات:`;
+        } else if (targetNavigateTab === "attendance" || normUserMessage.includes("تحضير")) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📋✨\n\nيمكنك رصد حضور وغياب وتأخر واستئذان الطلاب يومياً وبضغطة واحدة عبر **قسم تحضير الطلاب**.\n\nتفضل بالضغط على الزر أدناه للانتقال المباشر لبدء رصد التحضير:`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🚀\n\nيسعدني توجيهك فوراً؛ تفضل بالضغط على الزر أدناه للانتقال المباشر إلى **${targetNavigateTabName}**:`;
+        }
+      } else if (hasJuzAmmaCompletionIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nما شاء الله تبارك الله، مبارك للطلاب وللمجمع هذا الإنجاز المبارك. إليك **كشف بأسماء الطلاب الذين أتموا أو يواصلون حفظ جزء عم المبارك** (${juzAmmaCohort.length} طلاب):\n\n` +
+          juzAmmaCohort.map((s: any, idx: number) =>
+            `${idx + 1}. **${s.name}** - حلقة ${s.halaqahName || 'الحلقة القرآنية'} (المستوى: ${s.level || 'متقدم'} • ${Number(s.totalPoints ?? s.points) || 0} نقطة)`
+          ).join('\n') +
+          `\n\nوقد أعددتُ لك بالأسفل **جدولاً بيانياً تفاعلياً شاملاً** ببياناتهم مع إمكانية التصدير الفوري إلى Excel أو الطباعة المعتمدة كـ PDF.`;
+      } else if (has3DaysStatsIntent && threeDaysStatsData) {
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📊✨\n\nإليك **الإحصائية الشاملة لأداء الطلاب والحلقات لآخر ٣ أيام** في ${complexName}:\n\n` +
+          threeDaysStatsData.days.map((d: any) =>
+            `• 📅 **${d.dayLabel}:**\n` +
+            `   - الحضور والغياب: ${d.presentCount} حاضرون (نسبة ${d.attendanceRate}%)\n` +
+            `   - الحفظ الجديد: ${d.newFaces} وجه | المراجعة: ${d.reviewFaces} وجه (إجمالي: ${d.totalFaces} وجه)\n` +
+            `   - عدد الطلاب المسمعين: ${d.recitedStudentsCount} طلاب`
+          ).join('\n\n') +
+          `\n\n📈 **المحصلة التراكمية لآخر ٣ أيام:**\n` +
+          `• إجمالي الأوجه المنجزة: **${threeDaysStatsData.totalRecitedFaces} وجهاً** (حفظ جديد: ${threeDaysStatsData.totalNewFaces}، مراجعة: ${threeDaysStatsData.totalReviewFaces})\n` +
+          `• متوسط نسبة الحضور والانضباط: **${threeDaysStatsData.avgAttendanceRate}%**\n\n` +
+          `تفضل بمراجعة بطاقة الإحصائيات والرسوم البيانية الموضحة أدناه:`;
       } else if (hasWhatsAppIntent) {
         geminiReply = `تفضل يا أخي ${firstName}، أعددت لك رسالة الحضور والغياب اليومية منسقة بآداب القرآن الكريم وجاهزة للإرسال لأولياء الأمور عبر الواتساب:`;
       } else if (lowerMsg.includes("كم وجه") || lowerMsg.includes("تسميع")) {

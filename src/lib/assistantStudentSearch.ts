@@ -161,18 +161,18 @@ export function cleanNameToken(token: string): string {
   if (!token) return '';
   let cleaned = token.trim();
 
-  // Multi-pass iterative stripping of introductory conversational greetings, commands, and entity descriptors
+  // Multi-pass iterative stripping of introductory conversational greetings, commands, typos and entity descriptors
   let prevCleaned = '';
   while (cleaned !== prevCleaned) {
     prevCleaned = cleaned;
     cleaned = cleaned
       .replace(/^[و]\s*/, '')
-      .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم|وعليكم\s+السلام|هلا|يا\s+اخي|يا\s+أخي)\s+/gi, '')
+      .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم\s+ورحمة\s+الله\s+وبركاته|السلام\s+عليكم\s+ورحمة\s+الله|السلام\s+عليكم|وعليكم\s+السلام|صباح\s+الخير|مساء\s+الخير|هلا\s+والله|هلا|يا\s+اخي|يا\s+أخي|يا\s+شيخ|يا\s+استاذ|يا\s+معلم)\s+/gi, '')
       .replace(/^(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?/gi, '')
       .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
       .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
       .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
-      .replace(/^(?:الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه)\s+/gi, '')
+      .replace(/^(?:اطلالب|الطلالب|اطالب|الاطالب|الطلالاب|لاطلالب|الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه|شقيقه|أخاه|اخاه)\s+/gi, '')
       .trim();
   }
 
@@ -184,15 +184,17 @@ export function cleanNameToken(token: string): string {
   cleaned = cleaned.replace(/\s+(?:في|من|ضمن)\s+(?:فئة|مستوى|حلقة|مجمع).*$/gi, '');
   cleaned = cleaned.replace(/\s+(?:مرتب|مرتبين|ترتيب)\s+(?:حسب|تنازلي|تصاعدي|بالنقاط|ابجديا|أبجدياً).*$/gi, '');
 
-  // 4. Remove mid-sentence or trailing interrogative/action clauses like "ماذا سمع", "كم حفظ", "ما هو مقرره", "وين وصل", etc.
-  cleaned = cleaned.replace(/\s+(?:ماذا|وش|ايش|شو|كم|وين|أين|اين|كيف|ما|ماهو|ما\s+هو|متى)\s+(?:سمع|سمّع|سمعو|سمعوا|حفظ|حفظو|حفظوا|قرأ|قرا|واصل|وصل|مستواه|نقاطه|درجاته|مقرر|الورد).*$/gi, '');
+  // 4. Remove mid-sentence or trailing interrogative/action clauses like "ماذا سمع", "كم حفظ", "ما هو مقرره", "وين وصل", "وش سمع", "وش سوا", etc.
+  cleaned = cleaned.replace(/\s+(?:ماذا|وش|ايش|شو|ايه|إيه|ليه|شاللي|شنو|كم|وين|أين|اين|كيف|ما|ماهو|ما\s+هو|متى)\s+(?:سمع|سمّع|سمعو|سمعوا|حفظ|حفظو|حفظوا|قرأ|قرا|واصل|وصل|انجز|أنجز|سوى|سوا|عمل|سوو|سووا|مستواه|نقاطه|درجاته|مقرر|مقرره|الورد).*$/gi, '');
 
-  // 5. Remove standalone trailing recitation/listening verbs
-  cleaned = cleaned.replace(/\s+(?:سمع|سمّع|سمعو|سمعوا|حفظ|حفظو|حفظوا|قرأ|قرا|واصل|وصل|انجز|أنجز).*$/gi, '');
+  // 5. Remove trailing interrogative or recitation verbs directly attached to the name (e.g. "محمد وش سمع" -> "محمد")
+  cleaned = cleaned.replace(/\s+(?:وش\s+سمع|وش\s+سمّع|ايش\s+سمع|ايش\s+سمّع|شو\s+سمع|وش\s+حفظ|ايش\s+حفظ|شو\s+حفظ|وش\s+سوى|وش\s+سوا|ايش\s+سوى|شو\s+سوى|وش\s+عنده|ايش\s+عنده|وش\s+مسوي|وش\s+بيحفظ|ايش\s+بيحفظ).*$/gi, '');
+  cleaned = cleaned.replace(/\s+(?:سمع|سمّع|سمعو|سمعوا|حفظ|حفظو|حفظوا|قرأ|قرا|واصل|وصل|انجز|أنجز|سوى|سوا|عمل).*$/gi, '');
+  cleaned = cleaned.replace(/\s+(?:وش|ايش|شو|ماذا|ايه|إيه|ليه|شاللي|شنو|وين|أين|اين|كيف|متى|هل)$/gi, '');
 
-  // 6. Remove day names, dates, temporal adverbs from ANYWHERE in the token (NOT just end)
+  // 6. Remove day names, dates, temporal adverbs from ANYWHERE in the token (including colloquial Egyptian/Gulf: امبارح, النهارده, النهاردة, بكرة)
   cleaned = cleaned.replace(/(?:^|\s+)(?:يوم\s+)?(?:الاحد|الأحد|احد|أحد|الاثنين|الإثنين|اثنين|إثنين|اثنيين|الثلاثاء|ثلاثاء|ثلثاء|الاربعاء|الأربعاء|اربعاء|أربعاء|الخميس|خميس|الجمعة|جمعة|جمعه|السبت|سبت)(?:\s+|$)/gi, ' ');
-  cleaned = cleaned.replace(/(?:^|\s+)(?:اليوم|أمس|امس|البارحة|البارحه|بارحة|بارحه|غداً|غدا|الغد|بكرة|قبل\s+أمس|قبل\s+امس|منذ\s+يومين|هذا\s+الاسبوع|هذا\s+الشهر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرره)(?:\s+|$)/gi, ' ');
+  cleaned = cleaned.replace(/(?:^|\s+)(?:امبارح|النهارده|النهاردة|بكرة|بكره|اليوم|أمس|امس|البارحة|البارحه|بارحة|بارحه|غداً|غدا|الغد|قبل\s+أمس|قبل\s+امس|اول\s+امبارح|أول\s+امبارح|منذ\s+يومين|هذا\s+الاسبوع|هذا\s+الشهر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرره)(?:\s+|$)/gi, ' ');
 
   // 7. Remove system entity terms
   cleaned = cleaned.replace(/(?:^|\s+)(?:رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|مخطط\s+بياني|مخطط|شارت|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه|شامل)(?:\s+|$)/gi, ' ');
@@ -906,6 +908,79 @@ export function resolveStudentQuery(
     detectedSort = 'attendance_desc';
   }
 
+/**
+ * Automatically locate a student's brother(s) based on:
+ * 1. Shared parent phone number or student phone
+ * 2. Shared parent name
+ * 3. Shared family / last name and father name
+ */
+export function findStudentBrothers(student: any, allStudentsList: any[]): any[] {
+  if (!student || !Array.isArray(allStudentsList)) return [];
+  const brothers: any[] = [];
+  const seenIds = new Set<string>([student.id]);
+
+  const cleanPhone = (ph?: any) => {
+    if (!ph) return '';
+    return String(ph).replace(/\D/g, '').trim();
+  };
+
+  const studentPhones = [
+    cleanPhone(student.parentPhone),
+    cleanPhone(student.phone),
+    ...(Array.isArray(student.parentPhones) ? student.parentPhones.map(cleanPhone) : [])
+  ].filter(p => p.length >= 7);
+
+  const studentNormParent = normalizeArabicText(student.parentName || '');
+  const nameParts = (student.name || '').trim().split(/\s+/).filter(Boolean);
+  const studentLastName = nameParts.length >= 2 ? normalizeArabicText(nameParts[nameParts.length - 1]) : '';
+  const studentFatherName = nameParts.length >= 3 ? normalizeArabicText(nameParts[1]) : '';
+
+  for (const other of allStudentsList) {
+    if (!other || seenIds.has(other.id)) continue;
+
+    // 1. Match by shared parent/guardian phone
+    const otherPhones = [
+      cleanPhone(other.parentPhone),
+      cleanPhone(other.phone),
+      ...(Array.isArray(other.parentPhones) ? other.parentPhones.map(cleanPhone) : [])
+    ].filter(p => p.length >= 7);
+
+    const hasSharedPhone = studentPhones.some(sp => otherPhones.includes(sp));
+    if (hasSharedPhone) {
+      brothers.push(other);
+      seenIds.add(other.id);
+      continue;
+    }
+
+    // 2. Match by exact parent name
+    if (studentNormParent && studentNormParent.length >= 4 && other.parentName) {
+      if (normalizeArabicText(other.parentName) === studentNormParent) {
+        brothers.push(other);
+        seenIds.add(other.id);
+        continue;
+      }
+    }
+
+    // 3. Match by Family Last Name + Father Name
+    const otherNameParts = (other.name || '').trim().split(/\s+/).filter(Boolean);
+    const otherLastName = otherNameParts.length >= 2 ? normalizeArabicText(otherNameParts[otherNameParts.length - 1]) : '';
+    const otherFatherName = otherNameParts.length >= 3 ? normalizeArabicText(otherNameParts[1]) : '';
+
+    if (studentLastName && otherLastName && studentLastName.length >= 3 && studentLastName === otherLastName) {
+      if (studentFatherName && otherFatherName && studentFatherName === otherFatherName) {
+        brothers.push(other);
+        seenIds.add(other.id);
+      } else if (!student.halaqahId || other.halaqahId === student.halaqahId || other.complexId === student.complexId) {
+        // If in the same halaqah/complex sharing the exact family name
+        brothers.push(other);
+        seenIds.add(other.id);
+      }
+    }
+  }
+
+  return brothers;
+}
+
   const baseResult = resolveStudentsQuery(
     studentsList,
     {
@@ -925,8 +1000,50 @@ export function resolveStudentQuery(
     contextData
   );
 
-  const isSingle = !isAll && (names.length === 1 || (names.length === 0 && explicitCount === 1));
-  const isMultiple = !isAll && (names.length > 1 || (explicitCount !== null && explicitCount > 1) || Boolean(detectedLevel) || Boolean(matchedHalaqahId) || Boolean(matchedComplexId));
+  // Check brother intent ("يوسف واخوه", "فلان وأخوه", etc.)
+  const hasBrotherIntent = /(?:و\s*اخوه|و\s*أخوه|مع\s+اخوه|مع\s+أخوه|واخيه|وأخيه|اخوه|أخوه|شقيقه|أخاه|اخاه)/i.test(message || '');
+  if (hasBrotherIntent && baseResult.matchedStudents.length > 0) {
+    const mainStudent = baseResult.matchedStudents[0];
+    const brothers = findStudentBrothers(mainStudent, studentsList);
+    if (brothers.length > 0) {
+      for (const br of brothers) {
+        if (!baseResult.matchedStudents.some(s => s.id === br.id)) {
+          baseResult.matchedStudents.push(br);
+        }
+      }
+      baseResult.status = 'SUCCESS';
+      baseResult.message = `تم جلب بيانات الطالب ${mainStudent.name} وأخوه الطالب ${brothers.map(b => b.name).join(' و ')} بنجاح.`;
+    }
+  }
+
+  // Check Juz Amma intent ("ختموا جزء عم", "خاتمي جزء عم", etc.)
+  const isJuzAmmaIntent =
+    /(?:ختموا|ختم|أتموا|اتموا|أتم|اتم|خاتمي|خاتمين|حفظوا|حفظ|متقني|متقنين)\s+(?:جزء\s+)?(?:عم|عَمّ)/i.test(message || '') ||
+    normMsg.includes('ختموا جزء عم') ||
+    normMsg.includes('خاتمي جزء عم') ||
+    normMsg.includes('خاتمين جزء عم') ||
+    normMsg.includes('طلاب جزء عم') ||
+    normMsg.includes('حفظة جزء عم');
+
+  if (isJuzAmmaIntent) {
+    const juzAmmaStudents = studentsList.filter(s => {
+      const pages = Array.isArray(s.completedNewPages) ? s.completedNewPages : [];
+      const hasJuzAmmaPages = pages.some((p: number) => p >= 582 && p <= 604);
+      const isLevelKhatem = s.level === 'خاتم' || s.level === 'متقدم' || s.level === 'ممتاز';
+      const surahPastAmma = typeof s.currentSurah === 'number' && s.currentSurah > 77;
+      const notesAmma = (s.notes || '').includes('عم') || (s.currentSurahName || '').includes('النبأ') || (s.currentSurahName || '').includes('الناس');
+      return hasJuzAmmaPages || isLevelKhatem || surahPastAmma || notesAmma;
+    });
+
+    if (juzAmmaStudents.length > 0) {
+      baseResult.matchedStudents = juzAmmaStudents;
+      baseResult.status = 'SUCCESS';
+      baseResult.message = `تم العثور على ${juzAmmaStudents.length} طلاب أتموا أو يحفظون جزء عم المبارك.`;
+    }
+  }
+
+  const isSingle = !isAll && !hasBrotherIntent && (names.length === 1 || (names.length === 0 && explicitCount === 1));
+  const isMultiple = !isAll && (names.length > 1 || hasBrotherIntent || isJuzAmmaIntent || (explicitCount !== null && explicitCount > 1) || Boolean(detectedLevel) || Boolean(matchedHalaqahId) || Boolean(matchedComplexId));
   const isCount = explicitCount !== null && explicitCount > 0;
 
   let clarification: string | null = null;

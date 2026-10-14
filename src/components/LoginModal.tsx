@@ -457,7 +457,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <BookOpen className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-black font-heading text-white tracking-wide">
-            {settings.complexName || 'مَنَصَّة عُمْرَان للقرآن الكريم'}
+            منصة عُمْرَان
           </h2>
           <p className="text-xs text-slate-300 font-medium mt-1">
             منظومة المتابعة الحية والتقييم المشترك للمعلمين والطلاب

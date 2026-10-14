@@ -10,15 +10,54 @@ export interface ExcelColumn {
   width?: number;
 }
 
-export function exportToExcel(options: {
+export interface ExportToExcelOptions {
   filename: string;
   sheetName?: string;
   title?: string;
-  columns: ExcelColumn[];
+  columns?: ExcelColumn[];
   data: Record<string, any>[];
-}): boolean {
+}
+
+export function exportToExcel(
+  optionsOrData: ExportToExcelOptions | Record<string, any>[],
+  maybeFilename?: string
+): boolean {
   try {
-    const { filename, sheetName = 'البيانات', title, columns, data } = options;
+    let filename: string;
+    let sheetName = 'البيانات';
+    let title: string | undefined;
+    let columns: ExcelColumn[];
+    let data: Record<string, any>[];
+
+    if (Array.isArray(optionsOrData)) {
+      data = optionsOrData;
+      filename = maybeFilename || 'export';
+      if (data.length > 0) {
+        columns = Object.keys(data[0]).map(key => ({
+          header: key,
+          key: key,
+          width: Math.max(key.length * 2, 14)
+        }));
+      } else {
+        columns = [];
+      }
+    } else {
+      filename = optionsOrData.filename;
+      sheetName = optionsOrData.sheetName || 'البيانات';
+      title = optionsOrData.title;
+      data = optionsOrData.data || [];
+      if (optionsOrData.columns && optionsOrData.columns.length > 0) {
+        columns = optionsOrData.columns;
+      } else if (data.length > 0) {
+        columns = Object.keys(data[0]).map(key => ({
+          header: key,
+          key: key,
+          width: Math.max(key.length * 2, 14)
+        }));
+      } else {
+        columns = [];
+      }
+    }
 
     // Prepare rows with column headers
     const rows: any[][] = [];

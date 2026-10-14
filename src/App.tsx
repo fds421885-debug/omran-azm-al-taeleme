@@ -2448,7 +2448,7 @@ export function App() {
         onOpenParentPortal={() => {
           navigatePublic('login');
         }}
-        appName={settings.complexName || 'منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية'}
+        appName="منصة عُمْرَان"
       />
     );
   }

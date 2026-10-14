@@ -132,7 +132,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {effectiveLogoUrl && !logoImgFailed ? (
                 <img
                   src={effectiveLogoUrl}
-                  alt={displayComplexName}
+                  alt="منظومة عُمْرَان"
                   onError={() => setLogoImgFailed(true)}
                   className="w-full h-full object-cover"
                 />
@@ -144,13 +144,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span
                       className="font-black text-xs sm:text-sm tracking-tight leading-none drop-shadow-sm font-heading text-[#ffc800]"
                     >
-                      {complexInitial}
+                      ع
                     </span>
                   </div>
                   <span
-                    className="text-[7px] sm:text-[7.5px] font-bold tracking-tight mt-0.5 text-slate-300"
+                    className="text-[7px] sm:text-[7.5px] font-bold tracking-tight mt-0.5 text-[#ffd233]"
                   >
-                    مجمع
+                    عمران
                   </span>
                 </div>
               )}
@@ -159,36 +159,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="min-w-0 flex-1">
               <h1
                 className="text-sm sm:text-base lg:text-lg font-black font-heading tracking-tight text-white truncate"
-                title={displayComplexName}
+                title="منظومة عُمْرَان"
               >
-                {displayComplexName}
+                منظومة عُمْرَان
               </h1>
               <p className="text-[10px] sm:text-xs text-[#ffd233] font-bold truncate hidden sm:block">
-                {settings.complexName ? 'منظومة إدارة المجمعات القرآنية' : 'مجمع تحفيظ القرآن الكريم'}
+                منظومة إدارة الحلقات والمجمعات القرآنية
               </p>
             </div>
           </div>
 
           {/* Right User & Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Top Complexes Button */}
-            {currentUser?.role === 'admin' && isDeveloper && onOpenComplexManagement && (
-              <button
-                onClick={onOpenComplexManagement}
-                title="إدارة المجمعات القرآنية وتوزيع الحلقات"
-                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl bg-[#ffc800] hover:bg-[#ffd233] text-[#131f24] text-xs font-black border-b-4 border-[#e5a500] active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer"
-              >
-                <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#131f24]" />
-                <span className="hidden xs:inline">المجمعات</span>
-                {complexesCount !== undefined && (
-                  <span
-                    className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold bg-[#131f24] text-[#ffc800]"
-                  >
-                    {complexesCount}
-                  </span>
-                )}
-              </button>
-            )}
 
             {/* Quranic AI Assistant Button */}
             {currentUser?.role === 'admin' && (
