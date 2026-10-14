@@ -169,8 +169,8 @@ export function cleanNameToken(token: string): string {
       .replace(/^[و]\s*/, '')
       .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم\s+ورحمة\s+الله\s+وبركاته|السلام\s+عليكم\s+ورحمة\s+الله|السلام\s+عليكم|وعليكم\s+السلام|صباح\s+الخير|مساء\s+الخير|هلا\s+والله|هلا|يا\s+اخي|يا\s+أخي|يا\s+شيخ|يا\s+استاذ|يا\s+معلم)\s+/gi, '')
       .replace(/^(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?/gi, '')
-      .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
-      .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:اداء|أداء|انجاز|إنجاز|بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
+      .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|احصائية|إحصائية|احصاء|إحصاء|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
       .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
       .replace(/^(?:اطلالب|الطلالب|اطالب|الاطالب|الطلالاب|لاطلالب|الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه|شقيقه|أخاه|اخاه)\s+/gi, '')
       .trim();
@@ -328,15 +328,27 @@ export function extractCandidateNamesFromMessage(
     }
   }
 
-  // If query is a collective chart/diagnostic/recitation inquiry without explicit single student designator
+  // If the query is asking about students who completed Juz Amma or a specific Surah/Juz cohort
+  const isJuzAmmaQuery = /(?:ختموا|ختم|أتموا|اتموا|خاتمي|خاتمين|حفظوا|حفظة)\s+(?:جزء\s+)?(?:عم|عَمّ)/i.test(message);
+  if (isJuzAmmaQuery && !isExplicitSingleStudentQuery) {
+    return [];
+  }
+
+  // If query is about general cohort listing ("اسماء الطلاب الذين ...")
+  if (/(?:اسماء|أسماء|قائمة|جدول|كشف)\s+(?:الطلاب|طلاب)\s+(?:الذين|الي|اللي)/i.test(message) && !isExplicitSingleStudentQuery) {
+    return [];
+  }
+
+  // If query is a collective chart/diagnostic/recitation/stats inquiry without explicit single student designator
   if (!isExplicitSingleStudentQuery) {
-    const isChartQuery = /(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط|شارت|احصائيات|إحصائيات)/i.test(message);
+    const isChartQuery = /(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط|شارت|احصائيات|إحصائيات|احصائية|إحصائية|احصاء|إحصاء)/i.test(message);
     const isPluralRecitation = /(?:ماذا\s+سمع\s+الطلاب|ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|ايش\s+سمعوا|تسميع\s+الطلاب|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم)/i.test(message);
     if (isChartQuery || isPluralRecitation) {
       const strippedNonStudent = message
         .replace(/[\?؟!\.،,]/g, ' ')
         .replace(/(?:اعرض\s+لي|اعرض|اعمل\s+لي|اعمللي|اعملي|اعمل|سو\s+لي|سوي\s+لي|سوي|سو|هات\s+لي|هات|طلع\s+لي|طلع|أريد|اريد|ابغى|أبغى|ممكن)\s+/gi, ' ')
-        .replace(/(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط\s+بياني|مخطط|شارت|احصائيات|إحصائيات|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه|شامل)/gi, ' ')
+        .replace(/(?:رسم\s+بياني|تشخيص\s+بياني|رسومات\s+بيانية|مخطط\s+بياني|مخطط|شارت|احصائيات|إحصائيات|احصائية|إحصائية|احصاء|إحصاء|شامل\s+للمجمع|للمجمع|المجمع|مجمع|الحلقة|الحلقه|حلقة|حلقه|شامل)/gi, ' ')
+        .replace(/(?:اخر|آخر|ايام|أيام|يوم|يومين|اسبوع|أسبوع|شهر|شهور|\d+)/gi, ' ')
         .replace(/(?:ماذا\s+سمع\s+الطلاب|ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|تسميع\s+الطلاب|حفظ\s+الطلاب|حضور\s+الطلاب|غياب\s+الطلاب)/gi, ' ')
         .replace(/(?:وما\s+هو\s+مقرر\s+الغد|ما\s+هو\s+مقرر\s+الغد|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|مقرر\s+الغد|ورد\s+الغد|مقرر\s+اليوم|مقرر|الورد|الغد|اليوم|أمس|امس)/gi, ' ')
         .replace(/(?:الطلاب|طلاب|الطلبة|طلبة)/gi, ' ')
@@ -820,6 +832,79 @@ export function resolveStudentsQuery(
 }
 
 /**
+ * Automatically locate a student's brother(s) based on:
+ * 1. Shared parent phone number or student phone
+ * 2. Shared parent name
+ * 3. Shared family / last name and father name
+ */
+export function findStudentBrothers(student: any, allStudentsList: any[]): any[] {
+  if (!student || !Array.isArray(allStudentsList)) return [];
+  const brothers: any[] = [];
+  const seenIds = new Set<string>([student.id]);
+
+  const cleanPhone = (ph?: any) => {
+    if (!ph) return '';
+    return String(ph).replace(/\D/g, '').trim();
+  };
+
+  const studentPhones = [
+    cleanPhone(student.parentPhone),
+    cleanPhone(student.phone),
+    ...(Array.isArray(student.parentPhones) ? student.parentPhones.map(cleanPhone) : [])
+  ].filter(p => p.length >= 7);
+
+  const studentNormParent = normalizeArabicText(student.parentName || '');
+  const nameParts = (student.name || '').trim().split(/\s+/).filter(Boolean);
+  const studentLastName = nameParts.length >= 2 ? normalizeArabicText(nameParts[nameParts.length - 1]) : '';
+  const studentFatherName = nameParts.length >= 3 ? normalizeArabicText(nameParts[1]) : '';
+
+  for (const other of allStudentsList) {
+    if (!other || seenIds.has(other.id)) continue;
+
+    // 1. Match by shared parent/guardian phone
+    const otherPhones = [
+      cleanPhone(other.parentPhone),
+      cleanPhone(other.phone),
+      ...(Array.isArray(other.parentPhones) ? other.parentPhones.map(cleanPhone) : [])
+    ].filter(p => p.length >= 7);
+
+    const hasSharedPhone = studentPhones.some(sp => otherPhones.includes(sp));
+    if (hasSharedPhone) {
+      brothers.push(other);
+      seenIds.add(other.id);
+      continue;
+    }
+
+    // 2. Match by exact parent name
+    if (studentNormParent && studentNormParent.length >= 4 && other.parentName) {
+      if (normalizeArabicText(other.parentName) === studentNormParent) {
+        brothers.push(other);
+        seenIds.add(other.id);
+        continue;
+      }
+    }
+
+    // 3. Match by Family Last Name + Father Name
+    const otherNameParts = (other.name || '').trim().split(/\s+/).filter(Boolean);
+    const otherLastName = otherNameParts.length >= 2 ? normalizeArabicText(otherNameParts[otherNameParts.length - 1]) : '';
+    const otherFatherName = otherNameParts.length >= 3 ? normalizeArabicText(otherNameParts[1]) : '';
+
+    if (studentLastName && otherLastName && studentLastName.length >= 3 && studentLastName === otherLastName) {
+      if (studentFatherName && otherFatherName && studentFatherName === otherFatherName) {
+        brothers.push(other);
+        seenIds.add(other.id);
+      } else if (!student.halaqahId || other.halaqahId === student.halaqahId || other.complexId === student.complexId) {
+        // If in the same halaqah/complex sharing the exact family name
+        brothers.push(other);
+        seenIds.add(other.id);
+      }
+    }
+  }
+
+  return brothers;
+}
+
+/**
  * High-level assistant resolver with query classification (single, multi, all, count)
  */
 export function resolveStudentQuery(
@@ -835,6 +920,10 @@ export function resolveStudentQuery(
   isCountQuery: boolean;
   clarificationQuestion: string | null;
   requestedNames: string[];
+  detectedLevel?: string;
+  detectedHalaqah?: string;
+  detectedComplex?: string;
+  detectedSort?: 'points_desc' | 'points_asc' | 'alpha' | 'attendance_desc';
 } {
   const normMsg = normalizeArabicText(message || '');
   const isAll = isQueryRequestingAllStudents(normMsg);
@@ -907,79 +996,6 @@ export function resolveStudentQuery(
   } else if (normMsg.includes('حسب الحضور') || normMsg.includes('نسبة الحضور') || normMsg.includes('الاكثر التزاما') || normMsg.includes('الأكثر التزاماً')) {
     detectedSort = 'attendance_desc';
   }
-
-/**
- * Automatically locate a student's brother(s) based on:
- * 1. Shared parent phone number or student phone
- * 2. Shared parent name
- * 3. Shared family / last name and father name
- */
-export function findStudentBrothers(student: any, allStudentsList: any[]): any[] {
-  if (!student || !Array.isArray(allStudentsList)) return [];
-  const brothers: any[] = [];
-  const seenIds = new Set<string>([student.id]);
-
-  const cleanPhone = (ph?: any) => {
-    if (!ph) return '';
-    return String(ph).replace(/\D/g, '').trim();
-  };
-
-  const studentPhones = [
-    cleanPhone(student.parentPhone),
-    cleanPhone(student.phone),
-    ...(Array.isArray(student.parentPhones) ? student.parentPhones.map(cleanPhone) : [])
-  ].filter(p => p.length >= 7);
-
-  const studentNormParent = normalizeArabicText(student.parentName || '');
-  const nameParts = (student.name || '').trim().split(/\s+/).filter(Boolean);
-  const studentLastName = nameParts.length >= 2 ? normalizeArabicText(nameParts[nameParts.length - 1]) : '';
-  const studentFatherName = nameParts.length >= 3 ? normalizeArabicText(nameParts[1]) : '';
-
-  for (const other of allStudentsList) {
-    if (!other || seenIds.has(other.id)) continue;
-
-    // 1. Match by shared parent/guardian phone
-    const otherPhones = [
-      cleanPhone(other.parentPhone),
-      cleanPhone(other.phone),
-      ...(Array.isArray(other.parentPhones) ? other.parentPhones.map(cleanPhone) : [])
-    ].filter(p => p.length >= 7);
-
-    const hasSharedPhone = studentPhones.some(sp => otherPhones.includes(sp));
-    if (hasSharedPhone) {
-      brothers.push(other);
-      seenIds.add(other.id);
-      continue;
-    }
-
-    // 2. Match by exact parent name
-    if (studentNormParent && studentNormParent.length >= 4 && other.parentName) {
-      if (normalizeArabicText(other.parentName) === studentNormParent) {
-        brothers.push(other);
-        seenIds.add(other.id);
-        continue;
-      }
-    }
-
-    // 3. Match by Family Last Name + Father Name
-    const otherNameParts = (other.name || '').trim().split(/\s+/).filter(Boolean);
-    const otherLastName = otherNameParts.length >= 2 ? normalizeArabicText(otherNameParts[otherNameParts.length - 1]) : '';
-    const otherFatherName = otherNameParts.length >= 3 ? normalizeArabicText(otherNameParts[1]) : '';
-
-    if (studentLastName && otherLastName && studentLastName.length >= 3 && studentLastName === otherLastName) {
-      if (studentFatherName && otherFatherName && studentFatherName === otherFatherName) {
-        brothers.push(other);
-        seenIds.add(other.id);
-      } else if (!student.halaqahId || other.halaqahId === student.halaqahId || other.complexId === student.complexId) {
-        // If in the same halaqah/complex sharing the exact family name
-        brothers.push(other);
-        seenIds.add(other.id);
-      }
-    }
-  }
-
-  return brothers;
-}
 
   const baseResult = resolveStudentsQuery(
     studentsList,

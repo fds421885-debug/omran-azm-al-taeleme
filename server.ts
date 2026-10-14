@@ -1986,6 +1986,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const teachersList = Array.isArray(dataContext.teachers) ? dataContext.teachers : [];
 
     const lowerMsg = (message || "").toLowerCase();
+    const normUserMessage = normalizeArabicText(message || "");
 
     // 1. Interactive Student Registration Detection with Accurate Halaqah & Name
     const hasRegisterIntent =
@@ -2359,11 +2360,8 @@ app.post("/api/gemini/assistant", async (req, res) => {
       lowerMsg.includes("جدول المخالفات") ||
       lowerMsg.includes("الطلاب المخالفين") ||
       lowerMsg.includes("الإنذارات") ||
-      lowerMsg.includes("الانذارات") ||
       lowerMsg.includes("عليهم تنبيهات") ||
       lowerMsg.includes("عليهم مخالفات");
-
-    const normUserMessage = normalizeArabicText(message);
 
     // Build SearchUserContext for Centralized Resolution Engine
     const userContext: SearchUserContext = {

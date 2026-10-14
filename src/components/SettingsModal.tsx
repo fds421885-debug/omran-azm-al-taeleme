@@ -776,18 +776,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 إعدادات المنظومة والحلقات
-                {activeComplex && (
-                  <span
-                    className="text-xs px-2.5 py-0.5 rounded-full border font-bold"
-                    style={{
-                      backgroundColor: themeColors.secondaryColor || '#064e3b',
-                      borderColor: `${themeColors.accentColor}50`,
-                      color: themeColors.accentColor || '#fbbf24'
-                    }}
-                  >
-                    {activeComplex.name}
-                  </span>
-                )}
               </h2>
               <p className="text-xs opacity-80" style={{ color: themeColors.textColor || '#86efac' }}>
                 إدارة المعلمين والحلقات ونقل الطلاب وضبط قواعد المنظومة
