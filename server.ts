@@ -2211,6 +2211,32 @@ app.post("/api/gemini/assistant", async (req, res) => {
       halaqahToDelete = findMatchingHalaqah(message, halaqahsList);
     }
 
+    // Chart & Statistical Visualization Intent
+    const hasChartDiagnosticIntent =
+      lowerMsg.includes("رسم بياني") ||
+      lowerMsg.includes("تشخيص بياني") ||
+      lowerMsg.includes("دوائر") ||
+      lowerMsg.includes("أعمدة") ||
+      lowerMsg.includes("اعمدة") ||
+      lowerMsg.includes("تتبع") ||
+      lowerMsg.includes("مخطط بياني") ||
+      lowerMsg.includes("مخطط") ||
+      lowerMsg.includes("شارت") ||
+      lowerMsg.includes("بيانيا") ||
+      lowerMsg.includes("بيانياً") ||
+      lowerMsg.includes("احصائيات") ||
+      lowerMsg.includes("إحصائيات") ||
+      lowerMsg.includes("احصائيه") ||
+      lowerMsg.includes("إحصائية") ||
+      lowerMsg.includes("رسومات بيانية") ||
+      lowerMsg.includes("رسومات بيانيه") ||
+      lowerMsg.includes("رسم الانسب") ||
+      lowerMsg.includes("الرسم الانسب") ||
+      lowerMsg.includes("الرسم الأنسب") ||
+      lowerMsg.includes("وش الانسب") ||
+      lowerMsg.includes("ايش الانسب") ||
+      lowerMsg.includes("احصائيات بيانية");
+
     // 2.6 Data Table Intents (Attendance Table, Memorization Progress Table, General Students Table)
     const hasAttendanceTableIntent =
       lowerMsg.includes("من الطلاب الحاضرين") ||
@@ -2631,32 +2657,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("تعريف") ||
       normUserMessage.includes("هوي") ||
       normUserMessage.includes("كروت");
-
-    // Pre-declare Chart & Recitation Intents so they are never undefined before guards
-    const hasChartDiagnosticIntent =
-      lowerMsg.includes("رسم بياني") ||
-      lowerMsg.includes("تشخيص بياني") ||
-      lowerMsg.includes("دوائر") ||
-      lowerMsg.includes("أعمدة") ||
-      lowerMsg.includes("اعمدة") ||
-      lowerMsg.includes("تتبع") ||
-      lowerMsg.includes("مخطط بياني") ||
-      lowerMsg.includes("مخطط") ||
-      lowerMsg.includes("شارت") ||
-      lowerMsg.includes("بيانيا") ||
-      lowerMsg.includes("بيانياً") ||
-      lowerMsg.includes("احصائيات") ||
-      lowerMsg.includes("إحصائيات") ||
-      lowerMsg.includes("احصائيه") ||
-      lowerMsg.includes("إحصائية") ||
-      lowerMsg.includes("رسومات بيانية") ||
-      lowerMsg.includes("رسومات بيانيه") ||
-      lowerMsg.includes("رسم الانسب") ||
-      lowerMsg.includes("الرسم الانسب") ||
-      lowerMsg.includes("الرسم الأنسب") ||
-      lowerMsg.includes("وش الانسب") ||
-      lowerMsg.includes("ايش الانسب") ||
-      lowerMsg.includes("احصائيات بيانية");
 
     const hasRecitationInquiryIntent =
       !hasAnyDeleteIntent &&
