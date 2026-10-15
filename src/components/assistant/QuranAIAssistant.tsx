@@ -1023,6 +1023,12 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             time: a.time,
             notes: a.notes,
           })),
+          complexes: (complexes || []).map(c => ({
+            id: c.id,
+            name: c.name,
+            description: c.description || '',
+            themeColor: c.themeColor || '',
+          })),
           metrics: platformMetrics,
         },
       };

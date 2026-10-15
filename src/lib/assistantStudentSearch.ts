@@ -127,6 +127,15 @@ export function isStudentInHalaqah(student: any, halaqah: any): boolean {
 }
 
 /**
+/**
+ * Helper to strip the Arabic definite article "ال" or "الـ" from a word for resilient root matching
+ */
+export function stripArabicDefinite(w: string): string {
+  if (!w) return '';
+  return normalizeArabicText(w).replace(/^(?:ال|الـ)/, '').trim();
+}
+
+/**
  * Clean helper: Extract base complex name without generic prefix words ("مجمع", "المجمع")
  */
 export function cleanComplexBaseName(name: string): string {
@@ -150,26 +159,34 @@ export function isHalaqahInComplex(
   const targetId = complexTarget.id;
   const targetName = complexTarget.name || '';
   const cleanTarget = cleanComplexBaseName(targetName);
+  const bareTarget = stripArabicDefinite(cleanTarget);
 
   // 1. Direct ID match
   if (targetId && targetId !== 'all' && halaqah.complexId && halaqah.complexId === targetId) return true;
 
-  // 2. Direct name match
+  // 2. Direct name match (exact and root)
   if (halaqah.complexName && cleanTarget) {
     const cleanH = cleanComplexBaseName(halaqah.complexName);
+    const bareH = stripArabicDefinite(cleanH);
     if (cleanH === cleanTarget) return true;
+    if (bareTarget && bareH && bareTarget === bareH) return true;
     if (cleanTarget.length >= 3 && cleanH.includes(cleanTarget)) return true;
     if (cleanH.length >= 3 && cleanTarget.includes(cleanH)) return true;
+    if (bareTarget.length >= 3 && bareH.includes(bareTarget)) return true;
+    if (bareH.length >= 3 && bareTarget.includes(bareH)) return true;
   }
 
   // 3. Token match
   if (cleanTarget) {
-    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام']);
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن']);
     const tokens = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
-    if (tokens.length > 0) {
+    const bareTokens = tokens.map(t => stripArabicDefinite(t)).filter(w => w.length >= 3);
+    const allTokens = [...new Set([...tokens, ...bareTokens])];
+
+    if (allTokens.length > 0) {
       const hFields = [halaqah.complexName, halaqah.name, halaqah.description].filter(Boolean).map(f => normalizeArabicText(f));
-      for (const tok of tokens) {
-        if (hFields.some(f => f.includes(tok))) return true;
+      for (const tok of allTokens) {
+        if (hFields.some(f => f.includes(tok) || stripArabicDefinite(f).includes(tok))) return true;
       }
     }
   }
@@ -189,40 +206,146 @@ export function isStudentInComplex(
   const targetId = complexTarget.id;
   const targetName = complexTarget.name || '';
   const cleanTargetName = cleanComplexBaseName(targetName);
+  const bareTarget = stripArabicDefinite(cleanTargetName);
 
   // 1. Direct complexId match
   if (targetId && targetId !== 'all' && student.complexId && student.complexId === targetId) return true;
 
-  // 2. Direct student complexName match
+  // 2. Direct student complexName match (exact and root)
   if (student.complexName && cleanTargetName) {
     const cleanStudentC = cleanComplexBaseName(student.complexName);
+    const bareStudentC = stripArabicDefinite(cleanStudentC);
     if (cleanStudentC === cleanTargetName) return true;
+    if (bareTarget && bareStudentC && bareTarget === bareStudentC) return true;
     if (cleanTargetName.length >= 3 && cleanStudentC.includes(cleanTargetName)) return true;
     if (cleanStudentC.length >= 3 && cleanTargetName.includes(cleanStudentC)) return true;
+    if (bareTarget.length >= 3 && bareStudentC.includes(bareTarget)) return true;
+    if (bareStudentC.length >= 3 && bareTarget.includes(bareStudentC)) return true;
   }
 
   // 3. Match via student's halaqah
-  if (student.halaqahId || student.halaqahName) {
-    const h = halaqahsList.find(hl => hl.id === student.halaqahId || (student.halaqahName && normalizeArabicText(hl.name) === normalizeArabicText(student.halaqahName)));
-    if (h) {
-      if (targetId && targetId !== 'all' && h.complexId && h.complexId === targetId) return true;
-      if (h.complexName && cleanTargetName) {
-        const cleanHC = cleanComplexBaseName(h.complexName);
-        if (cleanHC === cleanTargetName) return true;
-        if (cleanTargetName.length >= 3 && cleanHC.includes(cleanTargetName)) return true;
-        if (cleanHC.length >= 3 && cleanTargetName.includes(cleanHC)) return true;
-      }
+  const h = (student.halaqahId || student.halaqahName)
+    ? halaqahsList.find(hl => hl.id === student.halaqahId || (student.halaqahName && normalizeArabicText(hl.name) === normalizeArabicText(student.halaqahName)))
+    : null;
+
+  if (h) {
+    if (targetId && targetId !== 'all' && h.complexId && h.complexId === targetId) return true;
+    if (h.complexName && cleanTargetName) {
+      const cleanHC = cleanComplexBaseName(h.complexName);
+      const bareHC = stripArabicDefinite(cleanHC);
+      if (cleanHC === cleanTargetName) return true;
+      if (bareTarget && bareHC && bareTarget === bareHC) return true;
+      if (cleanTargetName.length >= 3 && cleanHC.includes(cleanTargetName)) return true;
+      if (cleanHC.length >= 3 && cleanTargetName.includes(cleanHC)) return true;
+      if (bareTarget.length >= 3 && bareHC.includes(bareTarget)) return true;
+      if (bareHC.length >= 3 && bareTarget.includes(bareHC)) return true;
     }
   }
 
   // 4. Token match for distinctive complex name (e.g. "الحربي", "الفرقان", "النور")
   if (cleanTargetName) {
-    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام']);
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن']);
     const tokens = cleanTargetName.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
-    if (tokens.length > 0) {
-      const studentFields = [student.complexName, student.halaqahName, student.notes].filter(Boolean).map(f => normalizeArabicText(f));
-      for (const tok of tokens) {
-        if (studentFields.some(f => f.includes(tok))) return true;
+    const bareTokens = tokens.map(t => stripArabicDefinite(t)).filter(w => w.length >= 3);
+    const allTokens = [...new Set([...tokens, ...bareTokens])];
+
+    if (allTokens.length > 0) {
+      const studentFields = [
+        student.complexName,
+        student.complexId,
+        student.halaqahName,
+        student.notes,
+        h?.complexName,
+        h?.complexId,
+        h?.name,
+        h?.description
+      ].filter(Boolean).map(f => normalizeArabicText(f));
+
+      for (const tok of allTokens) {
+        if (studentFields.some(f => f.includes(tok) || stripArabicDefinite(f).includes(tok))) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Strict helper: Check if a teacher belongs to a specific complex
+ */
+export function isTeacherInComplex(
+  teacher: any,
+  complexTarget: { id?: string; name?: string } | null,
+  halaqahsList: any[] = []
+): boolean {
+  if (!teacher || !complexTarget) return false;
+  const targetId = complexTarget.id;
+  const targetName = complexTarget.name || '';
+  const cleanTargetName = cleanComplexBaseName(targetName);
+  const bareTarget = stripArabicDefinite(cleanTargetName);
+  const normTargetName = normalizeArabicText(targetName);
+
+  // 1. Direct complexId match or assignedComplexIds
+  if (targetId && targetId !== 'all') {
+    if (teacher.complexId === targetId) return true;
+    if (Array.isArray(teacher.assignedComplexIds) && teacher.assignedComplexIds.includes(targetId)) return true;
+    if (Array.isArray(teacher.authorizedComplexIds) && teacher.authorizedComplexIds.includes(targetId)) return true;
+  }
+
+  // 2. Direct complexName match
+  if (teacher.complexName) {
+    const cleanTC = cleanComplexBaseName(teacher.complexName);
+    const bareTC = stripArabicDefinite(cleanTC);
+    if (cleanTC === cleanTargetName || normTC === normTargetName) return true;
+    if (bareTarget && bareTC && bareTarget === bareTC) return true;
+    if (cleanTargetName.length >= 3 && cleanTC.includes(cleanTargetName)) return true;
+    if (cleanTC.length >= 3 && cleanTargetName.includes(cleanTC)) return true;
+    if (bareTarget.length >= 3 && bareTC.includes(bareTarget)) return true;
+    if (bareTC.length >= 3 && bareTarget.includes(bareTC)) return true;
+  }
+
+  // 3. Match via teacher's halaqahs
+  const teacherHalaqahs = Array.isArray(halaqahsList)
+    ? halaqahsList.filter(h =>
+        h.primaryTeacherId === teacher.id ||
+        h.teacherId === teacher.id ||
+        (teacher.assignedHalaqahIds && teacher.assignedHalaqahIds.includes(h.id)) ||
+        (teacher.halaqahId && teacher.halaqahId === h.id)
+      )
+    : [];
+
+  for (const h of teacherHalaqahs) {
+    if (targetId && targetId !== 'all' && h.complexId === targetId) return true;
+    if (h.complexName) {
+      const cleanHC = cleanComplexBaseName(h.complexName);
+      const bareHC = stripArabicDefinite(cleanHC);
+      if (cleanHC === cleanTargetName) return true;
+      if (bareTarget && bareHC && bareTarget === bareHC) return true;
+      if (cleanTargetName.length >= 3 && cleanHC.includes(cleanTargetName)) return true;
+      if (cleanHC.length >= 3 && cleanTargetName.includes(cleanHC)) return true;
+      if (bareTarget.length >= 3 && bareHC.includes(bareTarget)) return true;
+      if (bareHC.length >= 3 && bareTarget.includes(bareHC)) return true;
+    }
+  }
+
+  // 4. Token match
+  if (cleanTargetName) {
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن']);
+    const tokens = cleanTargetName.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    const bareTokens = tokens.map(t => stripArabicDefinite(t)).filter(w => w.length >= 3);
+    const allTokens = [...new Set([...tokens, ...bareTokens])];
+
+    if (allTokens.length > 0) {
+      const tFields = [
+        teacher.complexName,
+        teacher.halaqahName,
+        teacher.notes,
+        ...teacherHalaqahs.map(h => h.complexName),
+        ...teacherHalaqahs.map(h => h.name)
+      ].filter(Boolean).map(f => normalizeArabicText(f));
+
+      for (const tok of allTokens) {
+        if (tFields.some(f => f.includes(tok) || stripArabicDefinite(f).includes(tok))) return true;
       }
     }
   }
@@ -380,7 +503,7 @@ export function cleanNameToken(token: string): string {
       .replace(/^(?:جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|تقارير|احصائيات|إحصائيات|احصائية|إحصائية|احصاء|إحصاء|رسم\s+بياني|رسومات\s+بيانية|رسومات\s+بيانيه|تشخيص\s+بياني|شارت|مخطط|شيت|اكسل)(?:\s*(?:لـ|ل|عن|في|حق|بـ|ب)?\s*|\s+|$)/gi, '')
       .replace(/^(?:احصائياته\s+وطلابه|إحصائياته\s+وطلابه|احصائياتها\s+وطلابها|إحصائياتها\s+وطلابها|احصائياته|إحصائياته|احصائياتها|إحصائياتها|احصائياتهم|إحصائياتهم|احصائيات|إحصائيات|احصائية|إحصائية|احصاء|إحصاء)\s*/gi, '')
       .replace(/^(?:وطلابه|وطلابها|طلابه|طلابها|طلبتها|طلبته|طلبتهم|ومعلميه|ومعلميها|معلميه|معلميها|محفظيه|محفظيها)\s*/gi, '')
-      .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
+      .replace(/^(?:ماذا\s+سمعوا|ماذا\s+سمعو|وش\s+سمعوا|وش\s+سمعو|ايش\s+سمعوا|ايش\s+سمعو|شو\s+سمعوا|شو\s+سمعو|ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|كم\s+حفظ|لماذا\s+سمع|لماذا\s+سمعوا|لماذا\s+سمعو|وما\s+هو\s+مقرر\s+الغد|ما\s+هو\s+مقرر\s+الغد|وما\s+هو\s+مقرر\s+اليوم|ما\s+هو\s+مقرر\s+اليوم|مقرر\s+الغد|مقرر\s+اليوم|وما\s+هو\s+مقرر|ما\s+هو\s+مقرر|وما\s+هو\s+ورد|ما\s+هو\s+ورد|وما\s+هو|ما\s+هو|ما\s+مقرر|وين\s+وصل|أين\s+وصل|اين\s+وصل)\s*(?:عن\s+)?/gi, '')
       .replace(/^(?:اطلالب|الطلالب|اطالب|الاطالب|الطلالاب|لاطلالب|الطالب|طالب|طالبا|طالباً|الطلبة|الطلاب|طالبنا|اسم|اسمه|المدعو|عن|للطالب|لطالب|هو|وهو|كل\s+من|واخوه|و\s+اخوه|اخوه|أخوه|و\s+أخوه|وابنه|و\s+ابنه|ابنه|أبنه|شقيقه|أخاه|اخاه)\s+/gi, '')
       .replace(/^(?:بأسمائهم|باسمائهم|بأسمائهن|باسمائهن|اسماءهم|اسمائهم|اسماء|أسماء)\s*/gi, '')
       .replace(/^(?:فقط\s+لا\s+غير|فقط\s+لاغير|فقط)\s*/gi, '')
@@ -441,7 +564,7 @@ const GENERIC_STUDENT_WORDS = [
   'الجميع', 'الاولاد', 'الأولاد', 'الاطفال', 'الأطفال', 'الحلقات',
   'السجلات', 'سجلات', 'كشف', 'بيانات', 'تقرير', 'درجات', 'نقاط',
   'رسم بياني', 'تشخيص بياني', 'بياني', 'مخطط', 'مخططات', 'شارت', 'شامل للمجمع', 'للمجمع', 'المجمع', 'مجمع', 'شامل',
-  'مقرر الغد', 'مقرر اليوم', 'ما هو مقرر الغد', 'ما هو مقرر اليوم', 'مقرر', 'الورد', 'غدا', 'غداً', 'الغد', 'اليوم', 'أمس', 'امس',
+  'مقرر الغد', 'مقرر اليوم', 'ما هو مقرر الغد', 'ما هو مقرر اليوم', 'وما هو مقرر الغد', 'وما هو مقرر اليوم', 'وما هو مقرر', 'ما هو مقرر', 'مقرر', 'الورد', 'غدا', 'غداً', 'الغد', 'اليوم', 'أمس', 'امس',
   'طيب', 'حسنا', 'تمام', 'اوكي', 'شكرا', 'عفوا', 'السلام عليكم', 'وعليكم السلام', 'مرحبا', 'هلا', 'أهلاً', 'اهلاً',
   'ماذا سمعوا', 'ماذا سمعو', 'وش سمعوا', 'وش سمعو', 'ايش سمعوا', 'ايش سمعو', 'شو سمعوا', 'شو سمعو',
   'ماذا سمع الطلاب', 'تسميع الطلاب', 'حفظ الطلاب', 'حضور الطلاب', 'غياب الطلاب', 'كشف الطلاب', 'جدول الطلاب',
@@ -840,14 +963,8 @@ export function resolveStudentsQuery(
     scopePool = scopePool.filter(s => isStudentInHalaqah(s, { id: filter.halaqahId !== 'all' ? filter.halaqahId : undefined, name: filter.halaqahName }));
   }
 
-  if (filter.complexId && filter.complexId !== 'all') {
-    scopePool = scopePool.filter(s => (!s.complexId || s.complexId === filter.complexId) || (filter.complexName && normalizeArabicText(s.complexName || '') === normalizeArabicText(filter.complexName)));
-  } else if (filter.complexName) {
-    const normC = normalizeArabicText(filter.complexName);
-    scopePool = scopePool.filter(s => {
-      const sC = normalizeArabicText(s.complexName || '');
-      return sC.includes(normC) || normC.includes(sC);
-    });
+  if ((filter.complexId && filter.complexId !== 'all') || filter.complexName) {
+    scopePool = scopePool.filter(s => isStudentInComplex(s, { id: filter.complexId !== 'all' ? filter.complexId : undefined, name: filter.complexName }, contextData?.halaqahs || []));
   }
 
   if (filter.teacherId || filter.teacherName) {
@@ -1353,21 +1470,129 @@ export function detectTeacherInQuery(
 /**
  * Detect if a specific Quran Complex is requested in the message
  */
-export function findMatchingComplex(query: string, complexesList: any[] = []): any | null {
-  if (!query || !Array.isArray(complexesList)) return null;
+export function findMatchingComplex(
+  query: string,
+  complexesList: any[] = [],
+  studentsList: any[] = [],
+  halaqahsList: any[] = []
+): any | null {
+  if (!query) return null;
   const normQuery = normalizeArabicText(query);
-  for (const c of complexesList) {
-    if (!c || !c.name) continue;
+
+  // 1. Compile all known complexes from all available sources
+  const knownComplexes: Array<{ id: string; name: string; [key: string]: any }> = [];
+  const seenNames = new Set<string>();
+
+  const registerComplex = (c: any) => {
+    if (!c || !c.name) return;
+    const norm = normalizeArabicText(c.name);
+    if (!seenNames.has(norm)) {
+      seenNames.add(norm);
+      knownComplexes.push(c);
+    }
+  };
+
+  if (Array.isArray(complexesList)) {
+    complexesList.forEach(registerComplex);
+  }
+  if (Array.isArray(studentsList)) {
+    studentsList.forEach(s => {
+      if (s?.complexName) {
+        registerComplex({ id: s.complexId || `complex-${normalizeArabicText(s.complexName)}`, name: s.complexName });
+      }
+    });
+  }
+  if (Array.isArray(halaqahsList)) {
+    halaqahsList.forEach(h => {
+      if (h?.complexName) {
+        registerComplex({ id: h.complexId || `complex-${normalizeArabicText(h.complexName)}`, name: h.complexName });
+      }
+    });
+  }
+
+  // 2. Direct or clean name inclusion from known complexes
+  for (const c of knownComplexes) {
     const normC = normalizeArabicText(c.name);
-    const cleanC = normC.replace(/^(?:مجمع|المجمع)\s+/, '').trim();
+    const cleanC = cleanComplexBaseName(c.name);
     if (normQuery.includes(normC) || (cleanC.length >= 3 && normQuery.includes(cleanC))) {
       return c;
     }
   }
-  // Generic complex inquiry: "مجمع من المجمعات", "المجمع القرآني", "مجمع", "المجمع"
-  if (/(?:مجمع\s+من\s+المجمعات|أي\s+مجمع|اي\s+مجمع|احصائيات\s+(?:المجمع|مجمع)|المجمع\s+القراني|المجمع\s+القرآني|المجمع)/i.test(query)) {
-    if (complexesList.length > 0) return complexesList[0];
+
+  // 3. Extract candidate complex phrase after "مجمع" or "المجمع"
+  // e.g. "نقاط مجمع الحربي" -> "الحربي"
+  // e.g. "حضور وغياب مجمع الفلاح" -> "الفلاح"
+  // e.g. "كشف طلاب مجمع عائشة لتحفيظ القرآن" -> "عائشة"
+  const complexMatch = query.match(/(?:في\s+مجمع|في\s+المجمع|من\s+مجمع|من\s+المجمع|لمجمع|للمجمع|عن\s+مجمع|عن\s+المجمع|بمجمع|بالمجمع|مجمع|المجمع)\s+([^\n,\.؛!?]+)/i);
+
+  if (complexMatch && complexMatch[1]) {
+    let candidate = complexMatch[1].trim();
+
+    // Clean conversational noise, action verbs, and extraneous inquiry words from candidate phrase
+    candidate = candidate
+      .replace(/^(?:القراني|القرآني|النموذجي|العام)\s+/gi, '')
+      .replace(/\s+(?:القراني|القرآني|النموذجي|لتحفيظ\s+القران|لتحفيظ\s+القرآن|الكريم).*$/gi, '')
+      .replace(/\s+(?:طلعلي|طلعوا|طلعي|طلع|اعمللي|اعمل|سويلي|سوي|سو|هاتلي|هات|أعطيني|اعطيني|أعطني|اعطني|جيبلي|جيب|وريني|ورني|اعرضلي|اعرض|أريد|اريد|ابغى|أبغى|ممكن|لو\s+سمحت|بالله).*$/gi, '')
+      .replace(/\s+(?:نقاط|النقاط|درجات|الدرجات|حضور|الـحضور|الحضور|غياب|الغياب|طلاب|الطلاب|الطلبة|طلبة|معلمي|معلمين|المعلمين|كشف|جدول|تقرير|احصائيات|إحصائيات|بيانات|سجل|شيت|اكسل|كم|ايش|وش|شو|ترتيب|مستوى|فقط|كله|كلهم|جميعهم|كل\s+الطلاب|جميع\s+الطلاب).*$/gi, '')
+      .trim();
+
+    const normCandidate = normalizeArabicText(candidate);
+    const cleanCandidate = cleanComplexBaseName(candidate);
+
+    // Stop words to avoid false positive on purely generic descriptions
+    const genericTerms = new Set([
+      'من المجمعات', 'اي مجمع', 'أي مجمع', 'معين', 'محدد', 'قراني', 'قرآني', 'القراني', 'القرآني',
+      'نموذجي', 'النموذجي', 'عام', 'العام', 'المنظومة', 'المنظومه', 'الحلقات', 'حلقات', 'طلاب', 'الطلاب'
+    ]);
+
+    if (cleanCandidate && cleanCandidate.length >= 2 && !genericTerms.has(normCandidate) && !genericTerms.has(cleanCandidate)) {
+      // 3.1 Check known complexes by token and partial match
+      for (const c of knownComplexes) {
+        const cleanC = cleanComplexBaseName(c.name);
+        const normC = normalizeArabicText(c.name);
+
+        if (cleanC === cleanCandidate || normC === normCandidate) return c;
+        if (cleanC.length >= 3 && cleanCandidate.includes(cleanC)) return c;
+        if (cleanCandidate.length >= 3 && cleanC.includes(cleanCandidate)) return c;
+
+        // Distinctive token match (e.g. "حربي" in "مجمع الحربي القرآني")
+        const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن']);
+        const candTokens = cleanCandidate.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+        const cTokens = cleanC.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+
+        const hasTokenOverlap = candTokens.some(tok => cTokens.some(ct => ct === tok || ct.includes(tok) || tok.includes(ct)));
+        if (hasTokenOverlap) {
+          return c;
+        }
+      }
+
+      // 3.2 If not found in known complexes, create a dynamically detected complex representing what the user asked for!
+      const formattedName = candidate.startsWith('مجمع') ? candidate : `مجمع ${candidate}`;
+      return {
+        id: `complex-${normCandidate.replace(/\s+/g, '-')}`,
+        name: formattedName,
+        isDynamic: true,
+      };
+    }
   }
+
+  // 4. Token search across known complexes if a distinctive token appears in query
+  for (const c of knownComplexes) {
+    const cleanC = cleanComplexBaseName(c.name);
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام']);
+    const tokens = cleanC.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    for (const tok of tokens) {
+      if (normQuery.includes(tok)) {
+        return c;
+      }
+    }
+  }
+
+  // 5. Generic complex inquiry: only when specifically requesting a generic complex without a specific name
+  if (/(?:مجمع\s+من\s+المجمعات|أي\s+مجمع|اي\s+مجمع|احصائيات\s+(?:المجمع|مجمع)|المجمع\s+القراني|المجمع\s+القرآني)/i.test(query)) {
+    if (knownComplexes.length > 0) return knownComplexes[0];
+  }
+
   return null;
 }
 
@@ -1390,6 +1615,7 @@ export function resolveStudentQuery(
   detectedLevel?: string;
   detectedHalaqah?: string;
   detectedComplex?: string;
+  matchedComplex?: any;
   detectedTeacher?: any;
   explicitCount?: number;
   detectedSort?: 'points_desc' | 'points_asc' | 'alpha' | 'attendance_desc' | 'absent_desc';
@@ -1424,7 +1650,7 @@ export function resolveStudentQuery(
   }
 
   // Find complex if mentioned
-  const matchedComplex = findMatchingComplex(message || '', contextData?.complexes || []);
+  const matchedComplex = findMatchingComplex(message || '', contextData?.complexes || [], studentsList, halaqahsList);
   const matchedComplexId: string | undefined = matchedComplex?.id;
   const matchedComplexName: string | undefined = matchedComplex?.name;
 
@@ -1470,7 +1696,10 @@ export function resolveStudentQuery(
       limit: explicitCount || (isAll ? 50 : undefined),
     },
     userContext,
-    contextData
+    {
+      ...contextData,
+      halaqahs: (contextData?.halaqahs && contextData.halaqahs.length > 0) ? contextData.halaqahs : halaqahsList
+    }
   );
 
   // Check brother intent ("يوسف واخوه", "فلان وأخوه", etc.)
@@ -1542,6 +1771,7 @@ export function resolveStudentQuery(
     detectedLevel: detectedLevel || undefined,
     detectedHalaqah: matchedHalaqahName,
     detectedComplex: matchedComplexName,
+    matchedComplex: matchedComplex || undefined,
     detectedTeacher: detectedTeacher || undefined,
     detectedSort,
   };

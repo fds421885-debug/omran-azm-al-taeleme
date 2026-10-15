@@ -18,6 +18,12 @@ import {
   resolveStudentQuery,
   detectTeacherInQuery,
   matchStudentLevel,
+  findMatchingComplex,
+  isStudentInComplex,
+  isTeacherInComplex,
+  isHalaqahInComplex,
+  cleanComplexBaseName,
+  isStudentInHalaqah,
   type StudentResolutionResult,
   type SearchUserContext
 } from "./src/lib/assistantStudentSearch.ts";
@@ -2017,6 +2023,24 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const detectedHalaqahName = matchedHalaqah ? matchedHalaqah.name : (activeHalaqah.name && activeHalaqah.id !== "all" ? activeHalaqah.name : "");
     const extractedName = hasRegisterIntent ? extractCleanStudentName(message, matchedHalaqah) : "";
 
+    // Universal Complex Detection across the entire query (e.g., مجمع الحربي, مجمع النور, etc.)
+    const matchedComplex = findMatchingComplex(message, complexesList, studentsList, halaqahsList);
+    const targetComplexObj = matchedComplex || (complex?.id && complex.id !== 'all' ? complex : null);
+    const effectiveComplexName = matchedComplex ? matchedComplex.name : complexName;
+
+    // Specific cohort of students strictly scoped to the requested complex
+    const complexStudentsCohort = targetComplexObj
+      ? studentsList.filter((s: any) => isStudentInComplex(s, targetComplexObj, halaqahsList))
+      : [];
+
+    const complexHalaqahsCohort = targetComplexObj
+      ? halaqahsList.filter((h: any) => isHalaqahInComplex(h, targetComplexObj, complexesList, studentsList, teachersList))
+      : [];
+
+    const complexTeachersCohort = targetComplexObj
+      ? teachersList.filter((t: any) => isTeacherInComplex(t, targetComplexObj, halaqahsList))
+      : [];
+
     // Specific cohort of students belonging to the requested halaqah (strictly isolated, never contaminated by cross-halaqahs)
     const halaqahStudentsCohort = matchedHalaqah
       ? studentsList.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah))
@@ -2395,9 +2419,21 @@ app.post("/api/gemini/assistant", async (req, res) => {
       {
         complexes: complexesList,
         teachers: teachersList,
-        attendanceRecords: attendanceList
+        attendanceRecords: attendanceList,
+        halaqahs: halaqahsList
       }
     );
+
+    const effectiveMatchedComplex = matchedComplex || studentResolution.matchedComplex || (studentResolution.detectedComplex ? { id: `complex-${normalizeArabicText(studentResolution.detectedComplex).replace(/\s+/g, '-')}`, name: studentResolution.detectedComplex } : null);
+    const finalComplexStudentsCohort = effectiveMatchedComplex
+      ? studentsList.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList))
+      : complexStudentsCohort;
+    const finalComplexHalaqahsCohort = effectiveMatchedComplex
+      ? halaqahsList.filter((h: any) => isHalaqahInComplex(h, effectiveMatchedComplex, complexesList, studentsList, teachersList))
+      : complexHalaqahsCohort;
+    const finalComplexTeachersCohort = effectiveMatchedComplex
+      ? teachersList.filter((t: any) => isTeacherInComplex(t, effectiveMatchedComplex, halaqahsList))
+      : complexTeachersCohort;
 
     // 2.7.4 Explicit Recitation / Memorization Table Intent (كشف التسميع، ماذا سمعوا، لماذا سمعوا، وش سمعوا، إنجاز الحفظ)
     const isExplicitRecitationInquiry = Boolean(
@@ -3744,6 +3780,18 @@ ${excusedListStr}
           return `${idx + 1}. ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
         }).join("\n") +
         `\n⚠️ تنبيه صارم وحاسم للنموذج: التزم بهؤلاء الطلاب الـ (${studentResolution.matchedStudents.length}) المذكورين أعلاه حصراً! لا تضف أي طالب آخر من خارجهم.`;
+    } else if (effectiveMatchedComplex) {
+      if (finalComplexStudentsCohort.length > 0) {
+        studentsSummary = `• طلاب "${effectiveMatchedComplex.name}" حصراً (${finalComplexStudentsCohort.length} طلاب):\n` +
+          finalComplexStudentsCohort.slice(0, 30).map((s: any, idx: number) => {
+            const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+            return `${idx + 1}. ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+          }).join("\n") +
+          `\n⚠️ تنبيه صارم وحاسم للنموذج: المستخدم سأل واستفسر حصراً عن "${effectiveMatchedComplex.name}"! التزم بهؤلاء الطلاب الـ (${finalComplexStudentsCohort.length}) المذكورين أعلاه التابعين لهذا المجمع حصراً! إياك أن تذكر أي طالب من مجمع آخر أو من المنظومة العامة مطلقاً، واجعل كل إجابتك وأرقامك ونقاطك وتقاريرك عن "${effectiveMatchedComplex.name}".`;
+      } else {
+        studentsSummary = `• لا يوجد طلاب مسجلون حالياً في "${effectiveMatchedComplex.name}".
+⚠️ تنبيه صارم وحاسم للنموذج: مجمع "${effectiveMatchedComplex.name}" لا يحتوي على أي طالب مسجل حالياً في المنظومة. وضح للمستخدم بأدب ووضوح تام أنه لا يوجد طلاب مسجلون في "${effectiveMatchedComplex.name}" حتى الآن، وإياك إطلاقاً أن تذكر طلاباً من مجمعات أخرى أو تعرض نقاط طلاب من خارج هذا المجمع!`;
+      }
     } else {
       const cohortPool = isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
         ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
@@ -3754,13 +3802,16 @@ ${excusedListStr}
       }).join("\n");
     }
 
-    const halaqahsSummary = halaqahsList.map((h: any) =>
-      `• ${h.name} (المعلم: ${h.teacherName || "غير محدد"})`
+    const halaqahsSummary = (effectiveMatchedComplex && finalComplexHalaqahsCohort.length > 0
+      ? finalComplexHalaqahsCohort
+      : (effectiveMatchedComplex ? [] : halaqahsList)
+    ).map((h: any) =>
+      `• ${h.name} (المعلم: ${h.teacherName || h.primaryTeacherName || "غير محدد"})`
     ).join("\n");
 
     const systemInstruction = `أنت "المساعد القرآني الذكي" الحقيقي لمنصة عُمْرَان لإدارة المجمعات والحلقات القرآنية.
 أنت تتحدث مع: ${rawName} (صفته: ${role === "developer" ? "المبرمج والمشرف العام" : role === "supervisor" ? "مشرف المجمع" : "معلم الحلقة"}).
-المجمع الحالي: "${complexName}"، والحلقة الحالية: "${halaqahName}".
+المجمع الحالي أو المستفسر عنه: "${effectiveComplexName}"، والحلقة الحالية: "${halaqahName}".
 
 بيانات المنظومة الحية في هذه اللحظة:
 - إجمالي عدد الطلاب: ${metrics.totalStudents} طالب.
@@ -4663,42 +4714,64 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         }
       };
     } else if (hasAttendanceTableIntent) {
-      const targetDateAttRecords = attendanceList.filter((a: any) => a.date === targetRecitationDate);
+      const attCohort = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
+
+      const attCohortIds = new Set(attCohort.map((s: any) => s.id));
+      const targetDateAttRecords = attendanceList.filter((a: any) => a.date === targetRecitationDate && attCohortIds.has(a.studentId));
       const hasTargetDateRecords = targetDateAttRecords.length > 0;
       const isPastDate = targetRecitationDateLabel !== "اليوم";
 
       const effPresent = isPastDate
-        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "حاضر").length : effPresentCount)
-        : metrics.presentCount;
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "حاضر").length : attCohort.filter((s: any) => datePresentStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.presentStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'حاضر')).length : metrics.presentCount);
       const effAbsent = isPastDate
-        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "غائب").length : effAbsentCount)
-        : metrics.absentCount;
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "غائب").length : attCohort.filter((s: any) => dateAbsentStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.absentStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'غائب')).length : metrics.absentCount);
       const effExcused = isPastDate
-        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "معتذر").length : effExcusedCount)
-        : metrics.excusedCount;
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "معتذر").length : attCohort.filter((s: any) => dateExcusedStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.excusedStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'معتذر')).length : metrics.excusedCount);
       const effLate = isPastDate
-        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "متأخر").length : effLateCount)
-        : metrics.lateCount;
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "متأخر").length : attCohort.filter((s: any) => dateLateStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'متأخر')).length : metrics.lateCount);
+
+      const tableTitleAttendance = isPastDate
+        ? (matchedHalaqah
+            ? `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+            : (effectiveMatchedComplex
+                ? `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) - ${effectiveMatchedComplex.name}`
+                : `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) - ${effectiveComplexName}`))
+        : (matchedHalaqah
+            ? `كشف الحضور والغياب اليومي لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+            : (effectiveMatchedComplex
+                ? `كشف الحضور والغياب اليومي - ${effectiveMatchedComplex.name}`
+                : `كشف الحضور والغياب اليومي - ${effectiveComplexName}`));
 
       action = {
         type: "SHOW_DATA_TABLE",
         tableType: "attendance",
-        title: isPastDate
-          ? `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) - ${complexName}`
-          : `كشف الحضور والغياب اليومي - ${complexName}`,
+        title: tableTitleAttendance,
         data: {
-          complexName,
-          halaqahName,
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName || halaqahName,
           date: targetRecitationDate,
           dateLabel: targetRecitationDateLabel,
-          totalStudents: metrics.totalStudents || studentsList.length,
+          totalStudents: attCohort.length,
           presentCount: effPresent,
           absentCount: effAbsent,
           excusedCount: effExcused,
           lateCount: effLate,
-          students: studentsList.map((s: any) => {
+          students: attCohort.map((s: any) => {
             let status = "حاضر";
-            if (isPastDate && hasTargetDateRecords) {
+            const todayRec = attendanceList.find((a: any) => a.studentId === s.id && a.date === targetRecitationDate);
+            if (todayRec) {
+              status = todayRec.status;
+            } else if (isPastDate && hasTargetDateRecords) {
               const rec = targetDateAttRecords.find((a: any) => a.studentId === s.id);
               status = rec ? rec.status : "حاضر";
             } else if (isPastDate) {
@@ -4729,18 +4802,22 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
             normalizeArabicText(t.halaqahName || '').includes(normalizeArabicText(matchedHalaqah.name)) ||
             normalizeArabicText(matchedHalaqah.name).includes(normalizeArabicText(t.halaqahName || ''))
           )
-        : teachersList;
+        : (effectiveMatchedComplex
+            ? finalComplexTeachersCohort
+            : teachersList);
 
-      const effectiveTeachers = teachersPool.length > 0 ? teachersPool : teachersList;
+      const effectiveTeachers = teachersPool;
 
       action = {
         type: "SHOW_DATA_TABLE",
         tableType: "teachers",
         title: matchedHalaqah
-          ? `كشف معلمي ومحفظي حلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف معلمي ومحفظي المنظومة - ${complexName}`,
+          ? `كشف معلمي ومحفظي حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف معلمي ومحفظي ${effectiveMatchedComplex.name}`
+              : `كشف معلمي ومحفظي المنظومة - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalTeachers: effectiveTeachers.length,
           rows: effectiveTeachers.map((t: any) => ({
@@ -4763,21 +4840,25 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
             phone: t.phone || '-',
             teacherCode: t.teacherCode || '-',
           })),
-        }
+        },
       };
     } else if (hasMemorizationTableIntent) {
       const memStudentsPool = matchedHalaqah && halaqahStudentsCohort.length > 0
         ? halaqahStudentsCohort
-        : studentsList;
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : studentsList);
 
       action = {
         type: "SHOW_DATA_TABLE",
         tableType: "memorization",
         title: matchedHalaqah
-          ? `كشف مسار ومستويات حفظ طلاب حلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف مسار ومستويات حفظ الطلاب - ${complexName}`,
+          ? `كشف مسار ومستويات حفظ طلاب حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف مسار ومستويات حفظ طلاب ${effectiveMatchedComplex.name}`
+              : `كشف مسار ومستويات حفظ الطلاب - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalStudents: memStudentsPool.length,
           students: memStudentsPool.map((s: any) => ({
@@ -4794,7 +4875,11 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
     } else if (hasTopPointsIntent) {
       const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
         ? halaqahStudentsCohort
-        : studentsList;
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
 
       const sortedDesc = [...pointsBasePool].sort(
         (a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0)
@@ -4805,10 +4890,12 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         type: "SHOW_DATA_TABLE",
         tableType: "top_points",
         title: matchedHalaqah
-          ? `كشف الطلاب الأوائل في النقاط لحلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف الطلاب الأوائل في النقاط (الـ ${top5.length} الأوائل) - ${complexName}`,
+          ? `كشف الطلاب الأوائل في النقاط لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف الطلاب الأوائل في النقاط - ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب الأوائل في النقاط (الـ ${top5.length} الأوائل) - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalStudents: top5.length,
           students: top5.map((s: any, idx: number) => ({
@@ -4826,7 +4913,11 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
     } else if (hasLowPointsIntent) {
       const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
         ? halaqahStudentsCohort
-        : studentsList;
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
 
       const sortedAsc = [...pointsBasePool].sort(
         (a: any, b: any) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0)
@@ -4837,10 +4928,12 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         type: "SHOW_DATA_TABLE",
         tableType: "low_points",
         title: matchedHalaqah
-          ? `كشف الطلاب الأقل نقاطاً بحاجة لمتابعة لحلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف الطلاب الأكثر حاجة للمتابعة والدعم (الأقل نقاطاً) - ${complexName}`,
+          ? `كشف الطلاب الأقل نقاطاً بحاجة لمتابعة لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف الطلاب الأكثر حاجة للمتابعة والدعم (الأقل نقاطاً) - ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب الأكثر حاجة للمتابعة والدعم (الأقل نقاطاً) - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalStudents: low5.length,
           students: low5.map((s: any, idx: number) => ({
@@ -4856,10 +4949,17 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         },
       };
     } else if (hasViolationsTableIntent) {
+      const targetStudentsForViolations = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex ? finalComplexStudentsCohort : studentsList);
+
+      const targetStudentIds = new Set(targetStudentsForViolations.map((s: any) => s.id));
+      const filteredViolations = violationsList.filter((v: any) => targetStudentIds.has(v.studentId) || targetStudentsForViolations.some((s: any) => s.name === v.studentName));
+
       const violationRows =
-        violationsList.length > 0
-          ? violationsList.map((v: any, idx: number) => {
-              const st = studentsList.find(
+        filteredViolations.length > 0
+          ? filteredViolations.map((v: any, idx: number) => {
+              const st = targetStudentsForViolations.find(
                 (s: any) => s.id === v.studentId || s.name === v.studentName
               );
               return {
@@ -4873,7 +4973,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
                 notes: v.notes || v.description || "متابعة سلوكية",
               };
             })
-          : studentsList.slice(0, 5).map((s: any, idx: number) => ({
+          : targetStudentsForViolations.slice(0, 5).map((s: any, idx: number) => ({
               id: `v_clean_${idx}`,
               name: s.name,
               halaqahName: s.halaqahName || "الحلقة",
@@ -4888,10 +4988,12 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         type: "SHOW_DATA_TABLE",
         tableType: "violations",
         title: matchedHalaqah
-          ? `كشف الطلاب ذوي التنبيهات لحلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف الطلاب ذوي التنبيهات والملاحظات السلوكية - ${complexName}`,
+          ? `كشف الطلاب ذوي التنبيهات لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف تنبيهات وملاحظات طلاب ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب ذوي التنبيهات والملاحظات السلوكية - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalStudents: violationRows.length,
           students: violationRows,
@@ -4900,7 +5002,11 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
     } else if (hasPointsTableIntent) {
       const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
         ? halaqahStudentsCohort
-        : studentsList;
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
 
       let sortedAll = [...pointsBasePool];
       if (isSortPointsAsc) {
@@ -4915,10 +5021,12 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         type: "SHOW_DATA_TABLE",
         tableType: "points",
         title: matchedHalaqah
-          ? `كشف ترتيب نقاط طلاب حلقة ${matchedHalaqah.name} - ${complexName}`
-          : `كشف ترتيب نقاط كافة طلاب المنظومة - ${complexName}`,
+          ? `كشف ترتيب نقاط طلاب حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف ترتيب نقاط طلاب ${effectiveMatchedComplex.name}`
+              : `كشف ترتيب نقاط كافة طلاب المنظومة - ${effectiveComplexName}`),
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           totalStudents: sortedAll.length,
           students: sortedAll.map((s: any, idx: number) => ({
@@ -4941,6 +5049,13 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
           genBasePool = inH.length > 0 ? inH : halaqahStudentsCohort;
         } else {
           genBasePool = halaqahStudentsCohort;
+        }
+      } else if (effectiveMatchedComplex) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inC = studentResolution.matchedStudents.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList));
+          genBasePool = inC.length > 0 ? inC : finalComplexStudentsCohort;
+        } else {
+          genBasePool = finalComplexStudentsCohort;
         }
       } else if (studentResolution.matchedStudents.length > 0) {
         genBasePool = studentResolution.matchedStudents;
@@ -4970,22 +5085,24 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         sortedGen = sortedGen.slice(0, effectiveCountLimit);
       }
 
-      let tableTitle = `كشف وبيان طلاب المنظومة - ${complexName}`;
+      let tableTitle = `كشف وبيان طلاب المنظومة - ${effectiveComplexName}`;
       if (effectiveCountLimit && effectiveCountLimit > 0) {
         tableTitle = matchedHalaqah
-          ? `كشف (${sortedGen.length}) طلاب من حلقة ${matchedHalaqah.name} - ${complexName}`
-          : (studentResolution.detectedTeacher
-              ? `كشف (${sortedGen.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`
-              : `كشف (${sortedGen.length}) طلاب بأسمائهم ومستواهم ومسار حفظهم - ${complexName}`);
+          ? `كشف (${sortedGen.length}) طلاب من حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف (${sortedGen.length}) طلاب من ${effectiveMatchedComplex.name}`
+              : (studentResolution.detectedTeacher
+                  ? `كشف (${sortedGen.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name} - ${effectiveComplexName}`
+                  : `كشف (${sortedGen.length}) طلاب بأسمائهم ومستواهم ومسار حفظهم - ${effectiveComplexName}`));
       } else if (studentResolution.detectedTeacher) {
-        tableTitle = `كشف طلاب وإحصائيات فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`;
+        tableTitle = `كشف طلاب وإحصائيات فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${effectiveComplexName}`;
       } else if (matchedHalaqah) {
-        tableTitle = `كشف طلاب وإحصائيات حلقة ${matchedHalaqah.name} - ${complexName}`;
-      } else if (studentResolution.detectedComplex || normUserMessage.includes("مجمع")) {
-        tableTitle = `كشف طلاب وإحصائيات مجمع (${complexName})`;
+        tableTitle = `كشف طلاب وإحصائيات حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`;
+      } else if (effectiveMatchedComplex) {
+        tableTitle = `كشف طلاب وإحصائيات ${effectiveMatchedComplex.name}`;
       } else if (studentResolution.detectedLevel) {
-        tableTitle = `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${complexName}`;
-      } else if (hasSpecificMatched && sortedGen.length <= 4) {
+        tableTitle = `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${effectiveComplexName}`;
+      } else if (studentResolution.matchedStudents && studentResolution.matchedStudents.length > 0 && sortedGen.length <= 4) {
         tableTitle = `كشف بيانات ومسار الطلاب (${sortedGen.map(s => s.name).join(" - ")})`;
       }
 
@@ -4994,7 +5111,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         tableType: "smart_custom_table",
         title: tableTitle,
         data: {
-          complexName,
+          complexName: effectiveComplexName,
           halaqahName: detectedHalaqahName,
           detectedLevel: studentResolution.detectedLevel,
           totalStudents: sortedGen.length,
@@ -5145,7 +5262,9 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
 
       const chartBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
         ? halaqahStudentsCohort
-        : studentsList;
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : studentsList);
 
       const chartCohortRaw = studentResolution.matchedStudents.length > 0
         ? studentResolution.matchedStudents
