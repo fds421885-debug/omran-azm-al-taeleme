@@ -872,7 +872,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         },
         activeHalaqah,
         dataContext: {
-          complexes: complexes.map(c => ({ id: c.id, name: c.name })),
           violations: violations.map(v => ({
             id: v.id,
             studentId: v.studentId,

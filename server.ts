@@ -1084,25 +1084,6 @@ function cleanHalaqahBaseName(name: string): string {
     .trim();
 }
 
-// Strict helper: Check if a student belongs to a specific halaqah (never matches cross-halaqahs by generic tokens!)
-function isStudentInHalaqah(student: any, halaqah: any): boolean {
-  if (!student || !halaqah) return false;
-  // 1. Direct ID match
-  if (halaqah.id && student.halaqahId && student.halaqahId === halaqah.id) return true;
-
-  const cleanTarget = cleanHalaqahBaseName(halaqah.name);
-  const cleanStudentH = cleanHalaqahBaseName(student.halaqahName);
-  if (!cleanTarget || !cleanStudentH) return false;
-
-  if (cleanTarget === cleanStudentH) return true;
-  if (cleanTarget.length >= 4 && cleanStudentH.includes(cleanTarget)) return true;
-  if (cleanStudentH.length >= 4 && cleanTarget.includes(cleanStudentH)) return true;
-
-  const stopWords = new Set(["حلقه", "الحلقه", "احلققه", "احلقه", "مجموعه", "المجموعه", "بن", "ابن", "عبد", "الله", "في", "من", "مع", "عن", "طلاب", "طالب"]);
-  const tokens = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
-  return tokens.some(tok => cleanStudentH.includes(tok));
-}
-
 // Strict helper: Check if a teacher belongs to a specific halaqah
 function isTeacherInHalaqah(teacher: any, halaqah: any): boolean {
   if (!teacher || !halaqah) return false;
@@ -2497,14 +2478,25 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !isExplicitRecitationInquiry &&
       !hasTeachersTableIntent &&
       !hasAnyDeleteIntent &&
-      (/(?:كشف|جدول|قائمة|ترتيب|بيان)\s+(?:ل)?(?:النقاط|نقاط|الدرجات|المتصدرين|الأوائل)/i.test(message) ||
-      lowerMsg.includes("كشف للنقاط") ||
-      lowerMsg.includes("كشف النقاط") ||
-      lowerMsg.includes("جدول النقاط") ||
-      lowerMsg.includes("ترتيب الطلاب بالنقاط") ||
-      lowerMsg.includes("ترتيب النقاط") ||
-      normUserMessage.includes("كشف نقاط") ||
-      normUserMessage.includes("جدول نقاط"));
+      !isStudentPointsInquiry &&
+      (
+        /(?:كشف|جدول|قائمة|ترتيب|بيان|عرض|سجل|أعطني|اعطني|هات|طلع|وريني|ورني|كم|ايش|وش|شو|احصائيات|إحصائيات)?\s*(?:لـ|ل|عن|في)?\s*(?:النقاط|نقاط|الدرجات|درجات|المتصدرين|متصدرين|الأوائل|الاوائل|الصدارة|لوحة\s+الصدارة|لوحة\s+الشرف)/i.test(message) ||
+        lowerMsg.includes("كشف للنقاط") ||
+        lowerMsg.includes("كشف النقاط") ||
+        lowerMsg.includes("جدول النقاط") ||
+        lowerMsg.includes("ترتيب الطلاب بالنقاط") ||
+        lowerMsg.includes("ترتيب النقاط") ||
+        normUserMessage.includes("كشف نقاط") ||
+        normUserMessage.includes("جدول نقاط") ||
+        normUserMessage.includes("نقاط") ||
+        normUserMessage.includes("النقاط") ||
+        normUserMessage.includes("درجات") ||
+        normUserMessage.includes("الدرجات") ||
+        normUserMessage.includes("لوحة الصدارة") ||
+        normUserMessage.includes("لوحة الشرف") ||
+        normUserMessage.includes("المتصدرين") ||
+        normUserMessage.includes("المتفوقين")
+      );
 
     const hasExplicitTableKeyword =
       /(?:جدول|كشف|بيان|قائمة|سجل|تقرير|شيت|اكسل)/i.test(message) ||
@@ -2940,6 +2932,28 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("تقرير لأربع");
 
 
+    const hasExplicitRecitationKeywords = Boolean(
+      isExplicitRecitationInquiry ||
+      normUserMessage.includes("تسميع") ||
+      normUserMessage.includes("تسميعات") ||
+      normUserMessage.includes("سمعوا") ||
+      normUserMessage.includes("سمعو") ||
+      normUserMessage.includes("سمع") ||
+      normUserMessage.includes("ماذا سمع") ||
+      normUserMessage.includes("وش سمع") ||
+      normUserMessage.includes("ايش سمع") ||
+      normUserMessage.includes("شو سمع") ||
+      normUserMessage.includes("ما حفظوا") ||
+      normUserMessage.includes("ما حفظو") ||
+      normUserMessage.includes("ما انجزوا") ||
+      normUserMessage.includes("كشف التسميع") ||
+      normUserMessage.includes("سجل التسميع") ||
+      normUserMessage.includes("جدول التسميع") ||
+      normUserMessage.includes("كشف الحفظ") ||
+      normUserMessage.includes("اوجه") ||
+      normUserMessage.includes("أوجه")
+    );
+
     // Multi-Student Recitation / Report / ID Cards Inquiry Intent (must NOT hijack teachers, attendance, points, charts, or navigation!)
     const hasMultiStudentRecitationIntent = Boolean(
       !deleteItemTarget &&
@@ -2953,9 +2967,9 @@ app.post("/api/gemini/assistant", async (req, res) => {
       !hasNavigateIntent &&
       !studentResolution.isSingleStudentQuery &&
       (
-        (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 1) ||
-        isExplicitRecitationInquiry ||
-        (hasExplicitMultiCount && (normUserMessage.includes("تقرير") || normUserMessage.includes("كشف") || normUserMessage.includes("سجل"))) ||
+        hasExplicitRecitationKeywords ||
+        ((studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 1) && (normUserMessage.includes("تقرير") || normUserMessage.includes("تسميع") || normUserMessage.includes("سمع") || normUserMessage.includes("حفظ"))) ||
+        (hasExplicitMultiCount && (normUserMessage.includes("تقرير") || normUserMessage.includes("كشف") || normUserMessage.includes("سجل")) && (normUserMessage.includes("تسميع") || normUserMessage.includes("حفظ") || normUserMessage.includes("سمع"))) ||
         (hasReferenceToPreviousStudents && (normUserMessage.includes("سمع") || normUserMessage.includes("تسميع") || normUserMessage.includes("تقرير")))
       )
     );
