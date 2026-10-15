@@ -109,6 +109,11 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     .replace(/^الشيخ\s*\/\s*/, '')
     .trim();
 
+  // If email was provided as username (e.g. azmaltaeleme@gmail.com)
+  if (cleanName.includes('@')) {
+    cleanName = cleanName.split('@')[0];
+  }
+
   let formattedGreetingName = '';
   if (!cleanName || cleanName.toLowerCase() === 'admin' || cleanName.toLowerCase() === 'developer') {
     formattedGreetingName = isDeveloper ? 'المشرف والمطور العام' : isSupervisor ? 'مشرف المجمع القرآني' : 'معلم ومحفظ الحلقة';
@@ -171,6 +176,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   }}
                 >
                   <span>{formattedGreetingName}</span>
+                  <span className="text-xl">👋</span>
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-slate-200">حفظك الله ورعاك وبارك في جهودك 🌿</span>
               </h2>

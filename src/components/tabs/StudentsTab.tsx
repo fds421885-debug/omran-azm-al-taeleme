@@ -639,15 +639,30 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#064e3b]/60 border border-[#065f46] p-6 rounded-[32px] shadow-xl backdrop-blur-md">
+      <div
+        className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-[28px] border-2 border-b-4 shadow-xl backdrop-blur-md transition-all"
+        style={{
+          backgroundColor: secondaryBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
         <div>
-          <h2 className="text-xl font-bold font-heading text-white flex items-center gap-2">
+          <h2 className="text-xl font-black font-heading text-white flex items-center gap-2">
             <span>إدارة الطلاب والتسجيل الذكي</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-sans border border-[#fbbf24]/40 font-bold">
+            <span
+              className="text-xs px-3 py-1 rounded-full font-black border-2 border-b-2 shadow-xs"
+              style={{
+                backgroundColor: `${accentCol}20`,
+                borderColor: `${accentCol}60`,
+                borderBottomColor: accentShadow,
+                color: accentCol
+              }}
+            >
               {students.length} طالب
             </span>
           </h2>
-          <p className="text-xs text-[#86efac]/90 mt-1">
+          <p className="text-xs text-slate-300 font-bold mt-1">
             تسجيل الطلاب وتحديد مستوياتهم ومواضع حفظهم ومتابعة مقرراتهم المنهجية
           </p>
         </div>
@@ -657,11 +672,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           {isDeveloper && (
             <button
               onClick={onToggleRegistration}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+              className={`px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 border-2 border-b-4 active:translate-y-0.5 transition-all cursor-pointer shadow-sm ${
                 settings.allowStudentRegistration
-                  ? 'bg-[#fbbf24]/15 border-[#fbbf24]/40 text-[#fbbf24] hover:bg-[#fbbf24]/25'
-                  : 'bg-red-500/15 border-red-500/40 text-red-300 hover:bg-red-500/25'
+                  ? 'bg-amber-400/20 border-amber-400/60 text-amber-300 hover:bg-amber-400/30'
+                  : 'bg-red-500/20 border-red-500/60 text-red-300 hover:bg-red-500/30'
               }`}
+              style={{
+                borderBottomColor: settings.allowStudentRegistration ? accentShadow : '#991b1b'
+              }}
               title={
                 settings.allowStudentRegistration
                   ? 'التسجيل الذاتي مفتوح للطلاب (انقر للقفل)'
@@ -670,7 +688,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             >
               {settings.allowStudentRegistration ? (
                 <>
-                  <Unlock className="w-4 h-4 text-[#fbbf24]" />
+                  <Unlock className="w-4 h-4 text-amber-300" />
                   <span>إنشاء الحسابات: مفتوح</span>
                 </>
               ) : (
@@ -685,17 +703,29 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           {/* Bulk Add Students Button */}
           <button
             onClick={handleOpenBulkAddModal}
-            className="px-4 py-2.5 rounded-2xl bg-[#064e3b] hover:bg-[#022c22] text-[#fbbf24] border border-[#fbbf24]/50 hover:border-[#fbbf24] text-xs sm:text-sm font-black shadow-md flex items-center gap-2 transition-all cursor-pointer"
+            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-md flex items-center gap-2 transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol,
+              color: accentCol
+            }}
             title="إضافة دفعة من الطلاب دفعة واحدة بكتابة أسمائهم سطراً بسطر"
           >
-            <Users className="w-4 h-4 text-[#fbbf24]" />
+            <Users className="w-4 h-4" style={{ color: accentCol }} />
             <span>إضافة دفعة طلاب</span>
           </button>
 
           {/* Add Single Student Button */}
           <button
             onClick={openAddModal}
-            className="px-5 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs sm:text-sm font-black shadow-[0_0_20px_rgba(251,191,36,0.3)] flex items-center gap-2 transition-all cursor-pointer"
+            className="px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-xl flex items-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5 hover:brightness-110"
+            style={{
+              backgroundColor: accentCol,
+              color: primaryBg,
+              borderColor: accentCol,
+              borderBottomColor: accentShadow
+            }}
           >
             <UserPlus className="w-4 h-4" />
             <span>إضافة طالب جديد</span>
@@ -711,23 +741,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="بحث بالاسم أو السورة أو رقم الهاتف..."
-            className="w-full bg-[#064e3b]/50 border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-4 pr-11 text-sm text-[#f0f9f6] placeholder-[#86efac]/40 outline-none"
+            className="w-full border-2 rounded-2xl py-2.5 px-4 pr-11 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold shadow-inner"
+            style={{
+              backgroundColor: primaryBg,
+              borderColor: borderCol
+            }}
             dir="rtl"
           />
-          <Search className="w-4 h-4 text-[#86efac]/60 absolute right-4 top-3.5" />
+          <Search className="w-4 h-4 text-slate-400 absolute right-4 top-3.5" />
         </div>
 
-        <div className="flex items-center gap-2 bg-[#064e3b]/50 border border-[#065f46] p-1.5 rounded-2xl flex-wrap">
-          <span className="text-xs text-[#86efac] px-2 font-bold">المستوى:</span>
+        <div
+          className="flex items-center gap-2 p-1.5 rounded-2xl border-2 border-b-4 flex-wrap shadow-sm"
+          style={{
+            backgroundColor: secondaryBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <span className="text-xs text-slate-300 px-2 font-bold">المستوى:</span>
           {(['all', 'قوي', 'متوسط', 'ضعيف'] as const).map(lvl => (
             <button
               key={lvl}
               onClick={() => setLevelFilter(lvl)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 active:translate-y-0.5 ${
                 levelFilter === lvl
-                  ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                  : 'text-[#86efac]/80 hover:text-white'
+                  ? 'border-b-4 shadow-md'
+                  : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
               }`}
+              style={levelFilter === lvl ? {
+                backgroundColor: accentCol,
+                color: primaryBg,
+                borderColor: accentCol,
+                borderBottomColor: accentShadow
+              } : undefined}
             >
               {lvl === 'all' ? 'الكل' : lvl}
             </button>
@@ -735,37 +782,62 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         </div>
 
         {/* Assignment Status Filter */}
-        <div className="flex items-center gap-2 bg-[#064e3b]/50 border border-[#065f46] p-1.5 rounded-2xl flex-wrap">
-          <span className="text-xs text-[#86efac] px-2 font-bold">الحلقة:</span>
+        <div
+          className="flex items-center gap-2 p-1.5 rounded-2xl border-2 border-b-4 flex-wrap shadow-sm"
+          style={{
+            backgroundColor: secondaryBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <span className="text-xs text-slate-300 px-2 font-bold">الحلقة:</span>
           <button
             onClick={() => setAssignmentFilter('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 active:translate-y-0.5 ${
               assignmentFilter === 'all'
-                ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                : 'text-[#86efac]/80 hover:text-white'
+                ? 'border-b-4 shadow-md'
+                : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
             }`}
+            style={assignmentFilter === 'all' ? {
+              backgroundColor: accentCol,
+              color: primaryBg,
+              borderColor: accentCol,
+              borderBottomColor: accentShadow
+            } : undefined}
           >
             الكل ({students.length})
           </button>
           <button
             onClick={() => setAssignmentFilter('assigned')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 active:translate-y-0.5 ${
               assignmentFilter === 'assigned'
-                ? 'bg-emerald-500 text-white font-black shadow-sm'
-                : 'text-[#86efac]/80 hover:text-white'
+                ? 'border-b-4 shadow-md'
+                : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
             }`}
+            style={assignmentFilter === 'assigned' ? {
+              backgroundColor: '#58cc02',
+              color: '#ffffff',
+              borderColor: '#58cc02',
+              borderBottomColor: '#46a302'
+            } : undefined}
           >
             المرفقين ({assignedStudentsCount})
           </button>
           <button
             onClick={() => setAssignmentFilter('unassigned')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 active:translate-y-0.5 ${
               assignmentFilter === 'unassigned'
-                ? 'bg-amber-500 text-[#022c22] font-black shadow-sm'
+                ? 'border-b-4 shadow-md'
                 : unassignedStudentsCount > 0
-                ? 'text-amber-300 bg-amber-500/20 hover:bg-amber-500/30'
-                : 'text-[#86efac]/80 hover:text-white'
+                ? 'text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/40'
+                : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
             }`}
+            style={assignmentFilter === 'unassigned' ? {
+              backgroundColor: '#ff9600',
+              color: '#ffffff',
+              borderColor: '#ff9600',
+              borderBottomColor: '#e68300'
+            } : undefined}
           >
             <span>غير المرفقين ({unassignedStudentsCount})</span>
             {unassignedStudentsCount > 0 && <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
@@ -775,7 +847,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
       {/* Unassigned Students Alert Banner for Supervisor */}
       {unassignedStudentsCount > 0 && isSupervisor && assignmentFilter !== 'unassigned' && (
-        <div className="bg-gradient-to-r from-amber-500/20 via-amber-600/15 to-[#064e3b] border border-amber-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+        <div
+          className="border-2 border-b-4 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg"
+          style={{
+            backgroundColor: `${secondaryBg}`,
+            borderColor: '#f59e0b',
+            borderBottomColor: '#b45309'
+          }}
+        >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0">
               <AlertCircle className="w-5 h-5" />
@@ -784,14 +863,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               <h4 className="text-sm font-bold text-amber-200">
                 تنبيه: يوجد {unassignedStudentsCount} طالب غير مرفق في أي حلقة قرآنية
               </h4>
-              <p className="text-xs text-[#86efac]/90 mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5">
                 الطلاب غير المرفقين يظهر لهم في بوابتهم (لم يتم إرفاقك بعد)، ولن يظهروا للمعلمين في الحلقات إلا عند إرفاقهم بحلقة محددة.
               </p>
             </div>
           </div>
           <button
             onClick={() => setAssignmentFilter('unassigned')}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#022c22] font-black text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-md cursor-pointer transition-all"
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 font-black text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-md cursor-pointer transition-all border-2 border-b-4 border-amber-600 active:translate-y-0.5"
           >
             <span>عرض وتعيين غير المرفقين ({unassignedStudentsCount})</span>
           </button>
@@ -799,21 +878,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       )}
 
       {/* Bulk Selection and Batch Transfer Bar */}
-      <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+      <div
+        className="border-2 border-b-4 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg"
+        style={{
+          backgroundColor: secondaryBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"
             onClick={selectedStudentIds.length === filteredStudents.length && filteredStudents.length > 0 ? handleDeselectAll : handleSelectAllFiltered}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#064e3b] text-[#86efac] hover:text-white border border-[#065f46] flex items-center gap-2 cursor-pointer transition-colors"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold border-2 border-b-4 flex items-center gap-2 cursor-pointer transition-all active:translate-y-0.5"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol,
+              color: '#ffffff'
+            }}
           >
             {selectedStudentIds.length === filteredStudents.length && filteredStudents.length > 0 ? (
               <>
-                <CheckSquare className="w-4 h-4 text-[#fbbf24]" />
+                <CheckSquare className="w-4 h-4" style={{ color: accentCol }} />
                 <span>إلغاء تحديد الكل ({selectedStudentIds.length})</span>
               </>
             ) : (
               <>
-                <Square className="w-4 h-4" />
+                <Square className="w-4 h-4 text-slate-400" />
                 <span>تحديد جميع المعروضين ({filteredStudents.length})</span>
               </>
             )}
@@ -831,11 +923,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
           <div className="text-xs">
             {selectedStudentIds.length > 0 ? (
-              <span className="px-3 py-1 rounded-xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] font-bold">
+              <span
+                className="px-3 py-1 rounded-xl border-2 border-b-2 font-bold"
+                style={{
+                  backgroundColor: `${accentCol}20`,
+                  borderColor: `${accentCol}50`,
+                  color: accentCol
+                }}
+              >
                 تم تحديد <strong>{selectedStudentIds.length}</strong> طالب (إجراءات مجمّعة)
               </span>
             ) : (
-              <span className="text-[#86efac]/70 text-[11px] hidden sm:inline">
+              <span className="text-slate-300 text-[11px] hidden sm:inline">
                 حدد الطلاب بالضغط على زر المربع في بطاقة أي طالب لنقلهم أو حذفهم دفعة واحدة
               </span>
             )}
@@ -849,7 +948,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             type="button"
             disabled={selectedStudentIds.length === 0}
             onClick={() => setIsBulkDeleteModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl text-xs font-black bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:hover:bg-red-600 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-red-950/40 shrink-0"
+            className="px-4 py-2.5 rounded-xl text-xs font-black bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:hover:bg-red-600 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shrink-0 border-2 border-b-4 border-red-800 active:translate-y-0.5"
             title="حذف جميع الطلاب المحددين نهائياً"
           >
             <Trash2 className="w-4 h-4" />
@@ -866,7 +965,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               setBulkFeedback(null);
               setIsBulkTransferModalOpen(true);
             }}
-            className="px-4 sm:px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#064e3b] hover:from-[#f59e0b] hover:to-[#fbbf24] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-amber-950/30 shrink-0"
+            className="px-4 sm:px-5 py-2.5 rounded-xl text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shrink-0 border-2 border-b-4 active:translate-y-0.5"
+            style={{
+              backgroundColor: accentCol,
+              color: primaryBg,
+              borderColor: accentCol,
+              borderBottomColor: accentShadow
+            }}
           >
             <ArrowRightLeft className="w-4 h-4" />
             <span>نقل المحددين ({selectedStudentIds.length}) إلى حلقة</span>
@@ -877,10 +982,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       {/* Student Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredStudents.length === 0 ? (
-          <div className="col-span-full bg-[#064e3b]/40 border border-[#065f46] rounded-[32px] p-12 text-center">
-            <BookOpen className="w-12 h-12 text-[#86efac]/40 mx-auto mb-3" />
+          <div
+            className="col-span-full border-2 border-b-4 rounded-[32px] p-12 text-center"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-40" style={{ color: accentCol }} />
             <h4 className="text-base font-bold text-white">لا يوجد طلاب مطابقون للبحث</h4>
-            <p className="text-xs text-[#86efac]/70 mt-1">
+            <p className="text-xs text-slate-300 mt-1">
               تأكد من كتابة الاسم بشكل صحيح أو أضف طالباً جديداً
             </p>
           </div>

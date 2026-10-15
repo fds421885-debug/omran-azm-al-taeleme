@@ -891,10 +891,13 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                       <button
                         key={preset.id}
                         type="button"
-                        onClick={() => setEditingComplex(prev => ({
-                          ...prev,
-                          theme: { ...preset.colors }
-                        }))}
+                        onClick={() => {
+                          setEditingComplex(prev => ({
+                            ...prev,
+                            theme: { ...preset.colors }
+                          }));
+                          applyComplexThemeToDOM(preset.colors, true);
+                        }}
                         className={`p-2 rounded-xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                           isSelected
                             ? 'border-amber-400 bg-[#064e3b] shadow-md ring-2 ring-amber-400/50'

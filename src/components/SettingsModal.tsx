@@ -543,14 +543,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Dynamic Theme state for the active complex
   const [themeColors, setThemeColors] = useState<ComplexThemeConfig>(() => {
-    return activeComplex?.theme || {
-      primaryColor: '#022c22',
-      secondaryColor: '#064e3b',
-      accentColor: '#fbbf24',
-      backgroundColor: '#022c22',
-      surfaceColor: 'rgba(6, 78, 59, 0.7)',
-      cardColor: '#064e3b',
-      textColor: '#f0f9f6'
+    return activeComplex?.theme || settings?.theme || {
+      primaryColor: '#131f24',
+      secondaryColor: '#1b2e35',
+      accentColor: '#58cc02',
+      backgroundColor: '#131f24',
+      surfaceColor: 'rgba(27, 46, 53, 0.85)',
+      cardColor: '#203843',
+      textColor: '#ffffff'
     };
   });
 
@@ -574,9 +574,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         absentPointsDeduction: settings.attendancePointsSettings?.absentPointsDeduction ?? 1,
         enableAttendancePoints: settings.attendancePointsSettings?.enableAttendancePoints ?? true
       });
-      if (activeComplex?.theme) {
-        setThemeColors(activeComplex.theme);
-        applyComplexThemeToDOM(activeComplex.theme, true);
+      const effTheme = activeComplex?.theme || settings?.theme;
+      if (effTheme) {
+        setThemeColors(effTheme);
+        applyComplexThemeToDOM(effTheme, true);
       }
       setSwapFirstRole(null);
     }
@@ -1954,7 +1955,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Extracted Palette Swatches if available */}
+                {/* 10 Master Duolingo & Islamic Theme Presets Selection Grid */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold" style={{ color: themeColors.accentColor || '#ffc800' }}>
+                      اختر ثيم وهوية المجمع القرآني (تطبيق فوري لجميع الألوان والبطاقات والأزرار):
+                    </span>
+                    <span
+                      className="text-[10px] px-2.5 py-0.5 rounded-full font-black border"
+                      style={{
+                        borderColor: `${themeColors.accentColor || '#ffc800'}50`,
+                        color: themeColors.accentColor || '#ffc800',
+                        backgroundColor: `${themeColors.accentColor || '#ffc800'}15`
+                      }}
+                    >
+                      10 باقات متناسقة
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                    {ISLAMIC_THEME_PRESETS.map(preset => {
+                      const isSelected =
+                        (themeColors.backgroundColor || '').toLowerCase() === preset.colors.backgroundColor.toLowerCase() &&
+                        (themeColors.accentColor || '').toLowerCase() === preset.colors.accentColor.toLowerCase();
+
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => handleApplyThemePreset(preset.colors)}
+                          className={`p-2.5 rounded-2xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between gap-2 active:translate-y-0.5 ${
+                            isSelected
+                              ? 'border-b-4 shadow-lg ring-2 ring-white/50'
+                              : 'hover:brightness-110 shadow-xs'
+                          }`}
+                          style={{
+                            backgroundColor: preset.colors.cardColor || preset.colors.secondaryColor,
+                            borderColor: isSelected ? (preset.colors.accentColor || '#ffc800') : 'rgba(255,255,255,0.18)',
+                            borderBottomColor: preset.colors.accentColor || '#ffc800'
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.backgroundColor }} />
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.cardColor || preset.colors.secondaryColor }} />
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.accentColor }} />
+                          </div>
+                          <span className="text-xs font-black text-white block truncate">{preset.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {extractedPalette.length > 0 && (
                   <div
                     className="p-3 rounded-xl border space-y-1.5"

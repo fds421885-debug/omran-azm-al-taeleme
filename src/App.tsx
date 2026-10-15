@@ -1934,6 +1934,14 @@ export function App() {
   const handleUpdateSettings = async (newSettings: Partial<AppSettings> | AppSettings) => {
     const merged: AppSettings = { ...settings, ...newSettings };
     setSettings(merged);
+    if (merged.theme) {
+      applyComplexThemeToDOM(merged.theme, true);
+      if (activeComplex) {
+        const updatedC: QuranComplex = { ...activeComplex, theme: merged.theme };
+        await OmranDataService.saveComplex(updatedC);
+        setComplexes(prev => prev.map(c => c.id === updatedC.id ? updatedC : c));
+      }
+    }
     try {
       await OmranDataService.saveSettings(merged);
     } catch (err) {
@@ -2179,6 +2187,7 @@ export function App() {
     setComplexes(list);
     if (complex.theme) {
       applyComplexThemeToDOM(complex.theme, true);
+      setSettings(prev => ({ ...prev, theme: complex.theme }));
     }
   };
 
