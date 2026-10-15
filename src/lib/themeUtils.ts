@@ -42,6 +42,19 @@ export function darkenHex(hex?: string | null, percent = 0.2): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
+export function getContrastTextColor(hex?: string | null): string {
+  if (!hex) return '#ffffff';
+  let c = hex.replace('#', '').trim();
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return '#ffffff';
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 148 ? '#131f24' : '#ffffff';
+}
+
 export interface IslamicThemePreset {
   id: string;
   name: string;
@@ -297,6 +310,7 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-border-rgb', bRgb);
     document.documentElement.style.setProperty('--complex-text', text);
     document.documentElement.style.setProperty('--complex-subtext', subtext);
+    document.documentElement.style.setProperty('--complex-subtext-rgb', hexToRgb(subtext));
   } else {
     // Natural platform theme (Duolingo #131f24 & #ffc800) - outside complex
     document.body.style.backgroundColor = '#131f24';
@@ -319,6 +333,7 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-border-rgb', '43, 69, 80');
     document.documentElement.style.setProperty('--complex-text', '#ffffff');
     document.documentElement.style.setProperty('--complex-subtext', '#ffd233');
+    document.documentElement.style.setProperty('--complex-subtext-rgb', '255, 210, 51');
   }
 }
 

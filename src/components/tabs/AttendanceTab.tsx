@@ -566,70 +566,132 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
       </div>
 
-      {/* Stats Ribbon & Quick Action */}
+      {/* Stats Ribbon & Quick Action in Duolingo 3D Style */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="bg-[#064e3b]/70 border border-[#065f46] rounded-2xl p-4 flex items-center justify-between shadow-md">
+        <div
+          className="border-2 border-b-4 rounded-2xl p-4 flex items-center justify-between shadow-sm transition-all"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: '#58cc02',
+            borderBottomColor: '#46a302'
+          }}
+        >
           <div>
-            <span className="text-xs text-[#86efac] font-bold">حاضر</span>
-            <div className="text-2xl font-bold text-[#fbbf24] font-heading">{counts.present}</div>
+            <span className="text-xs text-emerald-300 font-bold">حاضر</span>
+            <div className="text-2xl font-black text-white font-mono">{counts.present}</div>
           </div>
-          <CheckCircle className="w-6 h-6 text-[#fbbf24]" />
+          <div className="w-10 h-10 rounded-xl bg-[#58cc02]/20 border border-[#58cc02]/40 text-[#58cc02] flex items-center justify-center">
+            <CheckCircle className="w-5 h-5 stroke-[2.5]" />
+          </div>
         </div>
 
-        <div className="bg-[#064e3b]/70 border border-[#065f46] rounded-2xl p-4 flex items-center justify-between shadow-md">
+        <div
+          className="border-2 border-b-4 rounded-2xl p-4 flex items-center justify-between shadow-sm transition-all"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: '#ff4b4b',
+            borderBottomColor: '#ea2b2b'
+          }}
+        >
           <div>
-            <span className="text-xs text-red-300 font-bold">غائب</span>
-            <div className="text-2xl font-bold text-red-300 font-heading">{counts.absent}</div>
+            <span className="text-xs text-rose-300 font-bold">غائب</span>
+            <div className="text-2xl font-black text-white font-mono">{counts.absent}</div>
           </div>
-          <XCircle className="w-6 h-6 text-red-400" />
+          <div className="w-10 h-10 rounded-xl bg-[#ff4b4b]/20 border border-[#ff4b4b]/40 text-[#ff4b4b] flex items-center justify-center">
+            <XCircle className="w-5 h-5 stroke-[2.5]" />
+          </div>
         </div>
 
-        <div className="bg-[#064e3b]/70 border border-[#065f46] rounded-2xl p-4 flex items-center justify-between shadow-md">
+        <div
+          className="border-2 border-b-4 rounded-2xl p-4 flex items-center justify-between shadow-sm transition-all"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: '#ff9600',
+            borderBottomColor: '#e68300'
+          }}
+        >
           <div>
             <span className="text-xs text-amber-300 font-bold">متأخر</span>
-            <div className="text-2xl font-bold text-amber-300 font-heading">{counts.late}</div>
+            <div className="text-2xl font-black text-white font-mono">{counts.late}</div>
           </div>
-          <Clock className="w-6 h-6 text-amber-400" />
+          <div className="w-10 h-10 rounded-xl bg-[#ff9600]/20 border border-[#ff9600]/40 text-[#ff9600] flex items-center justify-center">
+            <Clock className="w-5 h-5 stroke-[2.5]" />
+          </div>
         </div>
 
-        <div className="bg-[#064e3b]/70 border border-[#065f46] rounded-2xl p-4 flex items-center justify-between shadow-md">
+        <div
+          className="border-2 border-b-4 rounded-2xl p-4 flex items-center justify-between shadow-sm transition-all"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: '#1cb0f6',
+            borderBottomColor: '#1899d6'
+          }}
+        >
           <div>
-            <span className="text-xs text-emerald-300 font-bold">معتذر</span>
-            <div className="text-2xl font-bold text-emerald-300 font-heading">{counts.excused}</div>
+            <span className="text-xs text-cyan-300 font-bold">معتذر</span>
+            <div className="text-2xl font-black text-white font-mono">{counts.excused}</div>
           </div>
-          <HelpCircle className="w-6 h-6 text-emerald-400" />
+          <div className="w-10 h-10 rounded-xl bg-[#1cb0f6]/20 border border-[#1cb0f6]/40 text-[#1cb0f6] flex items-center justify-center">
+            <HelpCircle className="w-5 h-5 stroke-[2.5]" />
+          </div>
         </div>
       </div>
 
       {/* Table Container */}
-      <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] overflow-hidden shadow-xl backdrop-blur-md">
+      <div
+        className="border-2 border-b-4 rounded-[28px] overflow-hidden shadow-xl backdrop-blur-md"
+        style={{
+          backgroundColor: 'var(--complex-card, #203843)',
+          borderColor: 'var(--complex-border, #2b4550)',
+          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+        }}
+      >
         {/* Table Toolbar */}
-        <div className="p-4 border-b border-[#065f46] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div
+          className="p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          style={{ borderColor: 'var(--complex-border, #2b4550)' }}
+        >
           <div className="relative flex-1 max-w-xs">
             <input
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               placeholder="بحث في أسماء الطلاب..."
-              className="w-full bg-[#022c22] border border-[#065f46] rounded-2xl py-2 px-3.5 pr-9 text-xs text-[#f0f9f6] placeholder-[#86efac]/40 outline-none"
+              className="w-full border-2 rounded-2xl py-2 px-3.5 pr-9 text-xs text-white placeholder-slate-400 outline-none font-bold"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-border, #2b4550)'
+              }}
               dir="rtl"
             />
-            <Search className="w-3.5 h-3.5 text-[#86efac]/60 absolute right-3 top-3" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3" />
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={handleMarkAllPresent}
-              className="px-4 py-2 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24] text-[#f0f9f6] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5"
+              style={{
+                backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                color: 'var(--complex-text, #ffffff)'
+              }}
             >
-              <CheckCheck className="w-4 h-4 text-[#fbbf24]" />
+              <CheckCheck className="w-4 h-4 text-[#58cc02]" />
               <span>تحديد الجميع حاضر</span>
             </button>
 
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-5 py-2 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] border border-[#fbbf24] disabled:opacity-50 text-[#064e3b] text-xs font-black flex items-center gap-1.5 shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--complex-accent, #ffc800)',
+                color: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-accent, #ffc800)',
+                borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+              }}
             >
               <Save className="w-4 h-4" />
               <span>{isSaving ? 'جاري الحفظ...' : 'حفظ كشف الحضور'}</span>
@@ -638,15 +700,22 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
         </div>
 
         {saveMessage && (
-          <div className="p-3 bg-[#fbbf24]/20 border-b border-[#fbbf24]/40 text-[#fbbf24] text-xs font-bold text-center">
+          <div
+            className="p-3 border-b text-xs font-black text-center"
+            style={{
+              backgroundColor: 'rgba(var(--complex-accent-rgb, 255, 200, 0), 0.15)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              color: 'var(--complex-accent, #ffc800)'
+            }}
+          >
             {saveMessage}
           </div>
         )}
 
         {/* Student Rows */}
-        <div className="divide-y divide-[#fbbf24]/15">
+        <div className="divide-y divide-white/5">
           {filteredStudents.length === 0 ? (
-            <div className="p-8 text-center text-[#86efac]/60 text-xs">
+            <div className="p-8 text-center text-slate-400 text-xs font-bold">
               لا يوجد طلاب مسجلون لعرض الحضور.
             </div>
           ) : (
@@ -658,32 +727,46 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               return (
                 <div
                   key={student.id}
-                  className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#022c22]/40 transition-colors"
+                  className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.03] transition-colors"
                 >
                   {/* Student Info */}
                   <div className="flex items-center gap-3 min-w-[200px]">
-                    <div className="w-8 h-8 rounded-xl bg-[#022c22] border border-[#fbbf24]/30 text-[#fbbf24] text-xs font-bold flex items-center justify-center shrink-0">
+                    <div
+                      className="w-8 h-8 rounded-xl border-2 border-b-2 text-xs font-black flex items-center justify-center shrink-0 shadow-xs"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        color: 'var(--complex-accent, #ffc800)'
+                      }}
+                    >
                       {idx + 1}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-white">{student.name}</h4>
-                      <p className="text-[11px] text-[#86efac]/80">
+                      <h4 className="text-sm font-black text-white">{student.name}</h4>
+                      <p className="text-[11px] font-bold text-slate-300">
                         {student.currentSurahName} (آية {student.currentAyah}) • ولي الأمر: {student.parentName}
                         {parentPhone ? ` • هاتف: ${parentPhone}` : ''}
                       </p>
                     </div>
                   </div>
 
-                  {/* 4 Status Buttons + Send to Absentee button */}
+                  {/* 4 Status Duolingo 3D Tactile Buttons + Send to Absentee button */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5 bg-[#022c22] p-1.5 rounded-2xl border border-[#fbbf24]/30 shrink-0">
+                    <div
+                      className="flex items-center gap-1.5 p-1.5 rounded-2xl border-2 border-b-4 shrink-0 shadow-inner"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => handleStatusChange(student.id, 'حاضر')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-2 active:translate-y-0.5 ${
                           currentStatus === 'حاضر'
-                            ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
-                            : 'text-[#86efac]/80 hover:text-white'
+                            ? 'bg-[#58cc02] text-white border-[#58cc02] border-b-4 border-b-[#46a302] shadow-sm'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         <CheckCircle className="w-3.5 h-3.5" />
@@ -693,10 +776,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStatusChange(student.id, 'غائب')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-2 active:translate-y-0.5 ${
                           currentStatus === 'غائب'
-                            ? 'bg-red-600 text-white font-black shadow-md'
-                            : 'text-[#86efac]/80 hover:text-white'
+                            ? 'bg-[#ff4b4b] text-white border-[#ff4b4b] border-b-4 border-b-[#ea2b2b] shadow-sm'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         <XCircle className="w-3.5 h-3.5" />
@@ -706,10 +789,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStatusChange(student.id, 'متأخر')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-2 active:translate-y-0.5 ${
                           currentStatus === 'متأخر'
-                            ? 'bg-amber-600 text-white font-black shadow-md'
-                            : 'text-[#86efac]/80 hover:text-white'
+                            ? 'bg-[#ff9600] text-white border-[#ff9600] border-b-4 border-b-[#e68300] shadow-sm'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         <Clock className="w-3.5 h-3.5" />
@@ -719,10 +802,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStatusChange(student.id, 'معتذر')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-2 active:translate-y-0.5 ${
                           currentStatus === 'معتذر'
-                            ? 'bg-emerald-600 text-white font-black shadow-md'
-                            : 'text-[#86efac]/80 hover:text-white'
+                            ? 'bg-[#1cb0f6] text-white border-[#1cb0f6] border-b-4 border-b-[#1899d6] shadow-sm'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         <HelpCircle className="w-3.5 h-3.5" />
@@ -735,9 +818,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenAbsentModal(student)}
-                        className="px-3.5 py-1.5 rounded-2xl bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/50 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm animate-pulse hover:animate-none"
+                        className="px-3.5 py-1.5 rounded-2xl bg-[#ff4b4b] hover:bg-[#ea2b2b] text-white border-2 border-b-4 border-[#ff4b4b] border-b-[#ea2b2b] text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-0.5"
                         title="إرسال رسالة تفقد غياب لولي أمر الطالب عبر واتساب"
                       >
+                        <Send className="w-3.5 h-3.5 text-white rotate-180" />
+                        <span>إرسال للوالد</span>
+                      </button>
+                    )}
+                  </div>
                         <Send className="w-3.5 h-3.5 text-red-300 rotate-180" />
                         <span>إرسال للوالد</span>
                       </button>

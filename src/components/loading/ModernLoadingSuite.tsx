@@ -127,41 +127,42 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
   compact = false,
   activeComplex
 }) => {
-  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
-  const borderCol = activeComplex?.theme?.secondaryColor || 'var(--complex-border, #2b4550)';
-  const borderBottomCol = darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35);
   const accentCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const accentShadow = activeComplex?.theme ? darkenHex(activeComplex.theme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
+  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
+  const borderCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
 
   return (
     <button
       type="button"
       onClick={onRefresh}
       disabled={isSyncing}
-      className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm ${
+      className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md ${
         compact
           ? 'px-3 py-1.5 text-xs text-white'
           : 'px-4 py-2 text-xs text-white'
       } ${isSyncing ? 'opacity-85 pointer-events-none' : ''}`}
       style={{
         backgroundColor: cardBg,
-        borderColor: borderCol,
-        borderBottomColor: borderBottomCol
+        borderColor: `${borderCol}90`,
+        borderBottomColor: accentShadow,
+        color: 'var(--complex-text, #ffffff)'
       }}
       title="مزامنة وتأكيد البيانات فورياً مع قاعدة البيانات السحابية"
     >
       <RefreshCw
-        className={`w-3.5 h-3.5 transition-transform duration-500 ${
+        className={`w-3.5 h-3.5 transition-transform duration-500 shrink-0 ${
           isSyncing ? 'animate-spin' : 'group-hover:rotate-180'
         }`}
         style={{ color: accentCol }}
       />
-      <span className="whitespace-nowrap">
+      <span className="whitespace-nowrap font-black">
         {isSyncing ? 'جارٍ المزامنة والتأكيد...' : label}
       </span>
       {!compact && lastSyncedText && (
         <span
-          className="hidden sm:inline-block text-[10px] pr-2 border-r"
-          style={{ borderColor: borderCol, color: accentCol }}
+          className="hidden sm:inline-block text-[10px] pr-2 border-r font-bold"
+          style={{ borderColor: `${borderCol}40`, color: accentCol }}
         >
           {lastSyncedText}
         </span>
@@ -750,11 +751,11 @@ export const LoginSyncModalOverlay: React.FC<{
 }> = ({ isOpen, userName, activeComplex }) => {
   if (!isOpen) return null;
 
-  const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
-  const accentShadow = darkenHex(accentColor, 0.28);
-  const cardBg = activeComplex?.theme?.cardColor || '#203843';
-  const borderCol = lightenHex(cardBg, 0.2);
-  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const accentShadow = activeComplex?.theme ? darkenHex(activeComplex.theme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
+  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
+  const borderCol = activeComplex?.theme ? lightenHex(activeComplex.theme.cardColor, 0.2) : 'var(--complex-border, #2b4550)';
+  const borderBottomCol = activeComplex?.theme ? darkenHex(activeComplex.theme.primaryColor || activeComplex.theme.cardColor, 0.35) : 'var(--complex-card-shadow, #16262e)';
 
   return (
     <div
@@ -762,24 +763,24 @@ export const LoginSyncModalOverlay: React.FC<{
       dir="rtl"
     >
       <div
-        className="border-2 border-b-4 rounded-[36px] p-7 sm:p-8 max-w-sm w-full text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        className="border-2 border-b-4 rounded-[36px] p-7 sm:p-8 max-w-sm w-full text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
         style={{
           backgroundColor: cardBg,
           borderColor: borderCol,
           borderBottomColor: borderBottomCol
         }}
       >
-        {/* Modern Holy Quran Loader: Quran stays steady, circular glowing ring rotates smoothly around it */}
-        <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
-          {/* Smooth spinning loading ring around the Quran */}
-          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.4s' }}>
+        {/* Modern Quranic Loader: Static noble Holy Quran in center, orbital glowing ring rotates around it */}
+        <div className="relative w-32 h-32 mx-auto flex items-center justify-center">
+          {/* Smooth modern spinning loading ring orbiting around the Holy Quran */}
+          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.2s' }}>
             <circle
               cx="50"
               cy="50"
               r="44"
               fill="none"
               stroke="currentColor"
-              strokeWidth="4"
+              strokeWidth="3.5"
               className="opacity-15 text-white"
             />
             <circle
@@ -788,45 +789,45 @@ export const LoginSyncModalOverlay: React.FC<{
               r="44"
               fill="none"
               stroke={accentColor}
-              strokeWidth="4.5"
-              strokeDasharray="190 80"
+              strokeWidth="4"
+              strokeDasharray="180 90"
               strokeLinecap="round"
-              className="drop-shadow-[0_0_8px_rgba(255,200,0,0.5)]"
+              className="drop-shadow-[0_0_10px_rgba(255,200,0,0.6)]"
             />
           </svg>
 
-          {/* Elegant dignified Holy Quran emblem in center (steadfast, does NOT rotate) */}
+          {/* Steadfast Holy Quran Emblem (Does NOT rotate) */}
           <div
-            className="w-16 h-16 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-lg relative z-10 transition-transform"
+            className="w-18 h-18 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-xl relative z-10 select-none"
             style={{
-              backgroundColor: `${accentColor}20`,
+              backgroundColor: `${accentColor}22`,
               borderColor: `${accentColor}80`,
               borderBottomColor: accentShadow,
               color: accentColor
             }}
           >
-            <BookOpen className="w-8 h-8 drop-shadow-sm" />
+            <BookOpen className="w-9 h-9 drop-shadow-md stroke-[2.2]" />
           </div>
         </div>
 
-        {/* Clean, respectful greeting and loading copy */}
+        {/* Clean, respectful loading title */}
         <div className="space-y-1.5">
           <h3 className="text-lg font-black text-white font-heading">
-            {userName ? `مرحباً بك يا ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
+            {userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
           </h3>
           <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
             جَارٍ تَحْمِيلُ المَنْظُومَةِ القُرْآنِيَّةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
           </p>
         </div>
 
-        {/* Sleek Duolingo-styled animated progress bar */}
-        <div className="w-full bg-[#131f24] h-3 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+        {/* Sleek modern progress bar */}
+        <div className="w-full bg-[#131f24] h-2.5 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
           <div
             className="h-full rounded-full animate-pulse transition-all duration-300"
             style={{
               backgroundColor: accentColor,
-              width: '90%',
-              boxShadow: `0 0 10px ${accentColor}`
+              width: '92%',
+              boxShadow: `0 0 12px ${accentColor}`
             }}
           />
         </div>

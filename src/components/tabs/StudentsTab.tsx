@@ -893,11 +893,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 key={student.id}
                 id={`student-item-${student.id}`}
                 data-item-id={student.id}
-                className={`border rounded-[32px] p-5 flex flex-col justify-between gap-4 transition-all hover:shadow-2xl hover:shadow-emerald-950/50 ${
-                  isSelected
-                    ? 'bg-[#064e3b]/90 border-[#fbbf24] ring-2 ring-[#fbbf24]/50 shadow-lg shadow-amber-950/40'
-                    : 'bg-[#064e3b]/55 border-[#065f46] hover:border-[#fbbf24]/50'
+                className={`border-2 border-b-4 rounded-[28px] p-5 flex flex-col justify-between gap-4 transition-all duration-200 hover:shadow-xl ${
+                  isSelected ? 'ring-2 ring-amber-400/40 shadow-lg' : ''
                 }`}
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: isSelected ? 'var(--complex-accent, #ffc800)' : 'var(--complex-border, #2b4550)',
+                  borderBottomColor: isSelected ? 'var(--complex-accent-shadow, #e5a500)' : 'var(--complex-card-shadow, #16262e)'
+                }}
               >
                 {/* Card Top */}
                 <div>
@@ -913,31 +916,57 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                               : [...prev, student.id]
                           );
                         }}
-                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                        className={`w-9 h-9 rounded-xl border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] shadow-sm'
-                            : 'bg-[#022c22] text-slate-400 hover:text-white border-[#065f46] hover:border-[#fbbf24]/50'
+                            ? 'border-b-4 font-black'
+                            : 'border-slate-600/40 hover:border-amber-400/60'
                         }`}
+                        style={isSelected ? {
+                          backgroundColor: 'var(--complex-accent, #ffc800)',
+                          color: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-accent, #ffc800)',
+                          borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+                        } : {
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          color: '#ffffff'
+                        }}
                         title={isSelected ? 'إلغاء تحديد الطالب' : 'تحديد الطالب للنقل'}
                       >
                         {isSelected ? (
                           <CheckSquare className="w-5 h-5" />
                         ) : (
-                          <Square className="w-5 h-5" />
+                          <Square className="w-5 h-5 text-slate-400" />
                         )}
                       </button>
 
-                      <div className="w-12 h-12 rounded-2xl bg-[#022c22] border border-[#065f46] text-[#fbbf24] flex items-center justify-center text-lg font-black shadow-inner shrink-0">
+                      {/* Student Avatar Icon */}
+                      <div
+                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center text-lg font-black shadow-inner shrink-0"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                          color: 'var(--complex-accent, #ffc800)'
+                        }}
+                      >
                         {student.name.charAt(0)}
                       </div>
+
                       <div>
-                        <h3 className="text-sm font-bold text-white line-clamp-1">{student.name}</h3>
-                        <div className="flex items-center gap-2 mt-0.5 text-xs text-[#86efac]/80 flex-wrap">
+                        <h3 className="text-sm font-black text-white line-clamp-1">{student.name}</h3>
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300 font-bold flex-wrap">
                           <span>{student.age} سنة</span>
                           {(!student.halaqahId || student.halaqahId.trim() === '' || student.halaqahId === 'unassigned' || student.halaqahId === 'none') ? (
                             <>
                               <span>•</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/25 text-amber-300 border border-amber-500/50">
+                              <span
+                                className="px-2 py-0.5 rounded-full text-[10px] font-black border"
+                                style={{
+                                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                                  color: '#fbbf24',
+                                  borderColor: 'rgba(245, 158, 11, 0.4)'
+                                }}
+                              >
                                 غير مرفق بحلقة
                               </span>
                             </>
@@ -945,7 +974,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                             student.halaqahName && (
                               <>
                                 <span>•</span>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#022c22] text-[#86efac] border border-[#065f46]">
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                  style={{
+                                    backgroundColor: 'var(--complex-primary, #131f24)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    color: 'var(--complex-subtext, #ffd233)'
+                                  }}
+                                >
                                   {student.halaqahName}
                                 </span>
                               </>
@@ -955,90 +991,119 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       </div>
                     </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(student)}
-                      title="تعديل بيانات الطالب"
-                      className="p-2 rounded-xl text-[#86efac] hover:text-[#fbbf24] hover:bg-[#022c22] transition-colors cursor-pointer"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setStudentToDelete(student)}
-                      title="حذف الطالب"
-                      className="p-2 rounded-xl text-[#86efac] hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEditModal(student)}
+                        title="تعديل بيانات الطالب"
+                        className="p-2 rounded-xl text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        style={{ backgroundColor: 'var(--complex-primary, #131f24)' }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setStudentToDelete(student)}
+                        title="حذف الطالب"
+                        className="p-2 rounded-xl text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                        style={{ backgroundColor: 'var(--complex-primary, #131f24)' }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Progress Details */}
-                <div className="mt-4 bg-[#022c22]/70 border border-[#065f46] rounded-2xl p-3.5 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-[#f0f9f6]">
-                    <span className="text-[#86efac] font-medium">موضع الحفظ الحالي:</span>
-                    <span className="font-bold text-[#fbbf24]">
-                      سورة {student.currentSurahName} (الآية {student.currentAyah})
-                    </span>
-                  </div>
-                  {(() => {
-                    const curPage = getPageOfAyah(student.currentSurah || 78, student.currentAyah || 1);
-                    return (
-                      <div className="flex items-center justify-between text-[#f0f9f6]">
-                        <span className="text-[#86efac] font-medium">الوجه الحالي بالمصحف:</span>
-                        <span className="text-emerald-300 font-bold">
-                          الوجه {curPage} من 604
-                        </span>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex items-center justify-between text-[#f0f9f6] pt-1.5 border-t border-[#065f46]/60">
-                    <span className="text-[#86efac] font-medium">ولي الأمر:</span>
-                    <span className="text-white font-medium">{student.parentName}</span>
-                  </div>
-                  {student.parentPhones && student.parentPhones.length > 0 && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#86efac]/80 overflow-hidden pt-0.5">
-                      <Phone className="w-3.5 h-3.5 text-[#fbbf24] shrink-0" />
-                      <span className="truncate" dir="ltr">
-                        {student.parentPhones.join(' • ')}
+                  {/* Progress Details */}
+                  <div
+                    className="mt-4 border-2 rounded-2xl p-3.5 space-y-1.5 text-xs font-bold"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)'
+                    }}
+                  >
+                    <div className="flex items-center justify-between text-white">
+                      <span className="text-slate-300 font-bold">موضع الحفظ الحالي:</span>
+                      <span className="font-black" style={{ color: 'var(--complex-accent, #ffc800)' }}>
+                        سورة {student.currentSurahName} (الآية {student.currentAyah})
                       </span>
                     </div>
+                    {(() => {
+                      const curPage = getPageOfAyah(student.currentSurah || 78, student.currentAyah || 1);
+                      return (
+                        <div className="flex items-center justify-between text-white">
+                          <span className="text-slate-300 font-bold">الوجه الحالي بالمصحف:</span>
+                          <span className="font-bold" style={{ color: 'var(--complex-subtext, #ffd233)' }}>
+                            الوجه {curPage} من 604
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex items-center justify-between text-white pt-1.5 border-t border-white/10">
+                      <span className="text-slate-300 font-bold">ولي الأمر:</span>
+                      <span className="text-white font-bold">{student.parentName}</span>
+                    </div>
+                    {student.parentPhones && student.parentPhones.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-[11px] overflow-hidden pt-0.5" style={{ color: 'var(--complex-subtext, #ffd233)' }}>
+                        <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--complex-accent, #ffc800)' }} />
+                        <span className="truncate" dir="ltr">
+                          {student.parentPhones.join(' • ')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Assign Action for Unassigned Students */}
+                  {(!student.halaqahId || student.halaqahId.trim() === '' || student.halaqahId === 'unassigned' || student.halaqahId === 'none') && isSupervisor && (
+                    <button
+                      onClick={() => {
+                        setQuickAssignStudent(student);
+                        setQuickSelectedHalaqahId(halaqahs[0]?.id || '');
+                      }}
+                      className="w-full mt-3 py-2 px-3 rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm border-2 border-b-4 active:translate-y-0.5"
+                      style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                        color: '#fbbf24',
+                        borderColor: 'rgba(245, 158, 11, 0.5)',
+                        borderBottomColor: '#b45309'
+                      }}
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-amber-300" />
+                      <span>إرفاق هذا الطالب بحلقة قرآنية الآن</span>
+                    </button>
                   )}
                 </div>
 
-                {/* Quick Assign Action for Unassigned Students */}
-                {(!student.halaqahId || student.halaqahId.trim() === '' || student.halaqahId === 'unassigned' || student.halaqahId === 'none') && isSupervisor && (
-                  <button
-                    onClick={() => {
-                      setQuickAssignStudent(student);
-                      setQuickSelectedHalaqahId(halaqahs[0]?.id || '');
-                    }}
-                    className="w-full mt-3 py-2 px-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/50 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-amber-300" />
-                    <span>إرفاق هذا الطالب بحلقة قرآنية الآن</span>
-                  </button>
-                )}
+                {/* Plan Banner / Action */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                  {student.aiPlan ? (
+                    <button
+                      onClick={() => setViewingPlanStudent(student)}
+                      className="flex-1 py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-0.5 hover:brightness-110"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                        color: 'var(--complex-accent, #ffc800)'
+                      }}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" style={{ color: 'var(--complex-accent, #ffc800)' }} />
+                      <span>عرض الخطة المنهجية</span>
+                    </button>
+                  ) : (
+                    <div
+                      className="flex-1 py-2 px-3 rounded-2xl border text-[11px] font-bold text-center"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        color: 'var(--complex-subtext, #ffd233)'
+                      }}
+                    >
+                      الخطة المنهجية معتمدة
+                    </div>
+                  )}
+                </div>
               </div>
-
-              {/* Plan Banner / Action */}
-              <div className="pt-2 border-t border-[#065f46]/60 flex items-center justify-between gap-2">
-                {student.aiPlan ? (
-                  <button
-                    onClick={() => setViewingPlanStudent(student)}
-                    className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#fbbf24]/20 to-[#064e3b] hover:from-[#fbbf24]/30 hover:to-[#064e3b] border border-[#fbbf24]/40 text-[#fbbf24] text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
-                    <span>عرض الخطة المنهجية</span>
-                  </button>
-                ) : (
-                  <div className="flex-1 py-2 px-3 rounded-2xl bg-[#022c22]/50 border border-[#065f46] text-[#86efac]/70 text-[11px] text-center">
-                    الخطة المنهجية معتمدة
-                  </div>
-                )}
-              </div>
-            </div>
+            );
+          })
           );
         })
       )}

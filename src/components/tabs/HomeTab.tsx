@@ -132,15 +132,26 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               </span>
             </div>
 
-            <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2 flex-wrap">
-              <span>مرحباً بك:</span>
-              <span className="underline decoration-2 underline-offset-4" style={{ color: themeAccent }}>
-                {displayTeacherName}
-              </span>
-            </h2>
+            <div className="space-y-1">
+              <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2.5 flex-wrap">
+                <span>مرحباً بك،</span>
+                <span
+                  className="px-3 py-1 rounded-2xl border-2 border-b-4 inline-block font-black shadow-sm"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    color: themeAccent,
+                    borderColor: `${themeAccent}70`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  {displayTeacherName}
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-slate-300">حفظك الله ورعاك 🌿</span>
+              </h2>
+            </div>
 
             <p className="text-slate-200 text-xs sm:text-sm font-bold max-w-xl leading-relaxed">
-              مرحباً بك في {activeComplex?.name || 'المنظومة القرآنية'} • نسأل الله أن يبارك في جهودكم ويسدد خطاكم في تعليم كتاب الله ومتابعة الحلقات.
+              {activeComplex?.name || 'مجمع تحفيظ القرآن الكريم'} • نسأل الله أن يبارك في جهودكم ويسدد خطاكم في تعليم كتاب الله ومتابعة الحلقات.
             </p>
           </div>
 
@@ -152,13 +163,26 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-lg cursor-pointer transition-all hover:brightness-110"
               style={{
                 backgroundColor: themeAccent,
-                color: themePrimary,
+                color: '#ffffff',
                 borderColor: themeAccent,
                 borderBottomColor: themeAccentShadow
               }}
+              title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم' : `تسجيل ومتابعة حضور اليوم`}
             >
-              <CheckCircle className="w-4 h-4" style={{ color: themePrimary }} />
+              <CheckCircle className="w-4 h-4 text-white" />
               <span>تسجيل حضور اليوم</span>
+              {students.length > 0 && (
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-black border"
+                  style={{
+                    backgroundColor: 'rgba(0,0,0,0.25)',
+                    borderColor: 'rgba(255,255,255,0.3)',
+                    color: '#ffffff'
+                  }}
+                >
+                  {unrecordedCount === 0 ? `مكتمل (${presentCount}/${students.length})` : `${todayAttendance.length}/${students.length}`}
+                </span>
+              )}
             </button>
 
             {/* Evaluation Button */}

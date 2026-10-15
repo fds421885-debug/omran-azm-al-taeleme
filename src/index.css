@@ -275,13 +275,13 @@ label[class*="from-[#fbbf24]"],
 .btn-primary-theme {
   background-color: var(--complex-accent, #ffc800) !important;
   background-image: none !important;
-  color: #131f24 !important;
-  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) #e5a500 var(--complex-accent, #ffc800) !important;
+  color: var(--complex-primary, #131f24) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
   border-width: 2px 2px 4px 2px !important;
   border-style: solid !important;
   border-radius: 1rem !important;
   font-weight: 800 !important;
-  box-shadow: 0 4px 14px rgba(255, 200, 0, 0.28) !important;
+  box-shadow: 0 4px 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.28) !important;
   transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
@@ -295,8 +295,8 @@ button[class*="from-[#fbbf24]"]:hover,
 a[class*="from-amber"]:hover,
 a[class*="from-[#fbbf24]"]:hover,
 label[class*="from-amber"]:hover {
-  filter: brightness(1.06) !important;
-  box-shadow: 0 6px 20px rgba(255, 200, 0, 0.38) !important;
+  filter: brightness(1.08) !important;
+  box-shadow: 0 6px 20px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.38) !important;
 }
 
 button.bg-\[\#fbbf24\]:active,
@@ -321,8 +321,8 @@ a[class*="from-amber"] svg,
 a[class*="from-[#fbbf24]"] svg,
 label[class*="from-amber"] svg,
 label[class*="from-[#fbbf24]"] svg {
-  color: #131f24 !important;
-  stroke: #131f24 !important;
+  color: var(--complex-primary, #131f24) !important;
+  stroke: var(--complex-primary, #131f24) !important;
 }
 
 /* Secondary Action Buttons (List items, actions, etc.) */
@@ -340,7 +340,7 @@ a.bg-\[\#022c22\],
 a[class*="bg-[#022c22]"],
 a[class*="bg-[#064e3b]"] {
   background-color: var(--complex-card, #203843) !important;
-  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) #16262e var(--complex-border, #2b4550) !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #16262e) var(--complex-border, #2b4550) !important;
   border-width: 2px 2px 4px 2px !important;
   border-style: solid !important;
   border-radius: 1rem !important;
@@ -357,8 +357,8 @@ button[class*="bg-[#064e3b]"]:hover,
 button.bg-emerald-900:hover,
 button[class*="bg-emerald-900"]:hover,
 button.bg-emerald-800:hover {
-  background-color: #274452 !important;
-  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) #cca000 var(--complex-accent, #ffc800) !important;
+  background-color: var(--complex-secondary, #274452) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #cca000) var(--complex-accent, #ffc800) !important;
 }
 
 button.bg-\[\#022c22\]:active,
@@ -516,7 +516,7 @@ select option {
 
 /* 9. Tables */
 table th {
-  background-color: #1b2e35 !important;
+  background-color: var(--complex-secondary, #1b2e35) !important;
   color: var(--complex-accent, #ffc800) !important;
   border-color: var(--complex-border, #2b4550) !important;
   font-weight: 800 !important;

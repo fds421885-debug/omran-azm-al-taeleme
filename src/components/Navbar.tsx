@@ -476,7 +476,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       className="text-[10px] font-black hidden sm:inline shrink-0"
                       style={{ color: themeAccent }}
                     >
-                      مساحة الحلقة:
+                      الحلقة الحالية:
                     </span>
                     <select
                       value={activeHalaqahId || 'all'}
@@ -485,7 +485,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       title="التبديل بين حلقات العمل"
                     >
                       <option value="all" className="bg-[#203843] text-white">
-                        {isDeveloper ? 'جميع الحلقات لكافة المجمعات' : `جميع حلقات ${complexName || 'المجمع'}`} ({studentsCount} طالب)
+                        {isDeveloper ? 'الكل (جميع المجمعات)' : `الكل (جميع حلقات ${complexName || 'المجمع'})`} ({studentsCount} طالب)
                       </option>
                       {halaqahs.map(h => (
                         <option key={h.id} value={h.id} className="bg-[#203843] text-white">
@@ -496,14 +496,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 ) : (
                   <p
-                    className="text-xs text-slate-200 font-bold px-2.5 py-1 rounded-2xl border-2 border-b-4"
+                    className="text-xs text-slate-200 font-bold px-2.5 py-1 rounded-2xl border-2 border-b-4 flex items-center gap-1.5"
                     style={{
                       backgroundColor: themeCard,
                       borderColor: themeBorder,
                       borderBottomColor: themeBorderBottom
                     }}
                   >
-                    {displayHalaqahName}
+                    <span className="text-[10px] font-black" style={{ color: themeAccent }}>الحلقة الحالية:</span>
+                    <span>{displayHalaqahName}</span>
                   </p>
                 )
               ) : (
@@ -530,7 +531,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       className="text-[10px] font-black hidden sm:inline shrink-0"
                       style={{ color: themeAccent }}
                     >
-                      الحلقة:
+                      الحلقة الحالية:
                     </span>
                     <select
                       value={activeHalaqahId || assignedHalaqahs[0]?.id || ''}
