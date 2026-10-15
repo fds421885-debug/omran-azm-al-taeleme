@@ -133,55 +133,55 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               </span>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-2">
               <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2.5 flex-wrap">
                 <span>مرحباً بك،</span>
                 <span
-                  className="px-3 py-1 rounded-2xl border-2 border-b-4 inline-block font-black shadow-sm"
+                  className="px-4 py-1.5 rounded-2xl border-2 border-b-4 inline-flex items-center gap-2 font-black shadow-md text-xl sm:text-2xl"
                   style={{
                     backgroundColor: `${themeAccent}25`,
                     color: themeAccent,
-                    borderColor: `${themeAccent}70`,
+                    borderColor: `${themeAccent}80`,
                     borderBottomColor: themeAccentShadow
                   }}
                 >
-                  {displayTeacherName}
+                  <span>{displayTeacherName.startsWith('أ/') || displayTeacherName.startsWith('الشيخ') || displayTeacherName.startsWith('الأستاذ') ? displayTeacherName : `أ/ ${displayTeacherName}`}</span>
                 </span>
-                <span className="text-xs sm:text-sm font-bold text-slate-300">حفظك الله ورعاك 🌿</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-200">حفظك الله ورعاك وبارك في جهودك 🌿</span>
               </h2>
             </div>
 
             <p className="text-slate-200 text-xs sm:text-sm font-bold max-w-xl leading-relaxed">
-              {activeComplex?.name || 'مجمع تحفيظ القرآن الكريم'} • نسأل الله أن يبارك في جهودكم ويسدد خطاكم في تعليم كتاب الله ومتابعة الحلقات.
+              {activeComplex?.name || 'مجمع تحفيظ القرآن الكريم'} • لوحة المتابعة الشاملة للحلقات والتسميع اليومي.
             </p>
           </div>
 
-          {/* Duolingo 3D Action Buttons */}
+          {/* Duolingo 3D Action Buttons (Prominent Attendance & Evaluation) */}
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             {/* Attendance Button (تسجيل حضور اليوم) */}
             <button
               onClick={() => onNavigateTab('attendance')}
-              className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-lg cursor-pointer transition-all hover:brightness-110"
+              className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-xl cursor-pointer transition-all hover:brightness-110 select-none"
               style={{
                 backgroundColor: themeAccent,
                 color: accentTextColor,
                 borderColor: themeAccent,
                 borderBottomColor: themeAccentShadow
               }}
-              title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم' : `تسجيل ومتابعة حضور اليوم`}
+              title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم بنجاح' : `تسجيل ومتابعة حضور اليوم`}
             >
-              <CheckCircle className="w-4 h-4" style={{ color: accentTextColor }} />
-              <span>تسجيل حضور اليوم</span>
+              <CheckCircle className="w-5 h-5 shrink-0 stroke-[2.5]" style={{ color: accentTextColor }} />
+              <span className="text-sm font-black">تسجيل حضور اليوم</span>
               {students.length > 0 && (
                 <span
-                  className="px-2 py-0.5 rounded-full text-[10px] font-black border"
+                  className="px-2.5 py-1 rounded-xl text-xs font-black border shadow-xs"
                   style={{
-                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.18)',
-                    borderColor: 'rgba(0,0,0,0.15)',
+                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
+                    borderColor: 'rgba(0,0,0,0.18)',
                     color: accentTextColor
                   }}
                 >
-                  {unrecordedCount === 0 ? `مكتمل (${presentCount}/${students.length})` : `${todayAttendance.length}/${students.length}`}
+                  {unrecordedCount === 0 ? `تم التحضير (${presentCount}/${students.length}) ✓` : `${todayAttendance.length}/${students.length}`}
                 </span>
               )}
             </button>

@@ -1,13 +1,20 @@
 import { ComplexThemeConfig } from '../types';
 
+export function extractHexColor(input?: string | null): string | null {
+  if (!input) return null;
+  const str = String(input).trim();
+  const match = str.match(/#([0-9a-fA-F]{3,8})\b/);
+  return match ? `#${match[1]}` : null;
+}
+
 export function hexToRgb(hex?: string | null): string {
-  if (!hex) return '6, 78, 59';
-  let c = hex.replace('#', '').trim();
+  const cleanHex = extractHexColor(hex) || '#ffc800';
+  let c = cleanHex.replace('#', '').trim();
   if (c.length === 3) {
     c = c.split('').map(x => x + x).join('');
   }
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return '6, 78, 59';
+  const num = parseInt(c.slice(0, 6), 16);
+  if (isNaN(num)) return '255, 200, 0';
   const r = (num >> 16) & 255;
   const g = (num >> 8) & 255;
   const b = num & 255;
@@ -15,13 +22,13 @@ export function hexToRgb(hex?: string | null): string {
 }
 
 export function lightenHex(hex?: string | null, percent = 0.2): string {
-  if (!hex) return '#065f46';
-  let c = hex.replace('#', '').trim();
+  const cleanHex = extractHexColor(hex) || '#203843';
+  let c = cleanHex.replace('#', '').trim();
   if (c.length === 3) {
     c = c.split('').map(x => x + x).join('');
   }
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return '#065f46';
+  const num = parseInt(c.slice(0, 6), 16);
+  if (isNaN(num)) return '#2b4550';
   const r = Math.min(255, Math.floor(((num >> 16) & 255) + (255 - ((num >> 16) & 255)) * percent));
   const g = Math.min(255, Math.floor(((num >> 8) & 255) + (255 - ((num >> 8) & 255)) * percent));
   const b = Math.min(255, Math.floor((num & 255) + (255 - (num & 255)) * percent));
@@ -29,13 +36,13 @@ export function lightenHex(hex?: string | null, percent = 0.2): string {
 }
 
 export function darkenHex(hex?: string | null, percent = 0.2): string {
-  if (!hex) return '#022c22';
-  let c = hex.replace('#', '').trim();
+  const cleanHex = extractHexColor(hex) || '#ffc800';
+  let c = cleanHex.replace('#', '').trim();
   if (c.length === 3) {
     c = c.split('').map(x => x + x).join('');
   }
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return '#022c22';
+  const num = parseInt(c.slice(0, 6), 16);
+  if (isNaN(num)) return '#e5a500';
   const r = Math.max(0, Math.floor(((num >> 16) & 255) * (1 - percent)));
   const g = Math.max(0, Math.floor(((num >> 8) & 255) * (1 - percent)));
   const b = Math.max(0, Math.floor((num & 255) * (1 - percent)));
@@ -43,11 +50,11 @@ export function darkenHex(hex?: string | null, percent = 0.2): string {
 }
 
 export function getContrastTextColor(hex?: string | null): string {
-  if (!hex) return '#ffffff';
-  let c = hex.replace('#', '').trim();
+  const cleanHex = extractHexColor(hex) || '#ffc800';
+  let c = cleanHex.replace('#', '').trim();
   if (c.length === 3) c = c.split('').map(x => x + x).join('');
-  const num = parseInt(c, 16);
-  if (isNaN(num)) return '#ffffff';
+  const num = parseInt(c.slice(0, 6), 16);
+  if (isNaN(num)) return '#131f24';
   const r = (num >> 16) & 255;
   const g = (num >> 8) & 255;
   const b = num & 255;

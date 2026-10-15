@@ -42,7 +42,8 @@ import {
   EvaluationCriteria,
   CriteriaType,
   QuranRecitationItem,
-  AppSettings
+  AppSettings,
+  QuranComplex
 } from '../../types';
 import {
   QURAN_SURAHS,
@@ -57,6 +58,7 @@ import {
   calculateStudentCompletedPages,
   calculateRecitationFractionalFaces
 } from '../../data/quranPagesData';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface EvaluationTabProps {
   students: Student[];
@@ -65,6 +67,7 @@ interface EvaluationTabProps {
   criteria: EvaluationCriteria[];
   isSupervisor?: boolean;
   activeComplexId?: string;
+  activeComplex?: QuranComplex | null;
   selectedStudentId?: string;
   onSaveEvaluation: (
     evaluation: StudentEvaluation,
@@ -92,6 +95,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   criteria,
   isSupervisor = false,
   activeComplexId,
+  activeComplex,
   selectedStudentId,
   onSaveEvaluation,
   onSaveCriteria,
@@ -101,6 +105,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   onNavigateToBehavior,
   settings
 }) => {
+  const currentTheme = activeComplex?.theme || settings?.theme;
+  const themePrimary = currentTheme?.primaryColor || '#131f24';
+  const themeSecondary = currentTheme?.secondaryColor || '#1b2e35';
+  const themeAccent = currentTheme?.accentColor || '#ffc800';
+  const themeCardBg = currentTheme?.cardColor || '#203843';
+  const themeBorder = lightenHex(themeCardBg, 0.18);
+  const themeBorderBottom = darkenHex(themeCardBg, 0.35);
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const accentTextColor = getContrastTextColor(themeAccent);
+
   const todayStr = new Date().toISOString().split('T')[0];
 
   // Selected Date for evaluation view & entry (Default: Today)
@@ -1653,13 +1667,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div
                         className="w-9 h-9 rounded-xl border-2 border-b-2 flex items-center justify-center font-black text-xs shrink-0 shadow-xs duo-avatar"
                         style={isSelected ? {
-                          backgroundColor: 'var(--complex-primary, #131f24)',
-                          borderColor: 'var(--complex-primary, #131f24)',
-                          color: 'var(--complex-accent, #ffc800)'
+                          backgroundColor: themeAccent,
+                          borderColor: themeAccent,
+                          color: accentTextColor
                         } : {
-                          backgroundColor: 'var(--complex-primary, #131f24)',
-                          borderColor: 'var(--complex-border, #2b4550)',
-                          color: 'var(--complex-accent, #ffc800)'
+                          backgroundColor: themePrimary,
+                          borderColor: themeBorder,
+                          color: themeAccent
                         }}
                       >
                         {student.name.charAt(0)}
@@ -1667,9 +1681,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-xs line-clamp-1">{student.name}</div>
                         <div
-                          className={`text-[10px] mt-0.5 ${
-                            isSelected ? 'text-[#064e3b]/80' : 'text-[#86efac]/80'
-                          }`}
+                          className="text-[10px] mt-0.5"
+                          style={{ color: isSelected ? themePrimary : `${themeAccent}dd` }}
                         >
                           سورة {student.currentSurahName || getSurahInfo(student.currentSurah || 78).name} (آية {student.currentAyah || 1})
                         </div>
@@ -1681,19 +1694,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           const pct = Math.min(100, Math.round((current / total) * 100));
                           return (
                             <div className="w-full mt-1.5 flex items-center gap-1.5">
-                              <div className={`h-1.5 flex-1 rounded-full overflow-hidden ${isSelected ? 'bg-[#064e3b]/30' : 'bg-[#064e3b]'}`}>
+                              <div
+                                className="h-1.5 flex-1 rounded-full overflow-hidden"
+                                style={{ backgroundColor: isSelected ? 'rgba(0,0,0,0.2)' : themePrimary }}
+                              >
                                 <div
-                                  className={`h-full rounded-full transition-all ${
-                                    isSelected
-                                      ? 'bg-[#064e3b]'
-                                      : pct >= 80
-                                      ? 'bg-gradient-to-r from-amber-400 to-orange-400'
-                                      : 'bg-[#fbbf24]'
-                                  }`}
-                                  style={{ width: `${pct}%` }}
+                                  className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: isSelected ? themePrimary : themeAccent
+                                  }}
                                 />
                               </div>
-                              <span className={`text-[9px] font-mono shrink-0 ${isSelected ? 'text-[#064e3b]/90 font-bold' : 'text-[#86efac]/80'}`}>
+                              <span
+                                className="text-[9px] font-mono shrink-0 font-bold"
+                                style={{ color: isSelected ? themePrimary : themeAccent }}
+                              >
                                 {pct}%
                               </span>
                             </div>
@@ -1759,10 +1775,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <div
                     className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-lg shadow-lg duo-avatar shrink-0"
                     style={{
-                      backgroundColor: 'var(--complex-primary, #131f24)',
-                      borderColor: 'var(--complex-accent, #ffc800)',
-                      borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
-                      color: 'var(--complex-accent, #ffc800)'
+                      backgroundColor: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
                     }}
                   >
                     {activeStudent.name.charAt(0)}
@@ -1775,15 +1791,15 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <span
                         className="text-xs px-2.5 py-0.5 rounded-full font-black border"
                         style={{
-                          backgroundColor: 'rgba(var(--complex-accent-rgb, 255, 200, 0), 0.18)',
-                          borderColor: 'var(--complex-accent, #ffc800)',
-                          color: 'var(--complex-accent, #ffc800)'
+                          backgroundColor: `${themeAccent}25`,
+                          borderColor: `${themeAccent}70`,
+                          color: themeAccent
                         }}
                       >
                         مستوى: {activeStudent.level}
                       </span>
                     </div>
-                    <p className="text-xs text-[#86efac]/90 mt-0.5">
+                    <p className="text-xs text-slate-300 font-bold mt-0.5">
                       موضع الحفظ الحالي: سورة {activeStudent.currentSurahName || getSurahInfo(activeStudent.currentSurah || 78).name} (الآية {activeStudent.currentAyah || 1})
                     </p>
                   </div>
@@ -1968,19 +1984,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* The Visual Progress Bar Track */}
-                    <div className="space-y-1 relative z-10">
-                      <div className="h-3.5 sm:h-4 w-full bg-[#064e3b] border border-[#065f46] rounded-full p-0.5 relative overflow-hidden shadow-inner">
+                    <div className="space-y-1.5 relative z-10">
+                      <div
+                        className="h-4 sm:h-5 w-full rounded-full p-0.5 relative overflow-hidden shadow-inner border-2 border-b-2"
+                        style={{
+                          backgroundColor: themePrimary,
+                          borderColor: themeBorder
+                        }}
+                      >
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${percent}%` }}
                           transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-                          className={`h-full rounded-full relative overflow-hidden transition-all ${
-                            isCompleted
-                              ? 'bg-gradient-to-r from-emerald-500 via-amber-300 to-[#fbbf24] shadow-[0_0_15px_rgba(251,191,36,0.6)]'
-                              : isNearing
-                              ? 'bg-gradient-to-r from-emerald-500 via-amber-400 to-orange-400 shadow-[0_0_12px_rgba(251,191,36,0.4)]'
-                              : 'bg-gradient-to-r from-emerald-600 via-emerald-400 to-[#fbbf24]'
-                          }`}
+                          className="h-full rounded-full relative overflow-hidden transition-all shadow-md"
+                          style={{
+                            width: `${percent}%`,
+                            backgroundColor: isCompleted ? '#58cc02' : themeAccent,
+                            boxShadow: `0 0 14px ${isCompleted ? '#58cc02' : themeAccent}`
+                          }}
                         >
                           {/* Shimmer light sweep */}
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 animate-[pulse_2s_infinite]" />
@@ -1988,10 +2009,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       </div>
 
                       {/* Milestone Indicators under progress bar */}
-                      <div className="flex items-center justify-between text-[10px] text-[#86efac]/70 px-1 font-mono">
+                      <div className="flex items-center justify-between text-[11px] px-1 font-bold" style={{ color: `${themeAccent}cc` }}>
                         <span>بداية السورة (آية 1)</span>
                         <span className="hidden sm:inline">نصف السورة ({Math.round(totalAyahs / 2)})</span>
-                        <span className={isCompleted ? 'text-amber-300 font-bold' : ''}>
+                        <span className={isCompleted ? 'font-black' : ''} style={isCompleted ? { color: '#58cc02' } : undefined}>
                           ختام السورة (آية {totalAyahs})
                         </span>
                       </div>

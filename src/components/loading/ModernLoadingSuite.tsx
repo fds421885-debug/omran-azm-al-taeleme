@@ -128,8 +128,12 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
   activeComplex
 }) => {
   const accentCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
-  const accentShadow = activeComplex?.theme ? darkenHex(activeComplex.theme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
-  const contrastText = activeComplex?.theme?.accentColor ? getContrastTextColor(activeComplex.theme.accentColor) : 'var(--complex-accent-text, #131f24)';
+  const accentShadow = activeComplex?.theme?.accentColor 
+    ? darkenHex(activeComplex.theme.accentColor, 0.28) 
+    : 'var(--complex-accent-shadow, #e5a500)';
+  const contrastText = activeComplex?.theme?.accentColor 
+    ? getContrastTextColor(activeComplex.theme.accentColor) 
+    : 'var(--complex-primary, #131f24)';
 
   return (
     <button
@@ -750,11 +754,11 @@ export const LoginSyncModalOverlay: React.FC<{
 }> = ({ isOpen, userName, activeComplex }) => {
   if (!isOpen) return null;
 
-  const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
-  const accentShadow = activeComplex?.theme ? darkenHex(activeComplex.theme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
-  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
-  const borderCol = activeComplex?.theme ? lightenHex(activeComplex.theme.cardColor, 0.2) : 'var(--complex-border, #2b4550)';
-  const borderBottomCol = activeComplex?.theme ? darkenHex(activeComplex.theme.primaryColor || activeComplex.theme.cardColor, 0.35) : 'var(--complex-card-shadow, #16262e)';
+  const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
+  const accentShadow = darkenHex(accentColor, 0.28);
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const borderCol = lightenHex(cardBg, 0.2);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
 
   return (
     <div
@@ -762,7 +766,7 @@ export const LoginSyncModalOverlay: React.FC<{
       dir="rtl"
     >
       <div
-        className="border-2 border-b-4 rounded-[36px] p-7 sm:p-8 max-w-sm w-full text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        className="border-2 border-b-4 rounded-[36px] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
         style={{
           backgroundColor: cardBg,
           borderColor: borderCol,
@@ -772,14 +776,14 @@ export const LoginSyncModalOverlay: React.FC<{
         {/* Noble Holy Quran with Modern Orbital Rotating Ring */}
         <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
           {/* Orbital glowing ring spinning around the Holy Quran (The Holy Quran stays steadfast & does NOT spin) */}
-          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.4s' }}>
+          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.2s' }}>
             <circle
               cx="50"
               cy="50"
               r="44"
               fill="none"
               stroke="currentColor"
-              strokeWidth="3.5"
+              strokeWidth="3"
               className="opacity-15 text-white"
             />
             <circle
@@ -797,7 +801,7 @@ export const LoginSyncModalOverlay: React.FC<{
 
           {/* Steadfast Holy Quran Icon & Emblem (Fixed in center, dignified and beautiful) */}
           <div
-            className="w-20 h-20 rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none group"
+            className="w-20 h-20 rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none"
             style={{
               backgroundColor: 'var(--complex-primary, #131f24)',
               borderColor: `${accentColor}90`,
@@ -811,25 +815,13 @@ export const LoginSyncModalOverlay: React.FC<{
         </div>
 
         {/* Clean, respectful loading title */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 pt-1">
           <h3 className="text-lg font-black text-white font-heading">
             {userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
           </h3>
           <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
             جَارٍ تَحْمِيلُ المَنْظُومَةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
           </p>
-        </div>
-
-        {/* Sleek modern progress bar */}
-        <div className="w-full bg-[#131f24] h-2.5 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
-          <div
-            className="h-full rounded-full animate-pulse transition-all duration-300"
-            style={{
-              backgroundColor: accentColor,
-              width: '92%',
-              boxShadow: `0 0 12px ${accentColor}`
-            }}
-          />
         </div>
       </div>
     </div>

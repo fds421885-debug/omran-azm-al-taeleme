@@ -425,31 +425,68 @@ button[class*="bg-[#064e3b]"]:active {
 
 /* Duolingo Avatar Initial Letter Badge */
 .duo-avatar {
-  background-color: var(--complex-primary, #131f24) !important;
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16) !important;
   color: var(--complex-accent, #ffc800) !important;
-  border: 2px solid var(--complex-border, #2b4550) !important;
-  border-bottom: 4px solid var(--complex-card-shadow, #16262e) !important;
-  border-radius: 1rem !important;
+  border: 2px solid var(--complex-accent, #ffc800) !important;
+  border-bottom: 4px solid var(--complex-accent-shadow, #e5a500) !important;
+  border-radius: 1.15rem !important;
+  font-weight: 900 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 4px 10px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.2) !important;
+}
+
+.duo-avatar-accent {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.2) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border: 2px solid var(--complex-accent, #ffc800) !important;
+  border-bottom: 4px solid var(--complex-accent-shadow, #e5a500) !important;
+  border-radius: 1.15rem !important;
   font-weight: 900 !important;
 }
 
-/* Duolingo Holy Quran Reader Action Button */
-.mushaf-reader-btn {
-  background-color: var(--complex-primary, #131f24) !important;
+/* Duolingo Holy Quran Reader Action Button (Tactile 3D) */
+.mushaf-reader-btn,
+.mushaf-reader-btn-3d {
+  background-color: var(--complex-card, #203843) !important;
   color: var(--complex-accent, #ffc800) !important;
-  border: 2px solid var(--complex-border, #2b4550) !important;
-  border-bottom: 4px solid var(--complex-card-shadow, #16262e) !important;
-  border-radius: 1rem !important;
+  border: 2px solid var(--complex-accent, #ffc800) !important;
+  border-bottom: 4px solid var(--complex-accent-shadow, #e5a500) !important;
+  border-radius: 1.15rem !important;
   font-weight: 800 !important;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: 0 4px 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.22) !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
-.mushaf-reader-btn:hover {
-  border-color: var(--complex-accent, #ffc800) !important;
+.mushaf-reader-btn:hover,
+.mushaf-reader-btn-3d:hover {
+  filter: brightness(1.1) !important;
   background-color: var(--complex-secondary, #1b2e35) !important;
 }
-.mushaf-reader-btn:active {
+.mushaf-reader-btn:active,
+.mushaf-reader-btn-3d:active {
   transform: translateY(2px) !important;
   border-bottom-width: 2px !important;
+}
+
+/* Duolingo Surah Progress Bar */
+.duo-progress-container {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 4px solid var(--complex-card-shadow, #16262e) !important;
+  border-radius: 1.5rem !important;
+}
+.duo-progress-track {
+  background-color: var(--complex-primary, #131f24) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-radius: 9999px !important;
+  overflow: hidden !important;
+  padding: 2px !important;
+}
+.duo-progress-fill {
+  background: linear-gradient(90deg, #58cc02, var(--complex-accent, #ffc800)) !important;
+  box-shadow: 0 0 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.6) !important;
+  border-radius: 9999px !important;
 }
 
 /* 5. Clean Duolingo Borders */
