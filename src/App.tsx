@@ -1228,11 +1228,15 @@ export function App() {
       return {
         ...settings,
         halaqahName: resolvedHalaqahName,
-        teacherName: currentTeacherName
+        teacherName: currentTeacherName,
+        theme: activeComplex?.theme || settings.theme
       };
     }
-    return settings;
-  }, [settings, isDeveloper, supervisedComplex, scopedHalaqahs, activeHalaqahId, assignedHalaqahs, currentTeacher, currentUser]);
+    return {
+      ...settings,
+      theme: activeComplex?.theme || settings.theme
+    };
+  }, [settings, isDeveloper, supervisedComplex, scopedHalaqahs, activeHalaqahId, assignedHalaqahs, currentTeacher, currentUser, activeComplex]);
 
   // Scoped criteria: Specific to active complex if set
   const scopedCriteria = useMemo(() => {
@@ -1936,8 +1940,12 @@ export function App() {
     setSettings(merged);
     if (merged.theme) {
       applyComplexThemeToDOM(merged.theme, true);
-      if (activeComplex) {
-        const updatedC: QuranComplex = { ...activeComplex, theme: merged.theme };
+      try {
+        localStorage.setItem('omran_active_theme', JSON.stringify(merged.theme));
+      } catch (e) {}
+      const targetC = activeComplex || complexes[0];
+      if (targetC) {
+        const updatedC: QuranComplex = { ...targetC, theme: merged.theme };
         await OmranDataService.saveComplex(updatedC);
         setComplexes(prev => prev.map(c => c.id === updatedC.id ? updatedC : c));
       }
@@ -2188,6 +2196,10 @@ export function App() {
     if (complex.theme) {
       applyComplexThemeToDOM(complex.theme, true);
       setSettings(prev => ({ ...prev, theme: complex.theme }));
+      try {
+        localStorage.setItem('omran_active_theme', JSON.stringify(complex.theme));
+      } catch (e) {}
+      await OmranDataService.saveSettings({ ...settings, theme: complex.theme }).catch(() => {});
     }
   };
 
@@ -2259,17 +2271,17 @@ export function App() {
 
   const handleSelectStudentForEval = (studentId: string) => {
     setTargetStudentForEval(studentId);
-    setActiveTab('evaluation');
+    handleNavigateTab('evaluation');
   };
 
   const handleNavigateToWhatsApp = (studentId: string) => {
     setTargetStudentForWhatsApp(studentId);
-    setActiveTab('parents');
+    handleNavigateTab('parents');
   };
 
   const handleNavigateToBehavior = (studentId: string) => {
     setTargetStudentForBehavior(studentId);
-    setActiveTab('behavior');
+    handleNavigateTab('behavior');
   };
 
   // Scoped settings for students / parent portal

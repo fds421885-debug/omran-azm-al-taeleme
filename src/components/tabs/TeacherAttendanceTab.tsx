@@ -37,6 +37,7 @@ import {
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface TeacherAttendanceTabProps {
   teachers: TeacherAccount[];
@@ -59,6 +60,19 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 }) => {
   const isSupervisorOrDev = isSupervisor || isDeveloper;
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
+  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
+  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
+  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeCardShadow = darkenHex(themeCard, 0.35);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = activeComplex?.theme?.textColor || '#ffffff';
+  const themeSubtext = activeComplex?.theme?.subtextColor || lightenHex(themeAccent, 0.25);
+  const themeContrastText = getContrastTextColor(themeAccent);
 
   useEffect(() => {
     if (initialHighlightId) {
@@ -999,10 +1013,25 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Top Banner & Mode Toggle */}
-      <div className="bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] p-5 sm:p-6 rounded-[32px] border border-[#065f46] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Top Banner & Mode Toggle with Duolingo 3D Styling */}
+      <div
+        className="p-5 sm:p-6 rounded-[32px] border-2 border-b-4 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all"
+        style={{
+          backgroundColor: themeCard,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 text-[#064e3b] flex items-center justify-center font-black text-xl shadow-lg shrink-0">
+          <div
+            className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-xl shadow-lg shrink-0"
+            style={{
+              backgroundColor: themeAccent,
+              borderColor: themeAccent,
+              borderBottomColor: themeAccentShadow,
+              color: themeContrastText
+            }}
+          >
             <Clock className="w-6 h-6" />
           </div>
           <div>
@@ -1010,34 +1039,65 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               <h2 className="text-lg sm:text-xl font-black text-white font-heading">
                 نظام تحضير المعلمين الذكي
               </h2>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+              <span
+                className="text-xs px-2.5 py-0.5 rounded-full font-bold border"
+                style={{
+                  backgroundColor: `${themeAccent}25`,
+                  color: themeAccent,
+                  borderColor: `${themeAccent}60`
+                }}
+              >
                 {mosques.length} {mosques.length === 1 ? 'جامع مسجل' : 'جوامع مسجلة'}
               </span>
               {activeComplex?.name && (
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#022c22] text-[#86efac] font-bold border border-[#065f46] flex items-center gap-1">
-                  <Building2 className="w-3 h-3 text-amber-400" />
+                <span
+                  className="text-xs px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    color: themeSubtext,
+                    borderColor: themeBorder
+                  }}
+                >
+                  <Building2 className="w-3 h-3" style={{ color: themeAccent }} />
                   <span>{activeComplex.name}</span>
                 </span>
               )}
             </div>
-            <p className="text-xs text-emerald-300/80 mt-1">
+            <p className="text-xs text-slate-300 mt-1 font-bold">
               إدارة فترات الدوام والمناوبات، وتعيين الجوامع والمعلمين، والتحضير السلس بضغطة زر
             </p>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1.5 bg-[#022c22] p-1.5 rounded-2xl border border-[#065f46] flex-wrap">
+        <div
+          className="flex items-center gap-1.5 p-1.5 rounded-2xl border flex-wrap"
+          style={{
+            backgroundColor: themePrimary,
+            borderColor: themeBorder
+          }}
+        >
           {isSupervisorOrDev && (
             <>
               <button
                 type="button"
                 onClick={() => setActiveSubTab('records')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
+                style={
                   activeSubTab === 'records'
-                    ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-                    : 'text-emerald-200 hover:text-white hover:bg-[#064e3b]'
-                }`}
+                    ? {
+                        backgroundColor: themeAccent,
+                        color: themeContrastText,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }
+                    : {
+                        backgroundColor: 'transparent',
+                        color: '#cbd5e1',
+                        borderColor: 'transparent',
+                        borderBottomColor: 'transparent'
+                      }
+                }
               >
                 <Calendar className="w-3.5 h-3.5" />
                 <span>سجل التحضير</span>
@@ -1046,11 +1106,22 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveSubTab('shifts')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
+                style={
                   activeSubTab === 'shifts'
-                    ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-                    : 'text-emerald-200 hover:text-white hover:bg-[#064e3b]'
-                }`}
+                    ? {
+                        backgroundColor: themeAccent,
+                        color: themeContrastText,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }
+                    : {
+                        backgroundColor: 'transparent',
+                        color: '#cbd5e1',
+                        borderColor: 'transparent',
+                        borderBottomColor: 'transparent'
+                      }
+                }
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>فترات الدوام وتعيينها ({shifts.length})</span>
@@ -1059,11 +1130,22 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveSubTab('mosques')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
+                style={
                   activeSubTab === 'mosques'
-                    ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-                    : 'text-emerald-200 hover:text-white hover:bg-[#064e3b]'
-                }`}
+                    ? {
+                        backgroundColor: themeAccent,
+                        color: themeContrastText,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }
+                    : {
+                        backgroundColor: 'transparent',
+                        color: '#cbd5e1',
+                        borderColor: 'transparent',
+                        borderBottomColor: 'transparent'
+                      }
+                }
               >
                 <Building2 className="w-3.5 h-3.5" />
                 <span>الجوامع ({mosques.length})</span>
@@ -1074,11 +1156,22 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
           <button
             type="button"
             onClick={() => setActiveSubTab('self')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
+            style={
               activeSubTab === 'self' || !isSupervisorOrDev
-                ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-                : 'text-emerald-200 hover:text-white hover:bg-[#064e3b]'
-            }`}
+                ? {
+                    backgroundColor: themeAccent,
+                    color: themeContrastText,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow
+                  }
+                : {
+                    backgroundColor: 'transparent',
+                    color: '#cbd5e1',
+                    borderColor: 'transparent',
+                    borderBottomColor: 'transparent'
+                  }
+            }
           >
             <UserCheck className="w-3.5 h-3.5" />
             <span>تسجيل حضوري</span>
@@ -1090,18 +1183,35 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 1: TEACHER SELF ATTENDANCE (واجهة المعلم للتحضير الذاتي)        */}
       {/* ===================================================================== */}
       {(activeSubTab === 'self' || !isSupervisorOrDev) && (
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
-          <div className="border-b border-[#065f46] pb-4 flex items-center justify-between gap-3 flex-wrap">
+        <div
+          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div
+            className="pb-4 flex items-center justify-between gap-3 flex-wrap border-b"
+            style={{ borderColor: themeBorder }}
+          >
             <div>
               <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Navigation className="w-5 h-5 text-[#fbbf24]" />
+                <Navigation className="w-5 h-5" style={{ color: themeAccent }} />
                 <span>تحضير الحضور والانصراف اليومي</span>
               </h3>
-              <p className="text-xs text-emerald-300/80 mt-0.5">
-                تاريخ اليوم: {todayStr} • المعلم: <strong className="text-amber-300">{currentTeacher?.name || currentUserName || 'المعلم'}</strong>
+              <p className="text-xs text-slate-300 mt-0.5 font-bold">
+                تاريخ اليوم: {todayStr} • المعلم: <strong style={{ color: themeAccent }}>{currentTeacher?.name || currentUserName || 'المعلم'}</strong>
               </p>
             </div>
-            <span className="text-xs px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-700/50">
+            <span
+              className="text-xs px-3 py-1 rounded-full font-bold border"
+              style={{
+                backgroundColor: themeSecondary,
+                color: themeSubtext,
+                borderColor: themeBorder
+              }}
+            >
               النطاق المسموح: 1 كم من الجامع
             </span>
           </div>
@@ -1109,14 +1219,14 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
           {/* Feedback Banner */}
           {checkInFeedback && (
             <div
-              className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 animate-fadeIn ${
+              className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 animate-fadeIn border-2 border-b-4 ${
                 checkInFeedback.type === 'success'
-                  ? 'bg-amber-400/20 border border-amber-400/50 text-amber-300'
-                  : 'bg-red-500/20 border border-red-500/50 text-red-200'
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
+                  : 'bg-red-500/20 border-red-500/50 text-red-200'
               }`}
             >
               {checkInFeedback.type === 'success' ? (
-                <CheckCircle2 className="w-5 h-5 text-amber-300 shrink-0" />
+                <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
               ) : (
                 <AlertCircle className="w-5 h-5 text-red-300 shrink-0" />
               )}
@@ -1125,7 +1235,14 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
           )}
 
           {myAssignedShifts.length === 0 ? (
-            <div className="p-8 text-center text-xs text-emerald-300/80 border border-dashed border-[#065f46] rounded-3xl space-y-4 bg-[#022c22]/40">
+            <div
+              className="p-8 text-center text-xs border-2 border-dashed rounded-3xl space-y-4"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder,
+                color: themeSubtext
+              }}
+            >
               <p className="text-sm font-bold text-white">لا توجد فترات دوام مسندة إليك حالياً في هذا المجمع ({activeComplex?.name || 'المجمع'}).</p>
               {isSupervisorOrDev ? (
                 <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -1414,31 +1531,51 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 2: SUPERVISOR ATTENDANCE RECORDS (سجل الحضور اليومي للمشرف)      */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'records' && (
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
+        <div
+          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
           {/* Header & Date Navigation */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#065f46] pb-4">
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
+            style={{ borderColor: themeBorder }}
+          >
             <div>
               <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-[#fbbf24]" />
+                <Calendar className="w-5 h-5" style={{ color: themeAccent }} />
                 <span>سجل تحضير وانصراف المعلمين</span>
               </h3>
-              <p className="text-xs text-emerald-300/80 mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5 font-bold">
                 يمكنك الرجوع لأي تاريخ سابق للاطلاع على سجلات التحضير أو التعديل عليها
               </p>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-emerald-200 font-bold">التاريخ المحدد:</span>
+              <span className="text-xs text-slate-300 font-bold">التاريخ المحدد:</span>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={e => setSelectedDate(e.target.value)}
-                className="bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] text-[#fbbf24] font-bold rounded-xl px-3 py-1.5 text-xs outline-none cursor-pointer"
+                className="border-2 rounded-xl px-3 py-1.5 text-xs outline-none cursor-pointer font-bold"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder,
+                  color: themeAccent
+                }}
               />
               <button
                 type="button"
                 onClick={() => setSelectedDate(todayStr)}
-                className="px-2.5 py-1.5 rounded-xl bg-[#064e3b] text-emerald-200 hover:text-white border border-[#065f46] text-xs font-bold transition-colors cursor-pointer"
+                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-bold transition-all cursor-pointer"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder,
+                  color: themeText
+                }}
               >
                 اليوم
               </button>

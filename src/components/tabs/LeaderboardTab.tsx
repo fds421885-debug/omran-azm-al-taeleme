@@ -28,8 +28,10 @@ import {
   StudentEvaluation,
   ExamSubmission,
   StudentListeningLog,
-  LeaderboardSettings
+  LeaderboardSettings,
+  QuranComplex
 } from '../../types';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface LeaderboardTabProps {
   students: Student[];
@@ -42,6 +44,8 @@ interface LeaderboardTabProps {
   isSupervisor?: boolean;
   isDeveloper?: boolean;
   activeHalaqahId?: string;
+  activeComplex?: QuranComplex | null;
+  settings?: any;
   currentUserName?: string;
   onSaveLeaderboardSettings?: (settings: LeaderboardSettings) => Promise<void>;
   onAwardBonusPoints?: (studentId: string, points: number, reason: string) => Promise<void>;
@@ -63,6 +67,8 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
   isSupervisor = false,
   isDeveloper = false,
   activeHalaqahId = 'all',
+  activeComplex,
+  settings,
   currentUserName,
   onSaveLeaderboardSettings,
   onAwardBonusPoints
@@ -245,28 +251,81 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
     }
   };
 
+  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
+  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
+  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
+  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = activeComplex?.theme?.textColor || '#ffffff';
+  const themeSubtext = lightenHex(themeAccent, 0.45);
+  const themeContrastText = getContrastTextColor(themeAccent);
+
   return (
-    <div className="space-y-6">
-      {/* Top Banner Header */}
-      <div className="rounded-[32px] bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#064e3b] border border-[#fbbf24]/50 p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
-        <div className="absolute -top-12 -left-12 w-48 h-48 bg-[#fbbf24]/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="space-y-6" dir="rtl">
+      {/* Top Banner Header with Duolingo 3D Styling */}
+      <div
+        className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md transition-all"
+        style={{
+          backgroundColor: themeSecondary,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
+        <div
+          className="absolute -top-12 -left-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-25"
+          style={{ backgroundColor: themeAccent }}
+        />
+        <div
+          className="absolute -bottom-12 -right-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-20"
+          style={{ backgroundColor: themeAccent }}
+        />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] flex items-center justify-center shadow-lg border border-[#fbbf24]/40 shrink-0">
-              <Trophy className="w-8 h-8 text-[#064e3b]" />
+            <div
+              className="w-16 h-16 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-lg shrink-0"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                color: themeContrastText
+              }}
+            >
+              <Trophy className="w-8 h-8" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl sm:text-2xl font-black text-white font-heading">
                   لوحة الشرف والتفوق القرآني
                 </h2>
-                <span className="text-xs px-3 py-1 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/30">
+                <span
+                  className="text-xs px-3 py-1 rounded-full font-black border-2 border-b-2 shadow-xs"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    color: themeAccent,
+                    borderColor: `${themeAccent}60`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
                   {activeScope === 'per_halaqah' ? 'ترتيب الحلقة' : 'الترتيب العام الموحد'}
                 </span>
+                {activeComplex?.name && (
+                  <span
+                    className="text-xs px-3 py-1 rounded-full font-bold border"
+                    style={{
+                      backgroundColor: `${themeCard}95`,
+                      color: themeSubtext,
+                      borderColor: themeBorder
+                    }}
+                  >
+                    {activeComplex.name}
+                  </span>
+                )}
               </div>
-              <p className="text-xs sm:text-sm text-emerald-200/90 mt-1 max-w-xl leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl leading-relaxed font-bold">
                 لوحة تنافسية شاملة ترصد وتجمع نقاط الطلاب من تقييمات التسميع اليومية، الاختبارات القرآنية، إنجاز الاستماع المنزلي، والأوجه المكتملة.
               </p>
             </div>
@@ -277,9 +336,15 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
-                className="px-4 py-2.5 rounded-2xl bg-[#022c22] hover:bg-emerald-950 border border-[#fbbf24]/40 text-amber-300 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                style={{
+                  backgroundColor: themeCard,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom,
+                  color: themeAccent
+                }}
               >
-                <Sliders className="w-4 h-4 text-[#fbbf24]" />
+                <Sliders className="w-4 h-4" />
                 <span>إعدادات نطاق اللوحة</span>
               </button>
             )}
@@ -287,24 +352,36 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         </div>
 
         {/* Filter and Search Bar */}
-        <div className="mt-6 pt-5 border-t border-emerald-800/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div
+          className="mt-6 pt-5 border-t flex flex-col sm:flex-row items-center justify-between gap-3"
+          style={{ borderColor: `${themeBorder}80` }}
+        >
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3" />
+            <Search className="w-4 h-4 absolute right-3.5 top-3" style={{ color: themeAccent }} />
             <input
               type="text"
               placeholder="ابحث باسم الطالب لرؤية ترتيبه ونقاطه..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-4 pr-10 py-2 rounded-xl bg-[#022c22]/90 border border-[#065f46] text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none font-bold"
+              className="w-full pl-4 pr-10 py-2 rounded-xl border-2 text-xs text-white placeholder:text-slate-400 focus:outline-none font-bold"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: themeBorder
+              }}
             />
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs text-emerald-200 font-bold shrink-0">تصفية حسب الحلقة:</span>
+            <span className="text-xs text-slate-300 font-bold shrink-0">تصفية حسب الحلقة:</span>
             <select
               value={selectedHalaqahFilter}
               onChange={e => setSelectedHalaqahFilter(e.target.value)}
-              className="text-xs text-amber-200 bg-[#022c22] border border-[#065f46] rounded-xl px-3 py-2 focus:border-[#fbbf24] focus:outline-none cursor-pointer font-bold"
+              className="text-xs rounded-xl px-3 py-2 border-2 focus:outline-none cursor-pointer font-bold"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: themeBorder,
+                color: themeText
+              }}
             >
               <option value="all">جميع الحلقات ({students.length} طالب)</option>
               {halaqahs.map(h => (
@@ -317,7 +394,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         </div>
       </div>
 
-      {/* Top 3 Podium Cards */}
+      {/* Top 3 Podium Cards with Authentic Duolingo 3D Podium Styling */}
       {studentRankList.length > 0 && !searchQuery && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {studentRankList.slice(0, 3).map((item, idx) => {
@@ -325,34 +402,31 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               {
                 label: 'المركز الأول • تاج التفوق',
                 icon: Trophy,
-                border: 'border-[#fbbf24]',
-                glow: 'shadow-[0_0_25px_rgba(251,191,36,0.35)]',
-                bg: 'bg-gradient-to-b from-amber-500/20 via-[#064e3b] to-[#022c22]',
-                badgeBg: 'bg-[#fbbf24]',
-                badgeText: 'text-[#064e3b]',
-                cardBorder: 'border-[#fbbf24]',
+                badgeBg: '#ffc800',
+                badgeShadow: '#e5a500',
+                badgeText: '#131f24',
+                rankBorder: '#ffc800',
+                rankBorderBottom: '#e5a500',
                 rankNumber: 1
               },
               {
                 label: 'المركز الثاني • وسام التميز',
                 icon: Medal,
-                border: 'border-slate-300',
-                glow: 'shadow-[0_0_20px_rgba(203,213,225,0.2)]',
-                bg: 'bg-gradient-to-b from-slate-400/20 via-[#064e3b] to-[#022c22]',
-                badgeBg: 'bg-slate-300',
-                badgeText: 'text-slate-900',
-                cardBorder: 'border-slate-300/60',
+                badgeBg: '#cbd5e1',
+                badgeShadow: '#94a3b8',
+                badgeText: '#0f172a',
+                rankBorder: '#cbd5e1',
+                rankBorderBottom: '#94a3b8',
                 rankNumber: 2
               },
               {
                 label: 'المركز الثالث • درع الاجتهاد',
                 icon: Award,
-                border: 'border-amber-600',
-                glow: 'shadow-[0_0_20px_rgba(217,119,6,0.2)]',
-                bg: 'bg-gradient-to-b from-amber-600/20 via-[#064e3b] to-[#022c22]',
-                badgeBg: 'bg-amber-600',
-                badgeText: 'text-white',
-                cardBorder: 'border-amber-600/60',
+                badgeBg: '#ea580c',
+                badgeShadow: '#c2410c',
+                badgeText: '#ffffff',
+                rankBorder: '#ea580c',
+                rankBorderBottom: '#c2410c',
                 rankNumber: 3
               }
             ];
@@ -363,39 +437,73 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <div
                 key={item.student.id}
                 onClick={() => setSelectedStudentForBreakdown(item.student)}
-                className={`p-6 rounded-3xl border ${badge.cardBorder} ${badge.bg} ${badge.glow} flex flex-col justify-between gap-4 cursor-pointer transition-all hover:scale-[1.02] relative overflow-hidden group`}
+                className="p-6 rounded-3xl border-2 border-b-4 flex flex-col justify-between gap-4 cursor-pointer transition-all hover:scale-[1.01] relative overflow-hidden group shadow-lg active:translate-y-[2px]"
+                style={{
+                  backgroundColor: themeCard,
+                  borderColor: badge.rankBorder,
+                  borderBottomColor: badge.rankBorderBottom
+                }}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md ${badge.badgeBg} ${badge.badgeText}`}>
+                  <span
+                    className="px-3 py-1 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md border-b-2"
+                    style={{
+                      backgroundColor: badge.badgeBg,
+                      color: badge.badgeText,
+                      borderBottomColor: badge.badgeShadow
+                    }}
+                  >
                     <BadgeIcon className="w-4 h-4" />
                     <span>{badge.label}</span>
                   </span>
 
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#022c22] text-emerald-300 font-bold border border-emerald-800">
+                  <span
+                    className="text-xs px-2.5 py-0.5 rounded-full font-bold border-2 border-b-2"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      color: themeSubtext,
+                      borderColor: themeBorder,
+                      borderBottomColor: themeBorderBottom
+                    }}
+                  >
                     الترتيب #{badge.rankNumber}
                   </span>
                 </div>
 
                 <div className="text-center py-2">
-                  <div className="w-16 h-16 rounded-2xl bg-[#022c22] border-2 border-[#fbbf24]/50 text-[#fbbf24] text-2xl font-black flex items-center justify-center mx-auto mb-3 shadow-lg group-hover:border-[#fbbf24] transition-colors">
+                  <div
+                    className="w-16 h-16 rounded-2xl border-2 border-b-4 text-2xl font-black flex items-center justify-center mx-auto mb-3 shadow-lg transition-transform group-hover:scale-105"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: badge.rankBorder,
+                      borderBottomColor: badge.rankBorderBottom,
+                      color: badge.badgeBg
+                    }}
+                  >
                     {item.student.name.charAt(0)}
                   </div>
                   <h3 className="text-lg font-black text-white font-heading">{item.student.name}</h3>
-                  <p className="text-xs text-emerald-300/80 mt-0.5">{item.halaqahName}</p>
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">{item.halaqahName}</p>
                 </div>
 
-                <div className="bg-[#022c22]/90 rounded-2xl p-3 border border-emerald-800/60 grid grid-cols-3 gap-2 text-center text-xs">
+                <div
+                  className="rounded-2xl p-3 border-2 grid grid-cols-3 gap-2 text-center text-xs"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeBorder
+                  }}
+                >
                   <div>
-                    <span className="text-[10px] text-emerald-300/70 block">تسميع ومعايير</span>
+                    <span className="text-[10px] text-slate-300 font-bold block">تسميع ومعايير</span>
                     <strong className="text-emerald-400 font-mono text-xs">{item.evalPoints}</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-emerald-300/70 block">الاختبارات</span>
-                    <strong className="text-emerald-400 font-mono text-xs">{item.examPoints}</strong>
+                    <span className="text-[10px] text-slate-300 font-bold block">الاختبارات</span>
+                    <strong className="text-sky-400 font-mono text-xs">{item.examPoints}</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-[#fbbf24] block">إجمالي النقاط</span>
-                    <strong className="text-[#fbbf24] font-mono text-base font-black">{item.totalPoints}</strong>
+                    <span className="text-[10px] font-bold block" style={{ color: themeAccent }}>إجمالي النقاط</span>
+                    <strong className="font-mono text-base font-black" style={{ color: themeAccent }}>{item.totalPoints}</strong>
                   </div>
                 </div>
 
@@ -406,7 +514,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       e.stopPropagation();
                       setSelectedStudentForBreakdown(item.student);
                     }}
-                    className="flex-1 py-2 rounded-xl bg-[#fbbf24]/20 hover:bg-[#fbbf24]/30 text-[#fbbf24] border border-[#fbbf24]/40 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="flex-1 py-2 rounded-xl border-2 border-b-4 font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                    style={{
+                      backgroundColor: `${themeAccent}25`,
+                      color: themeAccent,
+                      borderColor: `${themeAccent}60`,
+                      borderBottomColor: themeAccentShadow
+                    }}
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>عرض التفاصيل</span>
@@ -419,7 +533,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                           e.stopPropagation();
                           handleOpenPointsModal(item.student, 'award');
                         }}
-                        className="px-3 py-2 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center justify-center gap-1 shadow-md transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-xl border-2 border-b-4 font-black text-xs flex items-center justify-center gap-1 shadow-md transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                        style={{
+                          backgroundColor: themeAccent,
+                          color: themeContrastText,
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow
+                        }}
                         title="إضافة نقاط تشجيعية"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -431,7 +551,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                           e.stopPropagation();
                           handleOpenPointsModal(item.student, 'deduct');
                         }}
-                        className="px-2.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 font-black text-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
+                        className="px-2.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-2 border-b-4 border-rose-500/40 border-b-rose-700 font-black text-xs flex items-center justify-center gap-1 transition-all cursor-pointer active:translate-y-[2px]"
                         title="خصم نقاط جزائية"
                       >
                         <Minus className="w-3.5 h-3.5" />
@@ -446,28 +566,48 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         </div>
       )}
 
-      {/* Main Ranking Table Card */}
-      <div className="rounded-[32px] bg-[#064e3b]/60 border border-[#065f46] p-6 shadow-xl backdrop-blur-md space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
+      {/* Main Ranking Table Card with Duolingo 3D Styling */}
+      <div
+        className="rounded-[32px] border-2 border-b-4 p-6 shadow-xl backdrop-blur-md space-y-4"
+        style={{
+          backgroundColor: themeCard,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
+        <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: themeBorder }}>
           <div className="flex items-center gap-2">
-            <Medal className="w-5 h-5 text-[#fbbf24]" />
+            <Medal className="w-5 h-5" style={{ color: themeAccent }} />
             <h3 className="text-base font-bold text-white font-heading">
               قائمة ترتيب الطلاب التنافسية ({studentRankList.length} طالب)
             </h3>
           </div>
-          <span className="text-xs text-[#86efac] font-medium">
+          <span className="text-xs font-bold" style={{ color: themeSubtext }}>
             انقر على أي طالب للاطلاع على تفاصيل وكيفية جمع نقاطه
           </span>
         </div>
 
         {studentRankList.length === 0 ? (
-          <div className="text-center py-12 text-xs text-emerald-200/70">
+          <div className="text-center py-12 text-xs text-slate-300 font-bold">
             لا يوجد طلاب مطابقين للبحث أو الحلقة المحددة.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-emerald-800/60 bg-[#022c22]/70">
+          <div
+            className="overflow-x-auto rounded-2xl border-2"
+            style={{
+              backgroundColor: themeSecondary,
+              borderColor: themeBorder
+            }}
+          >
             <table className="w-full text-right text-xs">
-              <thead className="bg-[#064e3b]/80 text-emerald-200 border-b border-[#065f46] text-[11px] font-bold">
+              <thead
+                className="border-b text-[11px] font-black"
+                style={{
+                  backgroundColor: themePrimary,
+                  borderColor: themeBorder,
+                  color: themeSubtext
+                }}
+              >
                 <tr>
                   <th className="p-3 text-center">الترتيب</th>
                   <th className="p-3">اسم الطالب</th>
@@ -480,25 +620,25 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   <th className="p-3 text-left">التفاصيل</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-900/60 text-white">
+              <tbody className="divide-y text-white" style={{ borderColor: `${themeBorder}60` }}>
                 {studentRankList.map((item, idx) => {
                   const rank = idx + 1;
                   return (
                     <tr
                       key={item.student.id}
                       onClick={() => setSelectedStudentForBreakdown(item.student)}
-                      className="hover:bg-emerald-900/40 transition-colors cursor-pointer group"
+                      className="hover:bg-white/5 transition-colors cursor-pointer group"
                     >
                       <td className="p-3 text-center font-mono">
                         <span
                           className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black shadow-sm ${
                             rank === 1
-                              ? 'bg-[#fbbf24] text-[#064e3b]'
+                              ? 'bg-[#ffc800] text-[#131f24]'
                               : rank === 2
                               ? 'bg-slate-300 text-slate-900'
                               : rank === 3
                               ? 'bg-amber-600 text-white'
-                              : 'bg-[#022c22] text-emerald-300 border border-emerald-700'
+                              : 'bg-white/10 text-slate-300 border border-white/20'
                           }`}
                         >
                           {rank}
@@ -506,30 +646,37 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-white group-hover:text-[#fbbf24] transition-colors">
+                          <span className="font-bold text-white group-hover:text-amber-300 transition-colors">
                             {item.student.name}
                           </span>
                           {rank <= 3 && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold">
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded-full font-black border"
+                              style={{
+                                backgroundColor: `${themeAccent}25`,
+                                color: themeAccent,
+                                borderColor: `${themeAccent}60`
+                              }}
+                            >
                               متميز
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="p-3 text-emerald-300/80">{item.halaqahName}</td>
-                      <td className="p-3 text-center font-mono font-bold text-emerald-300">
+                      <td className="p-3 text-slate-300 font-bold">{item.halaqahName}</td>
+                      <td className="p-3 text-center font-mono font-bold text-emerald-400">
                         {item.evalPoints}
                       </td>
-                      <td className="p-3 text-center font-mono font-bold text-emerald-300">
+                      <td className="p-3 text-center font-mono font-bold text-sky-400">
                         {item.examPoints}
                       </td>
-                      <td className="p-3 text-center font-mono font-bold text-emerald-300">
+                      <td className="p-3 text-center font-mono font-bold text-purple-400">
                         {item.listeningPoints}
                       </td>
-                      <td className="p-3 text-center font-mono text-emerald-300">
+                      <td className="p-3 text-center font-mono text-slate-300 font-bold">
                         {item.pagePoints}
                       </td>
-                      <td className="p-3 text-center font-mono text-sm font-black text-[#fbbf24]">
+                      <td className="p-3 text-center font-mono text-sm font-black" style={{ color: themeAccent }}>
                         {item.totalPoints}
                       </td>
                       <td className="p-3 text-left">
@@ -542,7 +689,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                                   e.stopPropagation();
                                   handleOpenPointsModal(item.student, 'award');
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-[#064e3b] text-[11px] font-black border border-amber-400/40 transition-all flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1 rounded-xl border-2 border-b-2 font-black text-[11px] transition-all flex items-center gap-1 cursor-pointer active:translate-y-[1px] hover:brightness-110 shadow-xs"
+                                style={{
+                                  backgroundColor: themeAccent,
+                                  color: themeContrastText,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow
+                                }}
                                 title="إضافة نقاط تشجيعية لهذا الطالب"
                               >
                                 <Plus className="w-3 h-3" />
@@ -554,7 +707,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                                   e.stopPropagation();
                                   handleOpenPointsModal(item.student, 'deduct');
                                 }}
-                                className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white text-[11px] font-black border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer"
+                                className="px-2 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white text-[11px] font-black border-2 border-b-2 border-rose-500/40 border-b-rose-700 transition-all flex items-center gap-1 cursor-pointer active:translate-y-[1px]"
                                 title="خصم نقاط جزائية من هذا الطالب"
                               >
                                 <Minus className="w-3 h-3" />
@@ -565,7 +718,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                           <button
                             type="button"
                             onClick={() => setSelectedStudentForBreakdown(item.student)}
-                            className="px-3 py-1 rounded-lg bg-emerald-800/80 hover:bg-[#fbbf24] text-emerald-100 hover:text-[#064e3b] text-[11px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            className="px-3 py-1 rounded-xl border-2 border-b-2 text-[11px] font-black transition-all inline-flex items-center gap-1 cursor-pointer active:translate-y-[1px]"
+                            style={{
+                              backgroundColor: `${themeAccent}20`,
+                              borderColor: `${themeAccent}50`,
+                              borderBottomColor: themeAccentShadow,
+                              color: themeAccent
+                            }}
                           >
                             <span>عرض النقاط</span>
                             <ChevronLeft className="w-3.5 h-3.5" />
@@ -583,12 +742,27 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
       {/* DETAILED POINT BREAKDOWN MODAL FOR SELECTED STUDENT */}
       {selectedStudentForBreakdown && breakdownData && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#022c22] border border-[#fbbf24]/60 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl space-y-6 text-right">
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto" dir="rtl">
+          <div
+            className="border-2 border-b-4 rounded-[32px] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl space-y-6 text-right"
+            style={{
+              backgroundColor: themeCard,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-emerald-800 pb-4">
+            <div className="flex items-center justify-between border-b pb-4" style={{ borderColor: themeBorder }}>
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] font-black text-xl flex items-center justify-center shadow-lg">
+                <div
+                  className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-xl shadow-lg shrink-0"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeContrastText
+                  }}
+                >
                   {selectedStudentForBreakdown.name.charAt(0)}
                 </div>
                 <div>
@@ -596,12 +770,19 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     <h3 className="text-base sm:text-lg font-black text-white font-heading">
                       {selectedStudentForBreakdown.name}
                     </h3>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/30">
+                    <span
+                      className="text-xs px-2.5 py-0.5 rounded-full font-black border"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        color: themeAccent,
+                        borderColor: `${themeAccent}60`
+                      }}
+                    >
                       الترتيب #{studentRankList.findIndex(i => i.student.id === selectedStudentForBreakdown.id) + 1}
                     </span>
                   </div>
-                  <p className="text-xs text-emerald-300/80 mt-0.5">
-                    الحلقة: {breakdownData.halaqahName} • إجمالي رصيد النقاط: <strong className="text-[#fbbf24] font-mono text-sm">{breakdownData.totalPoints} نقطة</strong>
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
+                    الحلقة: {breakdownData.halaqahName} • إجمالي رصيد النقاط: <strong className="font-mono text-sm" style={{ color: themeAccent }}>{breakdownData.totalPoints} نقطة</strong>
                   </p>
                 </div>
               </div>
@@ -609,7 +790,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedStudentForBreakdown(null)}
-                className="p-2 rounded-xl text-emerald-300 hover:text-white cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -617,55 +798,77 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
             {/* Point Sources Summary Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-emerald-800 text-center space-y-1">
-                <span className="text-[10px] text-emerald-300 font-bold block">تقييم التسميع</span>
-                <span className="text-lg font-black text-[#fbbf24] font-mono">{breakdownData.evalPoints}</span>
-                <span className="text-[10px] text-emerald-400/80 block">نقطة مكتسبة</span>
+              <div
+                className="p-3 rounded-2xl border-2 text-center space-y-1"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <span className="text-[10px] text-slate-300 font-bold block">تقييم التسميع</span>
+                <span className="text-lg font-black font-mono" style={{ color: themeAccent }}>{breakdownData.evalPoints}</span>
+                <span className="text-[10px] text-emerald-400 font-bold block">نقطة مكتسبة</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-emerald-800 text-center space-y-1">
-                <span className="text-[10px] text-emerald-300 font-bold block">الاختبارات القرآنية</span>
-                <span className="text-lg font-black text-[#fbbf24] font-mono">{breakdownData.examPoints}</span>
-                <span className="text-[10px] text-emerald-400/80 block">نقطة معتمدة</span>
+              <div
+                className="p-3 rounded-2xl border-2 text-center space-y-1"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <span className="text-[10px] text-slate-300 font-bold block">الاختبارات القرآنية</span>
+                <span className="text-lg font-black font-mono" style={{ color: themeAccent }}>{breakdownData.examPoints}</span>
+                <span className="text-[10px] text-sky-400 font-bold block">نقطة معتمدة</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-emerald-800 text-center space-y-1">
-                <span className="text-[10px] text-emerald-300 font-bold block">الاستماع القرآني</span>
-                <span className="text-lg font-black text-[#fbbf24] font-mono">{breakdownData.listeningPoints}</span>
-                <span className="text-[10px] text-emerald-400/80 block">تكرارات منجزة</span>
+              <div
+                className="p-3 rounded-2xl border-2 text-center space-y-1"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <span className="text-[10px] text-slate-300 font-bold block">الاستماع القرآني</span>
+                <span className="text-lg font-black font-mono" style={{ color: themeAccent }}>{breakdownData.listeningPoints}</span>
+                <span className="text-[10px] text-purple-400 font-bold block">تكرارات منجزة</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-emerald-800 text-center space-y-1">
-                <span className="text-[10px] text-emerald-300 font-bold block">نقاط تشجيعية / حسم</span>
+              <div
+                className="p-3 rounded-2xl border-2 text-center space-y-1"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <span className="text-[10px] text-slate-300 font-bold block">نقاط تشجيعية / حسم</span>
                 <span className={`text-lg font-black font-mono ${(breakdownData.student.bonusPoints || 0) >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
                   {(breakdownData.student.bonusPoints || 0) >= 0 ? `+${breakdownData.student.bonusPoints || 0}` : breakdownData.student.bonusPoints}
                 </span>
-                <span className="text-[10px] text-emerald-400/80 block">تعديلات المعلم</span>
+                <span className="text-[10px] text-slate-300 font-bold block">تعديلات المعلم</span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-[#011a14] border border-[#fbbf24]/40 text-center space-y-1">
-                <span className="text-[10px] text-amber-300 font-bold block">إجمالي الرصيد الفعلي</span>
-                <span className="text-lg font-black text-[#fbbf24] font-mono">{breakdownData.totalPoints}</span>
-                <span className="text-[10px] text-emerald-300/80 block">الرصيد المعتمد</span>
+              <div
+                className="p-3 rounded-2xl border-2 border-b-4 text-center space-y-1"
+                style={{
+                  backgroundColor: themePrimary,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }}
+              >
+                <span className="text-[10px] font-black block" style={{ color: themeSubtext }}>إجمالي الرصيد الفعلي</span>
+                <span className="text-lg font-black font-mono" style={{ color: themeAccent }}>{breakdownData.totalPoints}</span>
+                <span className="text-[10px] text-slate-300 font-bold block">الرصيد المعتمد</span>
               </div>
             </div>
 
             {/* Itemized Lists: How Points Were Gathered */}
             <div className="space-y-4">
               {/* 1. Recitation Evaluations Points List */}
-              <div className="bg-[#064e3b]/30 rounded-2xl p-4 border border-emerald-800 space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-white border-b border-emerald-800 pb-2">
+              <div
+                className="rounded-2xl p-4 border-2 space-y-3"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-white border-b pb-2" style={{ borderColor: themeBorder }}>
                   <div className="flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+                    <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
                     <span>سجل نقاط التسميع اليومي ({breakdownData.stEvaluations.length})</span>
                   </div>
-                  <span className="text-[#fbbf24] font-mono">
+                  <span className="font-mono font-black" style={{ color: themeAccent }}>
                     المجموع: {breakdownData.evalPoints} نقطة
                   </span>
                 </div>
 
                 {breakdownData.stEvaluations.length === 0 ? (
-                  <p className="text-xs text-emerald-300/60 text-center py-2">
+                  <p className="text-xs text-slate-400 text-center py-2">
                     لم تسجل تقييمات يومية بنقاط لهذا الطالب حتى الآن.
                   </p>
                 ) : (
@@ -675,10 +878,11 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       return (
                         <div
                           key={ev.id}
-                          className="p-2.5 rounded-xl bg-[#022c22] border border-emerald-900/60 flex items-center justify-between text-xs"
+                          className="p-2.5 rounded-xl border flex items-center justify-between text-xs"
+                          style={{ backgroundColor: themeCard, borderColor: themeBorder }}
                         >
                           <div>
-                            <span className="text-[#fbbf24] font-bold">تاريخ: {ev.date}</span>
+                            <span className="font-bold" style={{ color: themeAccent }}>تاريخ: {ev.date}</span>
                             <span className="text-slate-300 text-[11px] block mt-0.5">
                               {ev.recitationDetails?.newMemorizationAchieved || 'تسميع يومي'}
                             </span>
@@ -694,19 +898,22 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               </div>
 
               {/* 2. Exams Points List */}
-              <div className="bg-[#064e3b]/30 rounded-2xl p-4 border border-emerald-800 space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-white border-b border-emerald-800 pb-2">
+              <div
+                className="rounded-2xl p-4 border-2 space-y-3"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-white border-b pb-2" style={{ borderColor: themeBorder }}>
                   <div className="flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-[#fbbf24]" />
+                    <FileText className="w-4 h-4" style={{ color: themeAccent }} />
                     <span>سجل نقاط الاختبارات القرآنية ({breakdownData.stSubmissions.length})</span>
                   </div>
-                  <span className="text-[#fbbf24] font-mono">
+                  <span className="font-mono font-black" style={{ color: themeAccent }}>
                     المجموع: {breakdownData.examPoints} نقطة
                   </span>
                 </div>
 
                 {breakdownData.stSubmissions.length === 0 ? (
-                  <p className="text-xs text-emerald-300/60 text-center py-2">
+                  <p className="text-xs text-slate-400 text-center py-2">
                     لم ينجز الطالب أي اختبارات إلكترونية بعد.
                   </p>
                 ) : (
@@ -714,15 +921,19 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     {breakdownData.stSubmissions.map(sub => (
                       <div
                         key={sub.id}
-                        className="p-2.5 rounded-xl bg-[#022c22] border border-emerald-900/60 flex items-center justify-between text-xs"
+                        className="p-2.5 rounded-xl border flex items-center justify-between text-xs"
+                        style={{ backgroundColor: themeCard, borderColor: themeBorder }}
                       >
                         <div>
                           <span className="text-white font-bold">{sub.examTitle}</span>
-                          <span className="text-emerald-300 text-[11px] block mt-0.5 font-mono">
+                          <span className="text-slate-300 text-[11px] block mt-0.5 font-mono">
                             الدرجة: {sub.totalScoreEarned} من {sub.maxPossibleScore} ({sub.percentage}%)
                           </span>
                         </div>
-                        <span className="px-2.5 py-1 rounded-lg bg-[#fbbf24]/20 text-[#fbbf24] font-mono font-bold">
+                        <span
+                          className="px-2.5 py-1 rounded-lg font-mono font-bold"
+                          style={{ backgroundColor: `${themeAccent}25`, color: themeAccent }}
+                        >
                           +{sub.pointsGrantedForLeaderboard || 0} نقطة شرف
                         </span>
                       </div>
@@ -732,19 +943,22 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               </div>
 
               {/* 3. Listening Points List */}
-              <div className="bg-[#064e3b]/30 rounded-2xl p-4 border border-emerald-800 space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-white border-b border-emerald-800 pb-2">
+              <div
+                className="rounded-2xl p-4 border-2 space-y-3"
+                style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-white border-b pb-2" style={{ borderColor: themeBorder }}>
                   <div className="flex items-center gap-1.5">
-                    <Headphones className="w-4 h-4 text-[#fbbf24]" />
+                    <Headphones className="w-4 h-4" style={{ color: themeAccent }} />
                     <span>سجل الاستماع القرآني المكتمل ({breakdownData.completedListenings})</span>
                   </div>
-                  <span className="text-[#fbbf24] font-mono">
+                  <span className="font-mono font-black" style={{ color: themeAccent }}>
                     المجموع: {breakdownData.listeningPoints} نقطة
                   </span>
                 </div>
 
                 {breakdownData.stLogs.length === 0 ? (
-                  <p className="text-xs text-emerald-300/60 text-center py-2">
+                  <p className="text-xs text-slate-400 text-center py-2">
                     {breakdownData.listeningPoints > 0
                       ? `رصيد استماع معتمد: +${breakdownData.listeningPoints} نقطة`
                       : 'لم يتم إتمام أي جلسة استماع قرآني مكتملة بعد.'}
@@ -754,13 +968,14 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     {breakdownData.stLogs.map(l => (
                       <div
                         key={l.id}
-                        className="p-2.5 rounded-xl bg-[#022c22] border border-emerald-900/60 flex items-center justify-between text-xs"
+                        className="p-2.5 rounded-xl border flex items-center justify-between text-xs"
+                        style={{ backgroundColor: themeCard, borderColor: themeBorder }}
                       >
                         <div>
                           <span className="text-white font-bold">
                             سورة {l.surahName} (الآيات {l.fromAyah} إلى {l.toAyah})
                           </span>
-                          <span className="text-emerald-300 text-[11px] block mt-0.5">
+                          <span className="text-slate-300 text-[11px] block mt-0.5">
                             تم تكرار الاستماع {l.completedCount} مرات في تاريخ ({l.date})
                           </span>
                         </div>
@@ -774,7 +989,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-emerald-800 gap-2 flex-wrap">
+            <div className="flex items-center justify-between pt-3 border-t gap-2 flex-wrap" style={{ borderColor: themeBorder }}>
               {onAwardBonusPoints && (
                 <div className="flex items-center gap-2">
                   <button
@@ -784,7 +999,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       setSelectedStudentForBreakdown(null);
                       handleOpenPointsModal(st, 'award');
                     }}
-                    className="px-4 py-2 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                    className="px-4 py-2 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themeContrastText,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }}
                   >
                     <Plus className="w-4 h-4" />
                     <span>منح نقاط تشجيعية</span>
@@ -796,7 +1017,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       setSelectedStudentForBreakdown(null);
                       handleOpenPointsModal(st, 'deduct');
                     }}
-                    className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+                    className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-2 border-b-4 border-rose-500/40 border-b-rose-700 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px]"
                   >
                     <Minus className="w-4 h-4" />
                     <span>خصم نقاط جزائية</span>
@@ -806,7 +1027,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedStudentForBreakdown(null)}
-                className="px-6 py-2.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-900 text-emerald-200 font-bold text-xs cursor-pointer shadow-md mr-auto"
+                className="px-6 py-2.5 rounded-xl border-2 border-b-4 font-bold text-xs cursor-pointer shadow-md mr-auto active:translate-y-[2px]"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom,
+                  color: themeText
+                }}
               >
                 إغلاق النافذة
               </button>
@@ -817,8 +1044,15 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
       {/* AWARD BONUS POINTS MODAL (منح نقاط تشجيعية للطلاب من لوحة الشرف) */}
       {awardModalStudent && (
-        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border-2 border-[#fbbf24] rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-[0_0_35px_rgba(251,191,36,0.3)] space-y-5 text-right relative">
+        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="border-2 border-b-4 rounded-[32px] w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 text-right relative"
+            style={{
+              backgroundColor: themeCard,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
             <button
               onClick={() => {
                 if (!isSubmittingBonus) {
@@ -826,32 +1060,39 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   setBonusSuccessMsg(null);
                 }
               }}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             {/* Header */}
-            <div className="flex items-center gap-3 border-b border-emerald-800 pb-3">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg ${
-                pointsActionType === 'award'
-                  ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-[#064e3b]'
-                  : 'bg-gradient-to-br from-rose-500 to-rose-600 text-white'
-              }`}>
+            <div className="flex items-center gap-3 border-b pb-3" style={{ borderColor: themeBorder }}>
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-xl shadow-lg"
+                style={{
+                  backgroundColor: pointsActionType === 'award' ? themeAccent : '#ef4444',
+                  borderColor: pointsActionType === 'award' ? themeAccent : '#ef4444',
+                  borderBottomColor: pointsActionType === 'award' ? themeAccentShadow : '#b91c1c',
+                  color: pointsActionType === 'award' ? themeContrastText : '#ffffff'
+                }}
+              >
                 {pointsActionType === 'award' ? <Sparkles className="w-6 h-6" /> : <Minus className="w-6 h-6" />}
               </div>
               <div>
                 <h3 className="text-base sm:text-lg font-black text-white font-heading">
                   {pointsActionType === 'award' ? 'منح نقاط تشجيعية للطالب' : 'خصم نقاط جزائية من الطالب'}
                 </h3>
-                <p className="text-xs text-amber-300 font-bold">
+                <p className="text-xs font-bold" style={{ color: themeAccent }}>
                   {awardModalStudent.name} (رصيده الحالي: {awardModalStudent.points || 0} نقطة)
                 </p>
               </div>
             </div>
 
             {/* Toggle Action Type Segmented Control */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#011a14] border border-[#065f46]">
+            <div
+              className="grid grid-cols-2 gap-2 p-1 rounded-2xl border-2"
+              style={{ backgroundColor: themePrimary, borderColor: themeBorder }}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -861,9 +1102,14 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 }}
                 className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   pointsActionType === 'award'
-                    ? 'bg-[#fbbf24] text-[#064e3b] shadow-md'
-                    : 'text-emerald-300 hover:text-white'
+                    ? 'shadow-md border-b-2'
+                    : 'text-slate-300 hover:text-white'
                 }`}
+                style={pointsActionType === 'award' ? {
+                  backgroundColor: themeAccent,
+                  color: themeContrastText,
+                  borderBottomColor: themeAccentShadow
+                } : undefined}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>منح نقاط (+)</span>
@@ -877,7 +1123,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 }}
                 className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   pointsActionType === 'deduct'
-                    ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md'
+                    ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md border-b-2 border-b-rose-700'
                     : 'text-rose-300 hover:text-white'
                 }`}
               >
@@ -887,7 +1133,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
             </div>
 
             {bonusSuccessMsg ? (
-              <div className={`p-4 rounded-2xl border text-center font-bold text-sm flex items-center justify-center gap-2 animate-fadeIn ${
+              <div className={`p-4 rounded-2xl border-2 text-center font-bold text-sm flex items-center justify-center gap-2 animate-fadeIn ${
                 pointsActionType === 'award'
                   ? 'bg-amber-400/20 border-amber-400/40 text-amber-300'
                   : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
@@ -899,7 +1145,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <div className="space-y-4">
                 {/* Presets and Custom Points */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-[#86efac] block">
+                  <label className="text-xs font-bold block" style={{ color: themeSubtext }}>
                     {pointsActionType === 'award' ? 'اختر مقدار النقاط المراد إضافتها:' : 'اختر مقدار النقاط المراد خصمها:'}
                   </label>
                   <div className="grid grid-cols-4 gap-2">
@@ -911,15 +1157,25 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         key={pts}
                         type="button"
                         onClick={() => setBonusPointsAmount(pts)}
-                        className={`py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        className={`py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-2 active:translate-y-[1px] ${
                           bonusPointsAmount === pts
                             ? pointsActionType === 'award'
-                              ? 'bg-[#fbbf24] text-[#064e3b] shadow-md scale-105'
-                              : 'bg-rose-500 text-white shadow-md scale-105'
+                              ? 'shadow-md scale-105'
+                              : 'bg-rose-500 text-white border-rose-400 border-b-rose-700 shadow-md scale-105'
                             : pointsActionType === 'award'
-                              ? 'bg-[#064e3b] text-emerald-200 hover:text-white border border-[#065f46]'
-                              : 'bg-rose-950/40 text-rose-200 hover:text-white border border-rose-800/40'
+                              ? 'text-slate-300 hover:text-white'
+                              : 'bg-rose-950/40 text-rose-200 hover:text-white border-rose-800/40'
                         }`}
+                        style={bonusPointsAmount === pts && pointsActionType === 'award' ? {
+                          backgroundColor: themeAccent,
+                          color: themeContrastText,
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow
+                        } : {
+                          backgroundColor: themeSecondary,
+                          borderColor: themeBorder,
+                          borderBottomColor: themeBorderBottom
+                        }}
                       >
                         {pointsActionType === 'award' ? `+${pts}` : `-${pts}`} نقطة
                       </button>
@@ -931,11 +1187,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         max={1000}
                         value={bonusPointsAmount}
                         onChange={e => setBonusPointsAmount(Math.max(1, Number(e.target.value)))}
-                        className={`w-full py-2 px-2 bg-[#022c22] border rounded-xl text-center text-xs font-black outline-none ${
-                          pointsActionType === 'award'
-                            ? 'border-[#065f46] focus:border-[#fbbf24] text-[#fbbf24]'
-                            : 'border-rose-800/60 focus:border-rose-400 text-rose-300'
-                        }`}
+                        className="w-full py-2 px-2 border-2 rounded-xl text-center text-xs font-black outline-none"
+                        style={{
+                          backgroundColor: themeSecondary,
+                          borderColor: themeBorder,
+                          color: themeText
+                        }}
                         placeholder="مخصص"
                       />
                     </div>
@@ -944,7 +1201,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
                 {/* Reason Presets */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-[#86efac] block">
+                  <label className="text-xs font-bold block" style={{ color: themeSubtext }}>
                     {pointsActionType === 'award' ? 'سبب منح النقاط التكريمية:' : 'سبب خصم النقاط الجزائية:'}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
@@ -970,13 +1227,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         key={r}
                         type="button"
                         onClick={() => setBonusPointsReason(r)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                          bonusPointsReason === r
-                            ? pointsActionType === 'award'
-                              ? 'bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]'
-                              : 'bg-rose-950 text-rose-300 border border-rose-500'
-                            : 'bg-[#022c22] text-emerald-300/80 border border-[#065f46] hover:text-white'
-                        }`}
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer border-2"
+                        style={{
+                          backgroundColor: bonusPointsReason === r ? `${themeAccent}25` : themeSecondary,
+                          color: bonusPointsReason === r ? themeAccent : themeText,
+                          borderColor: bonusPointsReason === r ? themeAccent : themeBorder
+                        }}
                       >
                         {r}
                       </button>
@@ -988,22 +1244,29 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     value={bonusPointsReason}
                     onChange={e => setBonusPointsReason(e.target.value)}
                     placeholder="أو اكتب سبباً مخصصاً..."
-                    className="w-full mt-1.5 py-2 px-3 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl text-xs text-white outline-none"
+                    className="w-full mt-1.5 py-2 px-3 border-2 rounded-xl text-xs text-white outline-none"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: themeBorder
+                    }}
                   />
                 </div>
 
                 {/* Preview Banner */}
-                <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs ${
-                  pointsActionType === 'award'
-                    ? 'bg-[#011a14] border-[#065f46]'
-                    : 'bg-rose-950/20 border-rose-800/40'
-                }`}>
-                  <span className={pointsActionType === 'award' ? 'text-[#86efac]' : 'text-rose-300'}>
+                <div
+                  className="p-3.5 rounded-2xl border-2 flex items-center justify-between text-xs"
+                  style={{
+                    backgroundColor: themePrimary,
+                    borderColor: themeBorder
+                  }}
+                >
+                  <span className="font-bold text-slate-300">
                     {pointsActionType === 'award' ? 'الرصيد بعد الإضافة سيكون:' : 'الرصيد بعد الخصم سيكون:'}
                   </span>
-                  <span className={`font-mono font-black text-sm ${
-                    pointsActionType === 'award' ? 'text-[#fbbf24]' : 'text-rose-400'
-                  }`}>
+                  <span
+                    className="font-mono font-black text-sm"
+                    style={{ color: pointsActionType === 'award' ? themeAccent : '#f43f5e' }}
+                  >
                     {pointsActionType === 'award'
                       ? (awardModalStudent.points || 0) + (Number(bonusPointsAmount) || 0)
                       : Math.max(0, (awardModalStudent.points || 0) - (Number(bonusPointsAmount) || 0))} نقطة
@@ -1011,12 +1274,13 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-800">
+                <div className="flex items-center justify-end gap-2 pt-2 border-t" style={{ borderColor: themeBorder }}>
                   <button
                     type="button"
                     disabled={isSubmittingBonus}
                     onClick={() => setAwardModalStudent(null)}
-                    className="px-4 py-2 rounded-xl bg-emerald-950 text-emerald-300 text-xs font-bold cursor-pointer"
+                    className="px-4 py-2 rounded-xl border-2 text-slate-300 text-xs font-bold cursor-pointer"
+                    style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
                   >
                     إلغاء
                   </button>
@@ -1024,11 +1288,18 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     type="button"
                     disabled={isSubmittingBonus || bonusPointsAmount <= 0}
                     onClick={handleConfirmAwardBonus}
-                    className={`px-6 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-all disabled:opacity-50 ${
-                      pointsActionType === 'award'
-                        ? 'bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b]'
-                        : 'bg-gradient-to-r from-rose-500 to-rose-600 hover:brightness-110 text-white'
-                    }`}
+                    className="px-6 py-2.5 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-all disabled:opacity-50 active:translate-y-[2px] active:border-b-2"
+                    style={pointsActionType === 'award' ? {
+                      backgroundColor: themeAccent,
+                      color: themeContrastText,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    } : {
+                      backgroundColor: '#ef4444',
+                      color: '#ffffff',
+                      borderColor: '#ef4444',
+                      borderBottomColor: '#b91c1c'
+                    }}
                   >
                     {isSubmittingBonus ? (
                       <span>جارٍ اعتماد التغيير...</span>
@@ -1053,24 +1324,39 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
 
       {/* LEADERBOARD SCOPE SETTINGS MODAL */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border border-[#fbbf24]/60 rounded-3xl w-full max-w-md p-6 sm:p-7 shadow-2xl space-y-5 text-right relative">
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="border-2 border-b-4 rounded-[32px] w-full max-w-md p-6 sm:p-7 shadow-2xl space-y-5 text-right relative"
+            style={{
+              backgroundColor: themeCard,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
             <button
               onClick={() => setIsSettingsOpen(false)}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 border-b border-emerald-800/80 pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-[#fbbf24] border border-[#fbbf24]/40 flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 border-b pb-3" style={{ borderColor: themeBorder }}>
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0"
+                style={{
+                  backgroundColor: `${themeAccent}25`,
+                  borderColor: `${themeAccent}60`,
+                  borderBottomColor: themeAccentShadow,
+                  color: themeAccent
+                }}
+              >
                 <Sliders className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-white font-heading">
                   إعدادات نطاق لوحة الشرف
                 </h3>
-                <p className="text-xs text-[#fbbf24] font-bold mt-0.5">
+                <p className="text-xs font-bold mt-0.5" style={{ color: themeAccent }}>
                   تحديد آلية التنافس وترتيب الطلاب
                 </p>
               </div>
@@ -1081,19 +1367,20 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 type="button"
                 onClick={() => handleSaveScope('all_unified')}
                 disabled={isSavingSettings}
-                className={`w-full p-4 rounded-2xl border text-right transition-all cursor-pointer ${
-                  activeScope === 'all_unified'
-                    ? 'bg-[#064e3b] border-[#fbbf24] ring-2 ring-[#fbbf24]/40 text-white'
-                    : 'bg-[#022c22] border-[#065f46] text-emerald-200 hover:bg-[#064e3b]/50'
-                }`}
+                className="w-full p-4 rounded-2xl border-2 text-right transition-all cursor-pointer"
+                style={{
+                  backgroundColor: activeScope === 'all_unified' ? `${themeAccent}20` : themeSecondary,
+                  borderColor: activeScope === 'all_unified' ? themeAccent : themeBorder,
+                  color: '#ffffff'
+                }}
               >
                 <div className="flex items-center justify-between font-bold text-xs mb-1">
                   <span>1. الترتيب العام الموحد (كافة الحلقات معاً)</span>
                   {activeScope === 'all_unified' && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#fbbf24]" />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: themeAccent }} />
                   )}
                 </div>
-                <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                <p className="text-[11px] text-slate-300 leading-relaxed font-bold">
                   يتنافس جميع طلاب المركز في قائمة موحدة واحدة ويظهر ترتيب المراكز الأولى على مستوى المجمع ككل.
                 </p>
               </button>
@@ -1102,19 +1389,20 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 type="button"
                 onClick={() => handleSaveScope('per_halaqah')}
                 disabled={isSavingSettings}
-                className={`w-full p-4 rounded-2xl border text-right transition-all cursor-pointer ${
-                  activeScope === 'per_halaqah'
-                    ? 'bg-[#064e3b] border-[#fbbf24] ring-2 ring-[#fbbf24]/40 text-white'
-                    : 'bg-[#022c22] border-[#065f46] text-emerald-200 hover:bg-[#064e3b]/50'
-                }`}
+                className="w-full p-4 rounded-2xl border-2 text-right transition-all cursor-pointer"
+                style={{
+                  backgroundColor: activeScope === 'per_halaqah' ? `${themeAccent}20` : themeSecondary,
+                  borderColor: activeScope === 'per_halaqah' ? themeAccent : themeBorder,
+                  color: '#ffffff'
+                }}
               >
                 <div className="flex items-center justify-between font-bold text-xs mb-1">
                   <span>2. الترتيب الداخلي المستقل لكل حلقة</span>
                   {activeScope === 'per_halaqah' && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#fbbf24]" />
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: themeAccent }} />
                   )}
                 </div>
-                <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                <p className="text-[11px] text-slate-300 leading-relaxed font-bold">
                   يقتصر التنافس والترتيب على طلاب كل حلقة بمفردها، بحيث يكون لكل حلقة مراكزها الأولى الخاصة.
                 </p>
               </button>
@@ -1124,7 +1412,12 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-emerald-900/60 text-emerald-300 text-xs font-bold cursor-pointer"
+                className="px-5 py-2.5 rounded-xl border-2 border-b-2 text-xs font-bold cursor-pointer"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder,
+                  color: themeText
+                }}
               >
                 إغلاق
               </button>

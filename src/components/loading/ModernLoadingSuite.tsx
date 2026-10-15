@@ -292,65 +292,117 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
   };
   const IconComp = meta.icon;
   const accentColor = activeComplex?.theme?.accentColor || meta.color;
-  const accentShadow = darkenHex(accentColor, 0.25);
+  const accentShadow = darkenHex(accentColor, 0.28);
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
 
   return (
     <div
-      className="p-4 sm:p-5 rounded-[28px] border-2 border-b-4 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all animate-pulse"
+      className="p-4 sm:p-5 rounded-[28px] border-2 border-b-4 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all relative overflow-hidden"
       dir="rtl"
-      style={activeComplex?.theme ? {
-        backgroundColor: activeComplex.theme.cardColor || '#203843',
-        borderColor: activeComplex.theme.secondaryColor || '#2b4550',
-        borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
-      } : {
-        backgroundColor: '#203843',
-        borderColor: '#2b4550',
-        borderBottomColor: '#16262e'
+      style={{
+        backgroundColor: cardBg,
+        borderColor: borderCol,
+        borderBottomColor: borderBottomCol
       }}
     >
-      <div className="flex items-center gap-3.5">
-        <div
-          className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
-          style={{
-            backgroundColor: `${accentColor}25`,
-            borderColor: `${accentColor}60`,
-            borderBottomColor: accentShadow,
-            color: accentColor
-          }}
-        >
-          <IconComp className="w-6 h-6 animate-pulse" />
+      {/* Ambient background aura in complex accent color */}
+      <div
+        className="absolute -top-10 -left-10 w-44 h-44 rounded-full blur-2xl opacity-20 pointer-events-none"
+        style={{ backgroundColor: accentColor }}
+      />
+
+      <div className="flex items-center gap-4 relative z-10">
+        {/* Steadfast Holy Quran / Tab Icon with Rotating Glowing Dual Orbital Ring (like initial loader) */}
+        <div className="relative w-16 h-16 sm:w-18 sm:h-18 flex items-center justify-center shrink-0">
+          <svg
+            className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
+            viewBox="0 0 100 100"
+            style={{ animationDuration: '2.4s', animationTimingFunction: 'linear' }}
+          >
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke="rgba(255, 255, 255, 0.12)"
+              strokeWidth="3.5"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke={accentColor}
+              strokeWidth="4.5"
+              strokeDasharray="95 180"
+              strokeLinecap="round"
+              className="drop-shadow-[0_0_8px_currentColor]"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="3"
+              strokeDasharray="25 240"
+              strokeLinecap="round"
+              className="opacity-70"
+            />
+          </svg>
+
+          {/* Steadfast Center Emblem */}
+          <div
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border-2 border-b-4 flex flex-col items-center justify-center shadow-md relative z-10 select-none"
+            style={{
+              backgroundColor: activeComplex?.theme?.primaryColor || '#131f24',
+              borderColor: `${accentColor}90`,
+              borderBottomColor: accentShadow,
+              color: accentColor
+            }}
+          >
+            <IconComp className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
         </div>
 
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm sm:text-base font-black text-white font-heading">
               {meta.label}
             </h3>
             <span
               className="text-[10px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs"
               style={{
-                backgroundColor: `${accentColor}20`,
-                borderColor: `${accentColor}50`,
+                backgroundColor: `${accentColor}25`,
+                borderColor: `${accentColor}60`,
                 borderBottomColor: accentShadow,
                 color: accentColor
               }}
             >
-              تأكيد سحابي
+              تحديث وتأكيد البيانات سحابياً
             </span>
+            {activeComplex?.name && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold text-slate-300 bg-white/10 border border-white/10">
+                {activeComplex.name}
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-300 font-bold">
+          <p className="text-xs text-slate-300 font-bold leading-relaxed">
             {meta.desc}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-        <span className="relative flex h-2.5 w-2.5">
+      <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0 relative z-10">
+        <span className="relative flex h-3 w-3">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75" />
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#58cc02]" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-[#58cc02]" />
         </span>
         <span className="text-xs text-[#58cc02] font-black">
-          مزامنة مؤكدة ولحظية ✓
+          مزامنة لحظية وتحديث مستمر ✓
         </span>
       </div>
     </div>
@@ -646,6 +698,309 @@ export const EvaluationSkeleton: React.FC<{ activeComplex?: QuranComplex | null 
   );
 };
 
+// Teacher Attendance Tab Skeleton
+export const TeacherAttendanceSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.14);
+
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      {/* Subtabs bar placeholder */}
+      <div
+        className="p-3 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 flex-wrap"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-28 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+          <div className="h-9 w-32 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+          <div className="h-9 w-24 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+        </div>
+        <div className="h-9 w-36 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+      </div>
+
+      {/* 4 Summary Counters */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        {[1, 2, 3, 4].map(idx => (
+          <div
+            key={idx}
+            className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-24 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="w-10 h-10 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+            </div>
+            <div className="h-8 w-16 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-2 w-full rounded-full" style={{ backgroundColor: secondaryBg }} />
+          </div>
+        ))}
+      </div>
+
+      {/* Roster & Mosques List */}
+      <div
+        className="border-2 border-b-4 rounded-[28px] overflow-hidden p-4 space-y-3"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        {[1, 2, 3, 4].map(i => (
+          <div
+            key={i}
+            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+            style={{
+              backgroundColor: secondaryBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="w-11 h-11 rounded-2xl shrink-0" style={{ backgroundColor: shimmerBox }} />
+              <div className="space-y-2 flex-1">
+                <div className="h-4 w-44 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+                <div className="h-3 w-28 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 w-full md:w-72">
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Leaderboard / Honor Board Tab Skeleton (Podium + Ranking Table)
+export const LeaderboardSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.14);
+  const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
+
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      {/* Search & Scope Filters Bar */}
+      <div
+        className="p-4 rounded-[28px] border-2 border-b-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        <div className="h-10 w-full sm:w-72 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="h-10 w-36 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+          <div className="h-10 w-28 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+        </div>
+      </div>
+
+      {/* Top 3 Podium Cards (Gold, Silver, Bronze) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map(pos => (
+          <div
+            key={pos}
+            className="p-6 rounded-3xl border-2 border-b-4 space-y-4 text-center"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-6 w-28 rounded-full" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-5 w-16 rounded-full" style={{ backgroundColor: secondaryBg }} />
+            </div>
+            <div className="w-16 h-16 rounded-2xl mx-auto" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-5 w-32 rounded-xl mx-auto" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-3 w-20 rounded-xl mx-auto" style={{ backgroundColor: secondaryBg }} />
+            <div
+              className="p-3 rounded-2xl grid grid-cols-3 gap-2 border"
+              style={{ backgroundColor: secondaryBg, borderColor: borderCol }}
+            >
+              <div className="h-6 rounded" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-6 rounded" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-6 rounded" style={{ backgroundColor: shimmerBox }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table Rows Skeleton */}
+      <div
+        className="border-2 border-b-4 rounded-[28px] p-4 space-y-3"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        {[1, 2, 3, 4, 5].map(i => (
+          <div
+            key={i}
+            className="h-14 rounded-2xl border"
+            style={{
+              backgroundColor: secondaryBg,
+              borderColor: borderCol
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Reports Tab & Charts Skeleton
+export const ReportsSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.14);
+
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      {/* 4 Analytical KPI Metric Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        {[1, 2, 3, 4].map(idx => (
+          <div
+            key={idx}
+            className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-24 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="w-9 h-9 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+            </div>
+            <div className="h-8 w-20 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-2 w-full rounded-full" style={{ backgroundColor: secondaryBg }} />
+          </div>
+        ))}
+      </div>
+
+      {/* Chart Canvas Skeleton & Analytics Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div
+          className="lg:col-span-2 border-2 border-b-4 rounded-[28px] p-6 space-y-4"
+          style={{
+            backgroundColor: cardBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="h-6 w-48 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-8 w-32 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+          </div>
+          <div className="h-64 rounded-2xl flex items-end justify-between p-4 gap-3" style={{ backgroundColor: secondaryBg }}>
+            {[40, 75, 55, 90, 65, 80, 50, 85].map((h, i) => (
+              <div
+                key={i}
+                className="w-full rounded-t-xl"
+                style={{ height: `${h}%`, backgroundColor: shimmerBox }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div
+          className="border-2 border-b-4 rounded-[28px] p-6 space-y-4 flex flex-col items-center justify-center"
+          style={{
+            backgroundColor: cardBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <div className="h-6 w-36 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+          <div className="w-40 h-40 rounded-full border-8" style={{ borderColor: shimmerBox }} />
+          <div className="w-full grid grid-cols-2 gap-2 pt-2">
+            <div className="h-4 rounded" style={{ backgroundColor: secondaryBg }} />
+            <div className="h-4 rounded" style={{ backgroundColor: secondaryBg }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Library Tab Skeleton
+export const LibrarySkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.14);
+
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      {/* Search & Actions Bar */}
+      <div
+        className="p-4 rounded-[28px] border-2 border-b-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        <div className="h-10 w-full sm:w-80 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="h-10 w-36 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+          <div className="h-10 w-32 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+        </div>
+      </div>
+
+      {/* Grid of Documents */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3, 4, 5, 6].map(i => (
+          <div
+            key={i}
+            className="border-2 border-b-4 rounded-[24px] p-5 space-y-4"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-5 w-20 rounded-full" style={{ backgroundColor: secondaryBg }} />
+            </div>
+            <div className="space-y-2">
+              <div className="h-5 w-44 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-3 w-28 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: borderCol }}>
+              <div className="h-8 w-24 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+              <div className="h-8 w-8 rounded-xl" style={{ backgroundColor: secondaryBg }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Generic Adaptive Tab Skeleton
 export const GenericTabSkeleton: React.FC<{ activeTab?: string; title?: string; activeComplex?: QuranComplex | null }> = ({
   activeTab = 'general',
@@ -712,7 +1067,7 @@ interface TabSkeletonProps {
 
 export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeComplex }) => {
   return (
-    <div className="space-y-5 animate-pulse" dir="rtl">
+    <div className="space-y-5" dir="rtl">
       <TabHeaderLoaderBanner activeTab={activeTab} activeComplex={activeComplex} />
       {(() => {
         switch (activeTab) {
@@ -725,16 +1080,19 @@ export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeCompl
           case 'evaluation':
             return <EvaluationSkeleton activeComplex={activeComplex} />;
           case 'teacher_attendance':
-            return <AttendanceSkeleton activeComplex={activeComplex} />;
+            return <TeacherAttendanceSkeleton activeComplex={activeComplex} />;
+          case 'leaderboard':
+            return <LeaderboardSkeleton activeComplex={activeComplex} />;
+          case 'reports':
+            return <ReportsSkeleton activeComplex={activeComplex} />;
+          case 'library':
+            return <LibrarySkeleton activeComplex={activeComplex} />;
           case 'exams':
           case 'certificates':
-          case 'leaderboard':
           case 'behavior':
           case 'parents':
-          case 'reports':
           case 'accounts':
           case 'backup':
-          case 'library':
           default:
             return <GenericTabSkeleton activeTab={activeTab} activeComplex={activeComplex} />;
         }
