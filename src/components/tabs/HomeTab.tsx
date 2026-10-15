@@ -25,7 +25,7 @@ import {
   FolderArchive
 } from 'lucide-react';
 import { Student, AttendanceRecord, StudentEvaluation, AppSettings, TeacherAccount, QuranComplex } from '../../types';
-import { darkenHex, lightenHex } from '../../lib/themeUtils';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface HomeTabProps {
   students: Student[];
@@ -67,6 +67,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const themeBorder = lightenHex(themeCardBg, 0.18);
   const themeBorderBottom = darkenHex(themeCardBg, 0.35);
   const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const accentTextColor = getContrastTextColor(themeAccent);
 
   // Today's attendance calculation
   const todayAttendance = attendance.filter(a => a.date === todayStr);
@@ -163,21 +164,21 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-lg cursor-pointer transition-all hover:brightness-110"
               style={{
                 backgroundColor: themeAccent,
-                color: '#ffffff',
+                color: accentTextColor,
                 borderColor: themeAccent,
                 borderBottomColor: themeAccentShadow
               }}
               title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم' : `تسجيل ومتابعة حضور اليوم`}
             >
-              <CheckCircle className="w-4 h-4 text-white" />
+              <CheckCircle className="w-4 h-4" style={{ color: accentTextColor }} />
               <span>تسجيل حضور اليوم</span>
               {students.length > 0 && (
                 <span
                   className="px-2 py-0.5 rounded-full text-[10px] font-black border"
                   style={{
-                    backgroundColor: 'rgba(0,0,0,0.25)',
-                    borderColor: 'rgba(255,255,255,0.3)',
-                    color: '#ffffff'
+                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.18)',
+                    borderColor: 'rgba(0,0,0,0.15)',
+                    color: accentTextColor
                   }}
                 >
                   {unrecordedCount === 0 ? `مكتمل (${presentCount}/${students.length})` : `${todayAttendance.length}/${students.length}`}

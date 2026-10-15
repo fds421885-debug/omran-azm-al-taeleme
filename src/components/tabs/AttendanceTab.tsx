@@ -826,11 +826,6 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       </button>
                     )}
                   </div>
-                        <Send className="w-3.5 h-3.5 text-red-300 rotate-180" />
-                        <span>إرسال للوالد</span>
-                      </button>
-                    )}
-                  </div>
 
                   {/* Note / Excuse field */}
                   <div className="flex-1 min-w-[180px]">

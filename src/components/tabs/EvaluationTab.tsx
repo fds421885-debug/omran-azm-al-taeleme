@@ -1364,10 +1364,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           <button
             type="button"
             onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
-            className="px-3.5 py-2 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] border border-[#fbbf24]/40 hover:border-[#fbbf24] text-[#fbbf24] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-md"
+            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: 'var(--complex-accent, #ffc800)',
+              borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+              color: 'var(--complex-accent, #ffc800)'
+            }}
             title="فتح مصحف مجمع الملك فهد كاملاً"
           >
-            <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+            <BookOpen className="w-4 h-4" style={{ color: 'var(--complex-accent, #ffc800)' }} />
             <span>المصحف الشريف (طبعة الملك فهد)</span>
           </button>
 
@@ -1622,23 +1628,39 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <button
                     key={student.id}
                     onClick={() => setActiveStudentId(student.id)}
-                    className={`w-full p-3.5 rounded-2xl text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                    className={`w-full p-3.5 rounded-2xl text-right transition-all flex items-center justify-between gap-3 cursor-pointer border-2 border-b-4 active:translate-y-0.5 ${
                       isSelected
-                        ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-[0_0_15px_rgba(251,191,36,0.3)] border border-[#fbbf24]'
+                        ? 'shadow-md'
                         : isStudentAbsent
-                        ? 'bg-[#022c22]/40 text-[#86efac]/40 border border-[#065f46]/40 opacity-60'
+                        ? 'opacity-60'
                         : isStudentExcused
-                        ? 'bg-[#022c22]/60 text-emerald-300 border border-[#065f46] opacity-80'
-                        : 'bg-[#022c22] hover:bg-[#022c22]/80 text-[#f0f9f6] border border-[#065f46]'
+                        ? 'opacity-80'
+                        : 'hover:brightness-105'
                     }`}
+                    style={isSelected ? {
+                      backgroundColor: 'var(--complex-accent, #ffc800)',
+                      borderColor: 'var(--complex-accent, #ffc800)',
+                      borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                      color: 'var(--complex-primary, #131f24)'
+                    } : {
+                      backgroundColor: 'var(--complex-card, #203843)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                      color: 'var(--complex-text, #ffffff)'
+                    }}
                   >
                     <div className="flex items-center gap-2.5">
                       <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                          isSelected
-                            ? 'bg-[#064e3b] text-[#fbbf24]'
-                            : 'bg-[#064e3b] text-[#fbbf24] border border-[#065f46]'
-                        }`}
+                        className="w-9 h-9 rounded-xl border-2 border-b-2 flex items-center justify-center font-black text-xs shrink-0 shadow-xs duo-avatar"
+                        style={isSelected ? {
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-primary, #131f24)',
+                          color: 'var(--complex-accent, #ffc800)'
+                        } : {
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          color: 'var(--complex-accent, #ffc800)'
+                        }}
                       >
                         {student.name.charAt(0)}
                       </div>
@@ -1712,15 +1734,37 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         {/* Right Column: Teacher Recitation & Assignment Workspace */}
         <div className="lg:col-span-8">
           {!activeStudent ? (
-            <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-12 text-center text-[#86efac]/60 backdrop-blur-md">
+            <div
+              className="border-2 border-b-4 rounded-[32px] p-12 text-center text-slate-400 backdrop-blur-md"
+              style={{
+                backgroundColor: 'var(--complex-card, #203843)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+              }}
+            >
               اختر طالباً من القائمة للبدء في تسجيل التسميع ومقرر الغد
             </div>
           ) : (
-            <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
+            <div
+              className="border-2 border-b-4 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md"
+              style={{
+                backgroundColor: 'var(--complex-card, #203843)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+              }}
+            >
               {/* Header: Student Info */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#065f46]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] flex items-center justify-center font-bold text-lg shadow-lg">
+                  <div
+                    className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-lg shadow-lg duo-avatar shrink-0"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-accent, #ffc800)',
+                      borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                      color: 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
                     {activeStudent.name.charAt(0)}
                   </div>
                   <div>
@@ -1728,7 +1772,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <h3 className="text-base font-bold text-white font-heading">
                         {activeStudent.name}
                       </h3>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/40">
+                      <span
+                        className="text-xs px-2.5 py-0.5 rounded-full font-black border"
+                        style={{
+                          backgroundColor: 'rgba(var(--complex-accent-rgb, 255, 200, 0), 0.18)',
+                          borderColor: 'var(--complex-accent, #ffc800)',
+                          color: 'var(--complex-accent, #ffc800)'
+                        }}
+                      >
                         مستوى: {activeStudent.level}
                       </span>
                     </div>

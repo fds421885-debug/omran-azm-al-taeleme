@@ -1104,10 +1104,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               </div>
             );
           })
-          );
-        })
-      )}
-    </div>
+        )}
+      </div>
 
       {/* Add / Edit Student Modal */}
       {isAddModalOpen && (

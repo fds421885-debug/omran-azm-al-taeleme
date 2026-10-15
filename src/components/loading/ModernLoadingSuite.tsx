@@ -26,7 +26,7 @@ import {
   Check
 } from 'lucide-react';
 import { QuranComplex } from '../../types';
-import { darkenHex, lightenHex } from '../../lib/themeUtils';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 /* ========================================================================= */
 /* 1. Global Top Loading Bar (شريط التحميل العلوي فائق الأناقة والنعومة)      */
@@ -129,8 +129,7 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
 }) => {
   const accentCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
   const accentShadow = activeComplex?.theme ? darkenHex(activeComplex.theme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
-  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
-  const borderCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const contrastText = activeComplex?.theme?.accentColor ? getContrastTextColor(activeComplex.theme.accentColor) : 'var(--complex-accent-text, #131f24)';
 
   return (
     <button
@@ -139,14 +138,14 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
       disabled={isSyncing}
       className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md ${
         compact
-          ? 'px-3 py-1.5 text-xs text-white'
-          : 'px-4 py-2 text-xs text-white'
+          ? 'px-3 py-1.5 text-xs'
+          : 'px-4 py-2 text-xs'
       } ${isSyncing ? 'opacity-85 pointer-events-none' : ''}`}
       style={{
-        backgroundColor: cardBg,
-        borderColor: `${borderCol}90`,
+        backgroundColor: accentCol,
+        borderColor: accentCol,
         borderBottomColor: accentShadow,
-        color: 'var(--complex-text, #ffffff)'
+        color: contrastText
       }}
       title="مزامنة وتأكيد البيانات فورياً مع قاعدة البيانات السحابية"
     >
@@ -154,15 +153,15 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
         className={`w-3.5 h-3.5 transition-transform duration-500 shrink-0 ${
           isSyncing ? 'animate-spin' : 'group-hover:rotate-180'
         }`}
-        style={{ color: accentCol }}
+        style={{ color: contrastText }}
       />
       <span className="whitespace-nowrap font-black">
         {isSyncing ? 'جارٍ المزامنة والتأكيد...' : label}
       </span>
       {!compact && lastSyncedText && (
         <span
-          className="hidden sm:inline-block text-[10px] pr-2 border-r font-bold"
-          style={{ borderColor: `${borderCol}40`, color: accentCol }}
+          className="hidden sm:inline-block text-[10px] pr-2 border-r font-bold opacity-85"
+          style={{ borderColor: 'rgba(0,0,0,0.2)', color: contrastText }}
         >
           {lastSyncedText}
         </span>
@@ -283,7 +282,7 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
   const meta = TAB_META_CONFIG[activeTab] || {
     label: 'المنظومة القرآنية',
     desc: 'جارٍ مزامنة وتأكيد أحدث البيانات القرآنية سحابياً ولحظياً...',
-    icon: Sparkles,
+    icon: BookOpen,
     color: '#ffc800',
     shadow: '#e5a500'
   };
@@ -770,10 +769,10 @@ export const LoginSyncModalOverlay: React.FC<{
           borderBottomColor: borderBottomCol
         }}
       >
-        {/* Modern Quranic Loader: Static noble Holy Quran in center, orbital glowing ring rotates around it */}
-        <div className="relative w-32 h-32 mx-auto flex items-center justify-center">
-          {/* Smooth modern spinning loading ring orbiting around the Holy Quran */}
-          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.2s' }}>
+        {/* Noble Holy Quran with Modern Orbital Rotating Ring */}
+        <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
+          {/* Orbital glowing ring spinning around the Holy Quran (The Holy Quran stays steadfast & does NOT spin) */}
+          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.4s' }}>
             <circle
               cx="50"
               cy="50"
@@ -790,23 +789,24 @@ export const LoginSyncModalOverlay: React.FC<{
               fill="none"
               stroke={accentColor}
               strokeWidth="4"
-              strokeDasharray="180 90"
+              strokeDasharray="140 100"
               strokeLinecap="round"
-              className="drop-shadow-[0_0_10px_rgba(255,200,0,0.6)]"
+              className="drop-shadow-[0_0_12px_rgba(255,200,0,0.7)]"
             />
           </svg>
 
-          {/* Steadfast Holy Quran Emblem (Does NOT rotate) */}
+          {/* Steadfast Holy Quran Icon & Emblem (Fixed in center, dignified and beautiful) */}
           <div
-            className="w-18 h-18 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-xl relative z-10 select-none"
+            className="w-20 h-20 rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none group"
             style={{
-              backgroundColor: `${accentColor}22`,
-              borderColor: `${accentColor}80`,
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: `${accentColor}90`,
               borderBottomColor: accentShadow,
               color: accentColor
             }}
           >
-            <BookOpen className="w-9 h-9 drop-shadow-md stroke-[2.2]" />
+            <BookOpen className="w-10 h-10 drop-shadow-md stroke-[2.2]" />
+            <span className="text-[9px] font-black tracking-widest mt-0.5 opacity-90 font-quran">المصحف الشريف</span>
           </div>
         </div>
 
@@ -816,7 +816,7 @@ export const LoginSyncModalOverlay: React.FC<{
             {userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
           </h3>
           <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
-            جَارٍ تَحْمِيلُ المَنْظُومَةِ القُرْآنِيَّةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
+            جَارٍ تَحْمِيلُ المَنْظُومَةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
           </p>
         </div>
 

@@ -311,6 +311,8 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-text', text);
     document.documentElement.style.setProperty('--complex-subtext', subtext);
     document.documentElement.style.setProperty('--complex-subtext-rgb', hexToRgb(subtext));
+    document.documentElement.style.setProperty('--complex-accent-text', getContrastTextColor(accent));
+    document.documentElement.style.setProperty('--complex-secondary-shadow', darkenHex(secondary, 0.35));
   } else {
     // Natural platform theme (Duolingo #131f24 & #ffc800) - outside complex
     document.body.style.backgroundColor = '#131f24';
@@ -334,6 +336,8 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-text', '#ffffff');
     document.documentElement.style.setProperty('--complex-subtext', '#ffd233');
     document.documentElement.style.setProperty('--complex-subtext-rgb', '255, 210, 51');
+    document.documentElement.style.setProperty('--complex-accent-text', '#131f24');
+    document.documentElement.style.setProperty('--complex-secondary-shadow', '#122026');
   }
 }
 

@@ -400,6 +400,16 @@ button[class*="bg-[#064e3b]"]:active {
   color: var(--complex-accent, #ffc800) !important;
 }
 
+.text-\[\#064e3b\],
+.text-\[\#022c22\] {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+.text-\[\#f0f9f6\],
+.text-emerald-50 {
+  color: var(--complex-text, #ffffff) !important;
+}
+
 .text-\[\#86efac\],
 .text-emerald-100,
 .text-emerald-200,
@@ -411,6 +421,35 @@ button[class*="bg-[#064e3b]"]:active {
 .text-\[\#86efac\]\/80,
 .text-\[\#86efac\]\/70 {
   color: rgba(var(--complex-subtext-rgb, 255, 210, 51), 0.9) !important;
+}
+
+/* Duolingo Avatar Initial Letter Badge */
+.duo-avatar {
+  background-color: var(--complex-primary, #131f24) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 4px solid var(--complex-card-shadow, #16262e) !important;
+  border-radius: 1rem !important;
+  font-weight: 900 !important;
+}
+
+/* Duolingo Holy Quran Reader Action Button */
+.mushaf-reader-btn {
+  background-color: var(--complex-primary, #131f24) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 4px solid var(--complex-card-shadow, #16262e) !important;
+  border-radius: 1rem !important;
+  font-weight: 800 !important;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.mushaf-reader-btn:hover {
+  border-color: var(--complex-accent, #ffc800) !important;
+  background-color: var(--complex-secondary, #1b2e35) !important;
+}
+.mushaf-reader-btn:active {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
 }
 
 /* 5. Clean Duolingo Borders */
