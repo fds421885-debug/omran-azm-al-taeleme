@@ -18,9 +18,14 @@ import {
   ShieldCheck,
   RefreshCw,
   ShieldAlert,
-  MessageCircle
+  MessageCircle,
+  Trophy,
+  CheckCircle2,
+  FileText,
+  FolderArchive
 } from 'lucide-react';
 import { Student, AttendanceRecord, StudentEvaluation, AppSettings, TeacherAccount, QuranComplex } from '../../types';
+import { darkenHex } from '../../lib/themeUtils';
 
 interface HomeTabProps {
   students: Student[];
@@ -53,6 +58,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // Theme colors calculation with Duolingo defaults
+  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const themeCardBg = activeComplex?.theme?.cardColor || '#203843';
+  const themeBorder = activeComplex?.theme?.secondaryColor || '#2b4550';
+  const themeBorderBottom = darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.25);
+  const themeAccentShadow = darkenHex(themeAccent, 0.25);
+
   // Today's attendance calculation
   const todayAttendance = attendance.filter(a => a.date === todayStr);
   const presentCount = todayAttendance.filter(a => a.status === 'حاضر').length;
@@ -80,61 +92,89 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const displayTeacherName = currentUserName || settings.teacherName || 'معلم ومحفظ الحلقة';
 
   return (
-    <div className="space-y-6">
-      {/* Welcome Banner */}
+    <div className="space-y-6 w-full max-w-full">
+      {/* 1. Welcome Banner with Duolingo 3D Tactile Buttons & Dynamic Theme */}
       <div
-        className="relative overflow-hidden rounded-[32px] bg-[#1b2e35] border-2 border-b-4 border-[#2b4550] p-6 sm:p-8 shadow-2xl transition-all duration-300"
+        className="relative overflow-hidden rounded-[28px] border-2 border-b-4 p-6 sm:p-8 shadow-xl transition-all duration-300"
         style={activeComplex?.theme ? {
-          background: `linear-gradient(to right, ${activeComplex.theme.secondaryColor}, ${activeComplex.theme.primaryColor || activeComplex.theme.backgroundColor}, ${activeComplex.theme.secondaryColor})`,
-          borderColor: activeComplex.theme.accentColor ? `${activeComplex.theme.accentColor}55` : undefined
-        } : undefined}
+          backgroundColor: activeComplex.theme.secondaryColor || '#1b2e35',
+          borderColor: activeComplex.theme.primaryColor || '#2b4550',
+          borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.3)
+        } : {
+          backgroundColor: '#1b2e35',
+          borderColor: '#2b4550',
+          borderBottomColor: '#16262e'
+        }}
       >
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
+          <div className="space-y-2">
             <div
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#58cc02]/20 text-[#58cc02] border border-[#58cc02]/40 text-xs font-black mb-3 shadow-sm"
-              style={activeComplex?.theme?.accentColor ? {
-                backgroundColor: `${activeComplex.theme.accentColor}25`,
-                color: activeComplex.theme.accentColor,
-                borderColor: `${activeComplex.theme.accentColor}55`
-              } : undefined}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm"
+              style={{
+                backgroundColor: `${themeAccent}20`,
+                borderColor: `${themeAccent}60`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#ffc800]" />
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
               <span>لوحة المتابعة اليومية • {activeComplex?.name || 'مجمع تحفيظ القرآن الكريم'}</span>
             </div>
+
             <h2 className="text-2xl sm:text-3xl font-black font-heading text-white">
-              مرحباً بك، <span style={activeComplex?.theme?.accentColor ? { color: activeComplex.theme.accentColor } : undefined} className="text-[#58cc02]">{displayTeacherName}</span>
+              مرحباً بك، <span style={{ color: themeAccent }}>{displayTeacherName}</span>
             </h2>
-            <p className="text-slate-300 text-sm mt-1 max-w-xl font-medium">
-              تسميع وحفظ اليوم في {settings.halaqahName}. نظام المجمع مرتبط سحابياً بحيث يتشارك جميع المعلمين نفس الطلاب والتقييمات فورياً ولحظياً.
+
+            <p className="text-slate-300 text-xs sm:text-sm font-bold max-w-xl leading-relaxed">
+              تسميع وحفظ اليوم في {settings.halaqahName}. نظام المنظومة متصل سحابياً وفورياً لتشارك التقييمات والحضور بين كافة المعلمين والمشرفين.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Duolingo 3D Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 shrink-0">
+            {/* Attendance Button */}
             <button
               onClick={() => onNavigateTab('attendance')}
-              className="px-5 py-2.5 rounded-2xl bg-[#58cc02] border-2 border-[#58cc02] border-b-4 border-[#46a302] hover:brightness-105 text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-green-500/20 transition-all cursor-pointer active:translate-y-0.5"
-              style={activeComplex?.theme ? {
-                backgroundColor: activeComplex.theme.accentColor,
+              className="px-4 sm:px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer"
+              style={{
+                backgroundColor: '#58cc02',
+                borderColor: '#58cc02',
+                borderBottomColor: '#46a302',
                 color: '#ffffff'
-              } : undefined}
+              }}
             >
               <CheckCircle className="w-4 h-4 text-white" />
               <span>تسجيل حضور اليوم</span>
             </button>
+
+            {/* Evaluation Button */}
             <button
               onClick={() => onNavigateTab('evaluation')}
-              className="px-5 py-2.5 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-[#16262e] hover:border-[#58cc02] text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-md transition-all cursor-pointer active:translate-y-0.5"
+              className="px-4 sm:px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                color: '#131f24'
+              }}
             >
-              <BookOpen className="w-4 h-4 text-[#58cc02]" />
+              <BookOpen className="w-4 h-4 text-[#131f24]" />
               <span>تقييم التسميع</span>
             </button>
+
+            {/* Teacher Management Button */}
             {(isSupervisor || isDeveloper) && onOpenTeacherManagement && (
               <button
                 onClick={onOpenTeacherManagement}
-                className="px-4 py-2.5 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-[#16262e] hover:border-[#ffc800] text-[#ffc800] font-black text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-md active:translate-y-0.5"
+                className="px-4 sm:px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom,
+                  color: '#ffffff'
+                }}
               >
-                <Users className="w-4 h-4 text-[#ffc800]" />
+                <Users className="w-4 h-4" style={{ color: themeAccent }} />
                 <span>إدارة المعلمين ({teachers.length})</span>
               </button>
             )}
@@ -143,101 +183,200 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
         {/* Decorative Duolingo Subtle Glow */}
         <div
-          className="absolute top-0 left-0 w-64 h-64 pointer-events-none opacity-30"
-          style={{
-            backgroundImage: 'radial-gradient(circle at 0 0, rgba(88, 204, 2, 0.25), transparent 70%)'
-          }}
+          className="absolute -top-12 -left-12 w-64 h-64 pointer-events-none opacity-20 rounded-full blur-3xl"
+          style={{ backgroundColor: themeAccent }}
         />
       </div>
 
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Students */}
-        <div className="bg-[#203843] border-2 border-b-4 border-[#2b4550] hover:border-[#58cc02] rounded-[24px] p-5 transition-all shadow-md">
+      {/* 2. Main Stats Grid (4 Cards in Duolingo 3D Style & Theme) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        {/* Card 1: Total Students */}
+        <div
+          className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 transition-all shadow-md group hover:translate-y-[-2px]"
+          style={{
+            backgroundColor: themeCardBg,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-300">إجمالي طلاب الحلقة</span>
-            <div className="w-10 h-10 rounded-2xl bg-[#58cc02]/20 text-[#58cc02] flex items-center justify-center border border-[#58cc02]/40">
-              <Users className="w-5 h-5" />
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-inner"
+              style={{
+                backgroundColor: `${themeAccent}25`,
+                borderColor: `${themeAccent}60`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+            >
+              <Users className="w-5 h-5" style={{ color: themeAccent }} />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-white font-heading">
             {students.length}
           </div>
-          <div className="text-[11px] text-[#8ee000] mt-1 flex items-center gap-1 font-bold">
-            <span>{strongCount} متقدم</span> • <span>{mediumCount} متوسط</span> • <span>{weakCount} متابعة</span>
+          <div className="text-[11px] mt-2.5 flex flex-wrap items-center gap-1.5 font-bold">
+            <span className="px-2 py-0.5 rounded-xl bg-[#58cc02]/20 text-[#58cc02] border border-[#58cc02]/50 border-b-2 border-b-[#46a302] font-black">
+              {strongCount} متقدم
+            </span>
+            <span className="px-2 py-0.5 rounded-xl bg-[#1cb0f6]/20 text-[#1cb0f6] border border-[#1cb0f6]/50 border-b-2 border-b-[#1899d6] font-black">
+              {mediumCount} متوسط
+            </span>
+            <span className="px-2 py-0.5 rounded-xl bg-[#ff9600]/20 text-[#ff9600] border border-[#ff9600]/50 border-b-2 border-b-[#e68300] font-black">
+              {weakCount} متابعة
+            </span>
           </div>
         </div>
 
-        {/* Today Attendance Rate */}
-        <div className="bg-[#203843] border-2 border-b-4 border-[#2b4550] hover:border-[#1cb0f6] rounded-[24px] p-5 transition-all shadow-md">
+        {/* Card 2: Today Attendance Rate */}
+        <div
+          className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 transition-all shadow-md group hover:translate-y-[-2px]"
+          style={{
+            backgroundColor: themeCardBg,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-300">حضور اليوم ({todayStr})</span>
-            <div className="w-10 h-10 rounded-2xl bg-[#1cb0f6]/20 text-[#1cb0f6] flex items-center justify-center border border-[#1cb0f6]/40">
-              <CalendarDays className="w-5 h-5" />
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-inner"
+              style={{
+                backgroundColor: '#1cb0f625',
+                borderColor: '#1cb0f660',
+                borderBottomColor: '#1899d6',
+                color: '#1cb0f6'
+              }}
+            >
+              <CalendarDays className="w-5 h-5 text-[#1cb0f6]" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-white font-heading">
             {presentCount} <span className="text-xs text-slate-400 font-normal">/ {students.length} طالب</span>
           </div>
-          <div className="text-[11px] text-slate-300 mt-1 flex items-center gap-1 font-bold">
-            <span>نسبة الحضور: <strong className="text-[#1cb0f6]">{attendanceRate}%</strong></span>
+          <div className="text-[11px] text-slate-300 mt-2.5 flex items-center gap-1.5 font-bold">
+            <span>نسبة الحضور:</span>
+            <span className="px-2.5 py-0.5 rounded-xl bg-[#1cb0f6]/20 text-[#1cb0f6] border border-[#1cb0f6]/50 border-b-2 border-b-[#1899d6] font-black">
+              {attendanceRate}%
+            </span>
           </div>
         </div>
 
-        {/* Today Recited */}
-        <div className="bg-[#203843] border-2 border-b-4 border-[#2b4550] hover:border-[#ffc800] rounded-[24px] p-5 transition-all shadow-md">
+        {/* Card 3: Today Recited */}
+        <div
+          className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 transition-all shadow-md group hover:translate-y-[-2px]"
+          style={{
+            backgroundColor: themeCardBg,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-300">التسميع المنجز اليوم</span>
-            <div className="w-10 h-10 rounded-2xl bg-[#ffc800]/20 text-[#ffc800] flex items-center justify-center border border-[#ffc800]/40">
-              <BookOpen className="w-5 h-5" />
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-inner"
+              style={{
+                backgroundColor: `${themeAccent}25`,
+                borderColor: `${themeAccent}60`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+            >
+              <BookOpen className="w-5 h-5" style={{ color: themeAccent }} />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#ffc800] font-heading">
+          <div className="text-2xl sm:text-3xl font-black font-heading" style={{ color: themeAccent }}>
             {evaluatedCount} <span className="text-xs text-slate-400 font-normal">من {presentCount} حاضر</span>
           </div>
-          <div className="text-[11px] text-slate-300 mt-1 font-bold">
-            <span>نسبة إنجاز التسميع: <strong className="text-[#ffc800]">{evalRate}%</strong></span>
+          <div className="text-[11px] text-slate-300 mt-2.5 flex items-center gap-1.5 font-bold">
+            <span>نسبة إنجاز التسميع:</span>
+            <span
+              className="px-2.5 py-0.5 rounded-xl font-black border border-b-2 shadow-sm"
+              style={{
+                backgroundColor: `${themeAccent}25`,
+                borderColor: `${themeAccent}60`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+            >
+              {evalRate}%
+            </span>
           </div>
         </div>
 
-        {/* Approved Quran Plans Active */}
-        <div className="bg-[#203843] border-2 border-b-4 border-[#2b4550] hover:border-[#ce82ff] rounded-[24px] p-5 transition-all shadow-md">
+        {/* Card 4: Approved Quran Plans Active */}
+        <div
+          className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 transition-all shadow-md group hover:translate-y-[-2px]"
+          style={{
+            backgroundColor: themeCardBg,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-300">الخطط المنهجية المعتمدة</span>
-            <div className="w-10 h-10 rounded-2xl bg-[#ce82ff]/20 text-[#ce82ff] flex items-center justify-center border border-[#ce82ff]/40 shadow-sm">
-              <Sparkles className="w-5 h-5" />
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-inner"
+              style={{
+                backgroundColor: `${themeAccent}20`,
+                borderColor: `${themeAccent}50`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+            >
+              <Sparkles className="w-5 h-5" style={{ color: themeAccent }} />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#ce82ff] font-heading">
+          <div className="text-2xl sm:text-3xl font-black font-heading" style={{ color: themeAccent }}>
             {students.filter(s => s.aiPlan).length}
           </div>
-          <div className="text-[11px] text-slate-300 mt-1 font-bold">
-            <span>خطط مخصصة نشطة ومحدثة</span>
+          <div className="text-[11px] text-slate-300 mt-2.5 font-bold">
+            <span
+              className="px-2.5 py-0.5 rounded-xl border border-b-2 font-black inline-flex items-center gap-1"
+              style={{
+                backgroundColor: `${themeAccent}20`,
+                borderColor: `${themeAccent}50`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>خطط مخصصة نشطة ومحدثة</span>
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Two Column Section */}
+      {/* 3. Main Content Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Today's Student Roster Quick Review */}
+        {/* Left 2 Cols: Today's Student Recitation Roster with Duolingo 3D Polish */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold font-heading text-white flex items-center gap-2">
-              <Flame className="w-4 h-4 text-[#fbbf24]" />
+            <h3 className="text-base font-black font-heading text-white flex items-center gap-2">
+              <Flame className="w-5 h-5" style={{ color: themeAccent }} />
               <span>متابعة تسميع طلاب الحلقة اليوم</span>
             </h3>
             <button
               onClick={() => onNavigateTab('evaluation')}
-              className="text-xs text-[#fbbf24] hover:text-amber-300 flex items-center gap-1 font-bold cursor-pointer"
+              className="text-xs flex items-center gap-1 font-black cursor-pointer hover:underline"
+              style={{ color: themeAccent }}
             >
               <span>فتح شاشة التقييم الكاملة</span>
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="bg-[#064e3b]/50 border border-[#065f46] rounded-[24px] divide-y divide-[#065f46]/60 overflow-hidden shadow-lg">
+          <div
+            className="border-2 border-b-4 rounded-[28px] overflow-hidden shadow-lg divide-y divide-[#2b4550]/80 p-2 sm:p-3"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
             {students.length === 0 ? (
-              <div className="p-8 text-center text-[#86efac]/80 text-sm">
+              <div className="p-8 text-center text-slate-400 text-sm font-bold">
                 لم يتم تسجيل أي طلاب بعد. يمكنك إضافة طلاب من تبويب "الطلاب والتسجيل".
               </div>
             ) : (
@@ -246,67 +385,138 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 const isPresent = att?.status === 'حاضر';
                 const isAbsent = att?.status === 'غائب';
                 const isExcused = att?.status === 'معتذر';
+                const isLate = att?.status === 'متأخر';
                 const hasEvaluation = todayEvals.some(e => e.studentId === student.id);
 
                 return (
                   <div
                     key={student.id}
-                    className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                      isAbsent
-                        ? 'opacity-50 bg-[#022c22]/60'
-                        : isExcused
-                        ? 'opacity-60 bg-purple-950/20'
-                        : 'hover:bg-[#065f46]/40'
+                    className={`m-1.5 p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all shadow-sm ${
+                      isAbsent ? 'opacity-65' : isExcused ? 'opacity-75' : 'hover:translate-y-[-1px]'
                     }`}
+                    style={{
+                      backgroundColor: isAbsent ? '#131f24' : isExcused ? '#131f24' : (activeComplex?.theme?.cardColor || '#1b2e35'),
+                      borderColor: isAbsent ? 'rgba(255, 75, 75, 0.45)' : isExcused ? 'rgba(206, 130, 255, 0.45)' : themeBorder,
+                      borderBottomColor: isAbsent ? '#ea2b2b' : isExcused ? '#a558dc' : themeBorderBottom
+                    }}
                   >
+                    {/* Student Identity and Quran Location */}
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#022c22] border border-[#065f46] flex items-center justify-center font-bold text-sm text-[#fbbf24] shrink-0 shadow-inner">
+                      <div
+                        className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-sm shadow-sm shrink-0"
+                        style={{
+                          backgroundColor: `${themeAccent}25`,
+                          borderColor: `${themeAccent}60`,
+                          borderBottomColor: themeAccentShadow,
+                          color: themeAccent
+                        }}
+                      >
                         {student.name.charAt(0)}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-bold text-white">{student.name}</h4>
+
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-white truncate">{student.name}</h4>
                           <span
-                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            className={`text-[10px] px-2.5 py-0.5 rounded-xl font-black border-2 border-b-2 shadow-xs ${
                               student.level === 'قوي'
-                                ? 'bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30'
+                                ? 'bg-[#58cc02]/20 text-[#58cc02] border-[#58cc02]/50 border-b-[#46a302]'
                                 : student.level === 'متوسط'
-                                ? 'bg-emerald-500/20 text-[#86efac] border border-emerald-500/30'
-                                : 'bg-amber-600/20 text-amber-300 border border-amber-600/30'
+                                ? 'bg-[#1cb0f6]/20 text-[#1cb0f6] border-[#1cb0f6]/50 border-b-[#1899d6]'
+                                : 'bg-[#ff9600]/20 text-[#ff9600] border-[#ff9600]/50 border-b-[#e68300]'
                             }`}
                           >
                             {student.level}
                           </span>
                         </div>
-                        <p className="text-xs text-[#86efac]/80 mt-0.5">
-                          سورة {student.currentSurahName} (الآية {student.currentAyah}) • ورد الحفظ:{' '}
-                          <span className="text-[#fbbf24] font-medium">{student.dailyNewTarget}</span>
-                        </p>
+
+                        {/* Recitation Location & Target In Duolingo 3D Mini-Pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                          <span
+                            className="px-2.5 py-0.5 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1 shadow-xs"
+                            style={{
+                              backgroundColor: activeComplex?.theme?.primaryColor ? `${activeComplex.theme.primaryColor}80` : '#131f24',
+                              borderColor: themeBorder,
+                              borderBottomColor: themeBorderBottom,
+                              color: '#ffffff'
+                            }}
+                          >
+                            <BookOpen className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                            <span>سورة {student.currentSurahName} (الآية {student.currentAyah})</span>
+                          </span>
+                          <span
+                            className="px-2.5 py-0.5 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1 shadow-xs"
+                            style={{
+                              backgroundColor: `${themeAccent}20`,
+                              borderColor: `${themeAccent}50`,
+                              borderBottomColor: themeAccentShadow,
+                              color: themeAccent
+                            }}
+                          >
+                            <span>ورد الحفظ:</span>
+                            <strong className="font-black">{student.dailyNewTarget}</strong>
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      {/* Attendance Badge */}
+                    {/* Status Badges & Recitation Button in Duolingo 3D */}
+                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      {/* Attendance Badge in Duolingo 3D style */}
                       <span
-                        className={`text-xs px-2.5 py-1 rounded-xl font-bold ${
+                        className="text-xs px-3 py-1.5 rounded-xl font-black border-2 border-b-4 shadow-sm"
+                        style={
                           isPresent
-                            ? 'bg-emerald-500/20 text-[#86efac] border border-emerald-500/30'
+                            ? {
+                                backgroundColor: 'rgba(88, 204, 2, 0.2)',
+                                borderColor: 'rgba(88, 204, 2, 0.6)',
+                                borderBottomColor: '#46a302',
+                                color: '#58cc02'
+                              }
                             : isAbsent
-                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            ? {
+                                backgroundColor: 'rgba(255, 75, 75, 0.2)',
+                                borderColor: 'rgba(255, 75, 75, 0.6)',
+                                borderBottomColor: '#ea2b2b',
+                                color: '#ff4b4b'
+                              }
                             : isExcused
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                            : att?.status === 'متأخر'
-                            ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                            : 'bg-[#022c22] text-[#86efac]/60 border border-[#065f46]'
-                        }`}
+                            ? {
+                                backgroundColor: 'rgba(206, 130, 255, 0.2)',
+                                borderColor: 'rgba(206, 130, 255, 0.6)',
+                                borderBottomColor: '#a558dc',
+                                color: '#ce82ff'
+                              }
+                            : isLate
+                            ? {
+                                backgroundColor: 'rgba(255, 150, 0, 0.2)',
+                                borderColor: 'rgba(255, 150, 0, 0.6)',
+                                borderBottomColor: '#e68300',
+                                color: '#ff9600'
+                              }
+                            : {
+                                backgroundColor: activeComplex?.theme?.primaryColor ? `${activeComplex.theme.primaryColor}80` : '#16262e',
+                                borderColor: themeBorder,
+                                borderBottomColor: themeBorderBottom,
+                                color: '#94a3b8'
+                              }
+                        }
                       >
                         {att?.status || 'لم يسجل'}
                       </span>
 
-                      {/* Evaluation button / status */}
+                      {/* Recitation Evaluation Status in Duolingo 3D style */}
                       {hasEvaluation ? (
-                        <span className="text-xs px-3 py-1 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 font-bold flex items-center gap-1 shadow-sm">
-                          <CheckCircle className="w-3.5 h-3.5" />
+                        <span
+                          className="text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-4 flex items-center gap-1.5 shadow-sm"
+                          style={{
+                            backgroundColor: '#58cc0225',
+                            borderColor: '#58cc0280',
+                            borderBottomColor: '#46a302',
+                            color: '#58cc02'
+                          }}
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-[#58cc02]" />
                           <span>تم التسميع</span>
                         </span>
                       ) : isPresent ? (
@@ -317,9 +527,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                             }
                             onNavigateTab('evaluation');
                           }}
-                          className="text-xs px-3.5 py-1.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black transition-all shadow-[0_0_12px_rgba(251,191,36,0.3)] cursor-pointer"
+                          className="text-xs px-4 py-1.5 rounded-xl font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                          style={{
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: '#131f24'
+                          }}
                         >
-                          تسميع الآن
+                          <BookOpen className="w-3.5 h-3.5 text-[#131f24]" />
+                          <span>تسميع الآن</span>
                         </button>
                       ) : null}
                     </div>
@@ -330,107 +547,194 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
         </div>
 
-        {/* Right 1 Col: Quick Actions & AI Assistant Widget */}
-        <div className="space-y-4">
-          {/* Quick Shortcuts */}
-          <div className="bg-[#064e3b]/50 border border-[#065f46] rounded-[24px] p-5 shadow-lg">
-            <h3 className="text-sm font-bold font-heading text-[#fbbf24] mb-3.5 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#fbbf24]" />
+        {/* Right 1 Col: Quick Access Tiles in Duolingo 3D & WhatsApp Spotlight */}
+        <div className="space-y-5">
+          {/* Quick Access Container */}
+          <div
+            className="border-2 border-b-4 rounded-[28px] p-5 shadow-lg space-y-3"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
+            <h3 className="text-sm font-black font-heading text-white flex items-center gap-2 mb-4">
+              <TrendingUp className="w-4 h-4" style={{ color: themeAccent }} />
               <span>الوصول السريع للأقسام</span>
             </h3>
 
             <div className="space-y-2.5">
+              {/* Teachers Management */}
               {(isSupervisor || isDeveloper) && onOpenTeacherManagement && (
                 <button
                   onClick={onOpenTeacherManagement}
-                  className="w-full p-3 rounded-2xl bg-[#022c22]/70 hover:bg-[#022c22] border border-[#065f46] hover:border-[#fbbf24]/40 flex items-center justify-between text-right transition-all text-xs font-bold text-[#fbbf24] cursor-pointer"
+                  className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                  style={{
+                    backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center border border-[#fbbf24]/30">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl border-2 border-b-4 flex items-center justify-center shrink-0"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}60`,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
                       <Users className="w-4 h-4" />
                     </div>
-                    <span>إدارة المعلمين والمعاونين ({teachers.length})</span>
+                    <span className="text-xs font-black text-white">إدارة المعلمين والمعاونين ({teachers.length})</span>
                   </div>
-                  <ArrowLeft className="w-3.5 h-3.5 text-[#fbbf24]" />
+                  <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
                 </button>
               )}
 
+              {/* Students Management */}
               <button
                 onClick={() => onNavigateTab('students')}
-                className="w-full p-3 rounded-2xl bg-[#022c22]/70 hover:bg-[#022c22] border border-[#065f46] flex items-center justify-between text-right transition-all text-xs font-bold text-[#f0f9f6] cursor-pointer"
+                className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                style={{
+                  backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center border border-[#fbbf24]/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#58cc02]/20 border-2 border-[#58cc02]/50 border-b-4 border-b-[#46a302] text-[#58cc02] flex items-center justify-center shrink-0">
                     <Users className="w-4 h-4" />
                   </div>
-                  <span>إدارة الطلاب وتسجيلهم</span>
+                  <span className="text-xs font-black text-white">إدارة الطلاب والتسجيل</span>
                 </div>
-                <ArrowLeft className="w-3.5 h-3.5 text-[#86efac]" />
+                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
               </button>
 
+              {/* Attendance */}
+              <button
+                onClick={() => onNavigateTab('attendance')}
+                className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                style={{
+                  backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#1cb0f6]/20 border-2 border-[#1cb0f6]/50 border-b-4 border-b-[#1899d6] text-[#1cb0f6] flex items-center justify-center shrink-0">
+                    <CheckCircle className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-black text-white">تحضير حضور الطلاب</span>
+                </div>
+                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+              </button>
+
+              {/* Teacher Attendance */}
+              <button
+                onClick={() => onNavigateTab('teacher_attendance')}
+                className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                style={{
+                  backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#ff9600]/20 border-2 border-[#ff9600]/50 border-b-4 border-b-[#e68300] text-[#ff9600] flex items-center justify-center shrink-0">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-black text-white">تحضير المعلمين والمناوبات</span>
+                </div>
+                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+              </button>
+
+              {/* Behavior & Violations */}
               <button
                 onClick={() => onNavigateTab('behavior')}
-                className="w-full p-3 rounded-2xl bg-[#022c22]/70 hover:bg-[#022c22] border border-amber-500/30 flex items-center justify-between text-right transition-all text-xs font-bold text-[#f0f9f6] cursor-pointer"
+                className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                style={{
+                  backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#ff4b4b]/20 border-2 border-[#ff4b4b]/50 border-b-4 border-b-[#ea2b2b] text-[#ff4b4b] flex items-center justify-center shrink-0">
                     <ShieldAlert className="w-4 h-4" />
                   </div>
-                  <span>المخالفات والتوجيهات السلوكية</span>
+                  <span className="text-xs font-black text-white">المخالفات والتوجيهات السلوكية</span>
                 </div>
-                <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
               </button>
 
-              <button
-                onClick={() => onNavigateTab('parents')}
-                className="w-full p-3 rounded-2xl bg-[#022c22]/70 hover:bg-[#022c22] border border-[#065f46] flex items-center justify-between text-right transition-all text-xs font-bold text-[#f0f9f6] cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-[#86efac] flex items-center justify-center border border-emerald-500/30">
-                    <Send className="w-4 h-4" />
-                  </div>
-                  <span>إرسال رسائل الواتساب لأولياء الأمور</span>
-                </div>
-                <ArrowLeft className="w-3.5 h-3.5 text-[#86efac]" />
-              </button>
-
+              {/* Periodic Reports */}
               <button
                 onClick={() => onNavigateTab('reports')}
-                className="w-full p-3 rounded-2xl bg-[#022c22]/70 hover:bg-[#022c22] border border-[#065f46] flex items-center justify-between text-right transition-all text-xs font-bold text-[#f0f9f6] cursor-pointer"
+                className="w-full p-3 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex items-center justify-between text-right transition-all cursor-pointer shadow-sm group"
+                style={{
+                  backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center border border-[#fbbf24]/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#ce82ff]/20 border-2 border-[#ce82ff]/50 border-b-4 border-b-[#a558dc] text-[#ce82ff] flex items-center justify-center shrink-0">
                     <Award className="w-4 h-4" />
                   </div>
-                  <span>التقارير الأسبوعية والشهرية</span>
+                  <span className="text-xs font-black text-white">التقارير الأسبوعية والشهرية</span>
                 </div>
-                <ArrowLeft className="w-3.5 h-3.5 text-[#86efac]" />
-              </button>
-
-              <button
-                onClick={() => onNavigateTab('parents')}
-                className="w-full p-3 rounded-2xl bg-gradient-to-r from-emerald-500/15 to-[#064e3b] hover:from-emerald-500/25 hover:to-[#064e3b] border border-emerald-500/40 flex items-center justify-between text-right transition-all text-xs font-bold text-emerald-300 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.15)]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500 text-[#064e3b] flex items-center justify-center shadow-md">
-                    <MessageCircle className="w-4 h-4" />
-                  </div>
-                  <span>إرسال تقارير ورسائل الواتساب</span>
-                </div>
-                <ArrowLeft className="w-3.5 h-3.5 text-emerald-300" />
+                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
               </button>
             </div>
           </div>
 
-          {/* Reciter Recommendation Spotlight */}
-          <div className="bg-gradient-to-br from-[#064e3b] to-[#022c22] border border-[#fbbf24]/30 rounded-[24px] p-5 shadow-lg">
-            <div className="flex items-center gap-2 text-[#fbbf24] text-xs font-bold mb-2">
+          {/* Prominent WhatsApp Reports Action Card in Duolingo 3D */}
+          <div
+            onClick={() => onNavigateTab('parents')}
+            className="p-4 sm:p-5 rounded-[28px] border-2 border-b-4 cursor-pointer transition-all shadow-xl group active:translate-y-[2px] active:border-b-2"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: '#25D366',
+              borderBottomColor: '#1ea952'
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#25D366] text-white flex items-center justify-center border-2 border-b-4 border-b-[#1ea952] border-[#25D366] shadow-lg shrink-0 group-hover:scale-105 transition-transform">
+                  <MessageCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>إرسال تقارير ورسائل الواتساب</span>
+                    <Sparkles className="w-3.5 h-3.5 text-[#25D366]" />
+                  </h4>
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
+                    إرسال التقارير اليومية لأولياء الأمور بنقرة واحدة
+                  </p>
+                </div>
+              </div>
+              <ArrowLeft className="w-5 h-5 text-[#25D366] group-hover:-translate-x-1 transition-transform shrink-0" />
+            </div>
+          </div>
+
+          {/* Reciter Recommendation Spotlight Card */}
+          <div
+            className="border-2 border-b-4 rounded-[28px] p-5 shadow-lg space-y-2"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
+            <div className="flex items-center gap-2 text-xs font-black" style={{ color: themeAccent }}>
               <Volume2 className="w-4 h-4" />
               <span>القارئ الموصى به اليوم للحلقة</span>
             </div>
-            <h4 className="text-sm font-bold text-white">الشيخ محمود خليل الحصري (المصحف المعلم)</h4>
-            <p className="text-xs text-[#86efac]/90 mt-1 leading-relaxed">
-              يوصى بتشغيل سورة البقرة وقصار السور بصوت الشيخ الحصري لترسيخ مخارج الحروف وأحكام الإدغام والغنة والترتيل المتقن قبل التسميع.
+            <h4 className="text-sm font-black text-white">الشيخ محمود خليل الحصري (المصحف المعلم)</h4>
+            <p className="text-xs text-slate-300 font-bold leading-relaxed">
+              يوصى بالاستماع لقصار السور وأجزاء التلاوة بصوت الشيخ الحصري لترسيخ مخارج الحروف وأحكام التجويد والترتيل المتقن قبل التسميع.
             </p>
           </div>
         </div>

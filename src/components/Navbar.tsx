@@ -177,9 +177,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent('omran:open_ai_assistant'))}
                 title="المساعد القرآني الذكي (AI) - انقر لفتح المحادثة والتقارير والشهادات"
-                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl bg-[#1cb0f6] hover:bg-[#2bc2ff] text-white text-xs font-black border-b-4 border-[#1899d6] active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer"
+                style={activeComplex?.theme?.accentColor ? {
+                  backgroundColor: activeComplex.theme.accentColor,
+                  color: activeComplex.theme.primaryColor || '#131f24',
+                  borderColor: activeComplex.theme.accentColor,
+                  borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
+                } : {
+                  backgroundColor: '#1cb0f6',
+                  color: '#ffffff',
+                  borderColor: '#1cb0f6',
+                  borderBottomColor: '#1899d6'
+                }}
               >
-                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse shrink-0" />
                 <span className="hidden xs:inline">المساعد الذكي</span>
               </button>
             )}
@@ -189,9 +200,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onOpenSettings}
                 title="إعدادات الحلقات والمعلمين ونقل الطلاب وتخصيص هوية وثيم المجمع"
-                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl bg-[#ffc800] hover:bg-[#ffd233] text-[#131f24] text-xs font-black border-b-4 border-[#e5a500] active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer"
+                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer"
+                style={activeComplex?.theme?.accentColor ? {
+                  backgroundColor: activeComplex.theme.accentColor,
+                  color: activeComplex.theme.primaryColor || '#131f24',
+                  borderColor: activeComplex.theme.accentColor,
+                  borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
+                } : {
+                  backgroundColor: '#ffc800',
+                  color: '#131f24',
+                  borderColor: '#ffc800',
+                  borderBottomColor: '#e5a500'
+                }}
               >
-                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#131f24]" />
+                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span className="hidden sm:inline">الإعدادات</span>
               </button>
             )}
@@ -200,11 +222,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onOpenTeacherManagement}
                 title="إدارة حسابات المعلمين"
-                className="flex items-center gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl bg-[#203843] hover:bg-[#2b4550] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] text-xs font-black text-white shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+                className="flex items-center gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+                style={activeComplex?.theme ? {
+                  backgroundColor: activeComplex.theme.cardColor || '#203843',
+                  borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                  borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                  color: '#ffffff'
+                } : {
+                  backgroundColor: '#203843',
+                  borderColor: '#2b4550',
+                  borderBottomColor: '#16262e',
+                  color: '#ffffff'
+                }}
               >
-                <Users className="w-3.5 h-3.5 text-[#ffc800]" />
+                <Users className="w-3.5 h-3.5" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
                 <span className="hidden sm:inline">إدارة المعلمين</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold bg-[#131f24] text-[#ffd233]">
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold"
+                  style={{
+                    backgroundColor: activeComplex?.theme?.primaryColor ? `${activeComplex.theme.primaryColor}80` : '#131f24',
+                    color: activeComplex?.theme?.accentColor || '#ffd233'
+                  }}
+                >
                   {teachersCount}
                 </span>
               </button>
@@ -215,7 +254,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center">
                 {currentTeacher.isGoogleLinked && currentTeacher.googleEmail ? (
                   <div
-                    className="flex items-center gap-1 sm:gap-1.5 py-1.5 px-2.5 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] text-xs shadow-sm"
+                    className="flex items-center gap-1 sm:gap-1.5 py-1.5 px-2.5 rounded-2xl border-2 border-b-4 text-xs shadow-sm transition-all"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e',
+                    }}
                     title={`حساب Google المرتبط: ${currentTeacher.googleEmail}`}
                   >
                     <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" viewBox="0 0 24 24">
@@ -227,7 +275,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="text-[11px] font-bold text-slate-200 hidden md:inline">
                       مربوط بـ Google
                     </span>
-                    <CheckCircle className="w-3.5 h-3.5 text-[#ffc800] shrink-0" />
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
                     {onUnlinkGoogleTeacher && (
                       <button
                         type="button"
@@ -246,7 +294,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                       onClick={onLinkGoogleTeacher}
                       disabled={isLinkingGoogleTeacher}
                       title="ربط حسابك الحالي بحساب Google لتسجيل الدخول السريع لاحقاً"
-                      className="flex items-center gap-1 sm:gap-1.5 py-1.5 px-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-black border-b-4 border-slate-300 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer disabled:opacity-60"
+                      className="flex items-center gap-1 sm:gap-1.5 py-1.5 px-2.5 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer disabled:opacity-60"
+                      style={activeComplex?.theme ? {
+                        backgroundColor: activeComplex.theme.cardColor || '#203843',
+                        borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                        borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                        color: '#ffffff'
+                      } : {
+                        backgroundColor: '#203843',
+                        borderColor: '#2b4550',
+                        borderBottomColor: '#16262e',
+                        color: '#ffffff'
+                      }}
                     >
                       <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -254,7 +313,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                         <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                       </svg>
-                      <span className="font-heading font-extrabold text-slate-800 hidden xs:inline">
+                      <span className="font-heading font-extrabold hidden xs:inline" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}>
                         {isLinkingGoogleTeacher ? 'جاري الربط...' : 'ربط Google'}
                       </span>
                     </button>
@@ -268,19 +327,46 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onOpenPrivacyPolicy}
                 title="سياسة الخصوصية وحماية البيانات (Privacy Policy)"
-                className="p-2 rounded-2xl bg-[#203843] hover:bg-[#2b4550] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] text-slate-300 hover:text-white transition-all cursor-pointer shadow-sm flex items-center gap-1 active:translate-y-[2px] active:border-b-2"
+                className="p-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer shadow-sm flex items-center gap-1 active:translate-y-[2px] active:border-b-2"
+                style={activeComplex?.theme ? {
+                  backgroundColor: activeComplex.theme.cardColor || '#203843',
+                  borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                  borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                  color: '#ffffff'
+                } : {
+                  backgroundColor: '#203843',
+                  borderColor: '#2b4550',
+                  borderBottomColor: '#16262e',
+                  color: '#ffffff'
+                }}
               >
-                <ShieldCheck className="w-4 h-4 text-[#ffc800]" />
+                <ShieldCheck className="w-4 h-4" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
                 <span className="hidden xl:inline text-xs font-bold">الخصوصية</span>
               </button>
             )}
 
             {currentUser && (
               <div
-                className="flex items-center gap-1.5 sm:gap-2 bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-2xl px-2.5 sm:px-3 py-1.5 shadow-sm shrink-0"
+                className="flex items-center gap-1.5 sm:gap-2 border-2 border-b-4 rounded-2xl px-2.5 sm:px-3 py-1.5 shadow-sm shrink-0 transition-all"
+                style={activeComplex?.theme ? {
+                  backgroundColor: activeComplex.theme.cardColor || '#203843',
+                  borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                  borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                } : {
+                  backgroundColor: '#203843',
+                  borderColor: '#2b4550',
+                  borderBottomColor: '#16262e',
+                }}
               >
                 <div
-                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#ffc800] text-[#131f24] flex items-center justify-center text-xs sm:text-sm font-black shrink-0 shadow-sm"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shrink-0 shadow-sm transition-colors border border-black/20"
+                  style={activeComplex?.theme?.accentColor ? {
+                    backgroundColor: activeComplex.theme.accentColor,
+                    color: activeComplex.theme.primaryColor || '#131f24'
+                  } : {
+                    backgroundColor: '#ffc800',
+                    color: '#131f24'
+                  }}
                 >
                   {currentUser.username.charAt(0)}
                 </div>
@@ -288,7 +374,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="text-xs font-bold text-white flex items-center gap-1">
                     {currentUser.username}
                   </div>
-                  <div className="text-[9px] text-[#ffd233] font-bold">
+                  <div
+                    className="text-[9px] font-bold"
+                    style={{ color: activeComplex?.theme?.accentColor || '#ffd233' }}
+                  >
                     {currentUser.role === 'admin' ? (isDeveloper ? 'معلم ومشرف ومبرمج' : isSupervisor ? 'المعلم المشرف' : 'معلم') : 'طالب'}
                   </div>
                 </div>
@@ -299,7 +388,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     type="button"
                     onClick={onOpenEditAccount}
                     title="تعديل بيانات الحساب (اسم المستخدم، كلمة المرور، والاسم الرباعي)"
-                    className="p-1 sm:p-1.5 text-[#ffc800] hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-[10px] sm:text-[11px] font-bold"
+                    className="p-1 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-[10px] sm:text-[11px] font-bold"
+                    style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}
                   >
                     <UserCog className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     <span className="hidden lg:inline">الحساب</span>
@@ -323,10 +413,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Complex Switcher / Badge */}
           {canSwitchComplex && availableComplexes.length > 1 && onSwitchComplex ? (
             <div
-              className="flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 shadow-sm transition-all border-2 border-[#2b4550] border-b-4 border-b-[#16262e] bg-[#203843] hover:bg-[#2b4550] shrink-0"
+              className="flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 shadow-sm transition-all border-2 border-b-4 shrink-0"
+              style={activeComplex?.theme ? {
+                backgroundColor: activeComplex.theme.cardColor || '#203843',
+                borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+              } : {
+                backgroundColor: '#203843',
+                borderColor: '#2b4550',
+                borderBottomColor: '#16262e'
+              }}
             >
               <Building2
-                className="w-3.5 h-3.5 text-[#ffc800] shrink-0"
+                className="w-3.5 h-3.5 shrink-0"
+                style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}
               />
               <select
                 value={activeComplexId || availableComplexes[0]?.id || ''}
@@ -349,7 +449,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   type="button"
                   onClick={onOpenMultiComplexModal}
                   title="عرض بطاقات المجمعات والحلقات التابعة لك"
-                  className="p-1 rounded-lg hover:bg-white/15 text-[#ffc800] hover:text-white transition-colors cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+                  style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}
                 >
                   <Layers className="w-3.5 h-3.5" />
                 </button>
@@ -362,12 +463,34 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="shrink-0">
               {isSupervisor ? (
                 halaqahs.length > 0 && onSwitchHalaqah ? (
-                  <div className="flex items-center gap-1.5 bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-2xl px-2.5 py-1 shadow-sm">
+                  <div
+                    className="flex items-center gap-1.5 border-2 border-b-4 rounded-2xl px-2.5 py-1 shadow-sm"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e'
+                    }}
+                  >
                     <span className="relative flex h-2 w-2 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffc800] opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffc800]" />
+                      <span
+                        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                      />
+                      <span
+                        className="relative inline-flex rounded-full h-2 w-2"
+                        style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                      />
                     </span>
-                    <span className="text-[10px] text-[#ffd233] font-black hidden sm:inline shrink-0">مساحة الحلقة:</span>
+                    <span
+                      className="text-[10px] font-black hidden sm:inline shrink-0"
+                      style={{ color: activeComplex?.theme?.accentColor || '#ffd233' }}
+                    >
+                      مساحة الحلقة:
+                    </span>
                     <select
                       value={activeHalaqahId || 'all'}
                       onChange={e => onSwitchHalaqah(e.target.value)}
@@ -385,18 +508,51 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </select>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-200 font-bold px-2.5 py-1 bg-[#203843] rounded-2xl border-2 border-[#2b4550] border-b-4 border-b-[#16262e]">
+                  <p
+                    className="text-xs text-slate-200 font-bold px-2.5 py-1 rounded-2xl border-2 border-b-4"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e'
+                    }}
+                  >
                     {displayHalaqahName}
                   </p>
                 )
               ) : (
                 assignedHalaqahs.length > 1 && onSwitchHalaqah ? (
-                  <div className="flex items-center gap-1.5 bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-2xl px-2.5 py-1 shadow-sm">
+                  <div
+                    className="flex items-center gap-1.5 border-2 border-b-4 rounded-2xl px-2.5 py-1 shadow-sm"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e'
+                    }}
+                  >
                     <span className="relative flex h-2 w-2 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffc800] opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffc800]" />
+                      <span
+                        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                      />
+                      <span
+                        className="relative inline-flex rounded-full h-2 w-2"
+                        style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                      />
                     </span>
-                    <span className="text-[10px] text-[#ffd233] font-black hidden sm:inline shrink-0">الحلقة:</span>
+                    <span
+                      className="text-[10px] font-black hidden sm:inline shrink-0"
+                      style={{ color: activeComplex?.theme?.accentColor || '#ffd233' }}
+                    >
+                      الحلقة:
+                    </span>
                     <select
                       value={activeHalaqahId || assignedHalaqahs[0]?.id || ''}
                       onChange={e => onSwitchHalaqah(e.target.value)}
@@ -411,9 +567,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </select>
                   </div>
                 ) : assignedHalaqahs.length === 1 ? (
-                  <div className="inline-flex items-center gap-1.5 text-xs text-white font-bold bg-[#203843] px-2.5 py-1 rounded-2xl border-2 border-[#2b4550] border-b-4 border-b-[#16262e] shadow-sm shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#ffc800] shrink-0" />
-                    <span className="text-[#ffd233] font-black shrink-0">الحلقة:</span>
+                  <div
+                    className="inline-flex items-center gap-1.5 text-xs text-white font-bold px-2.5 py-1 rounded-2xl border-2 border-b-4 shadow-sm shrink-0"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e'
+                    }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                    />
+                    <span
+                      className="font-black shrink-0"
+                      style={{ color: activeComplex?.theme?.accentColor || '#ffd233' }}
+                    >
+                      الحلقة:
+                    </span>
                     <span className="truncate max-w-[160px] sm:max-w-none">
                       {assignedHalaqahs[0].name} {assignedHalaqahs[0].complexName ? `(${assignedHalaqahs[0].complexName})` : ''}
                     </span>
@@ -429,15 +604,42 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Student count pill */}
           {currentUser?.role === 'admin' && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] text-xs text-[#ffc800] font-black shrink-0">
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl border-2 border-b-4 text-xs font-black shrink-0"
+              style={activeComplex?.theme ? {
+                backgroundColor: activeComplex.theme.cardColor || '#203843',
+                borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                color: activeComplex.theme.accentColor || '#ffc800'
+              } : {
+                backgroundColor: '#203843',
+                borderColor: '#2b4550',
+                borderBottomColor: '#16262e',
+                color: '#ffc800'
+              }}
+            >
               <UserCheck className="w-3.5 h-3.5" />
               <span>{studentsCount} طالباً</span>
             </div>
           )}
 
           {/* Date pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] text-xs text-slate-300 font-bold shrink-0">
-            <Calendar className="w-3.5 h-3.5 text-[#ffc800]" />
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl border-2 border-b-4 text-xs text-slate-300 font-bold shrink-0"
+            style={activeComplex?.theme ? {
+              backgroundColor: activeComplex.theme.cardColor || '#203843',
+              borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+              borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+            } : {
+              backgroundColor: '#203843',
+              borderColor: '#2b4550',
+              borderBottomColor: '#16262e'
+            }}
+          >
+            <Calendar
+              className="w-3.5 h-3.5"
+              style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}
+            />
             <span className="truncate">{todayArabic}</span>
           </div>
 
@@ -445,21 +647,52 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isDeveloper && (
             activeComplex?.databaseConfig?.isCustom ? (
               <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-[10px] font-black bg-[#203843] text-[#ffc800] border-2 border-[#ffc800]/50 border-b-4 border-b-[#e5a500] shadow-sm shrink-0"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-[10px] font-black border-2 border-b-4 shadow-sm shrink-0"
+                style={activeComplex?.theme ? {
+                  backgroundColor: activeComplex.theme.cardColor || '#203843',
+                  color: activeComplex.theme.accentColor || '#ffc800',
+                  borderColor: `${activeComplex.theme.accentColor || '#ffc800'}80`,
+                  borderBottomColor: darkenHex(activeComplex.theme.accentColor || '#ffc800', 0.3)
+                } : {
+                  backgroundColor: '#203843',
+                  color: '#ffc800',
+                  borderColor: '#ffc80080',
+                  borderBottomColor: '#e5a500'
+                }}
                 title={`المجمع متصل ومستقل 100% بمشروع فايربيس: ${activeComplex.databaseConfig.projectId}`}
               >
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffc800] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ffc800]" />
+                  <span
+                    className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                    style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                  />
+                  <span
+                    className="relative inline-flex rounded-full h-2 w-2"
+                    style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                  />
                 </span>
                 <span>قاعدة: {activeComplex.databaseConfig.projectId}</span>
               </div>
             ) : (
               <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-[10px] font-bold bg-[#203843] text-slate-300 border-2 border-[#2b4550] border-b-4 border-b-[#16262e] shrink-0"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-[10px] font-bold border-2 border-b-4 shrink-0"
+                style={activeComplex?.theme ? {
+                  backgroundColor: activeComplex.theme.cardColor || '#203843',
+                  borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                  borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25),
+                  color: '#cbd5e1'
+                } : {
+                  backgroundColor: '#203843',
+                  borderColor: '#2b4550',
+                  borderBottomColor: '#16262e',
+                  color: '#cbd5e1'
+                }}
                 title="متصل بالقاعدة المركزية المشتركة للمنظومة"
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-[#ffc800]" />
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                />
                 <span>القاعدة المركزية</span>
               </div>
             )

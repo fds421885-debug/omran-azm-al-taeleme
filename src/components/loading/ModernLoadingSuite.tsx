@@ -13,13 +13,23 @@ import {
   Trophy,
   ClipboardList,
   Sliders,
-  Layers
+  Layers,
+  Home,
+  Clock,
+  FileText,
+  ShieldAlert,
+  MessageCircle,
+  FolderArchive,
+  UserCog,
+  Database,
+  Radio,
+  Check
 } from 'lucide-react';
+import { QuranComplex } from '../../types';
+import { darkenHex } from '../../lib/themeUtils';
 
 /* ========================================================================= */
 /* 1. Global Top Loading Bar (شريط التحميل العلوي فائق الأناقة والنعومة)      */
-/* Works like GitHub, YouTube, Linear, Vercel: non-intrusive, razor-thin,    */
-/* luminous glowing tip, runs across the top of viewport during any fetch.   */
 /* ========================================================================= */
 
 interface TopProgressBarProps {
@@ -29,7 +39,7 @@ interface TopProgressBarProps {
 
 export const TopProgressBar: React.FC<TopProgressBarProps> = ({
   isLoading,
-  color = '#fbbf24'
+  color = '#ffc800'
 }) => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -42,25 +52,25 @@ export const TopProgressBar: React.FC<TopProgressBarProps> = ({
 
     if (isLoading) {
       setVisible(true);
-      setProgress(20);
-      timer1 = setTimeout(() => setProgress(55), 100);
-      timer2 = setTimeout(() => setProgress(85), 250);
-      timer3 = setTimeout(() => setProgress(94), 500);
+      setProgress(25);
+      timer1 = setTimeout(() => setProgress(60), 80);
+      timer2 = setTimeout(() => setProgress(88), 200);
+      timer3 = setTimeout(() => setProgress(96), 400);
 
-      // Watchdog: Never let loading bar get stuck if background sync or transition is slow
+      // Watchdog: Never let loading bar get stuck
       watchdogTimer = setTimeout(() => {
         setProgress(100);
         setTimeout(() => {
           setVisible(false);
           setProgress(0);
-        }, 300);
-      }, 1400);
+        }, 250);
+      }, 1200);
     } else if (visible) {
       setProgress(100);
       const hideTimer = setTimeout(() => {
         setVisible(false);
         setProgress(0);
-      }, 300);
+      }, 250);
       return () => clearTimeout(hideTimer);
     }
 
@@ -76,22 +86,20 @@ export const TopProgressBar: React.FC<TopProgressBarProps> = ({
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[9999] h-[3px] pointer-events-none overflow-hidden transition-opacity duration-300"
+      className="fixed top-0 left-0 right-0 z-[9999] h-[3.5px] pointer-events-none overflow-hidden transition-opacity duration-300"
       style={{ opacity: visible ? 1 : 0 }}
       role="progressbar"
-      aria-label="جارٍ تحميل البيانات"
+      aria-label="جارٍ تحميل ومزامنة البيانات"
       aria-valuenow={progress}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full bg-gradient-to-r from-emerald-500 via-[#fbbf24] to-amber-300 transition-all duration-300 ease-out shadow-[0_0_12px_rgba(251,191,36,0.8)] relative"
+        className="h-full bg-gradient-to-r from-[#1cb0f6] via-[#ffc800] to-[#58cc02] transition-all duration-300 ease-out shadow-[0_0_14px_rgba(255,200,0,0.9)] relative"
         style={{
-          width: `${progress}%`,
-          boxShadow: '0 0 10px #fbbf24, 0 0 5px #34d399'
+          width: `${progress}%`
         }}
       >
-        {/* Glowing Head Particle */}
         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-200 blur-[2px] -mr-1" />
       </div>
     </div>
@@ -122,23 +130,23 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
       type="button"
       onClick={onRefresh}
       disabled={isSyncing}
-      className={`group flex items-center gap-2 rounded-xl transition-all cursor-pointer font-bold select-none ${
+      className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 ${
         compact
-          ? 'px-2.5 py-1.5 text-[11px] bg-[#022c22]/90 hover:bg-[#064e3b] text-[#86efac] border border-[#065f46]'
-          : 'px-3.5 py-2 text-xs bg-[#022c22]/90 hover:bg-[#064e3b] text-emerald-200 hover:text-white border border-[#065f46] shadow-sm'
-      } ${isSyncing ? 'opacity-85 pointer-events-none' : 'active:scale-95'}`}
-      title="مزامنة وتحديث البيانات فورياً مع قاعدة البيانات السحابية"
+          ? 'px-3 py-1.5 text-xs bg-[#203843] hover:bg-[#274452] text-slate-200 border-[#2b4550] border-b-[#16262e]'
+          : 'px-4 py-2 text-xs bg-[#203843] hover:bg-[#274452] text-white border-[#2b4550] border-b-[#16262e] shadow-sm'
+      } ${isSyncing ? 'opacity-85 pointer-events-none' : ''}`}
+      title="مزامنة وتأكيد البيانات فورياً مع قاعدة البيانات السحابية"
     >
       <RefreshCw
-        className={`w-3.5 h-3.5 text-[#fbbf24] transition-transform duration-500 ${
+        className={`w-3.5 h-3.5 text-[#ffc800] transition-transform duration-500 ${
           isSyncing ? 'animate-spin' : 'group-hover:rotate-180'
         }`}
       />
       <span className="whitespace-nowrap">
-        {isSyncing ? 'جارٍ المزامنة...' : label}
+        {isSyncing ? 'جارٍ المزامنة والتأكيد...' : label}
       </span>
       {!compact && lastSyncedText && (
-        <span className="hidden sm:inline-block text-[10px] text-emerald-400/70 border-r border-[#065f46] pr-2">
+        <span className="hidden sm:inline-block text-[10px] text-[#ffd233] border-r border-[#2b4550] pr-2">
           {lastSyncedText}
         </span>
       )}
@@ -147,93 +155,255 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
 };
 
 /* ========================================================================= */
-/* 3. Domain-Specific Skeleton Loaders (هياكل تحميل مطابقة لتصميم كل قسم)   */
+/* 3. Modern Tab Header Loader Banner (رأس التحميل العصري لكل تبويب)        */
 /* ========================================================================= */
 
-// Attendance Tab Skeleton (مطابق لقسم الحضور والغياب مع خيارات الحالة الأربعة)
-export const AttendanceSkeleton: React.FC = () => {
+const TAB_META_CONFIG: Record<string, { label: string; desc: string; icon: any; color: string; shadow: string }> = {
+  home: {
+    label: 'الرئيسية ولوحة المؤشرات',
+    desc: 'جارٍ جلب إحصائيات الحضور ونسب إنجاز التسميع والخطط المعتمدة...',
+    icon: Home,
+    color: '#ffc800',
+    shadow: '#e5a500'
+  },
+  students: {
+    label: 'الطلاب والتسجيل',
+    desc: 'جارٍ جلب سجلات الطلاب وأحدث مواضع الحفظ وربط الحلقات...',
+    icon: Users,
+    color: '#58cc02',
+    shadow: '#46a302'
+  },
+  attendance: {
+    label: 'حضور وغياب الطلاب',
+    desc: 'جارٍ استدعاء كشوفات حضور وغياب اليوم وتأكيد المزامنة الفورية...',
+    icon: UserCheck,
+    color: '#1cb0f6',
+    shadow: '#1899d6'
+  },
+  teacher_attendance: {
+    label: 'تحضير المعلمين والمناوبات',
+    desc: 'جارٍ مزامنة سجل حضور ومناوبات المعلمين وتأكيد السجلات...',
+    icon: Clock,
+    color: '#ff9600',
+    shadow: '#e68300'
+  },
+  evaluation: {
+    label: 'تقييم التسميع والمراجعة',
+    desc: 'جارٍ استدعاء سجلات التسميع وتحديث مقررات الحفظ الجديد والمراجعة...',
+    icon: BookOpen,
+    color: '#ffc800',
+    shadow: '#e5a500'
+  },
+  exams: {
+    label: 'قسم الاختبارات والتجويد',
+    desc: 'جارٍ تجهيز بنك الاختبارات والأسئلة ودرجات أداء الطلاب...',
+    icon: FileText,
+    color: '#1cb0f6',
+    shadow: '#1899d6'
+  },
+  certificates: {
+    label: 'قسم الشهادات والتكريم',
+    desc: 'جارٍ تحميل قوالب الشهادات الفاخرة وسجلات الطلاب المكرمين...',
+    icon: Award,
+    color: '#ffc800',
+    shadow: '#e5a500'
+  },
+  leaderboard: {
+    label: 'لوحة الشرف والتميز',
+    desc: 'جارٍ حساب نقاط الطلاب المعتمدة وتصنيف أبطال الحلقات...',
+    icon: Trophy,
+    color: '#ffc800',
+    shadow: '#e5a500'
+  },
+  behavior: {
+    label: 'المخالفات والتوجيهات السلوكية',
+    desc: 'جارٍ مزامنة الملاحظات التربوية والتوجيهات وسجلات المتابعة...',
+    icon: ShieldAlert,
+    color: '#ff4b4b',
+    shadow: '#ea2b2b'
+  },
+  parents: {
+    label: 'رسائل وتقارير الواتساب',
+    desc: 'جارٍ إعداد كشوفات الإنجاز اليومي وروابط متابعة أولياء الأمور...',
+    icon: MessageCircle,
+    color: '#25D366',
+    shadow: '#1ea952'
+  },
+  reports: {
+    label: 'التقارير الدورية والرسوم البيانية',
+    desc: 'جارٍ استخراج وتجميع الإحصائيات التراكمية وسجلات الأداء...',
+    icon: ClipboardList,
+    color: '#ce82ff',
+    shadow: '#a558dc'
+  },
+  library: {
+    label: 'المكتبة والأرشيف السحابي',
+    desc: 'جارٍ تحميل وثائق المكتبة ومقررات التجويد والأرشيف الموثق...',
+    icon: FolderArchive,
+    color: '#1cb0f6',
+    shadow: '#1899d6'
+  },
+  accounts: {
+    label: 'إدارة الحسابات والرتب',
+    desc: 'جارٍ مزامنة حسابات المعلمين والمشرفين والصلاحيات...',
+    icon: UserCog,
+    color: '#58cc02',
+    shadow: '#46a302'
+  },
+  backup: {
+    label: 'النسخ الاحتياطي السحابي',
+    desc: 'جارٍ فحص سلامة البيانات وقواعد التخزين السحابية...',
+    icon: Database,
+    color: '#1cb0f6',
+    shadow: '#1899d6'
+  }
+};
+
+export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?: QuranComplex | null }> = ({
+  activeTab,
+  activeComplex
+}) => {
+  const meta = TAB_META_CONFIG[activeTab] || {
+    label: 'المنظومة القرآنية',
+    desc: 'جارٍ مزامنة وتأكيد أحدث البيانات القرآنية سحابياً ولحظياً...',
+    icon: Sparkles,
+    color: '#ffc800',
+    shadow: '#e5a500'
+  };
+  const IconComp = meta.icon;
+  const accentColor = activeComplex?.theme?.accentColor || meta.color;
+  const accentShadow = darkenHex(accentColor, 0.25);
+
   return (
-    <div className="space-y-6 animate-pulse" dir="rtl">
-      {/* Top Controls Bar */}
-      <div className="bg-[#064e3b]/40 border border-[#065f46]/60 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="h-10 w-44 rounded-xl shimmer-box" />
-          <div className="h-10 w-28 rounded-xl shimmer-box hidden sm:block" />
+    <div
+      className="p-4 sm:p-5 rounded-[28px] border-2 border-b-4 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all animate-pulse"
+      dir="rtl"
+      style={activeComplex?.theme ? {
+        backgroundColor: activeComplex.theme.cardColor || '#203843',
+        borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+        borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+      } : {
+        backgroundColor: '#203843',
+        borderColor: '#2b4550',
+        borderBottomColor: '#16262e'
+      }}
+    >
+      <div className="flex items-center gap-3.5">
+        <div
+          className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
+          style={{
+            backgroundColor: `${accentColor}25`,
+            borderColor: `${accentColor}60`,
+            borderBottomColor: accentShadow,
+            color: accentColor
+          }}
+        >
+          <IconComp className="w-6 h-6 animate-pulse" />
         </div>
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-          <div className="h-10 w-36 rounded-xl shimmer-box" />
-          <div className="h-10 w-28 rounded-xl shimmer-box" />
-        </div>
-      </div>
 
-      {/* 4 Summary Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {[1, 2, 3, 4].map(idx => (
-          <div
-            key={idx}
-            className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-4 space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <div className="h-4 w-20 rounded shimmer-box" />
-              <div className="w-8 h-8 rounded-xl shimmer-box" />
-            </div>
-            <div className="h-7 w-14 rounded-lg shimmer-box" />
-            <div className="h-2 w-full rounded-full shimmer-box" />
-          </div>
-        ))}
-      </div>
-
-      {/* Student Attendance Roster Card */}
-      <div className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl overflow-hidden shadow-md">
-        <div className="p-4 border-b border-[#065f46]/60 flex items-center justify-between">
+        <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded shimmer-box" />
-            <div className="h-5 w-40 rounded shimmer-box" />
-          </div>
-          <div className="h-8 w-28 rounded-xl shimmer-box" />
-        </div>
-
-        {/* Shimmering Student Attendance Rows */}
-        <div className="divide-y divide-[#065f46]/40 p-2 sm:p-3 space-y-2">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div
-              key={i}
-              className="p-3 sm:p-4 rounded-xl bg-[#022c22]/50 border border-[#065f46]/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+            <h3 className="text-sm sm:text-base font-black text-white font-heading">
+              {meta.label}
+            </h3>
+            <span
+              className="text-[10px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs"
+              style={{
+                backgroundColor: `${accentColor}20`,
+                borderColor: `${accentColor}50`,
+                borderBottomColor: accentShadow,
+                color: accentColor
+              }}
             >
-              {/* Student Info */}
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <div className="w-10 h-10 rounded-xl shimmer-box shrink-0" />
-                <div className="space-y-1.5 flex-1">
-                  <div className="h-4 w-36 sm:w-48 rounded shimmer-box" />
-                  <div className="h-3 w-24 rounded shimmer-box" />
-                </div>
-              </div>
-
-              {/* 4 Status Buttons (حاضر / غائب / متأخر / معتذر) */}
-              <div className="grid grid-cols-4 gap-1.5 w-full md:w-96">
-                <div className="h-9 rounded-xl shimmer-box" />
-                <div className="h-9 rounded-xl shimmer-box" />
-                <div className="h-9 rounded-xl shimmer-box" />
-                <div className="h-9 rounded-xl shimmer-box" />
-              </div>
-            </div>
-          ))}
+              تأكيد سحابي
+            </span>
+          </div>
+          <p className="text-xs text-slate-300 font-bold">
+            {meta.desc}
+          </p>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#58cc02]" />
+        </span>
+        <span className="text-xs text-[#58cc02] font-black">
+          مزامنة مؤكدة ولحظية ✓
+        </span>
       </div>
     </div>
   );
 };
 
-// Students Tab Skeleton (مطابق لقسم الطلاب وإدارة السجلات)
+/* ========================================================================= */
+/* 4. Domain-Specific Skeleton Loaders in Duolingo 3D Style                  */
+/* ========================================================================= */
+
+// Attendance Tab Skeleton
+export const AttendanceSkeleton: React.FC = () => {
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab="attendance" />
+
+      {/* 4 Summary Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        {[1, 2, 3, 4].map(idx => (
+          <div
+            key={idx}
+            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 sm:p-5 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-20 rounded-xl bg-[#2b4550]" />
+              <div className="w-9 h-9 rounded-2xl bg-[#2b4550]" />
+            </div>
+            <div className="h-7 w-16 rounded-xl bg-[#2b4550]" />
+            <div className="h-2 w-full rounded-full bg-[#2b4550]" />
+          </div>
+        ))}
+      </div>
+
+      {/* Student Attendance Roster Card */}
+      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] overflow-hidden p-3 space-y-3">
+        {[1, 2, 3, 4].map(i => (
+          <div
+            key={i}
+            className="p-3.5 sm:p-4 rounded-2xl bg-[#1b2e35] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="w-11 h-11 rounded-2xl bg-[#2b4550] shrink-0" />
+              <div className="space-y-2 flex-1">
+                <div className="h-4 w-40 rounded-xl bg-[#2b4550]" />
+                <div className="h-3 w-28 rounded-xl bg-[#2b4550]" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 w-full md:w-80">
+              <div className="h-9 rounded-xl bg-[#2b4550]" />
+              <div className="h-9 rounded-xl bg-[#2b4550]" />
+              <div className="h-9 rounded-xl bg-[#2b4550]" />
+              <div className="h-9 rounded-xl bg-[#2b4550]" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Students Tab Skeleton
 export const StudentsSkeleton: React.FC = () => {
   return (
-    <div className="space-y-6 animate-pulse" dir="rtl">
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab="students" />
+
       {/* Header Filters & Add Button */}
-      <div className="bg-[#064e3b]/40 border border-[#065f46]/60 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="h-10 w-full sm:w-72 rounded-xl shimmer-box" />
+      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="h-10 w-full sm:w-72 rounded-2xl bg-[#2b4550]" />
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <div className="h-10 w-28 rounded-xl shimmer-box" />
-          <div className="h-10 w-36 rounded-xl shimmer-box" />
+          <div className="h-10 w-28 rounded-2xl bg-[#2b4550]" />
+          <div className="h-10 w-36 rounded-2xl bg-[#2b4550]" />
         </div>
       </div>
 
@@ -242,34 +412,32 @@ export const StudentsSkeleton: React.FC = () => {
         {[1, 2, 3, 4, 5, 6].map(i => (
           <div
             key={i}
-            className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-4 space-y-4"
+            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 space-y-4"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl shimmer-box shrink-0" />
-                <div className="space-y-1.5">
-                  <div className="h-4 w-32 rounded shimmer-box" />
-                  <div className="h-3 w-20 rounded shimmer-box" />
+                <div className="w-12 h-12 rounded-2xl bg-[#2b4550] shrink-0" />
+                <div className="space-y-2">
+                  <div className="h-4 w-32 rounded-xl bg-[#2b4550]" />
+                  <div className="h-3 w-20 rounded-xl bg-[#2b4550]" />
                 </div>
               </div>
-              <div className="h-6 w-16 rounded-full shimmer-box" />
+              <div className="h-6 w-16 rounded-full bg-[#2b4550]" />
             </div>
 
-            {/* Surah Progress Bar */}
-            <div className="space-y-1.5 bg-[#022c22]/50 p-2.5 rounded-xl border border-[#065f46]/30">
+            <div className="space-y-2 bg-[#1b2e35] p-3 rounded-2xl border border-[#2b4550]">
               <div className="flex justify-between">
-                <div className="h-3 w-16 rounded shimmer-box" />
-                <div className="h-3 w-12 rounded shimmer-box" />
+                <div className="h-3 w-20 rounded bg-[#2b4550]" />
+                <div className="h-3 w-12 rounded bg-[#2b4550]" />
               </div>
-              <div className="h-2 w-full rounded-full shimmer-box" />
+              <div className="h-2 w-full rounded-full bg-[#2b4550]" />
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center justify-between pt-1 border-t border-[#065f46]/40">
-              <div className="h-8 w-20 rounded-xl shimmer-box" />
-              <div className="flex gap-1.5">
-                <div className="w-8 h-8 rounded-xl shimmer-box" />
-                <div className="w-8 h-8 rounded-xl shimmer-box" />
+            <div className="flex items-center justify-between pt-1 border-t border-[#2b4550]">
+              <div className="h-8 w-24 rounded-xl bg-[#2b4550]" />
+              <div className="flex gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#2b4550]" />
+                <div className="w-8 h-8 rounded-xl bg-[#2b4550]" />
               </div>
             </div>
           </div>
@@ -279,138 +447,105 @@ export const StudentsSkeleton: React.FC = () => {
   );
 };
 
-// Home Tab Skeleton (مطابق للصفحة الرئيسية والإحصائيات)
+// Home Tab Skeleton
 export const HomeSkeleton: React.FC = () => {
   return (
-    <div className="space-y-6 animate-pulse" dir="rtl">
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab="home" />
+
       {/* 4 Large Metric Counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {[1, 2, 3, 4].map(idx => (
           <div
             key={idx}
-            className="bg-[#064e3b]/40 border border-[#065f46]/60 rounded-2xl p-4 sm:p-5 space-y-3"
+            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 sm:p-5 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <div className="h-4 w-24 rounded shimmer-box" />
-              <div className="w-9 h-9 rounded-xl shimmer-box" />
+              <div className="h-4 w-24 rounded-xl bg-[#2b4550]" />
+              <div className="w-10 h-10 rounded-2xl bg-[#2b4550]" />
             </div>
-            <div className="h-8 w-16 rounded-lg shimmer-box" />
-            <div className="h-3 w-28 rounded shimmer-box" />
+            <div className="h-8 w-16 rounded-xl bg-[#2b4550]" />
+            <div className="h-3 w-28 rounded-xl bg-[#2b4550]" />
           </div>
         ))}
       </div>
 
-      {/* Quick Action Grid */}
-      <div className="bg-[#064e3b]/30 border border-[#065f46]/50 rounded-2xl p-5 space-y-3">
-        <div className="h-5 w-36 rounded shimmer-box" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="h-20 rounded-2xl shimmer-box" />
-          ))}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="h-6 w-48 rounded-xl bg-[#2b4550]" />
+          <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-3 space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-18 rounded-2xl bg-[#1b2e35] border border-[#2b4550]" />
+            ))}
+          </div>
         </div>
-      </div>
-
-      {/* Split Dual Card Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {[1, 2].map(panel => (
-          <div
-            key={panel}
-            className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-5 space-y-3"
-          >
-            <div className="flex justify-between items-center pb-2 border-b border-[#065f46]/50">
-              <div className="h-5 w-32 rounded shimmer-box" />
-              <div className="h-4 w-16 rounded shimmer-box" />
-            </div>
-            <div className="space-y-2.5">
-              {[1, 2, 3, 4].map(row => (
-                <div key={row} className="h-12 rounded-xl shimmer-box" />
-              ))}
-            </div>
+        <div className="space-y-4">
+          <div className="h-6 w-36 rounded-xl bg-[#2b4550]" />
+          <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-12 rounded-2xl bg-[#1b2e35]" />
+            ))}
           </div>
-        ))}
+        </div>
       </div>
     </div>
   );
 };
 
-// Evaluation Tab Skeleton (مطابق لتقييم التسميع والمقاييس)
+// Evaluation Tab Skeleton
 export const EvaluationSkeleton: React.FC = () => {
   return (
-    <div className="space-y-6 animate-pulse" dir="rtl">
-      {/* Student Selector Card */}
-      <div className="bg-[#064e3b]/40 border border-[#065f46]/60 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="w-12 h-12 rounded-2xl shimmer-box" />
-          <div className="space-y-2">
-            <div className="h-5 w-44 rounded shimmer-box" />
-            <div className="h-3 w-28 rounded shimmer-box" />
-          </div>
-        </div>
-        <div className="h-10 w-full md:w-56 rounded-xl shimmer-box" />
-      </div>
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab="evaluation" />
 
-      {/* Surah & Verses Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-5 space-y-3">
-          <div className="h-4 w-28 rounded shimmer-box" />
-          <div className="h-11 rounded-xl shimmer-box" />
-          <div className="h-11 rounded-xl shimmer-box" />
-        </div>
-        <div className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-5 space-y-3">
-          <div className="h-4 w-28 rounded shimmer-box" />
-          <div className="h-11 rounded-xl shimmer-box" />
-          <div className="h-11 rounded-xl shimmer-box" />
-        </div>
-      </div>
-
-      {/* Rubric Criteria Sliders */}
-      <div className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-5 space-y-4">
-        <div className="h-5 w-36 rounded shimmer-box" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="p-3.5 rounded-xl bg-[#022c22]/50 border border-[#065f46]/40 space-y-2">
-              <div className="flex justify-between">
-                <div className="h-3 w-20 rounded shimmer-box" />
-                <div className="h-3 w-8 rounded shimmer-box" />
-              </div>
-              <div className="h-3 w-full rounded-full shimmer-box" />
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
+          <div className="h-10 rounded-2xl bg-[#2b4550]" />
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="h-16 rounded-2xl bg-[#1b2e35]" />
           ))}
+        </div>
+
+        <div className="lg:col-span-2 bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-6 space-y-4">
+          <div className="h-8 w-60 rounded-xl bg-[#2b4550]" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-28 rounded-2xl bg-[#1b2e35]" />
+            <div className="h-28 rounded-2xl bg-[#1b2e35]" />
+          </div>
+          <div className="space-y-3 pt-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-12 rounded-2xl bg-[#1b2e35]" />
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// Generic Adaptive Tab Skeleton (لأي قسم آخر مثل الشهادات، لوحة الشرف، المخالفات، الواتساب، إلخ)
-export const GenericTabSkeleton: React.FC<{ title?: string }> = ({
-  title = 'جَارٍ تَحْدِيثُ البَيَانَاتِ سَحَابِيّاً...'
+// Generic Adaptive Tab Skeleton
+export const GenericTabSkeleton: React.FC<{ activeTab?: string; title?: string }> = ({
+  activeTab = 'general',
+  title
 }) => {
   return (
-    <div className="space-y-6 animate-pulse" dir="rtl">
-      {/* Header bar */}
-      <div className="bg-[#064e3b]/40 border border-[#065f46]/60 rounded-2xl p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl shimmer-box" />
-          <div className="h-5 w-40 rounded shimmer-box" />
-        </div>
-        <div className="h-9 w-28 rounded-xl shimmer-box" />
-      </div>
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab={activeTab} />
 
       {/* 3 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[1, 2, 3].map(i => (
-          <div key={i} className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-4 space-y-2">
-            <div className="h-4 w-24 rounded shimmer-box" />
-            <div className="h-7 w-16 rounded-lg shimmer-box" />
+          <div key={i} className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-5 space-y-2">
+            <div className="h-4 w-24 rounded-xl bg-[#2b4550]" />
+            <div className="h-7 w-16 rounded-xl bg-[#2b4550]" />
           </div>
         ))}
       </div>
 
       {/* Content Feed */}
-      <div className="bg-[#064e3b]/35 border border-[#065f46]/50 rounded-2xl p-4 space-y-3">
+      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-16 rounded-xl shimmer-box" />
+          <div key={i} className="h-16 rounded-2xl bg-[#1b2e35] border border-[#2b4550]" />
         ))}
       </div>
     </div>
@@ -418,48 +553,128 @@ export const GenericTabSkeleton: React.FC<{ title?: string }> = ({
 };
 
 /* ========================================================================= */
-/* 4. Tab Skeleton Router / Renderer                                         */
+/* 5. Tab Skeleton Router / Renderer                                         */
 /* ========================================================================= */
 
 interface TabSkeletonProps {
   activeTab: string;
+  activeComplex?: QuranComplex | null;
 }
 
-export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab }) => {
-  switch (activeTab) {
-    case 'attendance':
-      return <AttendanceSkeleton />;
-    case 'students':
-      return <StudentsSkeleton />;
-    case 'home':
-      return <HomeSkeleton />;
-    case 'evaluation':
-      return <EvaluationSkeleton />;
-    case 'teacher_attendance':
-      return <AttendanceSkeleton />;
-    case 'exams':
-    case 'certificates':
-    case 'leaderboard':
-    case 'behavior':
-    case 'parents':
-    case 'reports':
-    case 'accounts':
-    case 'backup':
-    default:
-      return <GenericTabSkeleton />;
-  }
+export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeComplex }) => {
+  return (
+    <div className="space-y-5 animate-pulse" dir="rtl">
+      <TabHeaderLoaderBanner activeTab={activeTab} activeComplex={activeComplex} />
+      {(() => {
+        switch (activeTab) {
+          case 'attendance':
+            return <AttendanceSkeleton />;
+          case 'students':
+            return <StudentsSkeleton />;
+          case 'home':
+            return <HomeSkeleton />;
+          case 'evaluation':
+            return <EvaluationSkeleton />;
+          case 'teacher_attendance':
+            return <AttendanceSkeleton />;
+          case 'exams':
+          case 'certificates':
+          case 'leaderboard':
+          case 'behavior':
+          case 'parents':
+          case 'reports':
+          case 'accounts':
+          case 'backup':
+          case 'library':
+          default:
+            return <GenericTabSkeleton activeTab={activeTab} />;
+        }
+      })()}
+    </div>
+  );
 };
 
 /* ========================================================================= */
-/* 5. Minimal Backward-Compatible CloudLoadingScreen export                 */
+/* 6. Modern Login & Transition Overlay                                      */
 /* ========================================================================= */
+
+export const LoginSyncModalOverlay: React.FC<{
+  isOpen: boolean;
+  userName?: string;
+  activeComplex?: QuranComplex | null;
+}> = ({ isOpen, userName, activeComplex }) => {
+  if (!isOpen) return null;
+
+  const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
+  const accentShadow = darkenHex(accentColor, 0.25);
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const borderCol = activeComplex?.theme?.secondaryColor || '#2b4550';
+  const borderBottomCol = darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.25);
+
+  return (
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all select-none"
+      dir="rtl"
+    >
+      <div
+        className="border-2 border-b-4 rounded-[32px] p-6 sm:p-7 max-w-sm w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-200"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        <div
+          className="relative mx-auto w-16 h-16 rounded-3xl border-2 border-b-4 flex items-center justify-center shadow-lg"
+          style={{
+            backgroundColor: accentColor,
+            borderColor: accentColor,
+            borderBottomColor: accentShadow,
+            color: '#131f24'
+          }}
+        >
+          <Sparkles className="w-8 h-8 animate-spin" />
+        </div>
+
+        <div className="space-y-1">
+          <h3 className="text-lg font-black text-white font-heading">
+            مرحباً بك {userName ? `يا ${userName}` : ''}
+          </h3>
+          <p className="text-xs text-slate-300 font-bold leading-relaxed">
+            جارٍ تسجيل الدخول وتأكيد أحدث بيانات المنظومة سحابياً ولحظياً...
+          </p>
+        </div>
+
+        <div className="space-y-2 text-right pt-2 border-t border-white/10 text-xs font-bold text-slate-300">
+          <div className="flex items-center gap-2 text-[#58cc02]">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>تم التحقق من الحساب والصلاحيات بنجاح</span>
+          </div>
+          <div className="flex items-center gap-2 text-[#1cb0f6]">
+            <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+            <span>مزامنة وتأكيد سجلات الطلاب والحلقات...</span>
+          </div>
+        </div>
+
+        <div className="w-full bg-[#131f24] h-2.5 rounded-full overflow-hidden p-0.5 border border-white/10">
+          <div
+            className="h-full rounded-full animate-pulse transition-all duration-300"
+            style={{
+              backgroundColor: accentColor,
+              width: '85%'
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const CloudLoadingScreen: React.FC<{
   isLoading?: boolean;
   onRetry?: () => void;
   onForceEnter?: () => void;
 }> = ({ isLoading = true, onForceEnter }) => {
-  // If invoked anywhere as fallback, simply trigger force enter or render non-blocking top bar
   useEffect(() => {
     if (onForceEnter) {
       const t = setTimeout(onForceEnter, 100);
@@ -475,8 +690,8 @@ export const QuranInlineLoader: React.FC<{ message?: string }> = ({
 }) => {
   return (
     <div className="flex items-center justify-center gap-3 py-6 px-4 text-center select-none" dir="rtl">
-      <RefreshCw className="w-4 h-4 text-[#fbbf24] animate-spin" />
-      <span className="text-xs font-bold text-amber-300 tracking-wide">{message}</span>
+      <RefreshCw className="w-4 h-4 text-[#ffc800] animate-spin" />
+      <span className="text-xs font-black text-[#ffd233] tracking-wide">{message}</span>
     </div>
   );
 };

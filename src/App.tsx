@@ -85,7 +85,8 @@ import {
   TopProgressBar,
   LiveSyncButton,
   TabSkeleton,
-  GenericTabSkeleton
+  GenericTabSkeleton,
+  LoginSyncModalOverlay
 } from './components/loading/ModernLoadingSuite';
 import { ParentPortalView } from './components/ParentPortalView';
 import { TeacherManagementModal } from './components/TeacherManagementModal';
@@ -251,6 +252,8 @@ export function App() {
   const [isMultiComplexModalOpen, setIsMultiComplexModalOpen] = useState(false);
   const [newlyAddedComplexName, setNewlyAddedComplexName] = useState<string | null>(null);
   const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
+  const [isLoginSyncing, setIsLoginSyncing] = useState(false);
+  const [loginSyncUser, setLoginSyncUser] = useState<string>('');
 
   // Main Data States with instantaneous LocalCache hydration
   const [students, setStudents] = useState<Student[]>(() => {
@@ -836,6 +839,7 @@ export function App() {
     const unsubActiveHalaqah = OmranDataService.subscribeActiveHalaqah(data => {
       if (!isMounted || !data?.activeHalaqahId) return;
       const remoteHId = data.activeHalaqahId;
+      targetHalaqahIdRef.current = remoteHId;
       setActiveHalaqahId(prev => {
         if (prev !== remoteHId) {
           try {
@@ -1258,15 +1262,8 @@ export function App() {
       if (activeHalaqahId && activeHalaqahId !== 'all') {
         const isValid = scopedHalaqahIds.has(activeHalaqahId) || assignedHalaqahs.some(h => h.id === activeHalaqahId);
         if (!isValid) {
-          if (assignedHalaqahs.length > 0 && assignedHalaqahs.length !== scopedHalaqahs.length) {
-            setActiveHalaqahId(assignedHalaqahs[0].id);
-          } else {
-            setActiveHalaqahId('all');
-          }
+          setActiveHalaqahId('all');
         }
-      } else if (assignedHalaqahs.length > 0 && assignedHalaqahs.length !== scopedHalaqahs.length && (!activeHalaqahId || activeHalaqahId === 'all')) {
-        // Teacher supervisor who also teaches a specific halaqah: default to their halaqah
-        setActiveHalaqahId(assignedHalaqahs[0].id);
       }
     } else {
       if (assignedHalaqahs.length > 0) {
@@ -1276,6 +1273,22 @@ export function App() {
       }
     }
   }, [currentUser, isSupervisor, assignedHalaqahs, activeHalaqahId, scopedHalaqahIds, scopedHalaqahs.length]);
+
+  // Real-time tab-to-tab BroadcastChannel listener for active halaqah synchronization across all tabs and devices
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('omran_active_halaqah_sync');
+      bc.onmessage = (event) => {
+        if (event.data?.activeHalaqahId) {
+          targetHalaqahIdRef.current = event.data.activeHalaqahId;
+          setActiveHalaqahId(event.data.activeHalaqahId);
+        }
+      };
+      return () => {
+        try { bc.close(); } catch {}
+      };
+    }
+  }, []);
 
   // Guard programmer-only tabs: accounts/ranks and database backup are strictly for Programmer (Mohamed Montaser)
   useEffect(() => {
@@ -1412,8 +1425,10 @@ export function App() {
     return evaluations.filter(e => scopedStudentIds.has(e.studentId));
   }, [isDeveloper, evaluations, scopedStudentIds]);
 
-  // Save session on login
-  const handleLoginSuccess = (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => {
+  // Save session on login with modern cloud sync confirmation
+  const handleLoginSuccess = async (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => {
+    setLoginSyncUser(user.username || 'المستخدم');
+    setIsLoginSyncing(true);
     setCurrentUser(user);
     if (user.complexId) {
       setSelectedComplexId(user.complexId);
@@ -1422,6 +1437,14 @@ export function App() {
       } catch {}
     }
     localStorage.setItem('omran_session', JSON.stringify(user));
+
+    try {
+      await loadAllData(true);
+    } catch {}
+
+    setTimeout(() => {
+      setIsLoginSyncing(false);
+    }, 700);
   };
 
   const handleLogout = () => {
@@ -2192,12 +2215,12 @@ export function App() {
     }
     if (tab === activeTab) {
       setIsTabLoading(true);
-      setTimeout(() => setIsTabLoading(false), 200);
+      setTimeout(() => setIsTabLoading(false), 350);
       return;
     }
     setIsTabLoading(true);
     setActiveTab(tab);
-    setTimeout(() => setIsTabLoading(false), 220);
+    setTimeout(() => setIsTabLoading(false), 450);
   };
 
   const handleOpenThemeCustomizer = (targetComplex?: any) => {
@@ -2701,12 +2724,12 @@ export function App() {
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-300 mt-0.5 line-clamp-1 sm:line-clamp-none">
+                <p className="text-[11px] text-slate-300 font-bold mt-0.5 truncate">
                   {isDeveloper
-                    ? 'أنت في وضع المشرف العام والمبرمج: يمكنك الإشراف على كافة المجمعات والحلقات وإدارتها بالكامل.'
+                    ? 'وضع المشرف العام والمبرمج • إشراف شامل على كافة المجمعات والحلقات'
                     : isSupervisor
-                    ? `أنت في وضع مشرف المجمع (${supervisedComplex?.name || 'المجمع'}): يمكنك التصفح بين حلقات مجمعك وإدارتها بالكامل دون الاطلاع على المجمعات الأخرى.`
-                    : `أنت في وضع المعلم: يتم عرض طلاب وسجلات الحلقة المحددة فقط.`}
+                    ? `إشراف ${supervisedComplex?.name || 'المجمع'} • استعراض ومتابعة الحلقات المعتمدة`
+                    : 'مساحة المعلم • متابعة وتسميع طلاب الحلقة'}
                 </p>
               </div>
             </div>
@@ -2747,14 +2770,6 @@ export function App() {
                     borderBottomColor: '#16262e'
                   }}
                 >
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#58cc02] border border-[#58cc02]/30 text-[10px] font-black shrink-0" title="مزامنة فورية للحلقة المختارة متصلة سحابياً عبر كافة أجهزتك">
-                    <span className="relative flex h-1.5 w-1.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#58cc02]"></span>
-                    </span>
-                    <span className="hidden md:inline font-bold">متزامن للأجهزة</span>
-                  </div>
-
                   <button
                     onClick={() => handleSwitchHalaqah('all')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
@@ -2819,13 +2834,6 @@ export function App() {
                       borderBottomColor: '#16262e'
                     }}
                   >
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#58cc02] border border-[#58cc02]/30 text-[10px] font-black shrink-0" title="مزامنة فورية للحلقة المختارة متصلة سحابياً">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#58cc02]"></span>
-                      </span>
-                      <span className="hidden md:inline font-bold">متزامن</span>
-                    </div>
                     {assignedHalaqahs.map(h => (
                       <button
                         key={h.id}
@@ -2936,7 +2944,7 @@ export function App() {
             className="w-full space-y-6"
           >
             {isTabLoading || isLoadingData ? (
-              <TabSkeleton activeTab={activeTab} />
+              <TabSkeleton activeTab={activeTab} activeComplex={activeComplex} />
             ) : (
               <>
                 {activeTab === 'home' && (
@@ -3332,6 +3340,13 @@ export function App() {
         leaderboardSettings={leaderboardSettings}
         onSaveEvaluation={handleSaveEvaluation}
         onSaveComplex={handleSaveComplex}
+      />
+
+      {/* Modern Login & Cloud Sync Confirmation Overlay */}
+      <LoginSyncModalOverlay
+        isOpen={isLoginSyncing}
+        userName={loginSyncUser}
+        activeComplex={activeComplex}
       />
     </div>
   );

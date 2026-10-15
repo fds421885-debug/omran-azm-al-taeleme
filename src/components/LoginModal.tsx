@@ -11,6 +11,7 @@ import {
   AlertCircle,
   CheckCircle2,
   KeyRound,
+  RefreshCw,
   X
 } from 'lucide-react';
 import { Student, UserRole, AppSettings, TeacherAccount, getThreePartNameValidation, QuranComplex } from '../types';
@@ -116,7 +117,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    const normUser = normalizeArabicText(cleanUser);
+    setIsSubmitting(true);
+    try {
+      const normUser = normalizeArabicText(cleanUser);
     const cleanPhoneDigits = cleanUser.replace(/\D/g, '');
 
     // 1. Explicit admin/supervisor credentials check (admin, developer, المشرف العام)
@@ -585,10 +588,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
             <button
               type="submit"
-              className="w-full mt-2 py-3 px-4 rounded-2xl bg-[#ffc800] hover:bg-[#ffd233] text-[#131f24] font-black text-sm border-b-4 border-[#e5a500] active:translate-y-[2px] active:border-b-2 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+              disabled={isSubmitting}
+              className="w-full mt-2 py-3 px-4 rounded-2xl bg-[#ffc800] hover:bg-[#ffd233] text-[#131f24] font-black text-sm border-b-4 border-[#e5a500] active:translate-y-[2px] active:border-b-2 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-70"
             >
-              <span>دخول إلى المنصة</span>
-              <ArrowRight className="w-4 h-4" />
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#131f24]" />
+                  <span>جارٍ التحقق وتأكيد البيانات...</span>
+                </>
+              ) : (
+                <>
+                  <span>دخول إلى المنصة</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
         </div>
