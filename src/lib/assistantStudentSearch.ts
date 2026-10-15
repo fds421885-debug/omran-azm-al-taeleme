@@ -127,6 +127,110 @@ export function isStudentInHalaqah(student: any, halaqah: any): boolean {
 }
 
 /**
+ * Clean helper: Extract base complex name without generic prefix words ("مجمع", "المجمع")
+ */
+export function cleanComplexBaseName(name: string): string {
+  return normalizeArabicText(name || '')
+    .replace(/^(?:مجمع|المجمع)\s+/, '')
+    .replace(/\s*(?:القراني|القرآني|النموذجي|لتحفيظ\s+القران|لتحفيظ\s+القرآن|الكريم).*$/, '')
+    .trim();
+}
+
+/**
+ * Strict helper: Check if a halaqah belongs to a specific complex
+ */
+export function isHalaqahInComplex(
+  halaqah: any,
+  complexTarget: { id?: string; name?: string } | null,
+  complexesList: any[] = [],
+  studentsList: any[] = [],
+  teachersList: any[] = []
+): boolean {
+  if (!halaqah || !complexTarget) return false;
+  const targetId = complexTarget.id;
+  const targetName = complexTarget.name || '';
+  const cleanTarget = cleanComplexBaseName(targetName);
+
+  // 1. Direct ID match
+  if (targetId && targetId !== 'all' && halaqah.complexId && halaqah.complexId === targetId) return true;
+
+  // 2. Direct name match
+  if (halaqah.complexName && cleanTarget) {
+    const cleanH = cleanComplexBaseName(halaqah.complexName);
+    if (cleanH === cleanTarget) return true;
+    if (cleanTarget.length >= 3 && cleanH.includes(cleanTarget)) return true;
+    if (cleanH.length >= 3 && cleanTarget.includes(cleanH)) return true;
+  }
+
+  // 3. Token match
+  if (cleanTarget) {
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام']);
+    const tokens = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    if (tokens.length > 0) {
+      const hFields = [halaqah.complexName, halaqah.name, halaqah.description].filter(Boolean).map(f => normalizeArabicText(f));
+      for (const tok of tokens) {
+        if (hFields.some(f => f.includes(tok))) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Strict helper: Check if a student belongs to a specific complex
+ */
+export function isStudentInComplex(
+  student: any,
+  complexTarget: { id?: string; name?: string } | null,
+  halaqahsList: any[] = []
+): boolean {
+  if (!student || !complexTarget) return false;
+  const targetId = complexTarget.id;
+  const targetName = complexTarget.name || '';
+  const cleanTargetName = cleanComplexBaseName(targetName);
+
+  // 1. Direct complexId match
+  if (targetId && targetId !== 'all' && student.complexId && student.complexId === targetId) return true;
+
+  // 2. Direct student complexName match
+  if (student.complexName && cleanTargetName) {
+    const cleanStudentC = cleanComplexBaseName(student.complexName);
+    if (cleanStudentC === cleanTargetName) return true;
+    if (cleanTargetName.length >= 3 && cleanStudentC.includes(cleanTargetName)) return true;
+    if (cleanStudentC.length >= 3 && cleanTargetName.includes(cleanStudentC)) return true;
+  }
+
+  // 3. Match via student's halaqah
+  if (student.halaqahId || student.halaqahName) {
+    const h = halaqahsList.find(hl => hl.id === student.halaqahId || (student.halaqahName && normalizeArabicText(hl.name) === normalizeArabicText(student.halaqahName)));
+    if (h) {
+      if (targetId && targetId !== 'all' && h.complexId && h.complexId === targetId) return true;
+      if (h.complexName && cleanTargetName) {
+        const cleanHC = cleanComplexBaseName(h.complexName);
+        if (cleanHC === cleanTargetName) return true;
+        if (cleanTargetName.length >= 3 && cleanHC.includes(cleanTargetName)) return true;
+        if (cleanHC.length >= 3 && cleanTargetName.includes(cleanHC)) return true;
+      }
+    }
+  }
+
+  // 4. Token match for distinctive complex name (e.g. "الحربي", "الفرقان", "النور")
+  if (cleanTargetName) {
+    const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام']);
+    const tokens = cleanTargetName.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    if (tokens.length > 0) {
+      const studentFields = [student.complexName, student.halaqahName, student.notes].filter(Boolean).map(f => normalizeArabicText(f));
+      for (const tok of tokens) {
+        if (studentFields.some(f => f.includes(tok))) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Universal Halaqah Detector for Assistant Queries
  */
 export function findMatchingHalaqahInSearch(
