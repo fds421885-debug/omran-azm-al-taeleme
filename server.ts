@@ -16,6 +16,7 @@ import {
 } from "./src/data/quranPagesData.ts";
 import {
   resolveStudentQuery,
+  detectTeacherInQuery,
   matchStudentLevel,
   type StudentResolutionResult,
   type SearchUserContext
@@ -1062,6 +1063,11 @@ function findMatchingHalaqah(query: string, halaqahs: any[] = [], students: any[
     }
   }
 
+  // 4. Generic halaqah request: "حلقة من اللقات", "حلقة من الحلقات", "إحدى الحلقات", "احدى الحلقات", "أي حلقة", "اي حلقة", "حلقة معينة", "إحدى حلقاتنا"
+  if (/(?:حلقة\s+من\s+(?:الحلقات|اللقات|حلقات)|إحدى\s+الحلقات|احدى\s+الحلقات|أي\s+حلقة|اي\s+حلقة|حلقة\s+معينة|إحدى\s+حلقاتنا)/i.test(query)) {
+    return combinedHalaqahs[0] || null;
+  }
+
   return null;
 }
 
@@ -2002,7 +2008,11 @@ app.post("/api/gemini/assistant", async (req, res) => {
       message.includes("ضيف الطلالب");
 
     // Universal Halaqah Detection across the entire query (for rosters, recitations, reports, charts, registrations, etc.)
-    const matchedHalaqah = findMatchingHalaqah(message, halaqahsList, studentsList);
+    let matchedHalaqah = findMatchingHalaqah(message, halaqahsList, studentsList);
+    const teacherInQueryRes = detectTeacherInQuery(message, teachersList, halaqahsList);
+    if (!matchedHalaqah && teacherInQueryRes.halaqah) {
+      matchedHalaqah = teacherInQueryRes.halaqah;
+    }
     const detectedHalaqahId = matchedHalaqah ? matchedHalaqah.id : (activeHalaqah.id && activeHalaqah.id !== "all" ? activeHalaqah.id : "");
     const detectedHalaqahName = matchedHalaqah ? matchedHalaqah.name : (activeHalaqah.name && activeHalaqah.id !== "all" ? activeHalaqah.name : "");
     const extractedName = hasRegisterIntent ? extractCleanStudentName(message, matchedHalaqah) : "";
@@ -2384,6 +2394,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       userContext,
       {
         complexes: complexesList,
+        teachers: teachersList,
         attendanceRecords: attendanceList
       }
     );
@@ -2509,8 +2520,10 @@ app.post("/api/gemini/assistant", async (req, res) => {
         hasStudentsDirective ||
         (Boolean(studentResolution.detectedLevel) && (hasExplicitTableKeyword || normUserMessage.includes("طلاب") || normUserMessage.includes("فئة") || normUserMessage.includes("جدول") || normUserMessage.includes("كشف"))) ||
         (studentResolution.requestedNames.length > 0 && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("مع") || normUserMessage.includes("حفظهم") || normUserMessage.includes("جديد") || normUserMessage.includes("مراجعة") || normUserMessage.includes("بيانات") || normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("سورهم"))) ||
-        (Boolean(studentResolution.detectedHalaqah) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("حلقة"))) ||
-        (Boolean(studentResolution.detectedComplex) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("مجمع"))) ||
+        (Boolean(studentResolution.detectedHalaqah || matchedHalaqah) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("حلقة") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها"))) ||
+        (Boolean(studentResolution.detectedTeacher) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("شيخ") || normUserMessage.includes("معلم") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها"))) ||
+        (Boolean(studentResolution.detectedComplex || normUserMessage.includes("مجمع")) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها") || normUserMessage.includes("مجمع") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات"))) ||
+        ((Boolean(studentResolution.explicitCount && studentResolution.explicitCount > 0) || Boolean(studentResolution.isCountQuery) || normUserMessage.includes("عدد محدد") || normUserMessage.includes("باسمائهم") || normUserMessage.includes("بأسمائهم")) && (normUserMessage.includes("طلاب") || normUserMessage.includes("طالب") || normUserMessage.includes("باسمائهم") || normUserMessage.includes("بأسمائهم") || normUserMessage.includes("حفظهم") || normUserMessage.includes("مستواهم") || normUserMessage.includes("جدول") || normUserMessage.includes("كشف") || normUserMessage.includes("طلع") || normUserMessage.includes("اعطني") || normUserMessage.includes("هات") || normUserMessage.includes("اريد"))) ||
         /(?:كشف|جدول|قائمة|بيان|سجل)\s+(?:الطلاب|طلاب|الطلبة|الاسماء|الأسماء|البيانات|المسجلين|الحلقة|حلقة|المجمع|مجمع)/i.test(message) ||
         normUserMessage.includes("كشف الطلاب") ||
         normUserMessage.includes("جدول الطلاب") ||
@@ -2821,17 +2834,32 @@ app.post("/api/gemini/assistant", async (req, res) => {
       }
     }
 
-    // Collect students mentioned in current message
-    const namedStudentsInMessage: any[] = [...studentResolution.matchedStudents];
+    // Collect students explicitly named in current message
+    const hasExplicitNamedStudents = studentResolution.requestedNames.length > 0 && studentResolution.matchedStudents.length > 0;
+    const namedStudentsInMessage: any[] = hasExplicitNamedStudents ? [...studentResolution.matchedStudents] : [];
 
-    // Determine targeted cohort with strict precedence:
+    // Determine targeted cohort with strict precedence and strict halaqah isolation:
     let activeCohortStudents: any[] = [];
-    if (namedStudentsInMessage.length > 0) {
-      // 1. Explicit student names/resolution take top absolute priority
+    if (matchedHalaqah && halaqahStudentsCohort.length > 0) {
+      // 1. Explicit halaqah named in message (e.g. "حلقة الزبير") targets ONLY students of this halaqah!
+      if (namedStudentsInMessage.length > 0) {
+        const inHalaqah = namedStudentsInMessage.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        activeCohortStudents = inHalaqah.length > 0 ? inHalaqah : [...halaqahStudentsCohort];
+      } else if (studentResolution.matchedStudents.length > 0) {
+        const inHalaqah = studentResolution.matchedStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        activeCohortStudents = inHalaqah.length > 0 ? inHalaqah : [...halaqahStudentsCohort];
+      } else {
+        activeCohortStudents = [...halaqahStudentsCohort];
+      }
+    } else if (namedStudentsInMessage.length > 0) {
+      // 2. Explicit student names take top absolute priority when no specific halaqah was requested
       activeCohortStudents = [...namedStudentsInMessage];
-    } else if (matchedHalaqah && halaqahStudentsCohort.length > 0) {
-      // 2. Explicit halaqah named in message (e.g. "حلقة الزبير") targets ONLY students of this halaqah!
-      activeCohortStudents = [...halaqahStudentsCohort];
+    } else if (studentResolution.detectedTeacher && studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    } else if (studentResolution.detectedComplex && studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    } else if (studentResolution.matchedStudents.length > 0 && (studentResolution.isCountQuery || studentResolution.explicitCount || studentResolution.detectedLevel)) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
     } else if (hasReferenceToPreviousStudents && contextStudents.length > 0) {
       // 3. Explicit reference to previous students ("هؤلاء", "لهم", "فيهم", "للطلاب السابقين")
       activeCohortStudents = [...contextStudents];
@@ -2841,6 +2869,8 @@ app.post("/api/gemini/assistant", async (req, res) => {
       if (activeHalaqahStudents.length > 0) {
         activeCohortStudents = [...activeHalaqahStudents];
       }
+    } else if (studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
     }
 
     // Detect user-requested sorting criteria (بأي ترتيب: تنازلي، تصاعدي، بالنقاط، أبجدياً، بالسورة)
@@ -2980,6 +3010,12 @@ app.post("/api/gemini/assistant", async (req, res) => {
       }
 
       let chosenStudents = [...activeCohortStudents];
+      if (matchedHalaqah) {
+        chosenStudents = chosenStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        if (chosenStudents.length === 0) {
+          chosenStudents = [...halaqahStudentsCohort];
+        }
+      }
 
       // If more students needed, ONLY pull from the scope pool (never mix other halaqahs if halaqah specified!)
       if (!isFixedCohort && chosenStudents.length < requestedMultiCount) {
@@ -3026,11 +3062,15 @@ app.post("/api/gemini/assistant", async (req, res) => {
         chosenStudents.sort((a, b) => (a.currentSurahName || '').localeCompare(b.currentSurahName || '', 'ar'));
       }
 
-      const finalStudents = isFixedCohort
+      let finalStudents = isFixedCohort
         ? chosenStudents
         : (matchedHalaqah && !hasExplicitMultiCount
             ? chosenStudents
             : chosenStudents.slice(0, requestedMultiCount));
+
+      if (matchedHalaqah) {
+        finalStudents = finalStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+      }
 
       multiRecitationData = finalStudents.map((st: any) => {
         const stEvals = evaluationsList
@@ -4143,6 +4183,78 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         ).join("\n\n");
         geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📖✨\n\nإليك **${isCardsTitle ? 'البطاقات التعريفية الرسمية والتقرير القرآني الشامل' : 'التقرير القرآني الشامل والمفصل'}** لما سمّعه كافة الطلاب الـ (${multiRecitationData.length}) ${isCardsTitle ? 'بدون أي حصر على أربعة طلاب وبكامل تفاصيل الهوية القرآنية' : `ليوم (${targetRecitationDateLabel} - ${targetRecitationDate})`} بالتفصيل الكامل وبدون استثناء أي طالب:\n\n${studentSummaries}\n\nوقد أعددتُ لك بالأسفل **${isCardsTitle ? 'البطاقات التعريفية والتقرير القرآني الشامل المعتمد' : 'بطاقة التقرير القرآني الشاملة المعتمدة والقابلة للاستخراج والتصدير الفوري'}** (طباعة رسمية لكل بطاقة، تصدير كـ PDF، إكسل) لكافة الطلاب المحددين:`;
       }
+    } else if (
+      !hasMultiStudentRecitationIntent &&
+      (
+        Boolean(studentResolution.explicitCount && studentResolution.explicitCount > 0) ||
+        Boolean(studentResolution.isCountQuery && studentResolution.requestedCount > 0) ||
+        normUserMessage.includes("عدد محدد") ||
+        normUserMessage.includes("باسمائهم") ||
+        normUserMessage.includes("بأسمائهم") ||
+        ((matchedHalaqah || studentResolution.detectedTeacher || studentResolution.detectedComplex) &&
+         (normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها") || normUserMessage.includes("طلاب")))
+      )
+    ) {
+      let cohortTargetPool: any[] = [];
+      if (matchedHalaqah) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inH = studentResolution.matchedStudents.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah));
+          cohortTargetPool = inH.length > 0 ? inH : halaqahStudentsCohort;
+        } else {
+          cohortTargetPool = halaqahStudentsCohort;
+        }
+      } else if (studentResolution.matchedStudents.length > 0) {
+        cohortTargetPool = studentResolution.matchedStudents;
+      } else if (studentResolution.detectedTeacher) {
+        cohortTargetPool = studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id);
+      } else {
+        cohortTargetPool = studentsList;
+      }
+
+      const explicitLimit = studentResolution.explicitCount || (studentResolution.isCountQuery ? studentResolution.requestedCount : undefined) || (hasExplicitMultiCount ? requestedMultiCount : undefined);
+      let effectiveCohort = [...cohortTargetPool];
+      if (explicitLimit && explicitLimit > 0 && effectiveCohort.length > explicitLimit) {
+        effectiveCohort = effectiveCohort.slice(0, explicitLimit);
+      }
+
+      // Check if Gemini reply already contains the student names
+      const missingStudentNames = effectiveCohort.filter(st => !geminiReply || !geminiReply.includes(st.name)).length;
+      if (missingStudentNames > 0 || !geminiReply) {
+        const studentLines = effectiveCohort.map((s: any, idx: number) => {
+          const m = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+          const stEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+          const latestEv = stEvals[stEvals.length - 1];
+          const evDetails = latestEv?.recitationDetails || {};
+          const newMem = evDetails.newMemorizationAchieved || (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر');
+          const rev = evDetails.reviewAchieved || 'مراجعة وتثبيت';
+          const pts = Number(s.totalPoints ?? s.points) || 0;
+          const attRate = s.attendanceRate ? `${s.attendanceRate}%` : `${m.attendanceRate}%`;
+          const currentPos = `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`;
+          const teacherNotes = evDetails.teacherNotes || 'مواظب ومجتهد في الحفظ والتثبيت';
+          return `${idx + 1}. **الطالب: ${s.name}**\n   • 🏛️ **الحلقة والمستوى:** ${s.halaqahName || detectedHalaqahName || 'الحلقة'} - فئة (${s.level || 'متوسط'})\n   • 📖 **موضع الحفظ الحالي:** ${currentPos}\n   • ✨ **الحفظ الجديد:** ${newMem}\n   • 🔄 **المراجعة والتثبيت:** ${rev}\n   • ⭐ **رصيد النقاط:** ${pts} نقطة | 📋 **نسبة الحضور:** ${attRate}\n   • ✍️ **ملاحظة وتوجيه المعلم:** ${teacherNotes}`;
+        }).join('\n\n');
+
+        if (matchedHalaqah && !explicitLimit) {
+          const halaqahAttRate = halaqahStudentsCohort.length > 0
+            ? Math.round(halaqahStudentsCohort.reduce((acc, st) => acc + (Number(st.attendanceRate) || 95), 0) / halaqahStudentsCohort.length)
+            : 95;
+          const halaqahAvgPts = halaqahStudentsCohort.length > 0
+            ? Math.round(halaqahStudentsCohort.reduce((acc, st) => acc + (Number(st.totalPoints ?? st.points) || 0), 0) / halaqahStudentsCohort.length)
+            : 0;
+          const teacherNameStr = matchedHalaqah.teacherName || halaqahTeachersCohort[0]?.name || (matchedHalaqah.primaryTeacherName || 'المعلم المعتمد');
+          geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🌿\n\nإليك **الإحصائيات الشاملة وكشف طلاب حلقة (${matchedHalaqah.name})** بالتفصيل:\n\n📊 **المؤشرات والإحصائيات العامة للحلقة:**\n• **المعلم المشرف:** فضيلة الشيخ ${teacherNameStr}\n• **إجمالي عدد طلاب الحلقة:** ${effectiveCohort.length} طلاب مسجلين\n• **نسبة الانضباط والحضور:** ${halaqahAttRate}%\n• **متوسط رصيد النقاط:** ${halaqahAvgPts} نقطة\n\n📋 **كشف وبيانات طلاب الحلقة بأسمائهم ومسار حفظهم ومراجعتهم:**\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الكشف الشامل التفاعلي المعتمد** مع إمكانية التصدير المباشر (Excel, PDF, Google Sheets) والتبديل لعرض الرسوم البيانية:`;
+        } else if (studentResolution.detectedTeacher && !explicitLimit) {
+          const teacher = studentResolution.detectedTeacher;
+          geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🌿\n\nإليك **الإحصائيات المعتمدة وكشف طلاب فضيلة الشيخ ${teacher.name}** بالتفصيل:\n\n📊 **بيانات ومؤشرات الشيخ:**\n• **المعلم / المحفظ:** فضيلة الشيخ ${teacher.name}\n• **الحلقة المشرف عليها:** ${teacher.halaqahName || matchedHalaqah?.name || 'الحلقة القرآنية'}\n• **إجمالي طلاب الشيخ:** ${effectiveCohort.length} طلاب\n\n📋 **كشف طلاب الشيخ بأسمائهم ومسار حفظهم الجديد ومراجعتهم:**\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الجدول التفاعلي الشامل المعتمد** لتصديره كـ Excel أو طباعته كـ PDF:`;
+        } else if ((studentResolution.detectedComplex || normUserMessage.includes("مجمع")) && !explicitLimit) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🏛️✨\n\nإليك **التقرير الإحصائي الشامل لمجمع (${complexName})** وكشف الطلاب:\n\n📊 **إحصائيات المجمع القرآني:**\n• **عدد الحلقات القرآنية:** ${halaqahsList.length} حلقات\n• **عدد المعلمين والمحفظين:** ${teachersList.length} معلمين\n• **إجمالي عدد الطلاب:** ${metrics.totalStudents} طالب\n• **نسبة الحضور العامة:** ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%\n• **الأوجه المسمعة اليوم:** ${metrics.totalRecitedPagesToday} وجه\n\n📋 **كشف الطلاب ومسار إنجازهم:**\n\n${studentLines}\n\nتفضل بمراجعة الكشف التفاعلي الكامل أدناه مع خيارات التصدير:`;
+        } else {
+          // Explicit count (e.g. 3 students, 5 students)
+          const targetCountLabel = effectiveCohort.length === 1 ? 'طالب واحد' : effectiveCohort.length === 2 ? 'طالبين' : `${effectiveCohort.length} طلاب`;
+          const scopeLabel = matchedHalaqah ? `من حلقة ${matchedHalaqah.name}` : studentResolution.detectedTeacher ? `للشيخ ${studentResolution.detectedTeacher.name}` : `في ${complexName}`;
+          geminiReply = `حيّاك الله يا أخي ${firstName} 📋✨\n\nأبشر، أعددت لك كشفاً دقيقاً بـ **العدد المحدد (${targetCountLabel})** ${scopeLabel} بأسمائهم الصريحة وتفاصيل الحفظ الجديد والمراجعة وموضع الحفظ الحالي والنقاط:\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الكشف الشامل التفاعلي المعتمد** للـ (${effectiveCohort.length}) طلاب المحددين، مع إمكانية التصدير كـ Excel أو PDF وعرض الرسم البياني المخصص لهم:`;
+        }
+      }
     }
 
     // 7. Attach Appropriate Structured Action (Tables, Actions, Survey, WhatsApp, Chart, or Points/Recitation History)
@@ -4822,16 +4934,25 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         },
       };
     } else if (hasGeneralTableIntent) {
-      const hasSpecificMatched = studentResolution.matchedStudents.length > 0;
-      const genBasePool = hasSpecificMatched
-        ? studentResolution.matchedStudents
-        : (matchedHalaqah && halaqahStudentsCohort.length > 0
-            ? halaqahStudentsCohort
-            : (studentResolution.detectedLevel
-                ? studentsList.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
-                : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
-                    ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
-                    : studentsList)));
+      let genBasePool: any[] = [];
+      if (matchedHalaqah) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inH = studentResolution.matchedStudents.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah));
+          genBasePool = inH.length > 0 ? inH : halaqahStudentsCohort;
+        } else {
+          genBasePool = halaqahStudentsCohort;
+        }
+      } else if (studentResolution.matchedStudents.length > 0) {
+        genBasePool = studentResolution.matchedStudents;
+      } else if (studentResolution.detectedTeacher) {
+        genBasePool = studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id);
+      } else if (studentResolution.detectedLevel) {
+        genBasePool = studentsList.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!));
+      } else if (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all') {
+        genBasePool = studentsList.filter(s => s.halaqahId === activeHalaqah.id);
+      } else {
+        genBasePool = studentsList;
+      }
 
       let sortedGen = [...genBasePool];
       if (isSortAlpha || studentResolution.detectedSort === 'alpha') {
@@ -4844,13 +4965,29 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         sortedGen.sort((a: any, b: any) => (Number(b.attendanceRate) || 0) - (Number(a.attendanceRate) || 0));
       }
 
-      const tableTitle = studentResolution.detectedLevel
-        ? `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${complexName}`
-        : (hasSpecificMatched
-            ? `كشف بيانات ومسار الطلاب (${sortedGen.map(s => s.name).join(" - ")})`
-            : (matchedHalaqah
-                ? `كشف طلاب حلقة ${matchedHalaqah.name} - ${complexName}`
-                : `كشف وبيان طلاب المنظومة - ${complexName}`));
+      const effectiveCountLimit = studentResolution.explicitCount || (studentResolution.isCountQuery ? studentResolution.requestedCount : undefined) || (hasExplicitMultiCount ? requestedMultiCount : undefined);
+      if (effectiveCountLimit && effectiveCountLimit > 0 && sortedGen.length > effectiveCountLimit) {
+        sortedGen = sortedGen.slice(0, effectiveCountLimit);
+      }
+
+      let tableTitle = `كشف وبيان طلاب المنظومة - ${complexName}`;
+      if (effectiveCountLimit && effectiveCountLimit > 0) {
+        tableTitle = matchedHalaqah
+          ? `كشف (${sortedGen.length}) طلاب من حلقة ${matchedHalaqah.name} - ${complexName}`
+          : (studentResolution.detectedTeacher
+              ? `كشف (${sortedGen.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`
+              : `كشف (${sortedGen.length}) طلاب بأسمائهم ومستواهم ومسار حفظهم - ${complexName}`);
+      } else if (studentResolution.detectedTeacher) {
+        tableTitle = `كشف طلاب وإحصائيات فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`;
+      } else if (matchedHalaqah) {
+        tableTitle = `كشف طلاب وإحصائيات حلقة ${matchedHalaqah.name} - ${complexName}`;
+      } else if (studentResolution.detectedComplex || normUserMessage.includes("مجمع")) {
+        tableTitle = `كشف طلاب وإحصائيات مجمع (${complexName})`;
+      } else if (studentResolution.detectedLevel) {
+        tableTitle = `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${complexName}`;
+      } else if (hasSpecificMatched && sortedGen.length <= 4) {
+        tableTitle = `كشف بيانات ومسار الطلاب (${sortedGen.map(s => s.name).join(" - ")})`;
+      }
 
       action = {
         type: "SHOW_DATA_TABLE",
@@ -5012,11 +5149,17 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
 
       const chartCohortRaw = studentResolution.matchedStudents.length > 0
         ? studentResolution.matchedStudents
-        : (studentResolution.detectedLevel
-            ? chartBasePool.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
-            : (matchedHalaqah && halaqahStudentsCohort.length > 0 ? halaqahStudentsCohort : sortedByPoints.slice(0, 8)));
+        : (studentResolution.detectedTeacher
+            ? studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id)
+            : (studentResolution.detectedLevel
+                ? chartBasePool.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
+                : (matchedHalaqah && halaqahStudentsCohort.length > 0 ? halaqahStudentsCohort : sortedByPoints.slice(0, 8))));
 
-      const enrichedCohort = chartCohortRaw.map((s: any, idx: number) => {
+      const effectiveChartCohort = (studentResolution.explicitCount && studentResolution.explicitCount > 0 && chartCohortRaw.length > studentResolution.explicitCount)
+        ? chartCohortRaw.slice(0, studentResolution.explicitCount)
+        : chartCohortRaw;
+
+      const enrichedCohort = effectiveChartCohort.map((s: any, idx: number) => {
         const studentMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
         const studentEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
         const latestEval = studentEvals[studentEvals.length - 1];
@@ -5061,13 +5204,22 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         };
       });
 
-      const dynamicChartTitle = studentResolution.detectedLevel
-        ? `الإحصائيات والتشخيص البياني لطلاب فئة (${studentResolution.detectedLevel})${detectedHalaqahName ? ` - ${detectedHalaqahName}` : ''} - ${complexName}`
-        : (studentResolution.matchedStudents.length > 0
-            ? `مقارنة وتشخيص بياني للطلاب (${enrichedCohort.map(s => s.name).join(' - ')})`
-            : (matchedHalaqah
-                ? `الإحصائيات والتشخيص البياني لـ (${detectedHalaqahName}) - ${complexName}`
-                : `التشخيص البياني والإحصائي الشامل - ${complexName}`));
+      let dynamicChartTitle = `التشخيص البياني والإحصائي الشامل - ${complexName}`;
+      if (studentResolution.explicitCount && studentResolution.explicitCount > 0) {
+        dynamicChartTitle = matchedHalaqah
+          ? `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب من حلقة ${matchedHalaqah.name}`
+          : (studentResolution.detectedTeacher
+              ? `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name}`
+              : `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب بأسمائهم ومستواهم`);
+      } else if (studentResolution.detectedTeacher) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لطلاب فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`;
+      } else if (matchedHalaqah) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لـ (${detectedHalaqahName}) - ${complexName}`;
+      } else if (studentResolution.detectedLevel) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لطلاب فئة (${studentResolution.detectedLevel})${detectedHalaqahName ? ` - ${detectedHalaqahName}` : ''} - ${complexName}`;
+      } else if (studentResolution.matchedStudents.length > 0 && enrichedCohort.length <= 4) {
+        dynamicChartTitle = `مقارنة وتشخيص بياني للطلاب (${enrichedCohort.map(s => s.name).join(' - ')})`;
+      }
 
       action = {
         type: "SHOW_CHART",
