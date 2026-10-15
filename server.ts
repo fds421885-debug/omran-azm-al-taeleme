@@ -2005,13 +2005,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const extractedName = hasRegisterIntent ? extractCleanStudentName(message, matchedHalaqah) : "";
 
     // Universal Complex Detection across the entire query (e.g., مجمع الحربي, مجمع النور, etc.)
-    const matchedComplex = findMatchingComplex(message, complexesList, studentsList, halaqahsList);
+    const matchedComplex = findMatchingComplex(message, complexesList, studentsList, halaqahsList, teachersList);
     const targetComplexObj = matchedComplex || (complex?.id && complex.id !== 'all' ? complex : null);
     const effectiveComplexName = matchedComplex ? matchedComplex.name : complexName;
 
     // Specific cohort of students strictly scoped to the requested complex
     const complexStudentsCohort = targetComplexObj
-      ? studentsList.filter((s: any) => isStudentInComplex(s, targetComplexObj, halaqahsList))
+      ? studentsList.filter((s: any) => isStudentInComplex(s, targetComplexObj, halaqahsList, teachersList))
       : [];
 
     const complexHalaqahsCohort = targetComplexObj
@@ -2407,7 +2407,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     const effectiveMatchedComplex = matchedComplex || studentResolution.matchedComplex || (studentResolution.detectedComplex ? { id: `complex-${normalizeArabicText(studentResolution.detectedComplex).replace(/\s+/g, '-')}`, name: studentResolution.detectedComplex } : null);
     const finalComplexStudentsCohort = effectiveMatchedComplex
-      ? studentsList.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList))
+      ? studentsList.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList))
       : complexStudentsCohort;
     const finalComplexHalaqahsCohort = effectiveMatchedComplex
       ? halaqahsList.filter((h: any) => isHalaqahInComplex(h, effectiveMatchedComplex, complexesList, studentsList, teachersList))
@@ -2473,6 +2473,15 @@ app.post("/api/gemini/assistant", async (req, res) => {
         ((normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("قائمة") || normUserMessage.includes("بيان") || normUserMessage.includes("سجل")) &&
           (normUserMessage.includes("معلم") || normUserMessage.includes("معلمين") || normUserMessage.includes("المعلمين") || normUserMessage.includes("المحفظين") || normUserMessage.includes("مشايخ")))
       );
+
+    // 2.7.5.1 Accurate Student Points Inquiry Intent
+    const isStudentPointsInquiry =
+      /(?:كم\s+(?:عنده\s+)?(?:من\s+)?(?:النقاط|نقاط|نقطة)|كم\s+رصيد(?:ه)?\s*(?:من\s+)?(?:النقاط|نقاط)?|نقاط\s+الطالب|رصيد\s+الطالب|لوحة\s+الشرف|لوحة\s+الصدارة|كم\s+جاب\s+نقطة|كم\s+حصل\s+نقطة|كم\s+نقطة|كم\s+نقاط)/i.test(message) ||
+      lowerMsg.includes("كم نقطة") ||
+      lowerMsg.includes("كم نقاط") ||
+      lowerMsg.includes("رصيد النقاط") ||
+      lowerMsg.includes("نقاطه") ||
+      lowerMsg.includes("في لوحة الشرف");
 
     const hasPointsTableIntent =
       !isExplicitRecitationInquiry &&
@@ -2878,6 +2887,17 @@ app.post("/api/gemini/assistant", async (req, res) => {
         activeCohortStudents = inHalaqah.length > 0 ? inHalaqah : [...halaqahStudentsCohort];
       } else {
         activeCohortStudents = [...halaqahStudentsCohort];
+      }
+    } else if (effectiveMatchedComplex) {
+      // 2. Explicit complex named in message (e.g. "مجمع الحربي", "مجمع النور", or any complex) targets ONLY students of this complex!
+      if (namedStudentsInMessage.length > 0) {
+        const inComp = namedStudentsInMessage.filter(s => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
+        activeCohortStudents = inComp.length > 0 ? inComp : [...finalComplexStudentsCohort];
+      } else if (studentResolution.matchedStudents.length > 0) {
+        const inComp = studentResolution.matchedStudents.filter(s => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
+        activeCohortStudents = inComp.length > 0 ? inComp : [...finalComplexStudentsCohort];
+      } else {
+        activeCohortStudents = [...finalComplexStudentsCohort];
       }
     } else if (namedStudentsInMessage.length > 0) {
       // 2. Explicit student names take top absolute priority when no specific halaqah was requested
@@ -3548,15 +3568,6 @@ app.post("/api/gemini/assistant", async (req, res) => {
       ? Math.round((effPresentCount / totalStudentsInComplex) * 100)
       : 0;
 
-    // 2.12.8 Accurate Student Points Inquiry Intent
-    const isStudentPointsInquiry =
-      /(?:كم\s+(?:عنده\s+)?(?:من\s+)?(?:النقاط|نقاط|نقطة)|كم\s+رصيد(?:ه)?\s*(?:من\s+)?(?:النقاط|نقاط)?|نقاط\s+الطالب|رصيد\s+الطالب|لوحة\s+الشرف|لوحة\s+الصدارة|كم\s+جاب\s+نقطة|كم\s+حصل\s+نقطة|كم\s+نقطة|كم\s+نقاط)/i.test(message) ||
-      lowerMsg.includes("كم نقطة") ||
-      lowerMsg.includes("كم نقاط") ||
-      lowerMsg.includes("رصيد النقاط") ||
-      lowerMsg.includes("نقاطه") ||
-      lowerMsg.includes("في لوحة الشرف");
-
     let candidateStudentForPoints: any = null;
     if (isStudentPointsInquiry) {
       candidateStudentForPoints =
@@ -3823,19 +3834,59 @@ ${excusedListStr}
       `• ${h.name} (المعلم: ${h.teacherName || h.primaryTeacherName || "غير محدد"})`
     ).join("\n");
 
+    const effectiveCohortForMetrics = effectiveMatchedComplex
+      ? finalComplexStudentsCohort
+      : (matchedHalaqah ? halaqahStudentsCohort : null);
+
+    const scopedMetrics = effectiveCohortForMetrics ? (() => {
+      const cohortIds = new Set(effectiveCohortForMetrics.map((s: any) => s.id));
+      const todayDate = formatLocalDate(new Date());
+      const todayRecords = attendanceList.filter((a: any) => a.date === todayDate && cohortIds.has(a.studentId));
+      const present = todayRecords.filter((a: any) => a.status === 'حاضر').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const absent = todayRecords.filter((a: any) => a.status === 'غائب').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const excused = todayRecords.filter((a: any) => a.status === 'معتذر').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const late = todayRecords.filter((a: any) => a.status === 'متأخر').length;
+
+      return {
+        totalStudents: effectiveCohortForMetrics.length,
+        presentCount: present.length,
+        absentCount: absent.length,
+        excusedCount: excused.length,
+        lateCount: late,
+        presentStudents: present,
+        absentStudents: absent,
+        excusedStudents: excused,
+        totalRecitedPagesToday: 0,
+        totalNewPagesToday: 0,
+        totalReviewPagesToday: 0,
+        avgDailyNewTarget: metrics.avgDailyNewTarget,
+        registeredThisMonthCount: 0,
+        registeredThisMonthStudents: [],
+      };
+    })() : metrics;
+
     const systemInstruction = `أنت "المساعد القرآني الذكي" الحقيقي لمنصة عُمْرَان لإدارة المجمعات والحلقات القرآنية.
 أنت تتحدث مع: ${rawName} (صفته: ${role === "developer" ? "المبرمج والمشرف العام" : role === "supervisor" ? "مشرف المجمع" : "معلم الحلقة"}).
 المجمع الحالي أو المستفسر عنه: "${effectiveComplexName}"، والحلقة الحالية: "${halaqahName}".
 
-بيانات المنظومة الحية في هذه اللحظة:
-- إجمالي عدد الطلاب: ${metrics.totalStudents} طالب.
-- الحضور اليوم: ${metrics.presentCount} حاضر (${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%).
-- الغائبون اليوم: ${metrics.absentCount} طالب (الأسماء: ${metrics.absentStudents.join("، ") || "لا يوجد غياب"}).
-- المستأذنون: ${metrics.excusedCount} طالب (الأسماء: ${metrics.excusedStudents.join("، ") || "لا يوجد"}).
-- المتأخرون اليوم: ${metrics.lateCount} طالب.
-- الأوجه المسمعة اليوم: ${metrics.totalRecitedPagesToday} وجه (حفظ جديد: ${metrics.totalNewPagesToday} وجه، مراجعة وتثبيت: ${metrics.totalReviewPagesToday} وجه).
-- متوسط الحفظ الجديد اليومي للطلاب: ${metrics.avgDailyNewTarget}.
-- الطلاب المسجلون هذا الشهر: ${metrics.registeredThisMonthCount} طالب (منهم: ${metrics.registeredThisMonthStudents.slice(0, 5).join("، ") || "لا يوجد"}).
+بيانات ${effectiveMatchedComplex ? `مجمع "${effectiveComplexName}"` : (matchedHalaqah ? `حلقة "${matchedHalaqah.name}"` : 'المنظومة')} الحية في هذه اللحظة:
+- إجمالي عدد الطلاب: ${scopedMetrics.totalStudents} طالب.
+- الحضور اليوم: ${scopedMetrics.presentCount} حاضر (${scopedMetrics.totalStudents > 0 ? Math.round((scopedMetrics.presentCount / scopedMetrics.totalStudents) * 100) : 0}%).
+- الغائبون اليوم: ${scopedMetrics.absentCount} طالب (الأسماء: ${scopedMetrics.absentStudents.join("، ") || "لا يوجد غياب"}).
+- المستأذنون: ${scopedMetrics.excusedCount} طالب (الأسماء: ${scopedMetrics.excusedStudents.join("، ") || "لا يوجد"}).
+- المتأخرون اليوم: ${scopedMetrics.lateCount} طالب.
+- الأوجه المسمعة اليوم: ${scopedMetrics.totalRecitedPagesToday} وجه (حفظ جديد: ${scopedMetrics.totalNewPagesToday} وجه، مراجعة وتثبيت: ${scopedMetrics.totalReviewPagesToday} وجه).
+- متوسط الحفظ الجديد اليومي للطلاب: ${scopedMetrics.avgDailyNewTarget}.
+- الطلاب المسجلون هذا الشهر: ${scopedMetrics.registeredThisMonthCount} طالب (منهم: ${scopedMetrics.registeredThisMonthStudents.slice(0, 5).join("، ") || "لا يوجد"}).
 ${(isGeneralAttendanceInquiry || (targetRecitationDate && targetRecitationDateLabel !== "اليوم")) ? `
 سجل الحضور والغياب المعتمد ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}):
 - إجمالي الحاضرين: ${effPresentCount} حاضر (${datePresentStudents.slice(0, 10).join("، ") || (effPresentCount > 0 ? "مسجلون في الكشف" : "لم يُسجل حاضرون بعد")})
@@ -4057,8 +4108,8 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
     if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
       // Prioritize high-availability and fast responsive models
       const candidateModels = [
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite",
       ];
 
       for (const modelName of candidateModels) {
@@ -4071,7 +4122,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3500)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
           ]);
 
           if (response?.text) {
@@ -4147,7 +4198,13 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
       } else if (hasViolationsTableIntent) {
         geminiReply = `تفضل يا أخي ${firstName} 📋\n\nأعددت لك كشف التنبيهات والملاحظات السلوكية المسجلة على الطلاب لمتابعتها تربوياً واتخاذ التوجيهات اللازمة وفق آداب القرآن الكريم:`;
       } else if (hasPointsTableIntent) {
-        geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nإليك كشف ترتيب نقاط الطلاب ومستويات تحصيلهم، ويمكنك تصديره كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+        if (effectiveMatchedComplex && finalComplexStudentsCohort.length === 0) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nبمراجعة بيانات المنظومة، تبيّن أنه **لا يوجد طلاب مسجلون حالياً في ${effectiveMatchedComplex.name}** حتى الآن. يمكنك تسجيل وإلحاق الطلاب عبر استبيان التسجيل أو إدارة الحلقات.`;
+        } else if (effectiveMatchedComplex) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nإليك كشف ترتيب نقاط طلاب **${effectiveMatchedComplex.name}** ومستويات تحصيلهم (${finalComplexStudentsCohort.length} طالباً)، ويمكنك تصديره كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nإليك كشف ترتيب نقاط الطلاب ومستويات تحصيلهم، ويمكنك تصديره كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+        }
       } else if (hasTransferStudentIntent) {
         geminiReply = `أهلاً بك يا أخي ${firstName}. أعددت لك بطاقة تأكيد نقل الطالب بين الحلقات، تفضل بمراجعة التفاصيل وتأكيد النقل الآن:`;
       } else if (hasStudentAttendanceInquiryIntent && studentTargetForStats) {
@@ -5066,7 +5123,7 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
         }
       } else if (effectiveMatchedComplex) {
         if (studentResolution.matchedStudents.length > 0) {
-          const inC = studentResolution.matchedStudents.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList));
+          const inC = studentResolution.matchedStudents.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
           genBasePool = inC.length > 0 ? inC : finalComplexStudentsCohort;
         } else {
           genBasePool = finalComplexStudentsCohort;

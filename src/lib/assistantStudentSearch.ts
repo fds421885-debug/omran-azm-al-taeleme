@@ -1581,10 +1581,10 @@ export function findMatchingComplex(
     const cleanC = cleanComplexBaseName(c.name);
     const bareC = stripArabicDefinite(cleanC);
 
-    if (normQuery.includes(normC) || (cleanC.length >= 3 && normQuery.includes(cleanC))) {
+    if (normQuery.includes(normC) || (cleanC.length >= 2 && normQuery.includes(cleanC))) {
       return c;
     }
-    if (bareC.length >= 3 && (normQuery.includes(bareC) || bareQuery.includes(bareC))) {
+    if (bareC.length >= 2 && (normQuery.includes(bareC) || bareQuery.includes(bareC))) {
       return c;
     }
   }
@@ -1602,8 +1602,10 @@ export function findMatchingComplex(
     candidate = candidate
       .replace(/^(?:القراني|القرآني|النموذجي|العام)\s+/gi, '')
       .replace(/\s+(?:القراني|القرآني|النموذجي|لتحفيظ\s+القران|لتحفيظ\s+القرآن|الكريم).*$/gi, '')
+      .replace(/\s+(?:او\s+غيره|أو\s+غيره|وغيره|او\s+غيرها|أو\s+غيرها|وغيرها|واي\s+مجمع|وأي\s+مجمع|اي\s+مجمع|أي\s+مجمع|اكتبه|أكتبه).*$/gi, '')
       .replace(/\s+(?:فطلع\s+لي|فطلع|طلعلي|طلعوا|طلعي|طلع|اعمللي|اعمل|سويلي|سوي|سو|هاتلي|هات|أعطيني|اعطيني|أعطني|اعطني|جيبلي|جيب|وريني|ورني|اعرضلي|اعرض|أريد|اريد|ابغى|أبغى|ممكن|لو\s+سمحت|بالله|الله\s+يسعدك|الله\s+يعافيك|تكفى|شكرا|شكراً).*$/gi, '')
       .replace(/\s+(?:نقاط|النقاط|درجات|الدرجات|حضور|الـحضور|الحضور|غياب|الغياب|طلاب|الطلاب|الطلبة|طلبة|معلمي|معلمين|المعلمين|حلقات|الحلقات|كشف|جدول|تقرير|احصائيات|إحصائيات|بيانات|سجل|شيت|اكسل|كم|ايش|وش|شو|ترتيب|مستوى|فقط|كله|كلهم|جميعهم|كل\s+الطلاب|جميع\s+الطلاب|كاملة|كامله|كاملين|مرتبة|مرتبه|بالترتيب|اليوم|امس|أمس|الحين|الان|الآن|هذا\s+الاسبوع|هذا\s+الأسبوع).*$/gi, '')
+      .replace(/\s+(?:او|أو|و)$/gi, '')
       .trim();
 
     // If candidate has multiple trailing words, pick the first 1-2 words
