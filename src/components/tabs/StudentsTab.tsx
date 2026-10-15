@@ -28,7 +28,8 @@ import {
   Copy,
   FileText
 } from 'lucide-react';
-import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation } from '../../types';
+import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation, QuranComplex } from '../../types';
+import { darkenHex, lightenHex } from '../../lib/themeUtils';
 import { normalizeArabicText } from '../../lib/googleWorkspace';
 import { QURAN_SURAHS } from '../../data/quranData';
 import { getPageOfAyah } from '../../data/quranPagesData';
@@ -41,6 +42,7 @@ interface StudentsTabProps {
   activeHalaqahId?: string;
   isSupervisor?: boolean;
   isDeveloper?: boolean;
+  activeComplex?: QuranComplex | null;
   onAddStudent: (studentData: Partial<Student>) => Promise<boolean>;
   onBatchAddStudents?: (studentsList: Partial<Student>[]) => Promise<boolean>;
   onUpdateStudent: (student: Student) => Promise<boolean>;
@@ -88,6 +90,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   activeHalaqahId,
   isSupervisor = false,
   isDeveloper = false,
+  activeComplex,
   onAddStudent,
   onBatchAddStudents,
   onUpdateStudent,
@@ -100,6 +103,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   initialStudentToDeleteId,
   initialSearchQuery
 }) => {
+  const currentTheme = activeComplex?.theme || settings?.theme;
+  const cardBg = currentTheme?.cardColor || 'var(--complex-card, #203843)';
+  const secondaryBg = currentTheme?.secondaryColor || 'var(--complex-secondary, #1b2e35)';
+  const primaryBg = currentTheme?.primaryColor || 'var(--complex-primary, #131f24)';
+  const borderCol = currentTheme?.secondaryColor || 'var(--complex-border, #2b4550)';
+  const borderBottomCol = darkenHex(primaryBg, 0.35);
+  const accentCol = currentTheme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const accentShadow = darkenHex(accentCol, 0.28);
+
   const [searchTerm, setSearchTerm] = useState(initialSearchQuery || '');
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');

@@ -246,30 +246,33 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     // 4. Check dedicated/isolated databases for migrated complexes
     const customComplexes = complexes.filter(c => c.databaseConfig?.isCustom && c.databaseConfig?.projectId);
     if (customComplexes.length > 0) {
-      setIsSubmitting(true);
-      OmranDataService.authenticateUserAcrossDatabases(cleanUser, cleanPass, customComplexes)
-        .then(result => {
-          if (result) {
-            onLoginSuccess({
-              ...result.user,
-              complexId: result.targetComplex.id
-            });
-          } else {
-            setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-          }
-        })
-        .catch(() => {
+      try {
+        const result = await OmranDataService.authenticateUserAcrossDatabases(cleanUser, cleanPass, customComplexes);
+        if (result) {
+          onLoginSuccess({
+            ...result.user,
+            complexId: result.targetComplex.id
+          });
+          return;
+        } else {
           setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-        })
-        .finally(() => {
-          setIsSubmitting(false);
-        });
-      return;
+          return;
+        }
+      } catch {
+        setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
+        return;
+      }
     }
 
     // 5. Default clear error message when user doesn't have an account
     setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-  };
+  } catch (err: any) {
+    console.error('Login error:', err);
+    setLoginError('حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();

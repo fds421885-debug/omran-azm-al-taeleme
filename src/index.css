@@ -99,10 +99,10 @@ a.btn:active:not(:disabled) {
 /* Specific Duolingo 3D Button Utility Classes */
 .duo-btn-yellow,
 .duo-btn-primary {
-  background-color: #ffc800 !important;
-  border: 2px solid #ffc800 !important;
-  border-bottom: 4px solid #e5a500 !important;
-  color: #131f24 !important;
+  background-color: var(--complex-accent, #ffc800) !important;
+  border: 2px solid var(--complex-accent, #ffc800) !important;
+  border-bottom: 4px solid var(--complex-accent-shadow, #e5a500) !important;
+  color: var(--complex-primary, #131f24) !important;
   font-weight: 800 !important;
   border-radius: 1rem !important;
 }
@@ -161,16 +161,15 @@ a.btn:active:not(:disabled) {
 }
 
 .duo-btn-dark {
-  background-color: #203843 !important;
-  border: 2px solid #2b4550 !important;
-  border-bottom: 4px solid #16262e !important;
-  color: #ffffff !important;
+  background-color: var(--complex-card, #203843) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 4px solid var(--complex-card-shadow, var(--complex-primary, #16262e)) !important;
+  color: var(--complex-text, #ffffff) !important;
   font-weight: 800 !important;
   border-radius: 1rem !important;
 }
 .duo-btn-dark:hover:not(:disabled) {
-  background-color: #274452 !important;
-  border-color: #ffc800 #ffc800 #cca000 #ffc800 !important;
+  border-color: var(--complex-accent, #ffc800) !important;
 }
 .duo-btn-dark:active:not(:disabled) {
   border-bottom-width: 2px !important;
@@ -178,10 +177,10 @@ a.btn:active:not(:disabled) {
 
 /* Duolingo 3D Card */
 .duo-card {
-  background-color: #203843;
-  border: 2px solid #2b4550;
-  border-bottom: 4px solid #16262e;
-  border-radius: 1.25rem;
+  background-color: var(--complex-card, #203843) !important;
+  border: 2px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 4px solid var(--complex-card-shadow, var(--complex-primary, #16262e)) !important;
+  border-radius: 1.25rem !important;
 }
 
 /* ========================================================================= */
@@ -191,13 +190,18 @@ a.btn:active:not(:disabled) {
 /* 1. Base, Canvas & Card Backgrounds */
 .bg-\[\#022c22\],
 .bg-emerald-950,
+.bg-\[\#131f24\],
 body {
   background-color: var(--complex-bg, #131f24) !important;
 }
 
-.bg-\[\#022c22\]\/70,
-.bg-\[\#022c22\]\/80,
 .bg-\[\#022c22\]\/90,
+.bg-\[\#022c22\]\/85,
+.bg-\[\#022c22\]\/80,
+.bg-\[\#022c22\]\/70,
+.bg-\[\#022c22\]\/60,
+.bg-\[\#022c22\]\/50,
+.bg-\[\#022c22\]\/40,
 .bg-emerald-950\/80,
 .bg-emerald-950\/90 {
   background-color: rgba(var(--complex-bg-rgb, 19, 31, 36), 0.92) !important;
@@ -207,7 +211,8 @@ body {
 .bg-emerald-900,
 .bg-\[\#011a14\],
 .bg-\[\#03362a\],
-.bg-\[\#044334\] {
+.bg-\[\#044334\],
+.bg-\[\#203843\] {
   background-color: var(--complex-card, #203843) !important;
 }
 
@@ -217,21 +222,28 @@ body {
   background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.96) !important;
 }
 
+.bg-\[\#064e3b\]\/85,
 .bg-\[\#064e3b\]\/80,
+.bg-\[\#064e3b\]\/75,
 .bg-\[\#064e3b\]\/70,
 .bg-emerald-900\/80,
 .bg-emerald-900\/70 {
   background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.88) !important;
 }
 
+.bg-\[\#064e3b\]\/65,
 .bg-\[\#064e3b\]\/60,
+.bg-\[\#064e3b\]\/55,
 .bg-\[\#064e3b\]\/50,
 .bg-emerald-900\/50 {
   background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.65) !important;
 }
 
+.bg-\[\#064e3b\]\/45,
 .bg-\[\#064e3b\]\/40,
+.bg-\[\#064e3b\]\/35,
 .bg-\[\#064e3b\]\/30,
+.bg-\[\#064e3b\]\/25,
 .bg-\[\#064e3b\]\/20,
 .bg-\[\#064e3b\]\/10,
 .bg-emerald-900\/30,
@@ -241,7 +253,8 @@ body {
 
 .bg-emerald-800,
 .bg-emerald-700,
-.bg-\[\#065f46\] {
+.bg-\[\#065f46\],
+.bg-\[\#2b4550\] {
   background-color: var(--complex-border, #2b4550) !important;
 }
 

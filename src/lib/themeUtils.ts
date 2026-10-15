@@ -277,6 +277,9 @@ export function applyComplexThemeToDOM(
     document.body.style.backgroundColor = bg;
     document.body.style.color = text;
 
+    const accentShadow = darkenHex(accent, 0.28);
+    const cardShadow = darkenHex(card, 0.35);
+
     document.documentElement.setAttribute('data-complex-themed', 'true');
     document.documentElement.style.setProperty('--complex-primary', primary);
     document.documentElement.style.setProperty('--complex-primary-rgb', pRgb);
@@ -284,10 +287,12 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-secondary-rgb', sRgb);
     document.documentElement.style.setProperty('--complex-accent', accent);
     document.documentElement.style.setProperty('--complex-accent-rgb', aRgb);
+    document.documentElement.style.setProperty('--complex-accent-shadow', accentShadow);
     document.documentElement.style.setProperty('--complex-bg', bg);
     document.documentElement.style.setProperty('--complex-bg-rgb', bgRgb);
     document.documentElement.style.setProperty('--complex-card', card);
     document.documentElement.style.setProperty('--complex-card-rgb', cardRgb);
+    document.documentElement.style.setProperty('--complex-card-shadow', cardShadow);
     document.documentElement.style.setProperty('--complex-border', border);
     document.documentElement.style.setProperty('--complex-border-rgb', bRgb);
     document.documentElement.style.setProperty('--complex-text', text);
@@ -304,10 +309,12 @@ export function applyComplexThemeToDOM(
     document.documentElement.style.setProperty('--complex-secondary-rgb', '27, 46, 53');
     document.documentElement.style.setProperty('--complex-accent', '#ffc800');
     document.documentElement.style.setProperty('--complex-accent-rgb', '255, 200, 0');
+    document.documentElement.style.setProperty('--complex-accent-shadow', '#e5a500');
     document.documentElement.style.setProperty('--complex-bg', '#131f24');
     document.documentElement.style.setProperty('--complex-bg-rgb', '19, 31, 36');
     document.documentElement.style.setProperty('--complex-card', '#203843');
     document.documentElement.style.setProperty('--complex-card-rgb', '32, 56, 67');
+    document.documentElement.style.setProperty('--complex-card-shadow', '#16262e');
     document.documentElement.style.setProperty('--complex-border', '#2b4550');
     document.documentElement.style.setProperty('--complex-border-rgb', '43, 69, 80');
     document.documentElement.style.setProperty('--complex-text', '#ffffff');

@@ -26,7 +26,7 @@ import {
   Check
 } from 'lucide-react';
 import { QuranComplex } from '../../types';
-import { darkenHex } from '../../lib/themeUtils';
+import { darkenHex, lightenHex } from '../../lib/themeUtils';
 
 /* ========================================================================= */
 /* 1. Global Top Loading Bar (شريط التحميل العلوي فائق الأناقة والنعومة)      */
@@ -116,37 +116,53 @@ interface LiveSyncButtonProps {
   lastSyncedText?: string;
   label?: string;
   compact?: boolean;
+  activeComplex?: QuranComplex | null;
 }
 
 export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
   isSyncing,
   onRefresh,
   lastSyncedText = 'مُحدّث سحابياً',
-  label = 'تحديث فوري',
-  compact = false
+  label = 'تحديث مباشر',
+  compact = false,
+  activeComplex
 }) => {
+  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
+  const borderCol = activeComplex?.theme?.secondaryColor || 'var(--complex-border, #2b4550)';
+  const borderBottomCol = darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35);
+  const accentCol = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
+
   return (
     <button
       type="button"
       onClick={onRefresh}
       disabled={isSyncing}
-      className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 ${
+      className={`group flex items-center gap-2 rounded-2xl border-2 border-b-4 transition-all cursor-pointer font-black select-none active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm ${
         compact
-          ? 'px-3 py-1.5 text-xs bg-[#203843] hover:bg-[#274452] text-slate-200 border-[#2b4550] border-b-[#16262e]'
-          : 'px-4 py-2 text-xs bg-[#203843] hover:bg-[#274452] text-white border-[#2b4550] border-b-[#16262e] shadow-sm'
+          ? 'px-3 py-1.5 text-xs text-white'
+          : 'px-4 py-2 text-xs text-white'
       } ${isSyncing ? 'opacity-85 pointer-events-none' : ''}`}
+      style={{
+        backgroundColor: cardBg,
+        borderColor: borderCol,
+        borderBottomColor: borderBottomCol
+      }}
       title="مزامنة وتأكيد البيانات فورياً مع قاعدة البيانات السحابية"
     >
       <RefreshCw
-        className={`w-3.5 h-3.5 text-[#ffc800] transition-transform duration-500 ${
+        className={`w-3.5 h-3.5 transition-transform duration-500 ${
           isSyncing ? 'animate-spin' : 'group-hover:rotate-180'
         }`}
+        style={{ color: accentCol }}
       />
       <span className="whitespace-nowrap">
         {isSyncing ? 'جارٍ المزامنة والتأكيد...' : label}
       </span>
       {!compact && lastSyncedText && (
-        <span className="hidden sm:inline-block text-[10px] text-[#ffd233] border-r border-[#2b4550] pr-2">
+        <span
+          className="hidden sm:inline-block text-[10px] pr-2 border-r"
+          style={{ borderColor: borderCol, color: accentCol }}
+        >
           {lastSyncedText}
         </span>
       )}
@@ -742,55 +758,75 @@ export const LoginSyncModalOverlay: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all select-none"
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-all select-none"
       dir="rtl"
     >
       <div
-        className="border-2 border-b-4 rounded-[32px] p-6 sm:p-7 max-w-sm w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-200"
+        className="border-2 border-b-4 rounded-[36px] p-7 sm:p-8 max-w-sm w-full text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
         style={{
           backgroundColor: cardBg,
           borderColor: borderCol,
           borderBottomColor: borderBottomCol
         }}
       >
-        <div
-          className="relative mx-auto w-16 h-16 rounded-3xl border-2 border-b-4 flex items-center justify-center shadow-lg"
-          style={{
-            backgroundColor: accentColor,
-            borderColor: accentColor,
-            borderBottomColor: accentShadow,
-            color: '#131f24'
-          }}
-        >
-          <Sparkles className="w-8 h-8 animate-spin" />
+        {/* Modern Holy Quran Loader: Quran stays steady, circular glowing ring rotates smoothly around it */}
+        <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+          {/* Smooth spinning loading ring around the Quran */}
+          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.4s' }}>
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="4"
+              className="opacity-15 text-white"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke={accentColor}
+              strokeWidth="4.5"
+              strokeDasharray="190 80"
+              strokeLinecap="round"
+              className="drop-shadow-[0_0_8px_rgba(255,200,0,0.5)]"
+            />
+          </svg>
+
+          {/* Elegant dignified Holy Quran emblem in center (steadfast, does NOT rotate) */}
+          <div
+            className="w-16 h-16 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-lg relative z-10 transition-transform"
+            style={{
+              backgroundColor: `${accentColor}20`,
+              borderColor: `${accentColor}80`,
+              borderBottomColor: accentShadow,
+              color: accentColor
+            }}
+          >
+            <BookOpen className="w-8 h-8 drop-shadow-sm" />
+          </div>
         </div>
 
-        <div className="space-y-1">
+        {/* Clean, respectful greeting and loading copy */}
+        <div className="space-y-1.5">
           <h3 className="text-lg font-black text-white font-heading">
-            مرحباً بك {userName ? `يا ${userName}` : ''}
+            {userName ? `مرحباً بك يا ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
           </h3>
-          <p className="text-xs text-slate-300 font-bold leading-relaxed">
-            جارٍ تسجيل الدخول وتأكيد أحدث بيانات المنظومة سحابياً ولحظياً...
+          <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
+            جَارٍ تَحْمِيلُ المَنْظُومَةِ القُرْآنِيَّةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
           </p>
         </div>
 
-        <div className="space-y-2 text-right pt-2 border-t border-white/10 text-xs font-bold text-slate-300">
-          <div className="flex items-center gap-2 text-[#58cc02]">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>تم التحقق من الحساب والصلاحيات بنجاح</span>
-          </div>
-          <div className="flex items-center gap-2 text-[#1cb0f6]">
-            <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
-            <span>مزامنة وتأكيد سجلات الطلاب والحلقات...</span>
-          </div>
-        </div>
-
-        <div className="w-full bg-[#131f24] h-2.5 rounded-full overflow-hidden p-0.5 border border-white/10">
+        {/* Sleek Duolingo-styled animated progress bar */}
+        <div className="w-full bg-[#131f24] h-3 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
           <div
             className="h-full rounded-full animate-pulse transition-all duration-300"
             style={{
               backgroundColor: accentColor,
-              width: '85%'
+              width: '90%',
+              boxShadow: `0 0 10px ${accentColor}`
             }}
           />
         </div>

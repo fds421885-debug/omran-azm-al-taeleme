@@ -20,7 +20,7 @@ import {
   UserCog
 } from 'lucide-react';
 import { UserRole, AppSettings, Halaqah, QuranComplex, TeacherAccount } from '../types';
-import { darkenHex } from '../lib/themeUtils';
+import { darkenHex, lightenHex } from '../lib/themeUtils';
 
 interface NavbarProps {
   currentUser: { username: string; role: UserRole; studentId?: string } | null;

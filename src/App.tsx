@@ -26,7 +26,7 @@ import {
   FolderArchive,
   Radio
 } from 'lucide-react';
-import { darkenHex } from './lib/themeUtils';
+import { darkenHex, lightenHex } from './lib/themeUtils';
 import {
   Student,
   AttendanceRecord,
@@ -2177,6 +2177,9 @@ export function App() {
     await OmranDataService.saveComplex(complex);
     const list = await OmranDataService.loadComplexes();
     setComplexes(list);
+    if (complex.theme) {
+      applyComplexThemeToDOM(complex.theme, true);
+    }
   };
 
   const handleDeleteComplex = async (complexId: string) => {
@@ -2697,19 +2700,29 @@ export function App() {
                   <span className="text-xs font-bold shrink-0" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}>الحلقة الحالية:</span>
                   <span className="text-sm sm:text-base font-black text-white font-heading truncate">
                     {activeHalaqahId === 'all'
-                      ? (isDeveloper
-                          ? `جميع الحلقات لكافة المجمعات (${displayedStudents.length} طالباً)`
-                          : `جميع حلقات ${supervisedComplex?.name || 'المجمع'} (${displayedStudents.length} طالباً)`)
+                      ? 'الكل'
                       : (() => {
                           const activeHItem = halaqahs.find(h => h.id === activeHalaqahId);
                           const parentC = complexes.find(c => c.id === activeHItem?.complexId);
                           const compName = parentC?.name || activeHItem?.complexName || activeComplex?.name;
                           return activeHItem
                             ? `${activeHItem.name}${compName ? ` (${compName})` : ''}`
-                            : (scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الحلقة المختارة');
+                            : (scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل');
                         })()}
                   </span>
-                  {activeHalaqahId !== 'all' && (
+                  {activeHalaqahId === 'all' ? (
+                    <span
+                      className="text-[11px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs shrink-0"
+                      style={{
+                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}20`,
+                        color: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}50`,
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      }}
+                    >
+                      كافة الطلاب ({displayedStudents.length})
+                    </span>
+                  ) : (
                     <span
                       className="text-[11px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs shrink-0"
                       style={{
@@ -2747,6 +2760,7 @@ export function App() {
                 lastSyncedText={lastSyncedTime}
                 label="تحديث مباشر"
                 compact={true}
+                activeComplex={activeComplex}
               />
 
               {canSwitchComplex && scopedComplexes.length > 1 && (
