@@ -342,48 +342,69 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
 /* ========================================================================= */
 
 // Attendance Tab Skeleton
-export const AttendanceSkeleton: React.FC = () => {
+export const AttendanceSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.12);
+
   return (
     <div className="space-y-5 animate-pulse" dir="rtl">
-      <TabHeaderLoaderBanner activeTab="attendance" />
-
       {/* 4 Summary Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {[1, 2, 3, 4].map(idx => (
           <div
             key={idx}
-            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 sm:p-5 space-y-3"
+            className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
           >
             <div className="flex items-center justify-between">
-              <div className="h-4 w-20 rounded-xl bg-[#2b4550]" />
-              <div className="w-9 h-9 rounded-2xl bg-[#2b4550]" />
+              <div className="h-4 w-20 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="w-9 h-9 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
             </div>
-            <div className="h-7 w-16 rounded-xl bg-[#2b4550]" />
-            <div className="h-2 w-full rounded-full bg-[#2b4550]" />
+            <div className="h-7 w-16 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-2 w-full rounded-full" style={{ backgroundColor: shimmerBox }} />
           </div>
         ))}
       </div>
 
       {/* Student Attendance Roster Card */}
-      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] overflow-hidden p-3 space-y-3">
+      <div
+        className="border-2 border-b-4 rounded-[28px] overflow-hidden p-3 space-y-3"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
         {[1, 2, 3, 4].map(i => (
           <div
             key={i}
-            className="p-3.5 sm:p-4 rounded-2xl bg-[#1b2e35] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+            style={{
+              backgroundColor: secondaryBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
           >
             <div className="flex items-center gap-3 w-full md:w-auto">
-              <div className="w-11 h-11 rounded-2xl bg-[#2b4550] shrink-0" />
+              <div className="w-11 h-11 rounded-2xl shrink-0" style={{ backgroundColor: shimmerBox }} />
               <div className="space-y-2 flex-1">
-                <div className="h-4 w-40 rounded-xl bg-[#2b4550]" />
-                <div className="h-3 w-28 rounded-xl bg-[#2b4550]" />
+                <div className="h-4 w-40 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+                <div className="h-3 w-28 rounded-xl" style={{ backgroundColor: shimmerBox }} />
               </div>
             </div>
 
             <div className="grid grid-cols-4 gap-2 w-full md:w-80">
-              <div className="h-9 rounded-xl bg-[#2b4550]" />
-              <div className="h-9 rounded-xl bg-[#2b4550]" />
-              <div className="h-9 rounded-xl bg-[#2b4550]" />
-              <div className="h-9 rounded-xl bg-[#2b4550]" />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="h-9 rounded-xl" style={{ backgroundColor: shimmerBox }} />
             </div>
           </div>
         ))}
@@ -393,17 +414,28 @@ export const AttendanceSkeleton: React.FC = () => {
 };
 
 // Students Tab Skeleton
-export const StudentsSkeleton: React.FC = () => {
+export const StudentsSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.12);
+
   return (
     <div className="space-y-5 animate-pulse" dir="rtl">
-      <TabHeaderLoaderBanner activeTab="students" />
-
       {/* Header Filters & Add Button */}
-      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="h-10 w-full sm:w-72 rounded-2xl bg-[#2b4550]" />
+      <div
+        className="border-2 border-b-4 rounded-[28px] p-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
+        <div className="h-10 w-full sm:w-72 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <div className="h-10 w-28 rounded-2xl bg-[#2b4550]" />
-          <div className="h-10 w-36 rounded-2xl bg-[#2b4550]" />
+          <div className="h-10 w-28 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
+          <div className="h-10 w-36 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
         </div>
       </div>
 
@@ -412,32 +444,43 @@ export const StudentsSkeleton: React.FC = () => {
         {[1, 2, 3, 4, 5, 6].map(i => (
           <div
             key={i}
-            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 space-y-4"
+            className="border-2 border-b-4 rounded-[24px] p-4 space-y-4"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#2b4550] shrink-0" />
+                <div className="w-12 h-12 rounded-2xl shrink-0" style={{ backgroundColor: shimmerBox }} />
                 <div className="space-y-2">
-                  <div className="h-4 w-32 rounded-xl bg-[#2b4550]" />
-                  <div className="h-3 w-20 rounded-xl bg-[#2b4550]" />
+                  <div className="h-4 w-32 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+                  <div className="h-3 w-20 rounded-xl" style={{ backgroundColor: shimmerBox }} />
                 </div>
               </div>
-              <div className="h-6 w-16 rounded-full bg-[#2b4550]" />
+              <div className="h-6 w-16 rounded-full" style={{ backgroundColor: shimmerBox }} />
             </div>
 
-            <div className="space-y-2 bg-[#1b2e35] p-3 rounded-2xl border border-[#2b4550]">
+            <div
+              className="space-y-2 p-3 rounded-2xl border"
+              style={{
+                backgroundColor: secondaryBg,
+                borderColor: borderCol
+              }}
+            >
               <div className="flex justify-between">
-                <div className="h-3 w-20 rounded bg-[#2b4550]" />
-                <div className="h-3 w-12 rounded bg-[#2b4550]" />
+                <div className="h-3 w-20 rounded" style={{ backgroundColor: shimmerBox }} />
+                <div className="h-3 w-12 rounded" style={{ backgroundColor: shimmerBox }} />
               </div>
-              <div className="h-2 w-full rounded-full bg-[#2b4550]" />
+              <div className="h-2 w-full rounded-full" style={{ backgroundColor: shimmerBox }} />
             </div>
 
-            <div className="flex items-center justify-between pt-1 border-t border-[#2b4550]">
-              <div className="h-8 w-24 rounded-xl bg-[#2b4550]" />
+            <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: borderCol }}>
+              <div className="h-8 w-24 rounded-xl" style={{ backgroundColor: shimmerBox }} />
               <div className="flex gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#2b4550]" />
-                <div className="w-8 h-8 rounded-xl bg-[#2b4550]" />
+                <div className="w-8 h-8 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+                <div className="w-8 h-8 rounded-xl" style={{ backgroundColor: shimmerBox }} />
               </div>
             </div>
           </div>
@@ -448,42 +491,76 @@ export const StudentsSkeleton: React.FC = () => {
 };
 
 // Home Tab Skeleton
-export const HomeSkeleton: React.FC = () => {
+export const HomeSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.12);
+
   return (
     <div className="space-y-5 animate-pulse" dir="rtl">
-      <TabHeaderLoaderBanner activeTab="home" />
-
       {/* 4 Large Metric Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {[1, 2, 3, 4].map(idx => (
           <div
             key={idx}
-            className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-4 sm:p-5 space-y-3"
+            className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
           >
             <div className="flex items-center justify-between">
-              <div className="h-4 w-24 rounded-xl bg-[#2b4550]" />
-              <div className="w-10 h-10 rounded-2xl bg-[#2b4550]" />
+              <div className="h-4 w-24 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+              <div className="w-10 h-10 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
             </div>
-            <div className="h-8 w-16 rounded-xl bg-[#2b4550]" />
-            <div className="h-3 w-28 rounded-xl bg-[#2b4550]" />
+            <div className="h-8 w-16 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-3 w-28 rounded-xl" style={{ backgroundColor: shimmerBox }} />
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <div className="h-6 w-48 rounded-xl bg-[#2b4550]" />
-          <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-3 space-y-3">
+          <div className="h-6 w-48 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+          <div
+            className="border-2 border-b-4 rounded-[28px] p-3 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-18 rounded-2xl bg-[#1b2e35] border border-[#2b4550]" />
+              <div
+                key={i}
+                className="h-18 rounded-2xl border"
+                style={{
+                  backgroundColor: secondaryBg,
+                  borderColor: borderCol
+                }}
+              />
             ))}
           </div>
         </div>
         <div className="space-y-4">
-          <div className="h-6 w-36 rounded-xl bg-[#2b4550]" />
-          <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
+          <div className="h-6 w-36 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+          <div
+            className="border-2 border-b-4 rounded-[28px] p-4 space-y-3"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-12 rounded-2xl bg-[#1b2e35]" />
+              <div
+                key={i}
+                className="h-12 rounded-2xl"
+                style={{ backgroundColor: secondaryBg }}
+              />
             ))}
           </div>
         </div>
@@ -493,28 +570,54 @@ export const HomeSkeleton: React.FC = () => {
 };
 
 // Evaluation Tab Skeleton
-export const EvaluationSkeleton: React.FC = () => {
+export const EvaluationSkeleton: React.FC<{ activeComplex?: QuranComplex | null }> = ({ activeComplex }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.12);
+
   return (
     <div className="space-y-5 animate-pulse" dir="rtl">
-      <TabHeaderLoaderBanner activeTab="evaluation" />
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
-          <div className="h-10 rounded-2xl bg-[#2b4550]" />
+        <div
+          className="border-2 border-b-4 rounded-[28px] p-4 space-y-3"
+          style={{
+            backgroundColor: cardBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <div className="h-10 rounded-2xl" style={{ backgroundColor: shimmerBox }} />
           {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-16 rounded-2xl bg-[#1b2e35]" />
+            <div
+              key={i}
+              className="h-16 rounded-2xl"
+              style={{ backgroundColor: secondaryBg }}
+            />
           ))}
         </div>
 
-        <div className="lg:col-span-2 bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-6 space-y-4">
-          <div className="h-8 w-60 rounded-xl bg-[#2b4550]" />
+        <div
+          className="lg:col-span-2 border-2 border-b-4 rounded-[28px] p-6 space-y-4"
+          style={{
+            backgroundColor: cardBg,
+            borderColor: borderCol,
+            borderBottomColor: borderBottomCol
+          }}
+        >
+          <div className="h-8 w-60 rounded-xl" style={{ backgroundColor: shimmerBox }} />
           <div className="grid grid-cols-2 gap-4">
-            <div className="h-28 rounded-2xl bg-[#1b2e35]" />
-            <div className="h-28 rounded-2xl bg-[#1b2e35]" />
+            <div className="h-28 rounded-2xl" style={{ backgroundColor: secondaryBg }} />
+            <div className="h-28 rounded-2xl" style={{ backgroundColor: secondaryBg }} />
           </div>
           <div className="space-y-3 pt-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-12 rounded-2xl bg-[#1b2e35]" />
+              <div
+                key={i}
+                className="h-12 rounded-2xl"
+                style={{ backgroundColor: secondaryBg }}
+              />
             ))}
           </div>
         </div>
@@ -524,28 +627,54 @@ export const EvaluationSkeleton: React.FC = () => {
 };
 
 // Generic Adaptive Tab Skeleton
-export const GenericTabSkeleton: React.FC<{ activeTab?: string; title?: string }> = ({
+export const GenericTabSkeleton: React.FC<{ activeTab?: string; title?: string; activeComplex?: QuranComplex | null }> = ({
   activeTab = 'general',
-  title
+  activeComplex
 }) => {
+  const cardBg = activeComplex?.theme?.cardColor || '#203843';
+  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const borderCol = lightenHex(cardBg, 0.18);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const shimmerBox = lightenHex(cardBg, 0.12);
+
   return (
     <div className="space-y-5 animate-pulse" dir="rtl">
-      <TabHeaderLoaderBanner activeTab={activeTab} />
-
       {/* 3 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[1, 2, 3].map(i => (
-          <div key={i} className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[24px] p-5 space-y-2">
-            <div className="h-4 w-24 rounded-xl bg-[#2b4550]" />
-            <div className="h-7 w-16 rounded-xl bg-[#2b4550]" />
+          <div
+            key={i}
+            className="border-2 border-b-4 rounded-[24px] p-5 space-y-2"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: borderCol,
+              borderBottomColor: borderBottomCol
+            }}
+          >
+            <div className="h-4 w-24 rounded-xl" style={{ backgroundColor: shimmerBox }} />
+            <div className="h-7 w-16 rounded-xl" style={{ backgroundColor: shimmerBox }} />
           </div>
         ))}
       </div>
 
       {/* Content Feed */}
-      <div className="bg-[#203843] border-2 border-[#2b4550] border-b-4 border-b-[#16262e] rounded-[28px] p-4 space-y-3">
+      <div
+        className="border-2 border-b-4 rounded-[28px] p-4 space-y-3"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: borderCol,
+          borderBottomColor: borderBottomCol
+        }}
+      >
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-16 rounded-2xl bg-[#1b2e35] border border-[#2b4550]" />
+          <div
+            key={i}
+            className="h-16 rounded-2xl border"
+            style={{
+              backgroundColor: secondaryBg,
+              borderColor: borderCol
+            }}
+          />
         ))}
       </div>
     </div>
@@ -568,15 +697,15 @@ export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeCompl
       {(() => {
         switch (activeTab) {
           case 'attendance':
-            return <AttendanceSkeleton />;
+            return <AttendanceSkeleton activeComplex={activeComplex} />;
           case 'students':
-            return <StudentsSkeleton />;
+            return <StudentsSkeleton activeComplex={activeComplex} />;
           case 'home':
-            return <HomeSkeleton />;
+            return <HomeSkeleton activeComplex={activeComplex} />;
           case 'evaluation':
-            return <EvaluationSkeleton />;
+            return <EvaluationSkeleton activeComplex={activeComplex} />;
           case 'teacher_attendance':
-            return <AttendanceSkeleton />;
+            return <AttendanceSkeleton activeComplex={activeComplex} />;
           case 'exams':
           case 'certificates':
           case 'leaderboard':
@@ -587,7 +716,7 @@ export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeCompl
           case 'backup':
           case 'library':
           default:
-            return <GenericTabSkeleton activeTab={activeTab} />;
+            return <GenericTabSkeleton activeTab={activeTab} activeComplex={activeComplex} />;
         }
       })()}
     </div>
@@ -606,10 +735,10 @@ export const LoginSyncModalOverlay: React.FC<{
   if (!isOpen) return null;
 
   const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
-  const accentShadow = darkenHex(accentColor, 0.25);
+  const accentShadow = darkenHex(accentColor, 0.28);
   const cardBg = activeComplex?.theme?.cardColor || '#203843';
-  const borderCol = activeComplex?.theme?.secondaryColor || '#2b4550';
-  const borderBottomCol = darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.25);
+  const borderCol = lightenHex(cardBg, 0.2);
+  const borderBottomCol = darkenHex(cardBg, 0.35);
 
   return (
     <div

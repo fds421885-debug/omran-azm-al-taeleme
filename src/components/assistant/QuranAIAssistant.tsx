@@ -281,11 +281,11 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
   // Complex Theme Colors strictly mapped to platform theme
   const theme = activeComplex?.theme;
-  const primaryColor = theme?.primaryColor || '#022c22';
-  const secondaryColor = theme?.secondaryColor || '#064e3b';
-  const accentColor = theme?.accentColor || '#fbbf24';
-  const backgroundColor = theme?.backgroundColor || '#022c22';
-  const cardColor = theme?.cardColor || '#064e3b';
+  const primaryColor = theme?.primaryColor || '#131f24';
+  const secondaryColor = theme?.secondaryColor || '#1b2e35';
+  const accentColor = theme?.accentColor || '#ffc800';
+  const backgroundColor = theme?.backgroundColor || '#131f24';
+  const cardColor = theme?.cardColor || '#203843';
 
   // ----------------------------------------------------
   // Floating Circular Button Position & Dragging
@@ -2716,35 +2716,20 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             dragDistRef.current = 0;
             isActualDragRef.current = false;
           }}
-          style={theme ? {
+          style={{
             backgroundColor: accentColor,
             borderColor: accentColor,
-            borderBottomColor: darkenHex(accentColor, 0.25),
-            color: primaryColor || '#131f24',
+            borderBottomColor: darkenHex(accentColor, 0.28),
+            color: primaryColor,
             boxShadow: `0 8px 24px -2px rgba(0, 0, 0, 0.5), 0 0 16px 2px ${accentColor}40`,
-          } : {
-            backgroundColor: '#1cb0f6',
-            borderColor: '#1cb0f6',
-            borderBottomColor: '#1899d6',
-            color: '#ffffff',
-            boxShadow: '0 8px 24px -2px rgba(0, 0, 0, 0.4), 0 0 16px 2px rgba(28, 176, 246, 0.4)',
           }}
-          className={`flex items-center gap-1.5 sm:gap-2 py-2 px-3 sm:py-2.5 sm:px-3.5 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm active:translate-y-[2px] active:border-b-2 shadow-lg transition-all cursor-pointer ${
+          className={`flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl border-2 border-b-4 font-black text-xs active:translate-y-[2px] active:border-b-2 shadow-lg transition-all cursor-pointer ${
             isDraggingBubble ? 'scale-105 shadow-2xl opacity-90' : ''
           }`}
           title="المساعد القرآني الذكي (AI) - انقر للفتح أو اسحب للتحريك في أي مكان"
         >
           <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse shrink-0" />
           <span className="font-heading font-black tracking-wide">المساعد الذكي</span>
-          <span
-            className="text-[10px] px-1.5 py-0.2 rounded-md font-mono font-black"
-            style={{
-              backgroundColor: primaryColor ? `${primaryColor}30` : 'rgba(0,0,0,0.2)',
-              color: 'currentColor'
-            }}
-          >
-            AI
-          </span>
         </motion.button>
       </div>
 

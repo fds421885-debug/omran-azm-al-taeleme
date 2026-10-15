@@ -989,8 +989,9 @@ export function App() {
     // Strictly: Only apply complex theme if inside a complex (logged-in user or active portal student).
     // Outside the complex (landing page, login modal, privacy), strictly resets to natural platform colors (#022c22 & #fbbf24)!
     const isInsideComplex = Boolean(currentUser || activePortalStudent);
-    applyComplexThemeToDOM(activeComplex?.theme, isInsideComplex);
-  }, [activeComplex, settings.complexName, currentUser, activePortalStudent]);
+    const effectiveTheme = activeComplex?.theme || settings?.theme;
+    applyComplexThemeToDOM(effectiveTheme, isInsideComplex);
+  }, [activeComplex, settings.complexName, settings.theme, currentUser, activePortalStudent]);
 
   // Permission to switch complexes:
   // Developers and supervisors can switch between complexes freely to manage them.
@@ -2672,29 +2673,29 @@ export function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.99 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="p-3.5 sm:p-4 rounded-2xl border shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
-            style={activeComplex?.theme ? {
-              background: `linear-gradient(to right, ${activeComplex.theme.secondaryColor}, ${activeComplex.theme.primaryColor}, ${activeComplex.theme.secondaryColor})`,
-              borderColor: activeComplex.theme.primaryColor
-            } : {
-              background: 'linear-gradient(to right, #064e3b, #022c22, #064e3b)',
-              borderColor: '#065f46'
+            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
+            style={{
+              backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+              borderColor: activeComplex?.theme?.cardColor || '#203843',
+              borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
             }}
           >
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div
-                className="w-10 h-10 rounded-xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] flex items-center justify-center shrink-0 shadow-sm"
-                style={activeComplex?.theme?.accentColor ? {
-                  color: activeComplex.theme.accentColor,
-                  borderColor: `${activeComplex.theme.accentColor}66`
-                } : undefined}
+                className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
+                style={{
+                  backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                  color: activeComplex?.theme?.accentColor || '#ffc800',
+                  borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                  borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                }}
               >
                 <Layers className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-[#86efac] font-bold shrink-0">الحلقة الحالية:</span>
-                  <span className="text-sm sm:text-base font-extrabold text-white font-heading truncate">
+                  <span className="text-xs font-bold shrink-0" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}>الحلقة الحالية:</span>
+                  <span className="text-sm sm:text-base font-black text-white font-heading truncate">
                     {activeHalaqahId === 'all'
                       ? (isDeveloper
                           ? `جميع الحلقات لكافة المجمعات (${displayedStudents.length} طالباً)`
@@ -2710,27 +2711,31 @@ export function App() {
                   </span>
                   {activeHalaqahId !== 'all' && (
                     <span
-                      className="text-[11px] px-2.5 py-0.5 rounded-full font-bold shrink-0"
-                      style={activeComplex?.theme?.accentColor ? {
-                        backgroundColor: `${activeComplex.theme.accentColor}22`,
-                        color: activeComplex.theme.accentColor,
-                        borderColor: `${activeComplex.theme.accentColor}44`
-                      } : {
-                        backgroundColor: 'rgba(251, 191, 36, 0.15)',
-                        color: '#fbbf24'
+                      className="text-[11px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs shrink-0"
+                      style={{
+                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                        color: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}60`,
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
                       }}
                     >
                       {displayedStudents.length} طلاب
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-300 font-bold mt-0.5 truncate">
-                  {isDeveloper
-                    ? 'وضع المشرف العام والمبرمج • إشراف شامل على كافة المجمعات والحلقات'
-                    : isSupervisor
-                    ? `إشراف ${supervisedComplex?.name || 'المجمع'} • استعراض ومتابعة الحلقات المعتمدة`
-                    : 'مساحة المعلم • متابعة وتسميع طلاب الحلقة'}
-                </p>
+                <div className="flex items-center gap-1.5 text-[11px] font-bold mt-1 text-slate-300">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                  />
+                  <span className="truncate">
+                    {isDeveloper
+                      ? 'وضع المشرف والمبرمج العام • إشراف شامل ومباشر'
+                      : isSupervisor
+                      ? `إشراف: ${supervisedComplex?.name || 'المجمع القرآني'} • متابعة وإدارة الحلقات`
+                      : 'مساحة المعلم • متابعة وتسميع الحلقات'}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -2748,26 +2753,28 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setIsMultiComplexModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/30 hover:from-amber-500/30 hover:to-amber-600/40 text-amber-300 border border-amber-400/40 text-xs font-bold transition-all cursor-pointer shadow-sm shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer shadow-sm shrink-0 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                    borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                    borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.28),
+                    color: activeComplex?.theme?.accentColor || '#ffc800'
+                  }}
                   title="عرض بطاقات المجمعات والحلقات التابعة لك"
                 >
-                  <Building2 className="w-3.5 h-3.5 text-[#fbbf24]" />
+                  <Building2 className="w-3.5 h-3.5" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
                   <span>مجمعاتي ({scopedComplexes.length})</span>
-                  <Sparkles className="w-3 h-3 text-[#fbbf24]" />
+                  <Sparkles className="w-3 h-3" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
                 </button>
               )}
 
               {isSupervisor ? (
                 <div
                   className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
-                  style={activeComplex?.theme ? {
-                    backgroundColor: activeComplex.theme.cardColor || '#203843',
-                    borderColor: activeComplex.theme.secondaryColor || '#2b4550',
-                    borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
-                  } : {
-                    backgroundColor: '#203843',
-                    borderColor: '#2b4550',
-                    borderBottomColor: '#16262e'
+                  style={{
+                    backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                    borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+                    borderBottomColor: darkenHex(activeComplex?.theme?.cardColor || '#203843', 0.35)
                   }}
                 >
                   <button
@@ -2775,21 +2782,14 @@ export function App() {
                     className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                       activeHalaqahId === 'all'
                         ? 'border-b-4 shadow-md'
-                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
+                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                     }`}
-                    style={activeHalaqahId === 'all' ? (activeComplex?.theme ? {
-                      backgroundColor: activeComplex.theme.accentColor,
-                      color: activeComplex.theme.primaryColor || '#131f24',
-                      borderColor: activeComplex.theme.accentColor,
-                      borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
-                    } : {
-                      backgroundColor: '#ffc800',
-                      color: '#131f24',
-                      borderColor: '#ffc800',
-                      borderBottomColor: '#e5a500'
-                    }) : (activeComplex?.theme?.textColor ? {
-                      color: `${activeComplex.theme.textColor}bb`
-                    } : undefined)}
+                    style={activeHalaqahId === 'all' ? {
+                      backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                      color: activeComplex?.theme?.primaryColor || '#131f24',
+                      borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                      borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                    } : undefined}
                   >
                     الكل
                   </button>
@@ -2800,21 +2800,14 @@ export function App() {
                       className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                         activeHalaqahId === h.id
                           ? 'border-b-4 shadow-md'
-                          : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
+                          : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                       }`}
-                      style={activeHalaqahId === h.id ? (activeComplex?.theme ? {
-                        backgroundColor: activeComplex.theme.accentColor,
-                        color: activeComplex.theme.primaryColor || '#131f24',
-                        borderColor: activeComplex.theme.accentColor,
-                        borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
-                      } : {
-                        backgroundColor: '#ffc800',
-                        color: '#131f24',
-                        borderColor: '#ffc800',
-                        borderBottomColor: '#e5a500'
-                      }) : (activeComplex?.theme?.textColor ? {
-                        color: `${activeComplex.theme.textColor}bb`
-                      } : undefined)}
+                      style={activeHalaqahId === h.id ? {
+                        backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                        color: activeComplex?.theme?.primaryColor || '#131f24',
+                        borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      } : undefined}
                     >
                       {h.name}
                     </button>
@@ -2824,14 +2817,10 @@ export function App() {
                 assignedHalaqahs.length > 1 && (
                   <div
                     className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
-                    style={activeComplex?.theme ? {
-                      backgroundColor: activeComplex.theme.cardColor || '#203843',
-                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
-                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
-                    } : {
-                      backgroundColor: '#203843',
-                      borderColor: '#2b4550',
-                      borderBottomColor: '#16262e'
+                    style={{
+                      backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                      borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+                      borderBottomColor: darkenHex(activeComplex?.theme?.cardColor || '#203843', 0.35)
                     }}
                   >
                     {assignedHalaqahs.map(h => (
@@ -2841,21 +2830,14 @@ export function App() {
                         className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                           activeHalaqahId === h.id
                             ? 'border-b-4 shadow-md'
-                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
                         }`}
-                        style={activeHalaqahId === h.id ? (activeComplex?.theme ? {
-                          backgroundColor: activeComplex.theme.accentColor,
-                          color: activeComplex.theme.primaryColor || '#131f24',
-                          borderColor: activeComplex.theme.accentColor,
-                          borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
-                        } : {
-                          backgroundColor: '#ffc800',
-                          color: '#131f24',
-                          borderColor: '#ffc800',
-                          borderBottomColor: '#e5a500'
-                        }) : (activeComplex?.theme?.textColor ? {
-                          color: `${activeComplex.theme.textColor}bb`
-                        } : undefined)}
+                        style={activeHalaqahId === h.id ? {
+                          backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          color: activeComplex?.theme?.primaryColor || '#131f24',
+                          borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                        } : undefined}
                         title={`الانتقال إلى ${h.name} (${h.complexName || 'المجمع'})`}
                       >
                         {h.name} {h.complexName ? `(${h.complexName})` : ''}
@@ -2873,18 +2855,18 @@ export function App() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none slider-horizontal p-1.5 rounded-2xl border backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
-          style={activeComplex?.theme ? {
-            backgroundColor: activeComplex.theme.secondaryColor ? `${activeComplex.theme.secondaryColor}e6` : 'rgba(6, 78, 59, 0.8)',
-            borderColor: activeComplex.theme.primaryColor || '#065f46'
-          } : {
-            backgroundColor: 'rgba(6, 78, 59, 0.8)',
-            borderColor: '#065f46'
+          className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
+          style={{
+            backgroundColor: `${activeComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
+            borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+            borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
           }}
         >
           {navItems.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
+            const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+            const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
 
             return (
               <button
@@ -2892,37 +2874,37 @@ export function App() {
                 onClick={() => handleNavigateTab(item.id)}
                 className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer select-none ${
                   isActive
-                    ? 'text-[#064e3b] font-black'
-                    : 'text-[#86efac]/80 hover:text-white hover:bg-[#022c22]/60'
+                    ? 'font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 {isActive && (
                   <motion.div
                     layoutId="activeTabIndicator"
-                    className="absolute inset-0 bg-[#fbbf24] rounded-xl shadow-lg shadow-amber-950/40 z-0"
-                    style={activeComplex?.theme?.accentColor ? {
-                      backgroundColor: activeComplex.theme.accentColor
-                    } : undefined}
+                    className="absolute inset-0 rounded-xl shadow-md z-0 border-b-2"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderBottomColor: darkenHex(themeAccent, 0.28)
+                    }}
                     transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                   />
                 )}
                 <span
                   className="relative z-10 flex items-center gap-2"
-                  style={isActive && activeComplex?.theme?.primaryColor ? {
-                    color: activeComplex.theme.primaryColor
-                  } : undefined}
+                  style={isActive ? { color: themePrimary } : undefined}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#064e3b]' : 'text-[#86efac]'}`} style={isActive && activeComplex?.theme?.primaryColor ? { color: activeComplex.theme.primaryColor } : undefined} />
+                  <Icon className="w-4 h-4" style={isActive ? { color: themePrimary } : { color: themeAccent }} />
                   <span>{item.label}</span>
                   {item.badge !== undefined && (
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                        isActive ? 'bg-[#064e3b]/20 text-[#064e3b] font-black' : 'bg-[#022c22] text-[#86efac]'
-                      }`}
-                      style={isActive && activeComplex?.theme?.primaryColor ? {
-                        backgroundColor: `${activeComplex.theme.primaryColor}22`,
-                        color: activeComplex.theme.primaryColor
-                      } : undefined}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-black"
+                      style={isActive ? {
+                        backgroundColor: `${themePrimary}25`,
+                        color: themePrimary
+                      } : {
+                        backgroundColor: `${themeAccent}25`,
+                        color: themeAccent
+                      }}
                     >
                       {item.badge}
                     </span>

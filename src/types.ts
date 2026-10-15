@@ -704,6 +704,7 @@ export interface AppSettings {
   complexName?: string;
   themeLogoUrl?: string; // شعار المجمع العام
   themeStampUrl?: string; // ختم المجمع العام
+  theme?: ComplexThemeConfig; // هوية وألوان وثيم المنصة
   newPagePoints?: number; // نقاط كل وجه جديد
   reviewPagePoints?: number; // نقاط كل وجه مراجعة
   dailyListeningPoints?: number; // نقاط إنجاز الاستماع اليومي

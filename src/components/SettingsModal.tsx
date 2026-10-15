@@ -705,18 +705,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         complexName: generalForm.complexName.trim() || activeComplex?.name || settings.complexName,
         allowStudentRegistration: generalForm.allowStudentRegistration,
         workDaysPerWeek: Number(generalForm.workDaysPerWeek) || 5,
-        attendancePointsSettings: attPoints
+        attendancePointsSettings: attPoints,
+        theme: themeColors
       });
 
-      if (activeComplex && onSaveComplex) {
+      const targetComplex = activeComplex || complexes[0];
+      if (targetComplex && onSaveComplex) {
         const updatedComplex: QuranComplex = {
-          ...activeComplex,
-          name: generalForm.complexName.trim() || activeComplex.name,
+          ...targetComplex,
+          name: generalForm.complexName.trim() || targetComplex.name,
           theme: themeColors
         };
         await onSaveComplex(updatedComplex);
-        applyComplexThemeToDOM(themeColors, true);
       }
+      applyComplexThemeToDOM(themeColors, true);
 
       if (customApiUrl !== undefined) {
         ApiConfig.setCustomApiUrl(customApiUrl);
