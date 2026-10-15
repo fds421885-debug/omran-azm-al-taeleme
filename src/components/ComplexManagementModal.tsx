@@ -22,7 +22,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { QuranComplex, Halaqah, TeacherAccount, Student, getThreePartNameValidation, isHalaqahInComplex, normalizeTeacherText } from '../types';
-import { ISLAMIC_THEME_PRESETS } from '../lib/themeUtils';
+import { ISLAMIC_THEME_PRESETS, applyComplexThemeToDOM } from '../lib/themeUtils';
 import { compressImageToDataUrl } from '../lib/imageCompressor';
 import { OmranDataService } from '../lib/firebase';
 
