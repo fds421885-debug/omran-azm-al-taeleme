@@ -133,7 +133,7 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
     : 'var(--complex-accent-shadow, #e5a500)';
   const contrastText = activeComplex?.theme?.accentColor 
     ? getContrastTextColor(activeComplex.theme.accentColor) 
-    : 'var(--complex-primary, #131f24)';
+    : 'var(--complex-accent-text, #131f24)';
 
   return (
     <button
@@ -754,11 +754,17 @@ export const LoginSyncModalOverlay: React.FC<{
 }> = ({ isOpen, userName, activeComplex }) => {
   if (!isOpen) return null;
 
-  const accentColor = activeComplex?.theme?.accentColor || '#ffc800';
-  const accentShadow = darkenHex(accentColor, 0.28);
-  const cardBg = activeComplex?.theme?.cardColor || '#203843';
-  const borderCol = lightenHex(cardBg, 0.2);
-  const borderBottomCol = darkenHex(cardBg, 0.35);
+  const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const accentShadow = activeComplex?.theme?.accentColor
+    ? darkenHex(activeComplex.theme.accentColor, 0.28)
+    : 'var(--complex-accent-shadow, #e5a500)';
+  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
+  const borderCol = activeComplex?.theme?.cardColor
+    ? lightenHex(activeComplex.theme.cardColor, 0.2)
+    : 'var(--complex-border, #2b4550)';
+  const borderBottomCol = activeComplex?.theme?.cardColor
+    ? darkenHex(activeComplex.theme.cardColor, 0.35)
+    : 'var(--complex-card-shadow, #16262e)';
 
   return (
     <div
@@ -773,50 +779,73 @@ export const LoginSyncModalOverlay: React.FC<{
           borderBottomColor: borderBottomCol
         }}
       >
-        {/* Noble Holy Quran with Modern Orbital Rotating Ring */}
-        <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
-          {/* Orbital glowing ring spinning around the Holy Quran (The Holy Quran stays steadfast & does NOT spin) */}
-          <svg className="absolute inset-0 w-full h-full animate-spin" viewBox="0 0 100 100" style={{ animationDuration: '2.2s' }}>
+        {/* Noble Holy Quran in Center with Modern Dynamic Orbital Ring (Quran is steadfast & still, only orbital ring spins) */}
+        <div className="relative w-40 h-40 mx-auto flex items-center justify-center">
+          {/* Ambient Glowing Aura */}
+          <div
+            className="absolute inset-4 rounded-full blur-xl opacity-35 pointer-events-none"
+            style={{ backgroundColor: accentColor }}
+          />
+
+          {/* Modern Glowing Dual Orbital Loading Ring (Smoothly rotating around the Holy Quran) */}
+          <svg
+            className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
+            viewBox="0 0 100 100"
+            style={{ animationDuration: '2.4s', animationTimingFunction: 'linear' }}
+          >
+            {/* Background Track Circle */}
             <circle
               cx="50"
               cy="50"
               r="44"
               fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              className="opacity-15 text-white"
+              stroke="rgba(255, 255, 255, 0.12)"
+              strokeWidth="3.5"
             />
+            {/* Spinning Neon Arc 1 */}
             <circle
               cx="50"
               cy="50"
               r="44"
               fill="none"
               stroke={accentColor}
-              strokeWidth="4"
-              strokeDasharray="140 100"
+              strokeWidth="4.5"
+              strokeDasharray="95 180"
               strokeLinecap="round"
-              className="drop-shadow-[0_0_12px_rgba(255,200,0,0.7)]"
+              className="drop-shadow-[0_0_10px_currentColor]"
+            />
+            {/* Spinning Neon Arc 2 */}
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="3"
+              strokeDasharray="30 240"
+              strokeLinecap="round"
+              className="opacity-70"
             />
           </svg>
 
-          {/* Steadfast Holy Quran Icon & Emblem (Fixed in center, dignified and beautiful) */}
+          {/* The Noble Holy Quran Emblem (Fixed steadfast in the center, never rotates) */}
           <div
-            className="w-20 h-20 rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none"
+            className="w-22 h-22 rounded-[24px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none transition-transform"
             style={{
               backgroundColor: 'var(--complex-primary, #131f24)',
-              borderColor: `${accentColor}90`,
+              borderColor: `${accentColor}95`,
               borderBottomColor: accentShadow,
               color: accentColor
             }}
           >
             <BookOpen className="w-10 h-10 drop-shadow-md stroke-[2.2]" />
-            <span className="text-[9px] font-black tracking-widest mt-0.5 opacity-90 font-quran">المصحف الشريف</span>
+            <span className="text-[10px] font-black tracking-wider mt-1 opacity-95 font-quran">المصحف الشريف</span>
           </div>
         </div>
 
-        {/* Clean, respectful loading title */}
+        {/* Clean, Dignified Loading & Welcome Messaging */}
         <div className="space-y-1.5 pt-1">
-          <h3 className="text-lg font-black text-white font-heading">
+          <h3 className="text-xl font-black text-white font-heading">
             {userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
           </h3>
           <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>

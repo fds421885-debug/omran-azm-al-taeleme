@@ -56,7 +56,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   onSelectStudentForEval,
   onOpenTeacherManagement
 }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Local date helper to prevent timezone desync
+  const getLocalDateStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const todayStr = getLocalDateStr();
 
   // Theme colors calculation with Duolingo defaults
   const currentTheme = activeComplex?.theme || settings?.theme;
@@ -93,7 +101,24 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const mediumCount = students.filter(s => s.level === 'متوسط').length;
   const weakCount = students.filter(s => s.level === 'ضعيف').length;
 
-  const displayTeacherName = currentUserName || settings.teacherName || 'معلم ومحفظ الحلقة';
+  // Refined, dignified Arabic greeting calculation
+  const rawTeacherName = (currentUserName || settings.teacherName || '').trim();
+  let cleanName = rawTeacherName
+    .replace(/^أ\/\s*/, '')
+    .replace(/^الأستاذ\s*\/\s*/, '')
+    .replace(/^الشيخ\s*\/\s*/, '')
+    .trim();
+
+  let formattedGreetingName = '';
+  if (!cleanName || cleanName.toLowerCase() === 'admin' || cleanName.toLowerCase() === 'developer') {
+    formattedGreetingName = isDeveloper ? 'المشرف والمطور العام' : isSupervisor ? 'مشرف المجمع القرآني' : 'معلم ومحفظ الحلقة';
+  } else if (cleanName.includes('منتصر') || isDeveloper) {
+    formattedGreetingName = cleanName.includes('منتصر') ? `المهندس ${cleanName}` : (cleanName || 'المشرف والمطور العام');
+  } else if (isSupervisor) {
+    formattedGreetingName = cleanName.startsWith('الشيخ') ? cleanName : `فضيلة الشيخ / ${cleanName}`;
+  } else {
+    formattedGreetingName = cleanName.startsWith('الشيخ') || cleanName.startsWith('الأستاذ') ? cleanName : `الأستاذ / ${cleanName}`;
+  }
 
   return (
     <div className="space-y-6 w-full max-w-full">
@@ -107,7 +132,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         }}
       >
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="flex items-center gap-2 flex-wrap">
               <div
                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm"
@@ -137,7 +162,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2.5 flex-wrap">
                 <span>مرحباً بك،</span>
                 <span
-                  className="px-4 py-1.5 rounded-2xl border-2 border-b-4 inline-flex items-center gap-2 font-black shadow-md text-xl sm:text-2xl"
+                  className="px-4 py-1.5 rounded-2xl border-2 border-b-4 inline-flex items-center gap-2 font-black shadow-md text-xl sm:text-2xl transition-all"
                   style={{
                     backgroundColor: `${themeAccent}25`,
                     color: themeAccent,
@@ -145,7 +170,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                     borderBottomColor: themeAccentShadow
                   }}
                 >
-                  <span>{displayTeacherName.startsWith('أ/') || displayTeacherName.startsWith('الشيخ') || displayTeacherName.startsWith('الأستاذ') ? displayTeacherName : `أ/ ${displayTeacherName}`}</span>
+                  <span>{formattedGreetingName}</span>
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-slate-200">حفظك الله ورعاك وبارك في جهودك 🌿</span>
               </h2>
@@ -160,6 +185,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             {/* Attendance Button (تسجيل حضور اليوم) */}
             <button
+              type="button"
               onClick={() => onNavigateTab('attendance')}
               className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-xl cursor-pointer transition-all hover:brightness-110 select-none"
               style={{
@@ -176,7 +202,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 <span
                   className="px-2.5 py-1 rounded-xl text-xs font-black border shadow-xs"
                   style={{
-                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
+                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.18)',
                     borderColor: 'rgba(0,0,0,0.18)',
                     color: accentTextColor
                   }}

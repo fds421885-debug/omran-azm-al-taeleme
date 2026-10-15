@@ -897,9 +897,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   isSelected ? 'ring-2 ring-amber-400/40 shadow-lg' : ''
                 }`}
                 style={{
-                  backgroundColor: 'var(--complex-card, #203843)',
-                  borderColor: isSelected ? 'var(--complex-accent, #ffc800)' : 'var(--complex-border, #2b4550)',
-                  borderBottomColor: isSelected ? 'var(--complex-accent-shadow, #e5a500)' : 'var(--complex-card-shadow, #16262e)'
+                  backgroundColor: cardBg,
+                  borderColor: isSelected ? accentCol : borderCol,
+                  borderBottomColor: isSelected ? accentShadow : borderBottomCol
                 }}
               >
                 {/* Card Top */}
@@ -922,12 +922,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                             : 'border-slate-600/40 hover:border-amber-400/60'
                         }`}
                         style={isSelected ? {
-                          backgroundColor: 'var(--complex-accent, #ffc800)',
-                          color: 'var(--complex-primary, #131f24)',
-                          borderColor: 'var(--complex-accent, #ffc800)',
-                          borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+                          backgroundColor: accentCol,
+                          color: primaryBg,
+                          borderColor: accentCol,
+                          borderBottomColor: accentShadow
                         } : {
-                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          backgroundColor: primaryBg,
                           color: '#ffffff'
                         }}
                         title={isSelected ? 'إلغاء تحديد الطالب' : 'تحديد الطالب للنقل'}
@@ -939,17 +939,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                         )}
                       </button>
 
-                      {/* Student Avatar Icon */}
+                      {/* Student Avatar Initial Badge (Dynamically colored by active Complex Theme) */}
                       <div
-                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center text-lg font-black shadow-inner shrink-0"
+                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center text-xl font-black shadow-md shrink-0 transition-all select-none"
                         style={{
-                          backgroundColor: 'var(--complex-primary, #131f24)',
-                          borderColor: 'var(--complex-border, #2b4550)',
-                          borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                          color: 'var(--complex-accent, #ffc800)'
+                          backgroundColor: `${accentCol}22`,
+                          borderColor: `${accentCol}90`,
+                          borderBottomColor: accentShadow,
+                          color: accentCol
                         }}
                       >
-                        {student.name.charAt(0)}
+                        {student.name.trim().charAt(0) || 'ط'}
                       </div>
 
                       <div>
@@ -975,11 +975,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                               <>
                                 <span>•</span>
                                 <span
-                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                  className="px-2.5 py-0.5 rounded-full text-[10px] font-black border-2 border-b-2 shadow-xs"
                                   style={{
-                                    backgroundColor: 'var(--complex-primary, #131f24)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    color: 'var(--complex-subtext, #ffd233)'
+                                    backgroundColor: `${accentCol}20`,
+                                    borderColor: `${accentCol}60`,
+                                    borderBottomColor: accentShadow,
+                                    color: accentCol
                                   }}
                                 >
                                   {student.halaqahName}
@@ -996,33 +997,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       <button
                         onClick={() => openEditModal(student)}
                         title="تعديل بيانات الطالب"
-                        className="p-2 rounded-xl text-slate-300 hover:text-white transition-colors cursor-pointer"
-                        style={{ backgroundColor: 'var(--complex-primary, #131f24)' }}
+                        className="p-2 rounded-xl text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/5 hover:border-white/20"
+                        style={{ backgroundColor: primaryBg }}
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setStudentToDelete(student)}
                         title="حذف الطالب"
-                        className="p-2 rounded-xl text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                        style={{ backgroundColor: 'var(--complex-primary, #131f24)' }}
+                        className="p-2 rounded-xl text-red-400 hover:text-red-300 transition-colors cursor-pointer border border-white/5 hover:border-red-500/30"
+                        style={{ backgroundColor: primaryBg }}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Progress Details */}
+                  {/* Progress Details Card with Dynamic Complex Theme */}
                   <div
-                    className="mt-4 border-2 rounded-2xl p-3.5 space-y-1.5 text-xs font-bold"
+                    className="mt-4 border-2 border-b-4 rounded-2xl p-3.5 space-y-1.5 text-xs font-bold transition-all shadow-sm"
                     style={{
-                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                      borderColor: 'var(--complex-border, #2b4550)'
+                      backgroundColor: secondaryBg,
+                      borderColor: borderCol,
+                      borderBottomColor: borderBottomCol
                     }}
                   >
                     <div className="flex items-center justify-between text-white">
                       <span className="text-slate-300 font-bold">موضع الحفظ الحالي:</span>
-                      <span className="font-black" style={{ color: 'var(--complex-accent, #ffc800)' }}>
+                      <span className="font-black" style={{ color: accentCol }}>
                         سورة {student.currentSurahName} (الآية {student.currentAyah})
                       </span>
                     </div>
@@ -1031,7 +1033,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       return (
                         <div className="flex items-center justify-between text-white">
                           <span className="text-slate-300 font-bold">الوجه الحالي بالمصحف:</span>
-                          <span className="font-bold" style={{ color: 'var(--complex-subtext, #ffd233)' }}>
+                          <span className="font-bold opacity-90" style={{ color: accentCol }}>
                             الوجه {curPage} من 604
                           </span>
                         </div>
@@ -1042,9 +1044,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       <span className="text-white font-bold">{student.parentName}</span>
                     </div>
                     {student.parentPhones && student.parentPhones.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-[11px] overflow-hidden pt-0.5" style={{ color: 'var(--complex-subtext, #ffd233)' }}>
-                        <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--complex-accent, #ffc800)' }} />
-                        <span className="truncate" dir="ltr">
+                      <div className="flex items-center gap-1.5 text-[11px] overflow-hidden pt-0.5" style={{ color: accentCol }}>
+                        <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: accentCol }} />
+                        <span className="truncate font-mono font-bold" dir="ltr">
                           {student.parentPhones.join(' • ')}
                         </span>
                       </div>
