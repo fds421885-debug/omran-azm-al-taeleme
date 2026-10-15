@@ -70,6 +70,7 @@ import { triggerComplexThemePulse, dispatchHighlightItem } from '../../utils/hig
 import { hashPassword } from '../../utils/security';
 import { exportToExcel } from '../../lib/excelExport';
 import { ApiConfig } from '../../lib/apiConfig';
+import { darkenHex } from '../../lib/themeUtils';
 
 export function stripFaceEmojis(text: string): string {
   if (!text) return '';
@@ -2687,7 +2688,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   return (
     <>
       {/* ---------------------------------------------------- */}
-      {/* 1. Floating Circular Button: Circular Mushaf Design  */}
+      {/* 1. Floating AI Button: Matches Top Bar AI Button in Duolingo 3D Style & Platform Theme */}
       {/* ---------------------------------------------------- */}
       <div
         dir="rtl"
@@ -2701,8 +2702,8 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         className="select-none"
       >
         <motion.div
-          whileHover={{ scale: 1.08 }}
-          whileTap={{ scale: 0.94 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onPointerDown={handleBubblePointerDown}
           onPointerMove={handleBubblePointerMove}
           onPointerUp={handleBubblePointerUp}
@@ -2714,45 +2715,27 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             dragDistRef.current = 0;
             isActualDragRef.current = false;
           }}
-          style={{
-            background: `radial-gradient(circle at 30% 30%, ${accentColor} 0%, ${secondaryColor} 65%, ${primaryColor} 100%)`,
-            boxShadow: `0 10px 30px -4px rgba(0, 0, 0, 0.7), 0 0 22px 3px ${accentColor}50`,
-            border: `2.5px solid ${accentColor}`,
+          style={theme ? {
+            backgroundColor: accentColor,
+            borderColor: accentColor,
+            borderBottomColor: darkenHex(accentColor, 0.25),
+            color: primaryColor || '#131f24',
+            boxShadow: `0 8px 24px -3px rgba(0, 0, 0, 0.5), 0 0 16px 2px ${accentColor}40`,
+          } : {
+            backgroundColor: '#1cb0f6',
+            borderColor: '#1cb0f6',
+            borderBottomColor: '#1899d6',
+            color: '#ffffff',
+            boxShadow: '0 8px 24px -3px rgba(0, 0, 0, 0.4), 0 0 16px 2px rgba(28, 176, 246, 0.4)',
           }}
-          className={`relative group w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing transition-shadow ${
-            isDraggingBubble ? 'scale-110 shadow-2xl' : ''
+          className={`relative group flex items-center gap-1.5 sm:gap-2 py-2 px-3 sm:py-2.5 sm:px-3.5 rounded-2xl border-2 border-b-4 font-black cursor-grab active:cursor-grabbing transition-all ${
+            isDraggingBubble ? 'scale-105 shadow-2xl opacity-90' : ''
           }`}
-          title="المساعد القرآني الذكي (AI) - اسحب للتحريك أو انقر للفتح"
+          title="المساعد القرآني الذكي (AI) - انقر للفتح أو اسحب للتحريك في أي مكان"
         >
-          {/* Subtle Outer Glowing Spinner Ring */}
-          <div
-            style={{ borderColor: accentColor }}
-            className="absolute inset-[-4px] rounded-full border border-dashed opacity-75 animate-[spin_20s_linear_infinite] pointer-events-none"
-          />
-
-          {/* Intricate Quran Mushaf Emblem */}
-          <div className="relative flex flex-col items-center justify-center text-white pointer-events-none">
-            <BookOpen className="w-6 h-6 sm:w-7 sm:h-7 text-amber-100 drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]" />
-          </div>
-
-          {/* Button label is purely "AI" without any extra text */}
-          <div
-            style={{
-              backgroundColor: primaryColor,
-              color: accentColor,
-              borderColor: accentColor,
-            }}
-            className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-lg flex items-center gap-0.5 pointer-events-none"
-          >
-            <Sparkles className="w-2.5 h-2.5 text-amber-300" />
-            <span>AI</span>
-          </div>
-
-          {/* Subtle Drag Handle Dot Indicator */}
-          <div className="absolute top-1 left-1/2 -translate-x-1/2 flex gap-0.5 opacity-60 group-hover:opacity-100 pointer-events-none">
-            <div className="w-1 h-1 rounded-full bg-amber-200" />
-            <div className="w-1 h-1 rounded-full bg-amber-200" />
-          </div>
+          <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-pulse shrink-0" />
+          <span className="font-heading font-black text-xs sm:text-sm tracking-wide">المساعد الذكي</span>
+          <GripHorizontal className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity shrink-0 mr-0.5" />
         </motion.div>
       </div>
 

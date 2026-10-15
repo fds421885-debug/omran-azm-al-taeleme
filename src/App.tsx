@@ -23,8 +23,10 @@ import {
   ClipboardList,
   Trophy,
   Clock,
-  FolderArchive
+  FolderArchive,
+  Radio
 } from 'lucide-react';
+import { darkenHex } from './lib/themeUtils';
 import {
   Student,
   AttendanceRecord,
@@ -211,7 +213,13 @@ export function App() {
       return DEFAULT_HALAQAHS;
     }
   });
-  const [activeHalaqahId, setActiveHalaqahId] = useState<string>('all');
+  const [activeHalaqahId, setActiveHalaqahId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('omran_active_halaqah_id');
+      if (saved) return saved;
+    } catch {}
+    return 'all';
+  });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Complexes State & Complex Management Modal (المجمعات القرآنية)
@@ -824,6 +832,21 @@ export function App() {
       }
     });
 
+    // Real-time synchronization of active halaqah across all devices and browser tabs
+    const unsubActiveHalaqah = OmranDataService.subscribeActiveHalaqah(data => {
+      if (!isMounted || !data?.activeHalaqahId) return;
+      const remoteHId = data.activeHalaqahId;
+      setActiveHalaqahId(prev => {
+        if (prev !== remoteHId) {
+          try {
+            localStorage.setItem('omran_active_halaqah_id', remoteHId);
+          } catch {}
+          return remoteHId;
+        }
+        return prev;
+      });
+    });
+
     const handleBroadcastUpdate = (e: any) => {
       const type = e.detail?.type;
       const payload = e.detail?.payload;
@@ -916,8 +939,28 @@ export function App() {
       unsubListeningLogs();
       unsubLibraryDocs();
       unsubTombstones();
+      unsubActiveHalaqah();
     };
   }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+
+  // Real-time synchronization of active halaqah across browser tabs on the same device
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('omran_active_halaqah_sync');
+        bc.onmessage = (event) => {
+          const remoteHId = event.data?.activeHalaqahId;
+          if (remoteHId && remoteHId !== activeHalaqahId) {
+            setActiveHalaqahId(remoteHId);
+          }
+        };
+      }
+    } catch {}
+    return () => {
+      try { bc?.close(); } catch {}
+    };
+  }, [activeHalaqahId]);
 
   // Real-time synchronization of Browser Tab Title, Favicon, and Complex Theme
   useEffect(() => {
@@ -1071,10 +1114,24 @@ export function App() {
     return matched;
   }, [isDeveloper, selectedComplexId, teachers, supervisedComplex, currentTeacher, scopedHalaqahIds]);
 
-  // Handle switching halaqahs: If teacher selects a halaqah belonging to another complex, automatically switch active complex too!
+  // Handle switching halaqahs: Live synchronization across all devices and sessions
   const handleSwitchHalaqah = (newHalaqahId: string) => {
     targetHalaqahIdRef.current = newHalaqahId;
     setActiveHalaqahId(newHalaqahId);
+
+    // 1. Sync to local device storage & BroadcastChannel
+    try {
+      localStorage.setItem('omran_active_halaqah_id', newHalaqahId);
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('omran_active_halaqah_sync');
+        bc.postMessage({ activeHalaqahId: newHalaqahId, timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (e) {}
+
+    // 2. Real-time multi-device cloud synchronization via Firestore
+    OmranDataService.syncActiveHalaqah(newHalaqahId, activeComplex?.id, currentUser?.username);
+
     if (newHalaqahId !== 'all') {
       const targetH = halaqahs.find(h => h.id === newHalaqahId);
       if (targetH && targetH.complexId && targetH.complexId !== activeComplex?.id) {
@@ -2678,18 +2735,46 @@ export function App() {
               )}
 
               {isSupervisor ? (
-                <div className="flex items-center gap-1 bg-[#022c22] p-1 rounded-xl border border-[#065f46] overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full">
+                <div
+                  className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                  style={activeComplex?.theme ? {
+                    backgroundColor: activeComplex.theme.cardColor || '#203843',
+                    borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                    borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                  } : {
+                    backgroundColor: '#203843',
+                    borderColor: '#2b4550',
+                    borderBottomColor: '#16262e'
+                  }}
+                >
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#58cc02] border border-[#58cc02]/30 text-[10px] font-black shrink-0" title="مزامنة فورية للحلقة المختارة متصلة سحابياً عبر كافة أجهزتك">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#58cc02]"></span>
+                    </span>
+                    <span className="hidden md:inline font-bold">متزامن للأجهزة</span>
+                  </div>
+
                   <button
                     onClick={() => handleSwitchHalaqah('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                       activeHalaqahId === 'all'
-                        ? 'bg-[#fbbf24] text-[#064e3b] shadow-sm font-black'
-                        : 'text-[#86efac] hover:text-white'
+                        ? 'border-b-4 shadow-md'
+                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
                     }`}
-                    style={activeHalaqahId === 'all' && activeComplex?.theme ? {
+                    style={activeHalaqahId === 'all' ? (activeComplex?.theme ? {
                       backgroundColor: activeComplex.theme.accentColor,
-                      color: activeComplex.theme.primaryColor
-                    } : undefined}
+                      color: activeComplex.theme.primaryColor || '#131f24',
+                      borderColor: activeComplex.theme.accentColor,
+                      borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
+                    } : {
+                      backgroundColor: '#ffc800',
+                      color: '#131f24',
+                      borderColor: '#ffc800',
+                      borderBottomColor: '#e5a500'
+                    }) : (activeComplex?.theme?.textColor ? {
+                      color: `${activeComplex.theme.textColor}bb`
+                    } : undefined)}
                   >
                     الكل
                   </button>
@@ -2697,15 +2782,24 @@ export function App() {
                     <button
                       key={h.id}
                       onClick={() => handleSwitchHalaqah(h.id)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                         activeHalaqahId === h.id
-                          ? 'bg-[#fbbf24] text-[#064e3b] shadow-sm font-black'
-                          : 'text-[#86efac] hover:text-white'
+                          ? 'border-b-4 shadow-md'
+                          : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
                       }`}
-                      style={activeHalaqahId === h.id && activeComplex?.theme ? {
+                      style={activeHalaqahId === h.id ? (activeComplex?.theme ? {
                         backgroundColor: activeComplex.theme.accentColor,
-                        color: activeComplex.theme.primaryColor
-                      } : undefined}
+                        color: activeComplex.theme.primaryColor || '#131f24',
+                        borderColor: activeComplex.theme.accentColor,
+                        borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
+                      } : {
+                        backgroundColor: '#ffc800',
+                        color: '#131f24',
+                        borderColor: '#ffc800',
+                        borderBottomColor: '#e5a500'
+                      }) : (activeComplex?.theme?.textColor ? {
+                        color: `${activeComplex.theme.textColor}bb`
+                      } : undefined)}
                     >
                       {h.name}
                     </button>
@@ -2713,21 +2807,47 @@ export function App() {
                 </div>
               ) : (
                 assignedHalaqahs.length > 1 && (
-                  <div className="flex items-center gap-1.5 bg-[#022c22] p-1 rounded-xl border border-[#065f46] overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full">
-                    <span className="text-[10px] text-amber-300 font-bold px-1.5 shrink-0">تنقل بين حلقاتك:</span>
+                  <div
+                    className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                    style={activeComplex?.theme ? {
+                      backgroundColor: activeComplex.theme.cardColor || '#203843',
+                      borderColor: activeComplex.theme.secondaryColor || '#2b4550',
+                      borderBottomColor: darkenHex(activeComplex.theme.primaryColor || '#131f24', 0.25)
+                    } : {
+                      backgroundColor: '#203843',
+                      borderColor: '#2b4550',
+                      borderBottomColor: '#16262e'
+                    }}
+                  >
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#58cc02] border border-[#58cc02]/30 text-[10px] font-black shrink-0" title="مزامنة فورية للحلقة المختارة متصلة سحابياً">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#58cc02] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#58cc02]"></span>
+                      </span>
+                      <span className="hidden md:inline font-bold">متزامن</span>
+                    </div>
                     {assignedHalaqahs.map(h => (
                       <button
                         key={h.id}
                         onClick={() => handleSwitchHalaqah(h.id)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
                           activeHalaqahId === h.id
-                            ? 'bg-[#fbbf24] text-[#064e3b] shadow-sm font-black'
-                            : 'text-[#86efac] hover:text-white'
+                            ? 'border-b-4 shadow-md'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
                         }`}
-                        style={activeHalaqahId === h.id && activeComplex?.theme ? {
+                        style={activeHalaqahId === h.id ? (activeComplex?.theme ? {
                           backgroundColor: activeComplex.theme.accentColor,
-                          color: activeComplex.theme.primaryColor
-                        } : undefined}
+                          color: activeComplex.theme.primaryColor || '#131f24',
+                          borderColor: activeComplex.theme.accentColor,
+                          borderBottomColor: darkenHex(activeComplex.theme.accentColor, 0.25)
+                        } : {
+                          backgroundColor: '#ffc800',
+                          color: '#131f24',
+                          borderColor: '#ffc800',
+                          borderBottomColor: '#e5a500'
+                        }) : (activeComplex?.theme?.textColor ? {
+                          color: `${activeComplex.theme.textColor}bb`
+                        } : undefined)}
                         title={`الانتقال إلى ${h.name} (${h.complexName || 'المجمع'})`}
                       >
                         {h.name} {h.complexName ? `(${h.complexName})` : ''}

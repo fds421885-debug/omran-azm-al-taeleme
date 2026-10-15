@@ -4550,6 +4550,49 @@ export class OmranDataService {
     }
   }
 
+  // Live synchronization of active halaqah across all supervisor devices and sessions
+  static async syncActiveHalaqah(halaqahId: string, complexId?: string, updatedBy?: string): Promise<void> {
+    try {
+      const payload = {
+        activeHalaqahId: halaqahId,
+        complexId: complexId || '',
+        updatedBy: updatedBy || '',
+        updatedAt: Date.now(),
+      };
+      await setDoc(doc(this.getCentralDb(), 'settings', 'active_halaqah_sync'), payload, { merge: true });
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        await setDoc(doc(this.getActiveDb(), 'settings', 'active_halaqah_sync'), payload, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Failed to sync active halaqah to firestore:', e);
+    }
+  }
+
+  static subscribeActiveHalaqah(callback: (data: { activeHalaqahId: string; complexId?: string; updatedBy?: string; updatedAt?: number }) => void): () => void {
+    try {
+      const handleSnap = (snap: any) => {
+        if (snap && snap.exists()) {
+          const data = snap.data();
+          if (data && typeof data.activeHalaqahId === 'string') {
+            callback(data);
+          }
+        }
+      };
+
+      const unsubCentral = onSnapshot(doc(this.getCentralDb(), 'settings', 'active_halaqah_sync'), handleSnap, () => {});
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        const unsubActive = onSnapshot(doc(this.getActiveDb(), 'settings', 'active_halaqah_sync'), handleSnap, () => {});
+        return () => {
+          unsubCentral();
+          unsubActive();
+        };
+      }
+      return unsubCentral;
+    } catch {
+      return () => {};
+    }
+  }
+
   // Helper to sanitize exams and prevent undefined questions
   static sanitizeExam(raw: any): Exam {
     const rawQuestions = Array.isArray(raw?.questions)
