@@ -195,7 +195,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     } else if (customReportTargetMode === 'single') {
       const found = students.find(s => s.id === customSingleStudentId) || students[0];
       if (found) targetList = [found];
-    } else if (customReportTargetMode === 'selected') {
+    } else if (customReportTargetMode === 'multiple') {
       targetList = students.filter(s => customSelectedStudentIds.includes(s.id));
     } else {
       targetList = students;

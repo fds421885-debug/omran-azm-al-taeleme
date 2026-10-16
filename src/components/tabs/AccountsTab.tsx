@@ -404,7 +404,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
         halaqahName: resolvedHalaqahNames[0] || '',
         halaqahIds: selectedHalaqahIds,
         halaqahNames: resolvedHalaqahNames,
-        teacherCode: editingTeacherData.teacherCode || getTeacherSixDigitCode(editingTeacherData),
+        teacherCode: editingTeacherData.teacherCode || getTeacherSixDigitCode(editingTeacherData as any),
         googleEmail: editingTeacherData.googleEmail,
         googleUid: editingTeacherData.googleUid,
         googleName: editingTeacherData.googleName,

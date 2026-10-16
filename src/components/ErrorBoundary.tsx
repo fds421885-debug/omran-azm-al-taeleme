@@ -20,14 +20,15 @@ interface State {
  * Shields users from white screens and unexpected render crashes,
  * with graceful recovery, diagnostic logging, and safe state recovery.
  */
-export class ErrorBoundary extends Component<Props, State> {
+export class ErrorBoundary extends React.Component<Props, State> {
+  state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null,
+  };
+
   constructor(props: Props) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    };
   }
 
   static getDerivedStateFromError(error: Error): State {

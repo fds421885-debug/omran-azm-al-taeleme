@@ -8,6 +8,7 @@ export interface ComplexThemeConfig {
   surfaceColor?: string; // لون بطاقات ولوحات المحتوى
   cardColor?: string;
   textColor?: string; // لون النصوص الأساسية
+  subtextColor?: string; // لون النصوص الفرعية
 }
 
 export interface QuranComplex {
@@ -19,6 +20,8 @@ export interface QuranComplex {
   logoUrl?: string; // شعار المجمع (صورة لا تتجاوز 5 ميجا) - أيقونة التبويب وشعار المنصة
   stampUrl?: string; // ختم المجمع (صورة لا تتجاوز 5 ميجا) - ختم الشهادات والتقارير الرسمية
   theme?: ComplexThemeConfig; // ألوان وهوية وثيم المنصة الخاصة بالمجمع
+  themeColor?: string; // اللون الرئيسي المميز للمجمع
+  customCertificateTemplates?: CustomCertificateTemplate[]; // قوالب الشهادات الخاصة بالمجمع
   createdAt: string;
   updatedAt?: string;
   databaseConfig?: {
@@ -64,6 +67,7 @@ export interface Halaqah {
   complexName?: string; // Cached display name of the complex
   primaryTeacherId?: string; // ID of the primary teacher
   primaryTeacherName?: string;
+  teacherName?: string; // Alias for primary teacher display name
   teacherIds?: string[]; // Teacher IDs linked to this halaqah
   teacherNames?: string[]; // Cached teacher names
   createdAt: string;
@@ -139,7 +143,7 @@ export const normalizeArabicDigits = (str?: string | null): string => {
 /**
  * Get or guarantee 6-digit teacher code from teacher object or ID hash
  */
-export const getTeacherSixDigitCode = (teacher?: TeacherAccount | null): string => {
+export const getTeacherSixDigitCode = (teacher?: Partial<TeacherAccount> | null): string => {
   if (!teacher) return '100001';
   const rawCode = normalizeArabicDigits(teacher.teacherCode);
   const clean = rawCode.replace(/\D/g, '');
@@ -518,7 +522,17 @@ export interface UserAccount {
   createdAt: string;
 }
 
-export type StudentLevel = 'ضعيف' | 'متوسط' | 'قوي';
+export type StudentLevel =
+  | 'ضعيف'
+  | 'متوسط'
+  | 'قوي'
+  | 'مبتدئ'
+  | 'متقدم'
+  | 'خاتم'
+  | 'المستوى الأول'
+  | 'المستوى الثاني'
+  | 'المستوى الثالث'
+  | string;
 
 export interface QuranRecitationItem {
   id?: string;
@@ -606,6 +620,19 @@ export interface Student {
   criteriaPoints?: number; // نقاط المعايير المكتسبة
   bonusPoints?: number; // نقاط إضافية وتشجيعية ممنوحة من المعلم أو المشرف في لوحة الشرف
   points?: number; // إجمالي النقاط الكلي للطالب
+  totalPoints?: number; // الاسم البديل لإجمالي النقاط الكلي
+  username?: string; // اسم المستخدم المخصص للدخول
+  role?: string;
+  currentSurahNumber?: number; // الاسم البديل لرقم السورة
+  currentAyahNumber?: number; // الاسم البديل لرقم الآية
+  targetSurahName?: string; // السورة المستهدفة للغد
+  targetFromAyah?: number;
+  targetToAyah?: number;
+  reviewSurahName?: string; // سورة المراجعة المستهدفة
+  reviewFromAyah?: number;
+  reviewToAyah?: number;
+  attendanceCount?: number; // عدد أيام الحضور المحسوبة
+  completedParts?: number; // عدد الأجزاء المكتملة
   createdAt: string;
 }
 
@@ -617,6 +644,8 @@ export interface AttendanceRecord {
   studentId: string;
   status: AttendanceStatus;
   note?: string;
+  notes?: string; // الاسم البديل لملاحظات الحضور
+  time?: string;  // وقت تسجيل الحضور
   savedAt: string;
 }
 
@@ -642,6 +671,8 @@ export interface StudentEvaluation {
   attendanceStatus?: string;
   pointsAwarded?: number;
   generalNotes?: string;
+  score?: number; // نسبة أو درجة التسميع العامة (0 - 100)
+  teacherName?: string; // المعلم المشرف على التقييم
   criteriaScores?: Record<string, any>;
   criteriaValues?: Record<string, any>;
   recitationDetails: {
@@ -651,6 +682,8 @@ export interface StudentEvaluation {
     teacherNotes: string;
     todayNewItem?: QuranRecitationItem;
     todayReviewItems?: QuranRecitationItem[];
+    newMemorizationDidNotRecite?: boolean;
+    newMemorizationDidNotReciteReason?: string;
     // Tomorrow's required assignment (مقرر الغد الذي حدده المعلم)
     tomorrowNewItem?: QuranRecitationItem;
     tomorrowReviewItem?: QuranRecitationItem;
@@ -701,6 +734,7 @@ export interface AppSettings {
   workDaysNames: string[];
   halaqahName: string;
   teacherName: string;
+  complexId?: string; // معرف المجمع المرتبط
   complexName?: string;
   themeLogoUrl?: string; // شعار المجمع العام
   themeStampUrl?: string; // ختم المجمع العام
@@ -898,6 +932,7 @@ export interface ExamSubmission {
   percentage: number;
   pointsGrantedForLeaderboard: number;
   status: 'completed' | 'needs_grading'; // needs_grading if essay questions are pending
+  isPassed?: boolean; // هل اجتاز الاختبار بنجاح
   submittedAt: string;
   gradedAt?: string;
   gradedByTeacherName?: string;
@@ -937,6 +972,7 @@ export interface SurahRecordingSegment {
   ayahText?: string;
   startTimeSeconds: number;
   endTimeSeconds: number;
+  duration?: number;
   formattedStart?: string;
   formattedEnd?: string;
 }
@@ -952,6 +988,15 @@ export interface SurahRecording {
   status: 'processing' | 'ready';
   segments: SurahRecordingSegment[];
   defaultListeningCount: number;
+  totalDurationSeconds?: number;
+  studentId?: string;
+  studentName?: string;
+  fromAyah?: number;
+  toAyah?: number;
+  audioDataUrl?: string;
+  url?: string;
+  notes?: string;
+  teacherEvaluation?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -994,6 +1039,8 @@ export interface StudentListeningLog {
   completedCount: number;
   isFullyCompleted: boolean;
   date: string; // YYYY-MM-DD
+  audioUrl?: string;
+  notes?: string;
   timestamp: string;
 }
 
@@ -1082,10 +1129,16 @@ export interface CustomCertificateTemplate {
   halaqahId?: string;
   name: string; // اسم النموذج
   title?: string; // عنوان الشهادة مثل: شكر وتقدير
+  subtitle?: string; // العنوان الفرعي للشهادة
   occasionText?: string; // نص التكريم والثناء
   bgStyle?: string; // نمط الخلفية (royal_emerald, golden_honor, islamic_classic, blue_modern, custom)
   isPlatformAiTemplate?: boolean; // قوالب المنصة والذكاء الاصطناعي - لا تُحسب ضمن حد الـ 5 نماذج المرفوعة
+  isPlatform?: boolean; // قالب افتراضي من المنصة
   imageUrl: string; // Base64 / URL image data (under 5MB)
+  accentColor?: string; // لون التمييز
+  textColor?: string; // لون النصوص
+  bgClass?: string; // فئة خلفية المعاينة
+  borderClass?: string; // فئة إطار المعاينة
   studentNamePosition: {
     x: number; // percentage from left (0 to 100)
     y: number; // percentage from top (0 to 100)
@@ -1129,6 +1182,9 @@ export interface IssuedCertificate {
   occasion: CertificateOccasion | string;
   occasionText: string;
   certificateTitle?: string; // عنوان الشهادة المخصص (مثلاً: شكر وتقدير، إتمام متن، إلخ)
+  title?: string; // الاسم البديل لعنوان الشهادة
+  type?: string; // تصنيف الشهادة
+  appreciationText?: string; // نص الثناء والتكريم
   templateId: string;
   templateName: string;
   templateType: 'ready' | 'custom';
@@ -1138,6 +1194,7 @@ export interface IssuedCertificate {
   supervisorName?: string;
   dateArabic: string;
   dateGregorian: string;
+  issueDate?: string; // تاريخ الإصدار بصيغة YYYY-MM-DD
   createdAt: string;
   createdByName?: string;
 }

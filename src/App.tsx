@@ -123,6 +123,7 @@ export function App() {
     studentId?: string;
     teacherId?: string;
     complexId?: string;
+    displayName?: string;
   } | null>(() => {
     const saved = localStorage.getItem('omran_session');
     if (saved) {
@@ -3182,8 +3183,8 @@ export function App() {
                 isDeveloper={isDeveloper}
                 onSaveTeacher={handleSaveTeacher}
                 onDeleteTeacher={handleDeleteTeacher}
-                onUpdateStudent={handleUpdateStudent}
-                onDeleteStudent={handleDeleteStudent}
+                onUpdateStudent={async (st) => { await handleUpdateStudent(st); }}
+                onDeleteStudent={async (stId) => { await handleDeleteStudent(stId); }}
                 initialStudentToDeleteId={navMeta?.studentId}
                 initialSearchQuery={navMeta?.searchQuery || navMeta?.studentName}
                 initialSubTab={navMeta?.subTab || (navMeta?.studentId ? 'students' : undefined)}

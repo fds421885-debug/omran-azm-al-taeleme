@@ -2831,7 +2831,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   level: 'المستوى الأول',
                   attendanceCount: 0,
                   completedParts: 0
-                }}
+                } as unknown as Student}
                 currentAttemptNumber={1}
                 onFinishSubmission={async sub => {
                   alert(`تمت تجربة الاختبار بنجاح! الدرجة المحسوبة: ${sub.totalScoreEarned} من ${sub.maxPossibleScore} (${sub.percentage}%)`);

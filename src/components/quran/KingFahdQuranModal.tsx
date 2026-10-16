@@ -506,7 +506,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                             سُورَةُ {sec.surahInfo.name}
                           </h4>
                           <div className="flex items-center justify-center gap-4 text-[10px] text-emerald-200 mt-0.5">
-                            <span>{sec.surahInfo.revelationType === 'Meccan' ? 'مَكِّيَّةٌ' : 'مَدَنِيَّةٌ'}</span>
+                            <span>{sec.surahInfo.revelationType === 'مكية' ? 'مَكِّيَّةٌ' : 'مَدَنِيَّةٌ'}</span>
                             <span>•</span>
                             <span>آيَاتُهَا {toArabicNumerals(sec.surahInfo.numberOfAyahs)}</span>
                           </div>

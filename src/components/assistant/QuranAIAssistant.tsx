@@ -178,7 +178,9 @@ interface ChatMessage {
       | 'recitation_archive'
       | 'custom_students_progress'
       | 'students_comparison'
-      | 'teachers';
+      | 'smart_custom_table'
+      | 'teachers'
+      | string;
   };
 }
 
@@ -438,7 +440,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   }, [bubblePosition]);
 
   // Handle Bubble Dragging
-  const handleBubblePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleBubblePointerDown = (e: React.PointerEvent<HTMLElement>) => {
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
     dragDistRef.current = 0;
     isActualDragRef.current = false;
@@ -451,7 +453,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     } catch {}
   };
 
-  const handleBubblePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleBubblePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     if (!pointerStartRef.current) return;
     const dist = Math.hypot(e.clientX - pointerStartRef.current.x, e.clientY - pointerStartRef.current.y);
     dragDistRef.current = dist;
@@ -467,7 +469,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     }
   };
 
-  const handleBubblePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleBubblePointerUp = (e: React.PointerEvent<HTMLElement>) => {
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     } catch (err) {}
@@ -6318,7 +6320,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                               type="button"
                               onClick={() => {
                                 if (onOpenThemeCustomizer) {
-                                  onOpenThemeCustomizer(activeComplex);
+                                  onOpenThemeCustomizer(activeComplex?.id);
                                 } else if (onNavigateTab) {
                                   onNavigateTab('settings');
                                 }

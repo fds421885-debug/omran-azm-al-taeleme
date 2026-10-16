@@ -23,13 +23,14 @@ import {
   Eye,
   FileText
 } from 'lucide-react';
-import { Student, BehaviorViolation, ViolationSeverity, AppSettings } from '../../types';
+import { Student, BehaviorViolation, ViolationSeverity, AppSettings, QuranComplex } from '../../types';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 
 interface BehaviorTabProps {
   students: Student[];
   violations: BehaviorViolation[];
   settings: AppSettings;
+  activeComplex?: QuranComplex;
   teacherName?: string;
   onSaveViolation: (violation: BehaviorViolation) => Promise<void>;
   onDeleteViolation: (id: string) => Promise<void>;
