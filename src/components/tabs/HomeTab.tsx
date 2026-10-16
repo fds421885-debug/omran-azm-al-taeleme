@@ -36,6 +36,8 @@ interface HomeTabProps {
   currentUserName?: string;
   isSupervisor?: boolean;
   isDeveloper?: boolean;
+  pendingApplicationsCount?: number;
+  onOpenApplications?: () => void;
   activeComplex?: QuranComplex | null;
   onNavigateTab: (tab: string) => void;
   onSelectStudentForEval?: (studentId: string) => void;
@@ -51,6 +53,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   currentUserName,
   isSupervisor = false,
   isDeveloper = false,
+  pendingApplicationsCount = 0,
+  onOpenApplications,
   activeComplex,
   onNavigateTab,
   onSelectStudentForEval,
@@ -249,6 +253,30 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 <span>إدارة المعلمين ({teachers.length})</span>
               </button>
             )}
+
+            {/* Registration Applications Quick Action Button */}
+            {(isSupervisor || isDeveloper) && onOpenApplications && (
+              <button
+                type="button"
+                onClick={onOpenApplications}
+                className="px-4 sm:px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer hover:brightness-110"
+                style={{
+                  backgroundColor: pendingApplicationsCount > 0 ? themeAccent : themeCardBg,
+                  borderColor: pendingApplicationsCount > 0 ? themeAccent : `${themeAccent}70`,
+                  borderBottomColor: pendingApplicationsCount > 0 ? themeAccentShadow : themeBorderBottom,
+                  color: pendingApplicationsCount > 0 ? accentTextColor : '#ffffff'
+                }}
+                title="تفقد طلبات الانضمام والتسجيل الواردة إلى المجمع"
+              >
+                <UserPlus className="w-4 h-4" style={{ color: pendingApplicationsCount > 0 ? accentTextColor : themeAccent }} />
+                <span>طلبات الانضمام</span>
+                {pendingApplicationsCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-red-600 text-white animate-pulse">
+                    {pendingApplicationsCount} جديد
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -258,6 +286,60 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           style={{ backgroundColor: themeAccent }}
         />
       </div>
+
+      {/* Real-time Incoming Applications Alert Banner for Supervisor */}
+      {(isSupervisor || isDeveloper) && pendingApplicationsCount > 0 && onOpenApplications && (
+        <div
+          className="p-4 sm:p-5 rounded-[24px] border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg animate-in zoom-in-95 duration-200"
+          style={{
+            backgroundColor: 'rgba(var(--complex-accent-rgb, 255, 200, 0), 0.15)',
+            borderColor: 'var(--complex-accent, #ffc800)',
+            borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+          }}
+        >
+          <div className="flex items-center gap-3.5">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center font-black text-xl border-2 border-b-4 shadow-md shrink-0"
+              style={{
+                backgroundColor: 'var(--complex-accent, #ffc800)',
+                color: 'var(--complex-accent-text, #131f24)',
+                borderColor: 'var(--complex-accent, #ffc800)',
+                borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+              }}
+            >
+              <UserPlus className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm sm:text-base font-black text-white font-heading">
+                  طلبات انضمام جديدة واردة إلى المجمع
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-red-600 text-white animate-bounce shadow-sm">
+                  {pendingApplicationsCount} طلبات بانتظار الاعتماد
+                </span>
+              </div>
+              <p className="text-xs text-slate-200 font-bold mt-1">
+                وصلت طلبات تسجيل طلاب جديدة عبر رابط بوابة المجمع، اضغط لمراجعتها واعتمادها وإلحاق الطلاب بالحلقات فوراً.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenApplications}
+            className="px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black border-2 border-b-4 active:translate-y-0.5 shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer hover:brightness-110 shrink-0 self-start sm:self-auto"
+            style={{
+              backgroundColor: 'var(--complex-accent, #ffc800)',
+              color: 'var(--complex-accent-text, #131f24)',
+              borderColor: 'var(--complex-accent, #ffc800)',
+              borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+            }}
+          >
+            <span>مراجعة واعتماد الطلبات الآن</span>
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 2. Main Stats Grid (4 Cards in Duolingo 3D Style & Theme) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">

@@ -24,7 +24,10 @@ import {
   Trophy,
   Clock,
   FolderArchive,
-  Radio
+  Radio,
+  UserPlus,
+  Bell,
+  X
 } from 'lucide-react';
 import { darkenHex, lightenHex } from './lib/themeUtils';
 import {
@@ -55,7 +58,8 @@ import {
   getThreePartNameValidation,
   IssuedCertificate,
   StudentListeningLog,
-  LibraryDocument
+  LibraryDocument,
+  StudentRegistrationApplication
 } from './types';
 import {
   OmranDataService,
@@ -112,9 +116,39 @@ import { LeaderboardTab } from './components/tabs/LeaderboardTab';
 import { TeacherAttendanceTab } from './components/tabs/TeacherAttendanceTab';
 import { LibraryTab } from './components/tabs/LibraryTab';
 import { EditAccountModal } from './components/EditAccountModal';
+import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
 import { applyComplexThemeToDOM } from './lib/themeUtils';
 import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
 import { triggerComplexThemePulse, dispatchHighlightItem } from './utils/highlightHelper';
+
+// Gentle Web Audio API chime for live incoming application notification
+function playGentleApplicationChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.2, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+    playTone(659.25, now, 0.22); // E5
+    playTone(830.61, now + 0.09, 0.28); // G#5
+    playTone(987.77, now + 0.2, 0.42); // B5
+  } catch {}
+}
 
 export function App() {
   // Authentication State
@@ -256,6 +290,12 @@ export function App() {
   const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
   const [isLoginSyncing, setIsLoginSyncing] = useState(false);
   const [loginSyncUser, setLoginSyncUser] = useState<string>('');
+
+  // Registration Applications Hub & Live Real-Time Notifications
+  const [registrationApplications, setRegistrationApplications] = useState<StudentRegistrationApplication[]>([]);
+  const [isApplicationsModalOpen, setIsApplicationsModalOpen] = useState(false);
+  const [applicationsModalInitialTab, setApplicationsModalInitialTab] = useState<'link_and_config' | 'applications'>('applications');
+  const [liveNewAppAlert, setLiveNewAppAlert] = useState<StudentRegistrationApplication | null>(null);
 
   // Main Data States with instantaneous LocalCache hydration
   const [students, setStudents] = useState<Student[]>(() => {
@@ -975,6 +1015,39 @@ export function App() {
     };
   }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
 
+  // Live Real-Time Subscription for Incoming Student Registration Applications
+  // Immediately notifies supervisor in real-time the instant a student submits from any device!
+  useEffect(() => {
+    if (!currentUser) return;
+    const isSup = isSupervisor || isDeveloper;
+    if (!isSup) return;
+
+    let isInitialLoad = true;
+    const unsub = OmranDataService.subscribeToRegistrationApplications(
+      (apps, isRealtimeUpdate, latestNewApp) => {
+        setRegistrationApplications(apps);
+
+        if (!isInitialLoad && isRealtimeUpdate && latestNewApp && latestNewApp.status === 'pending') {
+          playGentleApplicationChime();
+          setLiveNewAppAlert(latestNewApp);
+        }
+        isInitialLoad = false;
+      },
+      activeComplex?.id
+    );
+
+    return () => unsub();
+  }, [currentUser, isSupervisor, isDeveloper, activeComplex?.id]);
+
+  // Auto-dismiss live incoming application alert after 25 seconds
+  useEffect(() => {
+    if (!liveNewAppAlert) return;
+    const timer = setTimeout(() => {
+      setLiveNewAppAlert(null);
+    }, 25000);
+    return () => clearTimeout(timer);
+  }, [liveNewAppAlert]);
+
   // Real-time synchronization of active halaqah across browser tabs on the same device
   useEffect(() => {
     let bc: BroadcastChannel | null = null;
@@ -1342,6 +1415,11 @@ export function App() {
       s.halaqahId !== 'none'
     );
   };
+
+  // Pending registration applications count for supervisor badge & alerts
+  const pendingApplicationsCount = useMemo(() => {
+    return registrationApplications.filter(a => a.status === 'pending').length;
+  }, [registrationApplications]);
 
   // Filter students based on active halaqah selection (or show all for supervisor within their complex)
   // Teachers and complex supervisors MUST only see students assigned to their complex, but can always see unassigned students in queue!
@@ -2663,6 +2741,11 @@ export function App() {
           onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           onOpenPrivacyPolicy={() => navigatePublic('privacy')}
+          pendingApplicationsCount={pendingApplicationsCount}
+          onOpenApplications={() => {
+            setApplicationsModalInitialTab('applications');
+            setIsApplicationsModalOpen(true);
+          }}
         />
         <main className="max-w-4xl mx-auto px-4 py-8 relative">
           <UnassignedTeacherView
@@ -2744,6 +2827,11 @@ export function App() {
         onOpenComplexManagement={isDeveloper ? () => setIsComplexModalOpen(true) : undefined}
         onOpenPrivacyPolicy={() => navigatePublic('privacy')}
         onOpenEditAccount={() => setIsEditAccountModalOpen(true)}
+        pendingApplicationsCount={pendingApplicationsCount}
+        onOpenApplications={() => {
+          setApplicationsModalInitialTab('applications');
+          setIsApplicationsModalOpen(true);
+        }}
       />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 pt-4 sm:pt-6 relative space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
@@ -3092,6 +3180,11 @@ export function App() {
                     onNavigateTab={handleNavigateTab}
                     onSelectStudentForEval={handleSelectStudentForEval}
                     onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
+                    pendingApplicationsCount={pendingApplicationsCount}
+                    onOpenApplications={() => {
+                      setApplicationsModalInitialTab('applications');
+                      setIsApplicationsModalOpen(true);
+                    }}
                   />
                 )}
 
@@ -3485,6 +3578,100 @@ export function App() {
         userName={loginSyncUser}
         activeComplex={activeComplex}
       />
+
+      {/* Complex Portal & Registration Applications Modal for Supervisor & Developer */}
+      {isApplicationsModalOpen && activeComplex && (
+        <ComplexPortalSettingsModal
+          isOpen={isApplicationsModalOpen}
+          onClose={() => setIsApplicationsModalOpen(false)}
+          complex={activeComplex}
+          halaqahs={scopedHalaqahs}
+          teachers={scopedTeachers}
+          onUpdateComplex={handleSaveComplex}
+          onStudentCreatedFromApp={(newStudent) => {
+            setStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+          }}
+          initialTab={applicationsModalInitialTab}
+        />
+      )}
+
+      {/* Prominent Instant Floating Alert Banner for Newly Submitted Registration Applications */}
+      <AnimatePresence>
+        {liveNewAppAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -60, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 450, damping: 28 }}
+            className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-[9999] rounded-2xl p-4 shadow-2xl border-2 border-b-4 bg-[#1b2e35] text-white backdrop-blur-lg"
+            style={{
+              borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+              borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.35),
+              boxShadow: `0 12px 36px rgba(0, 0, 0, 0.45), 0 0 24px ${activeComplex?.theme?.accentColor || '#ffc800'}45`
+            }}
+            dir="rtl"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md animate-pulse"
+                style={{
+                  backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                  color: '#022c22'
+                }}
+              >
+                <Bell className="w-5 h-5 font-black" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-black text-amber-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                    طلب انضمام جديد وصل الآن!
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLiveNewAppAlert(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                    title="إغلاق التنبيه"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <h4 className="font-black text-sm text-white mt-1 truncate">
+                  {liveNewAppAlert.studentName}
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5 line-clamp-1">
+                  {liveNewAppAlert.complexName || activeComplex?.name} • هاتف: {liveNewAppAlert.parentPhone}
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplicationsModalInitialTab('applications');
+                      setIsApplicationsModalOpen(true);
+                      setLiveNewAppAlert(null);
+                    }}
+                    className="flex-1 py-1.5 px-3 rounded-xl text-xs font-black shadow-md border-b-2 active:translate-y-0.5 transition-all text-center cursor-pointer"
+                    style={{
+                      backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                      color: '#022c22',
+                      borderColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.25)
+                    }}
+                  >
+                    مراجعة واعتماد الطلب الآن
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLiveNewAppAlert(null)}
+                    className="py-1.5 px-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

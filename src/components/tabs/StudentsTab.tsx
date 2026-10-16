@@ -409,24 +409,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
   useEffect(() => {
     if (!activeComplex) return;
-    const fetchPendingApps = async () => {
-      try {
-        const apps = await OmranDataService.loadRegistrationApplications(activeComplex.id);
-        const count = apps.filter(a => a.status === 'pending').length;
-        setPendingAppsCount(count);
-      } catch {
-        setPendingAppsCount(0);
-      }
-    };
-    fetchPendingApps();
+    const unsub = OmranDataService.subscribeToRegistrationApplications(apps => {
+      const count = apps.filter(a => a.status === 'pending').length;
+      setPendingAppsCount(count);
+    }, activeComplex.id);
 
-    const handleUpdate = (e: any) => {
-      if (e?.detail?.type === 'registration_application' || e?.detail?.type === 'registration_application_deleted') {
-        fetchPendingApps();
-      }
-    };
-    window.addEventListener('omran:data-updated', handleUpdate);
-    return () => window.removeEventListener('omran:data-updated', handleUpdate);
+    return () => unsub();
   }, [activeComplex?.id]);
 
   // Auto-open student deletion modal if navigated from assistant

@@ -5701,50 +5701,308 @@ export class OmranDataService {
   // =========================================================================
   static async loadRegistrationApplications(complexId?: string): Promise<StudentRegistrationApplication[]> {
     const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+    const itemsMap = new Map<string, StudentRegistrationApplication>();
+    local.forEach(a => { if (a && a.id) itemsMap.set(a.id, a); });
+
     try {
-      const snap = await safeGetDocs(collection(this.getActiveDb(), 'registration_applications'));
-      const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as StudentRegistrationApplication));
-      if (list.length > 0) {
-        setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, list);
-        return complexId ? list.filter(a => a.complexId === complexId) : list;
+      // 1. Primary check on registration_applications collection (each submission has its own document)
+      try {
+        const colSnap = await safeGetDocs(collection(this.getCentralDb(), 'registration_applications'));
+        if (colSnap && colSnap.docs) {
+          colSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data) {
+              const item = { ...data, id: d.id } as StudentRegistrationApplication;
+              itemsMap.set(item.id, item);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('[OmranDataService] Col snap error in loadRegistrationApplications:', e);
       }
+
+      // 2. Resilient check in settings/registration_applications
+      try {
+        const settingsSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'registration_applications'));
+        if (settingsSnap && settingsSnap.exists()) {
+          const data = settingsSnap.data();
+          if (Array.isArray(data?.items)) {
+            (data.items as StudentRegistrationApplication[]).forEach(a => {
+              if (a && a.id) itemsMap.set(a.id, a);
+            });
+          }
+        }
+      } catch {}
+
+      // 3. Fallback check on activeDb if different
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        try {
+          const activeColSnap = await safeGetDocs(collection(this.getActiveDb(), 'registration_applications'));
+          if (activeColSnap && activeColSnap.docs) {
+            activeColSnap.docs.forEach(d => {
+              const data = d.data();
+              if (data) {
+                const item = { ...data, id: d.id } as StudentRegistrationApplication;
+                itemsMap.set(item.id, item);
+              }
+            });
+          }
+        } catch {}
+      }
+
+      const mergedList = Array.from(itemsMap.values()).sort(
+        (a, b) => new Date(b.appliedAt || 0).getTime() - new Date(a.appliedAt || 0).getTime()
+      );
+      setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, mergedList);
+      return complexId ? mergedList.filter(a => a.complexId === complexId) : mergedList;
     } catch (e) {
-      // quiet fallback
+      const fallback = Array.from(itemsMap.values());
+      return complexId ? fallback.filter(a => a.complexId === complexId) : fallback;
     }
-    return complexId ? local.filter(a => a.complexId === complexId) : local;
   }
 
   static async saveRegistrationApplication(app: StudentRegistrationApplication): Promise<void> {
+    // 1. Immediately store to local cache
     const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
     const updated = [app, ...local.filter(a => a.id !== app.id)];
     setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, updated);
     broadcastDataUpdate('registration_application', app);
+
     try {
-      await setDoc(doc(this.getActiveDb(), 'registration_applications', app.id), cleanFirestoreData(app), { merge: true });
-      if (this.getActiveDb() !== this.getCentralDb()) {
-        try {
-          await setDoc(doc(this.getCentralDb(), 'registration_applications', app.id), cleanFirestoreData(app), { merge: true });
-        } catch {}
-      }
-    } catch (e) {
-      console.warn('Registration application cloud error:', e);
+      window.dispatchEvent(new CustomEvent('omran:new-registration-application', { detail: app }));
+    } catch {}
+
+    const dbs = [this.getCentralDb()];
+    if (this.getActiveDb() !== this.getCentralDb()) {
+      dbs.push(this.getActiveDb());
     }
+
+    // 2. Direct document save to registration_applications/{app.id}
+    // Ensures zero-collision and instant trigger of Firestore collection onSnapshot listeners
+    const cleanApp = cleanFirestoreData(app);
+    await Promise.all(
+      dbs.map(async targetDb => {
+        try {
+          await setDoc(doc(targetDb, 'registration_applications', app.id), cleanApp, { merge: true });
+        } catch (e) {
+          console.warn('[OmranDataService] Error saving app to registration_applications collection:', e);
+        }
+      })
+    );
+
+    // 3. Resilient merge save to settings/registration_applications
+    await Promise.all(
+      dbs.map(async targetDb => {
+        try {
+          let currentServerItems: StudentRegistrationApplication[] = [];
+          try {
+            const snap = await safeGetDoc(doc(targetDb, 'settings', 'registration_applications'));
+            if (snap && snap.exists()) {
+              const data = snap.data();
+              if (Array.isArray(data?.items)) {
+                currentServerItems = data.items as StudentRegistrationApplication[];
+              }
+            }
+          } catch {}
+
+          const mergedMap = new Map<string, StudentRegistrationApplication>();
+          currentServerItems.forEach(i => { if (i?.id) mergedMap.set(i.id, i); });
+          local.forEach(i => { if (i?.id) mergedMap.set(i.id, i); });
+          mergedMap.set(app.id, app);
+
+          const finalMergedList = Array.from(mergedMap.values()).sort(
+            (a, b) => new Date(b.appliedAt || 0).getTime() - new Date(a.appliedAt || 0).getTime()
+          );
+
+          setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, finalMergedList);
+
+          const payload = {
+            items: finalMergedList.map(cleanFirestoreData),
+            lastUpdated: new Date().toISOString(),
+            latestAppId: app.id,
+            latestStudentName: app.studentName,
+            latestComplexId: app.complexId,
+            bumpTime: Date.now()
+          };
+
+          await setDoc(doc(targetDb, 'settings', 'registration_applications'), payload, { merge: true });
+        } catch (e) {
+          console.warn('[OmranDataService] Settings registration applications sync warning:', e);
+        }
+      })
+    );
   }
 
   static async deleteRegistrationApplication(applicationId: string): Promise<void> {
     const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
-    setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, local.filter(a => a.id !== applicationId));
+    const updated = local.filter(a => a.id !== applicationId);
+    setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, updated);
     broadcastDataUpdate('registration_application_deleted', applicationId);
-    try {
-      await deleteDoc(doc(this.getActiveDb(), 'registration_applications', applicationId));
-      if (this.getActiveDb() !== this.getCentralDb()) {
-        try {
-          await deleteDoc(doc(this.getCentralDb(), 'registration_applications', applicationId));
-        } catch {}
-      }
-    } catch (e) {
-      console.warn('Delete registration application cloud error:', e);
+
+    const dbs = [this.getCentralDb()];
+    if (this.getActiveDb() !== this.getCentralDb()) {
+      dbs.push(this.getActiveDb());
     }
+
+    const payload = {
+      items: updated.map(cleanFirestoreData),
+      lastUpdated: new Date().toISOString(),
+      deletedAppId: applicationId,
+      bumpTime: Date.now()
+    };
+
+    await Promise.all(
+      dbs.map(async targetDb => {
+        try {
+          await deleteDoc(doc(targetDb, 'registration_applications', applicationId));
+        } catch {}
+        try {
+          await setDoc(doc(targetDb, 'settings', 'registration_applications'), payload, { merge: true });
+        } catch {}
+      })
+    );
+  }
+
+  /**
+   * Real-time Firestore Live Subscription for incoming student registration applications
+   * Immediately updates supervisor view and triggers instant alerts the second an application is submitted on any device.
+   */
+  static subscribeToRegistrationApplications(
+    onData: (apps: StudentRegistrationApplication[], isRealtimeUpdate?: boolean, latestNewApp?: StudentRegistrationApplication) => void,
+    complexId?: string
+  ): () => void {
+    const unsubs: (() => void)[] = [];
+    const itemsMap = new Map<string, StudentRegistrationApplication>();
+
+    // Seed from local cache
+    const initial = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+    initial.forEach(a => { if (a && a.id) itemsMap.set(a.id, a); });
+
+    let isInitialLoad = true;
+
+    const emit = (isRealtime: boolean = false, latestNewApp?: StudentRegistrationApplication) => {
+      const sorted = Array.from(itemsMap.values()).sort(
+        (a, b) => new Date(b.appliedAt || 0).getTime() - new Date(a.appliedAt || 0).getTime()
+      );
+      setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, sorted);
+      const filtered = complexId ? sorted.filter(a => a.complexId === complexId) : sorted;
+      onData(filtered, isRealtime && !isInitialLoad, latestNewApp);
+    };
+
+    // 1. Live subscription to collection(centralDb, 'registration_applications')
+    // This fires the instant ANY student on ANY phone/tablet submits!
+    try {
+      const unsubCol = onSnapshot(
+        collection(this.getCentralDb(), 'registration_applications'),
+        snapshot => {
+          let hasChanges = false;
+          let newlyAddedApp: StudentRegistrationApplication | undefined;
+
+          snapshot.docChanges().forEach(change => {
+            const docId = change.doc.id;
+            if (change.type === 'removed') {
+              itemsMap.delete(docId);
+              hasChanges = true;
+            } else {
+              const item = { ...change.doc.data(), id: docId } as StudentRegistrationApplication;
+              const isBrandNew = !itemsMap.has(docId);
+              itemsMap.set(docId, item);
+              hasChanges = true;
+              if (change.type === 'added' && isBrandNew && !isInitialLoad && item.status === 'pending') {
+                newlyAddedApp = item;
+              }
+            }
+          });
+
+          if (hasChanges || isInitialLoad) {
+            emit(!isInitialLoad, newlyAddedApp);
+          }
+        },
+        err => console.warn('Registration apps collection snapshot notice:', err)
+      );
+      unsubs.push(unsubCol);
+    } catch (e) {
+      console.warn('Registration apps collection sub error:', e);
+    }
+
+    // 2. Dual-redundant live subscription to doc(centralDb, 'settings', 'registration_applications')
+    try {
+      const unsubDoc = onSnapshot(
+        doc(this.getCentralDb(), 'settings', 'registration_applications'),
+        snap => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (Array.isArray(data?.items)) {
+              let newlyAdded: StudentRegistrationApplication | undefined;
+              (data.items as StudentRegistrationApplication[]).forEach(a => {
+                if (a && a.id) {
+                  if (!itemsMap.has(a.id) && !isInitialLoad && a.status === 'pending') {
+                    newlyAdded = a;
+                  }
+                  itemsMap.set(a.id, a);
+                }
+              });
+              emit(!isInitialLoad, newlyAdded);
+            }
+          }
+        },
+        err => console.warn('Registration apps doc snapshot notice:', err)
+      );
+      unsubs.push(unsubDoc);
+    } catch (e) {
+      console.warn('Registration apps doc sub error:', e);
+    }
+
+    // 3. ActiveDb collection subscription if different
+    if (this.getActiveDb() !== this.getCentralDb()) {
+      try {
+        const unsubActiveCol = onSnapshot(
+          collection(this.getActiveDb(), 'registration_applications'),
+          snapshot => {
+            snapshot.docChanges().forEach(change => {
+              if (change.type === 'removed') {
+                itemsMap.delete(change.doc.id);
+              } else {
+                itemsMap.set(change.doc.id, { ...change.doc.data(), id: change.doc.id } as StudentRegistrationApplication);
+              }
+            });
+            emit(!isInitialLoad);
+          },
+          () => {}
+        );
+        unsubs.push(unsubActiveCol);
+      } catch {}
+    }
+
+    // 4. Local cross-tab & custom event listener
+    const handleLocalUpdate = () => {
+      const current = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+      current.forEach(a => { if (a && a.id) itemsMap.set(a.id, a); });
+      emit(true);
+    };
+    const handleNewAppCustomEvent = (e: any) => {
+      if (e.detail && e.detail.id) {
+        itemsMap.set(e.detail.id, e.detail);
+        emit(true, e.detail);
+      }
+    };
+
+    window.addEventListener('omran:data-updated', handleLocalUpdate);
+    window.addEventListener('omran:new-registration-application', handleNewAppCustomEvent);
+
+    // Initial emit
+    emit(false);
+    setTimeout(() => {
+      isInitialLoad = false;
+    }, 600);
+
+    return () => {
+      unsubs.forEach(u => {
+        try { u(); } catch {}
+      });
+      window.removeEventListener('omran:data-updated', handleLocalUpdate);
+      window.removeEventListener('omran:new-registration-application', handleNewAppCustomEvent);
+    };
   }
 
   static async findRegistrationApplication(trackingOrPhone: string, complexId?: string): Promise<StudentRegistrationApplication | null> {

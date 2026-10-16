@@ -31,7 +31,8 @@ import {
   ComplexPortalMode,
   StudentRegistrationApplication,
   RegistrationApplicationStatus,
-  Student
+  Student,
+  TeacherAccount
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
@@ -41,8 +42,10 @@ interface ComplexPortalSettingsModalProps {
   onClose: () => void;
   complex: QuranComplex;
   halaqahs: Halaqah[];
+  teachers?: TeacherAccount[];
   onUpdateComplex: (updated: QuranComplex) => void | Promise<void>;
   onStudentCreatedFromApp?: (newStudent: Student) => void;
+  initialTab?: 'link_and_config' | 'applications';
 }
 
 export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProps> = ({
@@ -50,13 +53,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   onClose,
   complex,
   halaqahs,
+  teachers,
   onUpdateComplex,
-  onStudentCreatedFromApp
+  onStudentCreatedFromApp,
+  initialTab = 'link_and_config'
 }) => {
   if (!isOpen) return null;
 
   // Active Tab inside settings modal: 'link_and_config' vs 'applications'
-  const [modalTab, setModalTab] = useState<'link_and_config' | 'applications'>('link_and_config');
+  const [modalTab, setModalTab] = useState<'link_and_config' | 'applications'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setModalTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Theme styling
   const theme = complex.theme || {
@@ -140,7 +151,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   };
 
   useEffect(() => {
-    loadApps();
+    setIsLoadingApps(true);
+    const unsub = OmranDataService.subscribeToRegistrationApplications(apps => {
+      setApplications(apps);
+      setIsLoadingApps(false);
+    }, complex.id);
+
+    return () => unsub();
   }, [complex.id]);
 
   // Save Portal Configuration

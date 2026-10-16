@@ -17,7 +17,8 @@ import {
   Workflow,
   CheckCircle,
   X,
-  UserCog
+  UserCog,
+  UserPlus
 } from 'lucide-react';
 import { UserRole, AppSettings, Halaqah, QuranComplex, TeacherAccount } from '../types';
 import { darkenHex, lightenHex } from '../lib/themeUtils';
@@ -44,6 +45,8 @@ interface NavbarProps {
   assignedHalaqahs?: Halaqah[];
   isSupervisor?: boolean;
   isDeveloper?: boolean;
+  pendingApplicationsCount?: number;
+  onOpenApplications?: () => void;
   activeHalaqahId?: string;
   onSwitchHalaqah?: (halaqahId: string) => void;
   onOpenTeacherManagement?: () => void;
@@ -75,6 +78,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   assignedHalaqahs = [],
   isSupervisor = false,
   isDeveloper = false,
+  pendingApplicationsCount = 0,
+  onOpenApplications,
   activeHalaqahId,
   onSwitchHalaqah,
   onOpenTeacherManagement,
@@ -207,6 +212,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-pulse shrink-0" />
                 <span className="hidden xs:inline">المساعد الذكي</span>
+              </button>
+            )}
+
+            {/* Live Registration Applications Button for Supervisor / Developer */}
+            {currentUser?.role === 'admin' && (isSupervisor || isDeveloper) && onOpenApplications && (
+              <button
+                type="button"
+                onClick={onOpenApplications}
+                title="طلبات الانضمام والتسجيل الواردة إلى المجمع"
+                className="relative flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
+                style={{
+                  backgroundColor: pendingApplicationsCount > 0 ? themeAccent : themeCard,
+                  color: pendingApplicationsCount > 0 ? themePrimary : '#ffffff',
+                  borderColor: pendingApplicationsCount > 0 ? themeAccent : `${themeAccent}70`,
+                  borderBottomColor: pendingApplicationsCount > 0 ? themeAccentShadow : themeBorderBottom
+                }}
+              >
+                <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" style={{ color: pendingApplicationsCount > 0 ? themePrimary : themeAccent }} />
+                <span className="hidden sm:inline">الطلبات</span>
+                {pendingApplicationsCount > 0 && (
+                  <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black bg-red-600 text-white shadow-sm animate-bounce">
+                    {pendingApplicationsCount}
+                  </span>
+                )}
               </button>
             )}
 
