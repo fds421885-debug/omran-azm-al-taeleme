@@ -35,6 +35,7 @@ import {
 } from '../../types';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface LibraryTabProps {
   libraryDocs: LibraryDocument[];
@@ -75,6 +76,19 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
   const [selectedHalaqahFilter, setSelectedHalaqahFilter] = useState<string>('all');
+
+  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
+  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
+  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
+  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeCardShadow = darkenHex(themeCard, 0.35);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = activeComplex?.theme?.textColor || '#ffffff';
+  const themeSubtext = activeComplex?.theme?.subtextColor || lightenHex(themeAccent, 0.25);
+  const themeContrastText = getContrastTextColor(themeAccent);
 
   useEffect(() => {
     if (initialSearchQuery) {
@@ -265,21 +279,43 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#064e3b] border border-[#fbbf24]/40 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+      {/* Top Banner with Duolingo 3D Styling */}
+      <div
+        className="rounded-[32px] border-2 border-b-4 p-6 shadow-xl relative overflow-hidden transition-all"
+        style={{
+          backgroundColor: themeCard,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-[#fbbf24] text-[#064e3b] flex items-center justify-center font-black shadow-lg shrink-0">
+            <div
+              className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black shadow-lg shrink-0"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                color: themeContrastText
+              }}
+            >
               <FolderArchive className="w-7 h-7" />
             </div>
             <div>
-              <h2 className="text-xl font-black font-heading text-[#fbbf24] flex items-center gap-2">
+              <h2 className="text-xl font-black font-heading text-white flex items-center gap-2">
                 <span>المكتبة والأرشيف السحابي الشامل</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#064e3b] text-emerald-200 border border-[#065f46] font-mono font-bold">
+                <span
+                  className="text-xs px-2.5 py-0.5 rounded-full border font-mono font-bold"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    color: themeAccent,
+                    borderColor: `${themeAccent}60`
+                  }}
+                >
                   {libraryDocs.length} مستند
                 </span>
               </h2>
-              <p className="text-xs text-[#86efac] mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5 font-bold">
                 أرشيف مركزي دائم لتقارير الحلقات، ملفات الـ PDF، جداول Google Sheets، ونماذج الاختبارات مع إمكانية التحديث المباشر للملفات القائمة.
               </p>
             </div>
@@ -288,7 +324,13 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs sm:text-sm font-black shadow-lg cursor-pointer transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-lg cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                color: themeContrastText
+              }}
             >
               <Plus className="w-4 h-4" />
               <span>أرشفة تقرير / ملف جديد</span>
@@ -297,22 +339,37 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
         </div>
 
         {/* Quick Summary Counts */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-[#065f46]">
-          <div className="bg-[#022c22]/70 p-3 rounded-xl border border-[#065f46]">
-            <span className="text-[11px] text-[#86efac]/80 block">تقارير PDF محفوظة:</span>
+        <div
+          className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t"
+          style={{ borderColor: themeBorder }}
+        >
+          <div
+            className="p-3 rounded-2xl border-2 border-b-2"
+            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+          >
+            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>تقارير PDF محفوظة:</span>
             <span className="text-base font-black text-white font-mono">{pdfCount}</span>
           </div>
-          <div className="bg-[#022c22]/70 p-3 rounded-xl border border-[#065f46]">
-            <span className="text-[11px] text-[#86efac]/80 block">جداول Google Sheets:</span>
-            <span className="text-base font-black text-emerald-300 font-mono">{sheetsCount}</span>
+          <div
+            className="p-3 rounded-2xl border-2 border-b-2"
+            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+          >
+            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>جداول Google Sheets:</span>
+            <span className="text-base font-black text-white font-mono">{sheetsCount}</span>
           </div>
-          <div className="bg-[#022c22]/70 p-3 rounded-xl border border-[#065f46]">
-            <span className="text-[11px] text-[#86efac]/80 block">نماذج Google Forms:</span>
-            <span className="text-base font-black text-blue-300 font-mono">{formsCount}</span>
+          <div
+            className="p-3 rounded-2xl border-2 border-b-2"
+            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+          >
+            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>نماذج Google Forms:</span>
+            <span className="text-base font-black text-white font-mono">{formsCount}</span>
           </div>
-          <div className="bg-[#022c22]/70 p-3 rounded-xl border border-[#065f46]">
-            <span className="text-[11px] text-[#86efac]/80 block">المجمع الحالي:</span>
-            <span className="text-xs font-bold text-amber-300 truncate block">{activeComplex?.name || 'الرئيسي'}</span>
+          <div
+            className="p-3 rounded-2xl border-2 border-b-2"
+            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
+          >
+            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>المجمع الحالي:</span>
+            <span className="text-xs font-bold truncate block" style={{ color: themeAccent }}>{activeComplex?.name || 'الرئيسي'}</span>
           </div>
         </div>
 
@@ -335,60 +392,62 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
         )}
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#022c22]/90 border border-[#065f46] p-4 rounded-2xl">
+      {/* Filter and Search Bar with Duolingo 3D buttons */}
+      <div
+        className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-3xl border-2 border-b-4 shadow-md"
+        style={{
+          backgroundColor: themeCard,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setActiveFilterType('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeFilterType === 'all'
-                ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                : 'bg-[#064e3b] text-[#86efac] hover:bg-[#065f46]'
-            }`}
-          >
-            الكل ({libraryDocs.length})
-          </button>
-          <button
-            onClick={() => setActiveFilterType('pdf_report')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeFilterType === 'pdf_report'
-                ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                : 'bg-[#064e3b] text-[#86efac] hover:bg-[#065f46]'
-            }`}
-          >
-            تقارير PDF
-          </button>
-          <button
-            onClick={() => setActiveFilterType('google_sheet')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeFilterType === 'google_sheet'
-                ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                : 'bg-[#064e3b] text-[#86efac] hover:bg-[#065f46]'
-            }`}
-          >
-            جداول Sheets
-          </button>
-          <button
-            onClick={() => setActiveFilterType('google_form')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeFilterType === 'google_form'
-                ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                : 'bg-[#064e3b] text-[#86efac] hover:bg-[#065f46]'
-            }`}
-          >
-            نماذج Forms
-          </button>
+          {[
+            { id: 'all', label: `الكل (${libraryDocs.length})` },
+            { id: 'pdf_report', label: 'تقارير PDF' },
+            { id: 'google_sheet', label: 'جداول Sheets' },
+            { id: 'google_form', label: 'نماذج Forms' }
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setActiveFilterType(f.id)}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
+              style={
+                activeFilterType === f.id
+                  ? {
+                      backgroundColor: themeAccent,
+                      color: themeContrastText,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }
+                  : {
+                      backgroundColor: themeSecondary,
+                      color: '#cbd5e1',
+                      borderColor: themeBorder,
+                      borderBottomColor: themeBorderBottom
+                    }
+              }
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Date Picker Filter */}
-          <div className="flex items-center gap-1.5 bg-[#064e3b]/80 px-2.5 py-1.5 rounded-xl border border-[#065f46]">
-            <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2"
+            style={{
+              backgroundColor: themeSecondary,
+              borderColor: themeBorder
+            }}
+          >
+            <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
             <input
               type="date"
               value={selectedDateFilter}
               onChange={e => setSelectedDateFilter(e.target.value)}
-              className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
+              className="bg-transparent text-xs text-white outline-none cursor-pointer font-bold"
               title="تصفية حسب تاريخ التقرير"
             />
             {selectedDateFilter && (

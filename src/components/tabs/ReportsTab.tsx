@@ -36,6 +36,7 @@ import {
   ReportDocumentType,
   CustomReportFields
 } from '../reports/PrintableQuranicReport';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface ReportsTabProps {
   students: Student[];
@@ -60,6 +61,20 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   onSaveLibraryDoc
 }) => {
   const [workDays, setWorkDays] = useState<number>(settings.workDaysPerWeek || 5);
+
+  const effectiveTheme = activeComplex?.theme || settings?.theme;
+  const themePrimary = effectiveTheme?.primaryColor || '#131f24';
+  const themeSecondary = effectiveTheme?.secondaryColor || '#1b2e35';
+  const themeCard = effectiveTheme?.cardColor || effectiveTheme?.surfaceColor || '#203843';
+  const themeBg = effectiveTheme?.backgroundColor || '#131f24';
+  const themeAccent = effectiveTheme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeCardShadow = darkenHex(themeCard, 0.35);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = effectiveTheme?.textColor || '#ffffff';
+  const themeSubtext = effectiveTheme?.subtextColor || lightenHex(themeAccent, 0.25);
+  const themeContrastText = getContrastTextColor(themeAccent);
 
   // Modal 1: Comprehensive Single Student Profile Modal
   const [detailedStudent, setDetailedStudent] = useState<Student | null>(null);
@@ -270,51 +285,88 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       {/* ========================================================================= */}
       {/* 1. TOP HEADER & ACTION BAR                                               */}
       {/* ========================================================================= */}
-      <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 shadow-xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div
+        className="rounded-[32px] border-2 border-b-4 p-6 shadow-xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all"
+        style={{
+          backgroundColor: themeCard,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
         <div>
-          <h2 className="text-xl font-bold font-heading text-white flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#fbbf24]" />
+          <h2 className="text-xl font-black font-heading text-white flex items-center gap-2">
+            <BarChart3 className="w-5 h-5" style={{ color: themeAccent }} />
             <span>التقارير الإحصائية والرسوم التوضيحية للحلقة القرآنية</span>
           </h2>
-          <p className="text-xs text-[#86efac]/90 mt-1">
+          <p className="text-xs text-slate-300 mt-1 font-bold">
             الرسوم البيانية المباشرة، سجلات الطلاب الفردية الشاملة، وأداة استخراج تقارير PDF الفاخرة المخصصة
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Custom Report Builder Button */}
+          {/* Custom Report Builder Button with Duolingo 3D styling */}
           <button
             type="button"
             onClick={() => {
               setCustomSelectedStudentIds(students.map(s => s.id));
               setIsCustomReportModalOpen(true);
             }}
-            className="px-4 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] border border-[#fbbf24] text-xs font-black flex items-center gap-2 shadow-[0_0_20px_rgba(251,191,36,0.35)] transition-all cursor-pointer"
+            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
+            style={{
+              backgroundColor: themeAccent,
+              borderColor: themeAccent,
+              borderBottomColor: themeAccentShadow,
+              color: themeContrastText
+            }}
           >
-            <Printer className="w-4 h-4 text-[#064e3b]" />
+            <Printer className="w-4 h-4" />
             <span>أداة استخراج تقارير PDF مخصصة</span>
           </button>
 
           {/* Schedule Settings: Work Days */}
-          <div className="flex items-center gap-1.5 bg-[#022c22] border border-[#fbbf24]/30 px-3 py-1.5 rounded-2xl text-xs shadow-inner">
-            <span className="text-[#86efac] font-bold text-[11px]">أيام الحلقة:</span>
+          <div
+            className="flex items-center gap-1.5 border px-3 py-1.5 rounded-2xl text-xs shadow-inner"
+            style={{
+              backgroundColor: themeSecondary,
+              borderColor: themeBorder
+            }}
+          >
+            <span className="font-bold text-[11px]" style={{ color: themeSubtext }}>أيام الحلقة:</span>
             <button
               onClick={() => handleSaveWorkDays(4)}
-              className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className="px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border"
+              style={
                 workDays === 4
-                  ? 'bg-[#fbbf24] text-[#064e3b] shadow-sm font-black'
-                  : 'text-[#f0f9f6]/70 hover:text-white'
-              }`}
+                  ? {
+                      backgroundColor: themeAccent,
+                      color: themeContrastText,
+                      borderColor: themeAccent
+                    }
+                  : {
+                      backgroundColor: 'transparent',
+                      color: '#cbd5e1',
+                      borderColor: 'transparent'
+                    }
+              }
             >
               4 أيام
             </button>
             <button
               onClick={() => handleSaveWorkDays(5)}
-              className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className="px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border"
+              style={
                 workDays === 5
-                  ? 'bg-[#fbbf24] text-[#064e3b] shadow-sm font-black'
-                  : 'text-[#f0f9f6]/70 hover:text-white'
-              }`}
+                  ? {
+                      backgroundColor: themeAccent,
+                      color: themeContrastText,
+                      borderColor: themeAccent
+                    }
+                  : {
+                      backgroundColor: 'transparent',
+                      color: '#cbd5e1',
+                      borderColor: 'transparent'
+                    }
+              }
             >
               5 أيام
             </button>
@@ -330,6 +382,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         evaluations={evaluations}
         attendance={attendance}
         settings={settings}
+        activeComplex={activeComplex}
       />
 
       {/* ========================================================================= */}

@@ -1838,14 +1838,24 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 3: MOSQUES MANAGEMENT (إدارة الجوامع والمساجد المضافة)            */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'mosques' && (
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between gap-3 pb-4 border-b border-[#065f46] flex-wrap">
+        <div
+          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div
+            className="flex items-center justify-between gap-3 pb-4 border-b flex-wrap"
+            style={{ borderColor: themeBorder }}
+          >
             <div>
               <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-[#fbbf24]" />
+                <Building2 className="w-5 h-5" style={{ color: themeAccent }} />
                 <span>إدارة الجوامع والمساجد</span>
               </h3>
-              <p className="text-xs text-emerald-300/80 mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5 font-bold">
                 يمكنك كتابة اسم الجامع وحفظه، وإضافة أكثر من جامع للمجمع بسهولة تامة
               </p>
             </div>
@@ -1853,7 +1863,13 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
             <button
               type="button"
               onClick={handleOpenAddMosqueModal}
-              className="px-4 py-2 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+              className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-0.5"
+              style={{
+                backgroundColor: themeAccent,
+                color: themeContrastText,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow
+              }}
             >
               <Plus className="w-4 h-4" />
               <span>إضافة جامع جديد</span>
@@ -1966,14 +1982,24 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 4: SHIFTS MANAGEMENT (إدارة فترات ومناوبات الدوام)                 */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'shifts' && (
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between gap-3 pb-4 border-b border-[#065f46] flex-wrap">
+        <div
+          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div
+            className="flex items-center justify-between gap-3 pb-4 border-b flex-wrap"
+            style={{ borderColor: themeBorder }}
+          >
             <div>
               <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Clock className="w-5 h-5 text-[#fbbf24]" />
+                <Clock className="w-5 h-5" style={{ color: themeAccent }} />
                 <span>فترات ومناوبات دوام المعلمين</span>
               </h3>
-              <p className="text-xs text-emerald-300/80 mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5 font-bold">
                 تحديد مواعيد الحضور والانصراف، وربط كل فترة بجامع مخصص وقائمة المعلمين المناوبين
               </p>
             </div>
@@ -1981,7 +2007,13 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
             <button
               type="button"
               onClick={handleOpenAddShiftModal}
-              className="px-4 py-2 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+              className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-0.5"
+              style={{
+                backgroundColor: themeAccent,
+                color: themeContrastText,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow
+              }}
             >
               <Plus className="w-4 h-4" />
               <span>إضافة فترة دوام</span>

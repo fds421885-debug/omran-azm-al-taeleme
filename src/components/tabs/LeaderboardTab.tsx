@@ -251,16 +251,17 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
     }
   };
 
-  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
-  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
-  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
-  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
-  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const effectiveTheme = activeComplex?.theme || settings?.theme;
+  const themePrimary = effectiveTheme?.primaryColor || '#131f24';
+  const themeSecondary = effectiveTheme?.secondaryColor || '#1b2e35';
+  const themeCard = effectiveTheme?.cardColor || effectiveTheme?.surfaceColor || '#203843';
+  const themeBg = effectiveTheme?.backgroundColor || '#131f24';
+  const themeAccent = effectiveTheme?.accentColor || '#ffc800';
   const themeAccentShadow = darkenHex(themeAccent, 0.28);
   const themeBorder = lightenHex(themeCard, 0.18);
   const themeBorderBottom = darkenHex(themeCard, 0.35);
-  const themeText = activeComplex?.theme?.textColor || '#ffffff';
-  const themeSubtext = lightenHex(themeAccent, 0.45);
+  const themeText = effectiveTheme?.textColor || '#ffffff';
+  const themeSubtext = effectiveTheme?.subtextColor || lightenHex(themeAccent, 0.35);
   const themeContrastText = getContrastTextColor(themeAccent);
 
   return (

@@ -31,8 +31,9 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Student, StudentEvaluation, AttendanceRecord, AppSettings } from '../../types';
+import { Student, StudentEvaluation, AttendanceRecord, AppSettings, QuranComplex } from '../../types';
 import { getSurahInfo, QURAN_SURAHS } from '../../data/quranData';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface ReportsChartsViewProps {
   students: Student[];
@@ -40,6 +41,7 @@ interface ReportsChartsViewProps {
   attendance: AttendanceRecord[];
   settings: AppSettings;
   selectedStudentId?: string;
+  activeComplex?: QuranComplex | null;
 }
 
 export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
@@ -47,13 +49,28 @@ export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
   evaluations,
   attendance,
   settings,
-  selectedStudentId: initialStudentId
+  selectedStudentId: initialStudentId,
+  activeComplex
 }) => {
   const [activeTab, setActiveTab] = useState<'surahs' | 'pages' | 'attendance' | 'master_table'>('surahs');
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<string>(
     initialStudentId || (students[0]?.id || '')
   );
+
+  const effectiveTheme = activeComplex?.theme || settings?.theme;
+  const themePrimary = effectiveTheme?.primaryColor || '#131f24';
+  const themeSecondary = effectiveTheme?.secondaryColor || '#1b2e35';
+  const themeCard = effectiveTheme?.cardColor || effectiveTheme?.surfaceColor || '#203843';
+  const themeBg = effectiveTheme?.backgroundColor || '#131f24';
+  const themeAccent = effectiveTheme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeCardShadow = darkenHex(themeCard, 0.35);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = effectiveTheme?.textColor || '#ffffff';
+  const themeSubtext = effectiveTheme?.subtextColor || lightenHex(themeAccent, 0.25);
+  const themeContrastText = getContrastTextColor(themeAccent);
 
   useEffect(() => {
     if (students.length > 0) {
@@ -311,65 +328,110 @@ export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
         </div>
       </div>
 
-      {/* KPI Summary Cards */}
+      {/* KPI Summary Cards with Duolingo 3D Styling */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        <div className="bg-[#064e3b]/50 border border-emerald-500/40 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg space-y-1">
-          <div className="text-xs text-[#86efac] flex items-center justify-between">
+        <div
+          className="rounded-3xl border-2 border-b-4 p-4 sm:p-5 shadow-lg space-y-1.5 transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div className="text-xs font-bold flex items-center justify-between" style={{ color: themeSubtext }}>
             <span>إجمالي السور المنجزة</span>
-            <Award className="w-4 h-4 text-emerald-400" />
+            <Award className="w-4 h-4" style={{ color: themeAccent }} />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-emerald-300 font-mono">
+          <div className="text-2xl sm:text-3xl font-black font-mono" style={{ color: themeAccent }}>
             {overallKPIs.totalCompletedSurahs}
           </div>
-          <p className="text-[10px] text-slate-300">سورة مكتملة تم إتقانها</p>
+          <p className="text-[10px] text-slate-300 font-bold">سورة مكتملة تم إتقانها</p>
         </div>
 
-        <div className="bg-[#064e3b]/50 border border-amber-400/40 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg space-y-1">
-          <div className="text-xs text-amber-200 flex items-center justify-between">
+        <div
+          className="rounded-3xl border-2 border-b-4 p-4 sm:p-5 shadow-lg space-y-1.5 transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div className="text-xs font-bold flex items-center justify-between" style={{ color: themeSubtext }}>
             <span>الأوجه المنجزة (مصحف المدينة)</span>
-            <BookOpen className="w-4 h-4 text-amber-400" />
+            <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">
+          <div className="text-2xl sm:text-3xl font-black font-mono text-white">
             {overallKPIs.totalPages}
           </div>
-          <p className="text-[10px] text-slate-300">وجهاً تم حفظها وتسميعها</p>
+          <p className="text-[10px] text-slate-300 font-bold">وجهاً تم حفظها وتسميعها</p>
         </div>
 
-        <div className="bg-[#064e3b]/50 border border-emerald-500/40 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg space-y-1">
-          <div className="text-xs text-[#86efac] flex items-center justify-between">
+        <div
+          className="rounded-3xl border-2 border-b-4 p-4 sm:p-5 shadow-lg space-y-1.5 transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div className="text-xs font-bold flex items-center justify-between" style={{ color: themeSubtext }}>
             <span>نسبة مواظبة الطلاب</span>
             <UserCheck className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+          <div className="text-2xl sm:text-3xl font-black font-mono text-white">
             {overallKPIs.avgAttendance}%
           </div>
-          <p className="text-[10px] text-slate-300">
+          <p className="text-[10px] text-slate-300 font-bold">
             {overallKPIs.totalPresents} يوم حضور مقابل {overallKPIs.totalAbsents} غياب
           </p>
         </div>
 
-        <div className="bg-[#064e3b]/50 border border-emerald-600/40 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg space-y-1">
-          <div className="text-xs text-[#86efac] flex items-center justify-between">
+        <div
+          className="rounded-3xl border-2 border-b-4 p-4 sm:p-5 shadow-lg space-y-1.5 transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div className="text-xs font-bold flex items-center justify-between" style={{ color: themeSubtext }}>
             <span>إجمالي الطلاب بالحلقة</span>
-            <Users className="w-4 h-4 text-[#fbbf24]" />
+            <Users className="w-4 h-4" style={{ color: themeAccent }} />
           </div>
-          <div className="text-2xl sm:text-3xl font-black text-[#fbbf24] font-mono">
+          <div className="text-2xl sm:text-3xl font-black font-mono" style={{ color: themeAccent }}>
             {students.length}
           </div>
-          <p className="text-[10px] text-slate-300">طالباً مسجلين في المتابعة الحية</p>
+          <p className="text-[10px] text-slate-300 font-bold">طالباً مسجلين في المتابعة الحية</p>
         </div>
       </div>
 
-      {/* Tabs Switcher: Exactly the 3 requested points + Master Table */}
-      <div className="flex items-center gap-2 p-1.5 bg-[#022c22] border border-[#065f46] rounded-2xl flex-wrap">
+      {/* Tabs Switcher: Exactly the 4 requested points + Master Table with Duolingo 3D styling */}
+      <div
+        className="flex items-center gap-2 p-1.5 rounded-2xl border flex-wrap"
+        style={{
+          backgroundColor: themePrimary,
+          borderColor: themeBorder
+        }}
+      >
         <button
           type="button"
           onClick={() => setActiveTab('surahs')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
+          style={
             activeTab === 'surahs'
-              ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-              : 'text-[#86efac]/70 hover:text-white hover:bg-[#064e3b]/40'
-          }`}
+              ? {
+                  backgroundColor: themeAccent,
+                  color: themeContrastText,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }
+              : {
+                  backgroundColor: 'transparent',
+                  color: '#cbd5e1',
+                  borderColor: 'transparent',
+                  borderBottomColor: 'transparent'
+                }
+          }
         >
           <Award className="w-4 h-4" />
           <span>السور المنجزة والمحفوظة</span>
@@ -378,11 +440,22 @@ export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('pages')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
+          style={
             activeTab === 'pages'
-              ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-              : 'text-[#86efac]/70 hover:text-white hover:bg-[#064e3b]/40'
-          }`}
+              ? {
+                  backgroundColor: themeAccent,
+                  color: themeContrastText,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }
+              : {
+                  backgroundColor: 'transparent',
+                  color: '#cbd5e1',
+                  borderColor: 'transparent',
+                  borderBottomColor: 'transparent'
+                }
+          }
         >
           <BookOpen className="w-4 h-4" />
           <span>الأوجه والآيات المنجزة</span>
@@ -391,11 +464,22 @@ export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('attendance')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
+          style={
             activeTab === 'attendance'
-              ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-              : 'text-[#86efac]/70 hover:text-white hover:bg-[#064e3b]/40'
-          }`}
+              ? {
+                  backgroundColor: themeAccent,
+                  color: themeContrastText,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }
+              : {
+                  backgroundColor: 'transparent',
+                  color: '#cbd5e1',
+                  borderColor: 'transparent',
+                  borderBottomColor: 'transparent'
+                }
+          }
         >
           <Calendar className="w-4 h-4" />
           <span>حضور وغياب الطلاب</span>
@@ -404,11 +488,22 @@ export const ReportsChartsView: React.FC<ReportsChartsViewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('master_table')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
+          style={
             activeTab === 'master_table'
-              ? 'bg-[#fbbf24] text-[#064e3b] shadow-md font-black'
-              : 'text-[#86efac]/70 hover:text-white hover:bg-[#064e3b]/40'
-          }`}
+              ? {
+                  backgroundColor: themeAccent,
+                  color: themeContrastText,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }
+              : {
+                  backgroundColor: 'transparent',
+                  color: '#cbd5e1',
+                  borderColor: 'transparent',
+                  borderBottomColor: 'transparent'
+                }
+          }
         >
           <FileText className="w-4 h-4" />
           <span>كشف الحصيلة الشامل للطلاب</span>

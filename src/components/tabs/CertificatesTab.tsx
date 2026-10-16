@@ -45,6 +45,7 @@ import {
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import { OmranDataService, OMRAN_CACHE_KEYS, getLocalCache, setLocalCache } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import jsPDF from 'jspdf';
 
 interface CertificatesTabProps {
@@ -178,6 +179,19 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
 }) => {
   // Navigation Sub-Tabs ('issue' | 'archive' | 'builder' | 'templates')
   const [activeSubTab, setActiveSubTab] = useState<'issue' | 'archive' | 'builder' | 'templates'>('issue');
+
+  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
+  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
+  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
+  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
+  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const themeCardShadow = darkenHex(themeCard, 0.35);
+  const themeBorder = lightenHex(themeCard, 0.18);
+  const themeBorderBottom = darkenHex(themeCard, 0.35);
+  const themeText = activeComplex?.theme?.textColor || '#ffffff';
+  const themeSubtext = activeComplex?.theme?.subtextColor || lightenHex(themeAccent, 0.25);
+  const themeContrastText = getContrastTextColor(themeAccent);
 
   useEffect(() => {
     if (initialHighlightId) {
@@ -2008,14 +2022,24 @@ ${occasionText}
       {/* SUBTAB: SAVED CERTIFICATES ARCHIVE                                    */}
       {/* ===================================================================== */}
       {activeSubTab === 'archive' && (
-        <div className="bg-[#022c22] p-6 rounded-3xl border border-[#065f46] shadow-xl space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[#065f46]">
+        <div
+          className="p-6 rounded-[32px] border-2 border-b-4 shadow-xl space-y-6 transition-all"
+          style={{
+            backgroundColor: themeCard,
+            borderColor: themeBorder,
+            borderBottomColor: themeBorderBottom
+          }}
+        >
+          <div
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b"
+            style={{ borderColor: themeBorder }}
+          >
             <div>
-              <h3 className="text-lg font-bold text-white font-heading flex items-center gap-2">
-                <BookmarkCheck className="w-5 h-5 text-[#fbbf24]" />
+              <h3 className="text-lg font-black text-white font-heading flex items-center gap-2">
+                <BookmarkCheck className="w-5 h-5" style={{ color: themeAccent }} />
                 <span>سجل الشهادات المحفوظة والمعتمدة للمجمع ({allCertificates.length})</span>
               </h3>
-              <p className="text-xs text-[#86efac]/90 mt-1">
+              <p className="text-xs text-slate-300 mt-1 font-bold">
                 أرشيف كامل لكافة شهادات التميز والإتقان التي تم إنشاؤها وحفظها لطلاب الحلقات، مع إمكانية المعاينة، الطباعة، التحميل، والمشاركة وحذف الشهادة بكل سهولة.
               </p>
             </div>
@@ -2023,7 +2047,13 @@ ${occasionText}
             <button
               type="button"
               onClick={() => setActiveSubTab('issue')}
-              className="px-4 py-2 rounded-xl bg-[#fbbf24] hover:bg-amber-400 text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+              className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-0.5"
+              style={{
+                backgroundColor: themeAccent,
+                color: themeContrastText,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow
+              }}
             >
               <Plus className="w-4 h-4" />
               <span>إصدار وحفظ شهادة جديدة</span>
@@ -2033,13 +2063,17 @@ ${occasionText}
           {/* Search & Filters */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="relative">
-              <Search className="w-4 h-4 text-[#86efac] absolute right-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2" style={{ color: themeAccent }} />
               <input
                 type="text"
                 value={archiveSearch}
                 onChange={e => setArchiveSearch(e.target.value)}
                 placeholder="ابحث باسم الطالب أو المناسبة..."
-                className="w-full bg-[#064e3b]/50 border border-[#065f46] rounded-2xl pr-9 pl-3 py-2 text-xs text-white outline-none focus:border-[#fbbf24]"
+                className="w-full border-2 rounded-2xl pr-9 pl-3 py-2 text-xs text-white outline-none font-bold"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder
+                }}
               />
             </div>
 
@@ -2047,7 +2081,11 @@ ${occasionText}
               <select
                 value={archiveHalaqahFilter}
                 onChange={e => setArchiveHalaqahFilter(e.target.value)}
-                className="w-full bg-[#064e3b]/50 border border-[#065f46] rounded-2xl px-3 py-2 text-xs text-white outline-none focus:border-[#fbbf24]"
+                className="w-full border-2 rounded-2xl px-3 py-2 text-xs text-white outline-none font-bold cursor-pointer"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder
+                }}
               >
                 <option value="all">كافة الحلقات القرآنية</option>
                 {halaqahs.map(h => (
@@ -2061,7 +2099,11 @@ ${occasionText}
             <select
               value={archiveOccasionFilter}
               onChange={e => setArchiveOccasionFilter(e.target.value)}
-              className="w-full bg-[#064e3b]/50 border border-[#065f46] rounded-2xl px-3 py-2 text-xs text-white outline-none focus:border-[#fbbf24]"
+              className="w-full border-2 rounded-2xl px-3 py-2 text-xs text-white outline-none font-bold cursor-pointer"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder
+              }}
             >
               <option value="all">كافة المناسبات والتكريمات</option>
               {[
