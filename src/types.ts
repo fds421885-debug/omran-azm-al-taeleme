@@ -57,6 +57,54 @@ export interface QuranComplex {
     authDomain?: string;
     connectedAt?: string;
   };
+  portalConfig?: ComplexPortalConfig; // إعدادات بوابة التسجيل والدخول المخصصة للمجمع
+}
+
+export type ComplexPortalMode = 'login_and_register' | 'login_only' | 'register_only';
+
+export interface ComplexPortalFieldConfig {
+  studentNameRequired: boolean; // مقالي (اسم الطالب الرباعي أو الثلاثي)
+  ageRequired: boolean; // عمر الطالب (من 0 - 100)
+  parentNameRequired: boolean; // اسم ولي الأمر
+  parentPhoneRequired: boolean; // رقم هاتف ولي الأمر
+  memorizedJuzRequired: boolean; // أجزاء القرآن المحفوظة (أجزاء من 1 - 30)
+  preferredHalaqahRequired: boolean; // اختيار الحلقة
+  notesAllowed: boolean; // ملاحظات إضافية
+}
+
+export interface ComplexPortalConfig {
+  isEnabled: boolean;
+  portalMode: ComplexPortalMode;
+  portalTitle?: string;
+  welcomeMessage?: string;
+  fieldConfig: ComplexPortalFieldConfig;
+  autoAcceptToHalaqahId?: string;
+  updatedAt?: string;
+}
+
+export type RegistrationApplicationStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface StudentRegistrationApplication {
+  id: string; // e.g. "app_123456"
+  trackingCode: string; // e.g. "OMR-849201" (رقم تفقد الطلب)
+  complexId: string;
+  complexName?: string;
+  studentName: string;
+  age: number;
+  parentName: string;
+  parentPhone: string;
+  memorizedJuzList: number[]; // e.g. [30, 29, 28] (أجزاء القرآن الكريم)
+  preferredHalaqahId?: string;
+  preferredHalaqahName?: string;
+  notes?: string;
+  status: RegistrationApplicationStatus;
+  rejectionReason?: string;
+  assignedHalaqahId?: string;
+  assignedHalaqahName?: string;
+  createdStudentId?: string;
+  appliedAt: string;
+  reviewedAt?: string;
+  reviewedByName?: string;
 }
 
 export interface Halaqah {

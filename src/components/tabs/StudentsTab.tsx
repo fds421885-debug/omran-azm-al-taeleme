@@ -26,7 +26,8 @@ import {
   RefreshCw,
   Users,
   Copy,
-  FileText
+  FileText,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation, QuranComplex } from '../../types';
 import { darkenHex, lightenHex } from '../../lib/themeUtils';
@@ -34,6 +35,8 @@ import { normalizeArabicText } from '../../lib/googleWorkspace';
 import { QURAN_SURAHS } from '../../data/quranData';
 import { getPageOfAyah } from '../../data/quranPagesData';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
+import { OmranDataService } from '../../lib/firebase';
+import { ComplexPortalSettingsModal } from '../portal/ComplexPortalSettingsModal';
 
 interface StudentsTabProps {
   students: Student[];
@@ -400,6 +403,32 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   const [quickSelectedHalaqahId, setQuickSelectedHalaqahId] = useState<string>('');
   const [isQuickAssigning, setIsQuickAssigning] = useState(false);
 
+  // Complex Portal & Applications State
+  const [isPortalSettingsOpen, setIsPortalSettingsOpen] = useState(false);
+  const [pendingAppsCount, setPendingAppsCount] = useState(0);
+
+  useEffect(() => {
+    if (!activeComplex) return;
+    const fetchPendingApps = async () => {
+      try {
+        const apps = await OmranDataService.loadRegistrationApplications(activeComplex.id);
+        const count = apps.filter(a => a.status === 'pending').length;
+        setPendingAppsCount(count);
+      } catch {
+        setPendingAppsCount(0);
+      }
+    };
+    fetchPendingApps();
+
+    const handleUpdate = (e: any) => {
+      if (e?.detail?.type === 'registration_application' || e?.detail?.type === 'registration_application_deleted') {
+        fetchPendingApps();
+      }
+    };
+    window.addEventListener('omran:data-updated', handleUpdate);
+    return () => window.removeEventListener('omran:data-updated', handleUpdate);
+  }, [activeComplex?.id]);
+
   // Auto-open student deletion modal if navigated from assistant
   useEffect(() => {
     if (initialSearchQuery !== undefined && initialSearchQuery !== '') {
@@ -715,6 +744,30 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             <Users className="w-4 h-4" style={{ color: accentCol }} />
             <span>إضافة دفعة طلاب</span>
           </button>
+
+          {/* Complex Dedicated Portal & Registration Link Button (للمشرف والمطور) */}
+          {(isSupervisor || isDeveloper) && activeComplex && (
+            <button
+              type="button"
+              onClick={() => setIsPortalSettingsOpen(true)}
+              className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-md flex items-center gap-2 transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
+              style={{
+                backgroundColor: cardBg,
+                borderColor: accentCol,
+                borderBottomColor: accentShadow,
+                color: '#ffffff'
+              }}
+              title="تفعيل وإعداد رابط وبوابة التسجيل الخاصة بهذا المجمع وتفقد طلبات الانضمام"
+            >
+              <LinkIcon className="w-4 h-4" style={{ color: accentCol }} />
+              <span>بوابة ورابط تسجيل المجمع</span>
+              {pendingAppsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-900 shadow-sm animate-pulse">
+                  {pendingAppsCount} طلبات
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Add Single Student Button */}
           <button
@@ -2220,6 +2273,22 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Complex Dedicated Portal & Registration Settings Modal */}
+      {activeComplex && (
+        <ComplexPortalSettingsModal
+          isOpen={isPortalSettingsOpen}
+          onClose={() => setIsPortalSettingsOpen(false)}
+          complex={activeComplex}
+          halaqahs={halaqahs}
+          onUpdateComplex={async (updated) => {
+            await OmranDataService.saveComplex(updated);
+          }}
+          onStudentCreatedFromApp={(st) => {
+            onAddStudent(st);
+          }}
+        />
       )}
     </div>
   );

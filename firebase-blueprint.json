@@ -122,6 +122,24 @@
         "fileData": { "type": "string" }
       },
       "required": ["title", "type"]
+    },
+    "RegistrationApplication": {
+      "title": "RegistrationApplication",
+      "description": "New student registration and join application for a complex portal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "trackingCode": { "type": "string", "maxLength": 50 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 200 },
+        "age": { "type": "number" },
+        "parentName": { "type": "string", "maxLength": 200 },
+        "parentPhone": { "type": "string", "maxLength": 50 },
+        "memorizedJuzList": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "appliedAt": { "type": "string" }
+      },
+      "required": ["studentName", "complexId", "status"]
     }
   },
   "firestore": {
@@ -156,6 +174,10 @@
     "/library_docs/{docId}": {
       "schema": "LibraryDocument",
       "description": "Library documents and exported archives"
+    },
+    "/registration_applications/{appId}": {
+      "schema": "RegistrationApplication",
+      "description": "Student registration applications for complex portals"
     }
   }
 }

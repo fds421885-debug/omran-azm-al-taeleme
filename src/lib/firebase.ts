@@ -50,7 +50,9 @@ import {
   TeacherAttendanceRecord,
   normalizeTeacherText,
   LibraryDocument,
-  getTeacherSixDigitCode
+  getTeacherSixDigitCode,
+  StudentRegistrationApplication,
+  ComplexPortalConfig
 } from '../types';
 
 // Web app's Firebase configuration from firebase-applet-config.json
@@ -1443,6 +1445,7 @@ export const OMRAN_CACHE_KEYS = {
   DELETED_HALAQAHS: 'omran_deleted_halaqahs',
   DELETED_EXAMS: 'omran_deleted_exams',
   DELETED_TEACHERS: 'omran_deleted_teachers',
+  REGISTRATION_APPLICATIONS: 'omran_registration_applications',
   INITIALIZED_FLAG: 'omran_platform_initialized_flag'
 };
 
@@ -5691,5 +5694,67 @@ export class OmranDataService {
       console.error('Batch create students error:', e);
       return false;
     }
+  }
+
+  // =========================================================================
+  // Complex Registration Applications Hub (طلبات الانضمام وبوابة المجمع)
+  // =========================================================================
+  static async loadRegistrationApplications(complexId?: string): Promise<StudentRegistrationApplication[]> {
+    const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+    try {
+      const snap = await safeGetDocs(collection(this.getActiveDb(), 'registration_applications'));
+      const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as StudentRegistrationApplication));
+      if (list.length > 0) {
+        setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, list);
+        return complexId ? list.filter(a => a.complexId === complexId) : list;
+      }
+    } catch (e) {
+      // quiet fallback
+    }
+    return complexId ? local.filter(a => a.complexId === complexId) : local;
+  }
+
+  static async saveRegistrationApplication(app: StudentRegistrationApplication): Promise<void> {
+    const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+    const updated = [app, ...local.filter(a => a.id !== app.id)];
+    setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, updated);
+    broadcastDataUpdate('registration_application', app);
+    try {
+      await setDoc(doc(this.getActiveDb(), 'registration_applications', app.id), cleanFirestoreData(app), { merge: true });
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        try {
+          await setDoc(doc(this.getCentralDb(), 'registration_applications', app.id), cleanFirestoreData(app), { merge: true });
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('Registration application cloud error:', e);
+    }
+  }
+
+  static async deleteRegistrationApplication(applicationId: string): Promise<void> {
+    const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
+    setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, local.filter(a => a.id !== applicationId));
+    broadcastDataUpdate('registration_application_deleted', applicationId);
+    try {
+      await deleteDoc(doc(this.getActiveDb(), 'registration_applications', applicationId));
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        try {
+          await deleteDoc(doc(this.getCentralDb(), 'registration_applications', applicationId));
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('Delete registration application cloud error:', e);
+    }
+  }
+
+  static async findRegistrationApplication(trackingOrPhone: string, complexId?: string): Promise<StudentRegistrationApplication | null> {
+    const clean = trackingOrPhone.trim().toLowerCase();
+    const cleanDigits = trackingOrPhone.replace(/\D/g, '');
+    const apps = await this.loadRegistrationApplications(complexId);
+    return apps.find(a => {
+      const matchTrack = a.trackingCode?.trim().toLowerCase() === clean;
+      const matchPhone = cleanDigits.length >= 7 && (a.parentPhone?.replace(/\D/g, '').includes(cleanDigits) || cleanDigits.includes(a.parentPhone?.replace(/\D/g, '') || ''));
+      return matchTrack || matchPhone;
+    }) || null;
   }
 }

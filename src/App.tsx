@@ -88,6 +88,7 @@ import {
   GenericTabSkeleton,
   LoginSyncModalOverlay
 } from './components/loading/ModernLoadingSuite';
+import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
 import { ParentPortalView } from './components/ParentPortalView';
 import { TeacherManagementModal } from './components/TeacherManagementModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -316,6 +317,22 @@ export function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('مُحدّث سحابياً');
 
+  // Dedicated Complex Portal ID parsed from shareable link (e.g. ?complexPortal=xxx)
+  const [portalComplexId, setPortalComplexId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const cp = p.get('complexPortal') || p.get('complex');
+      if (cp) return decodeURIComponent(cp);
+      if (window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        const hcp = hashParams.get('complexPortal') || hashParams.get('complex');
+        if (hcp) return decodeURIComponent(hcp);
+      }
+    }
+    return null;
+  });
+
   // Parse URL on initial load and handle direct login links
   useEffect(() => {
     const parseUrlParams = () => {
@@ -326,19 +343,29 @@ export function App() {
         urlParams.get('student') ||
         urlParams.get('studentId');
 
-      if (!portalId && window.location.hash) {
+      let complexParam = urlParams.get('complexPortal') || urlParams.get('complex');
+
+      if ((!portalId || !complexParam) && window.location.hash) {
         const hash = window.location.hash.replace(/^#\/?/, '');
         const hashParams = new URLSearchParams(hash);
-        portalId =
-          hashParams.get('portal') ||
-          hashParams.get('id') ||
-          hashParams.get('student') ||
-          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
-          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+        if (!portalId) {
+          portalId =
+            hashParams.get('portal') ||
+            hashParams.get('id') ||
+            hashParams.get('student') ||
+            (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
+            (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+        }
+        if (!complexParam) {
+          complexParam = hashParams.get('complexPortal') || hashParams.get('complex');
+        }
       }
 
       if (portalId) {
         setPortalStudentId(decodeURIComponent(portalId));
+      }
+      if (complexParam) {
+        setPortalComplexId(decodeURIComponent(complexParam));
       }
     };
 
@@ -2523,6 +2550,36 @@ export function App() {
       <PrivacyPolicyPage
         onBackToHome={() => navigatePublic('landing')}
         onGoToLogin={!currentUser ? () => navigatePublic('login') : undefined}
+      />
+    );
+  }
+
+  // Priority 1.5: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
+  if (portalComplexId && !currentUser) {
+    const targetComplex = complexes.find(c => c.id === portalComplexId) || complexes[0];
+    const complexHalaqahs = halaqahs.filter(h => isHalaqahInComplex(h, targetComplex, complexes, students, teachers));
+
+    return (
+      <ComplexCustomPortalPage
+        complex={targetComplex}
+        halaqahs={complexHalaqahs}
+        onLoginSuccess={(user, teacher, student) => {
+          handleLoginSuccess(user);
+          if (student) {
+            setPortalStudentId(student.id);
+            setDirectPortalStudent(student);
+          }
+          setPortalComplexId(null);
+        }}
+        onExitPortal={() => {
+          setPortalComplexId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('complexPortal');
+            url.searchParams.delete('complex');
+            window.history.pushState({}, '', url.pathname);
+          } catch {}
+        }}
       />
     );
   }

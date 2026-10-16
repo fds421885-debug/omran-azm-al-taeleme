@@ -191,5 +191,13 @@ service cloud.firestore {
         && incoming().title is string;
       allow delete: if isValidId(docId);
     }
+
+    // Student Registration Applications (طلبات الانضمام وبوابة المجمع)
+    match /registration_applications/{appId} {
+      allow read: if true;
+      allow create, update: if isValidId(appId)
+        && incoming().studentName is string;
+      allow delete: if isValidId(appId);
+    }
   }
 }
