@@ -3874,6 +3874,100 @@ ${excusedListStr}
       };
     })() : metrics;
 
+    // 2.12.10 Pedagogical Coaching, Behavioral Counseling & Brainstorming ("سهرة تربوية / أخذ وعطاء")
+    const isCoachingQuery =
+      normUserMessage.includes("سهر") ||
+      normUserMessage.includes("اتسهر") ||
+      normUserMessage.includes("استشار") ||
+      normUserMessage.includes("استشير") ||
+      normUserMessage.includes("استشيرك") ||
+      normUserMessage.includes("أستشيرك") ||
+      normUserMessage.includes("كيف اطور") ||
+      normUserMessage.includes("كيف أطور") ||
+      normUserMessage.includes("تطوير") ||
+      normUserMessage.includes("معقدني") ||
+      normUserMessage.includes("مشاغب") ||
+      normUserMessage.includes("مشاكس") ||
+      normUserMessage.includes("يتشاغب") ||
+      normUserMessage.includes("فوضى") ||
+      normUserMessage.includes("يشوش") ||
+      normUserMessage.includes("ما يركز") ||
+      normUserMessage.includes("تشتت") ||
+      normUserMessage.includes("متشتت") ||
+      normUserMessage.includes("عنيد") ||
+      normUserMessage.includes("كسول") ||
+      normUserMessage.includes("يتكاسل") ||
+      normUserMessage.includes("تكاسل") ||
+      normUserMessage.includes("بطيء") ||
+      normUserMessage.includes("صعوبة") ||
+      normUserMessage.includes("علاج") ||
+      normUserMessage.includes("كيف اتعامل") ||
+      normUserMessage.includes("كيف أتعامل") ||
+      normUserMessage.includes("كيف اتصرف") ||
+      normUserMessage.includes("كيف أتصرف") ||
+      normUserMessage.includes("اخذ وعطا") ||
+      normUserMessage.includes("أخذ وعطا") ||
+      normUserMessage.includes("حوار") ||
+      normUserMessage.includes("نقاش") ||
+      normUserMessage.includes("تربوي") ||
+      normUserMessage.includes("طريقة تدريس") ||
+      normUserMessage.includes("طريقة تحفيظ") ||
+      normUserMessage.includes("تحفيز") ||
+      normUserMessage.includes("احفز") ||
+      normUserMessage.includes("أحفز") ||
+      normUserMessage.includes("كسر الروتين");
+
+    const candidateStudentForCoaching =
+      candidateStudentForAttendance ||
+      candidateStudentForReport ||
+      candidateStudentForRecitation ||
+      currentActiveStudent ||
+      findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
+      (contextStudents.length === 1 ? contextStudents[0] : null);
+
+    const hasCoachingIntent =
+      isCoachingQuery ||
+      Boolean(
+        candidateStudentForCoaching &&
+        (
+          normUserMessage.includes("كيف") ||
+          normUserMessage.includes("شو") ||
+          normUserMessage.includes("وش") ||
+          normUserMessage.includes("حل") ||
+          normUserMessage.includes("تصرف") ||
+          normUserMessage.includes("رايك") ||
+          normUserMessage.includes("رأيك") ||
+          normUserMessage.includes("ساعدني")
+        )
+      );
+
+    let coachingStudentProfile = "";
+    if (candidateStudentForCoaching) {
+      const stEvals = evaluationsList.filter((e: any) => e.studentId === candidateStudentForCoaching.id);
+      const latestNotes = stEvals.slice(-3).map((e: any) => e.recitationDetails?.teacherNotes || e.generalNotes).filter(Boolean).join(" | ") || "لا توجد ملاحظات سلبية مسجلة";
+      const stViolations = violationsList.filter((v: any) => v.studentId === candidateStudentForCoaching.id || v.studentName === candidateStudentForCoaching.name);
+      const vSummary = stViolations.length > 0
+        ? stViolations.map((v: any) => `${v.title || v.violationType || 'تنبيه'} (${v.notes || ''})`).join("، ")
+        : "سجل سلوكي خالٍ من المخالفات الرسمية";
+
+      const stAttRecords = attendanceList.filter((a: any) => a.studentId === candidateStudentForCoaching.id);
+      const stPresent = stAttRecords.filter((a: any) => a.status === 'حاضر').length;
+      const stTotal = stAttRecords.length || 1;
+      const stAttRate = Math.round((stPresent / stTotal) * 100);
+
+      coachingStudentProfile = `
+• الطالب موضوع الاستشارة: "${candidateStudentForCoaching.name}"
+  - الحلقة: ${candidateStudentForCoaching.halaqahName || "الحلقة القرآنية"}
+  - المستوى القرآني: ${candidateStudentForCoaching.level || "متوسط"}
+  - السورة الحالية: سورة ${candidateStudentForCoaching.currentSurahName || "الفاتحة"} (آية ${candidateStudentForCoaching.currentAyah || 1})
+  - الورد اليومي المستهدف: ${candidateStudentForCoaching.dailyNewTarget || "نصف وجه"}
+  - نسبة الحضور العامة: ${stAttRate}% (${stPresent} من أصل ${stAttRecords.length} جلسة)
+  - رصيد النقاط في الصدارة: ${typeof candidateStudentForCoaching.points === 'number' ? candidateStudentForCoaching.points : candidateStudentForCoaching.totalPoints || 0} نقطة
+  - الملاحظات السلوكية والتنبيهات: ${vSummary}
+  - آخر ملاحظات المعلم في سجلات التسميع: "${latestNotes}"
+  - ولي الأمر: ${candidateStudentForCoaching.parentPhone ? `هاتف ولي الأمر مسجل (${candidateStudentForCoaching.parentPhone})` : "غير مسجل"}`;
+    }
+
     const systemInstruction = `أنت "المساعد القرآني الذكي" الحقيقي لمنصة عُمْرَان لإدارة المجمعات والحلقات القرآنية.
 أنت تتحدث مع: ${rawName} (صفته: ${role === "developer" ? "المبرمج والمشرف العام" : role === "supervisor" ? "مشرف المجمع" : "معلم الحلقة"}).
 المجمع الحالي أو المستفسر عنه: "${effectiveComplexName}"، والحلقة الحالية: "${halaqahName}".
@@ -3974,7 +4068,30 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
   * ملاحظات المعلم: ${targetEvaluationForQueriedDate.recitationData?.teacherNotes || "مواظب ومجتهد في الحلقة"}
   * مقرر الغد: ${targetEvaluationForQueriedDate.evaluation?.recitationDetails?.tomorrowNewItem ? `${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.surahName} (آيات ${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.fromAyah}-${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.toAyah})` : "متابعة الحفظ"}` : `- تفاصيل التسميع لتاريخ (${queriedSpecificDateLabel}): لم تُسجل جلسة تسميع في هذا اليوم تحديداً للطالب ${candidateStudentForRecitation.name}، ولكن آخر جلسة تسميع مسجلة له كانت بتاريخ (${lastRecordedRecitationDate || "سابقاً"}).`}
 - رصيد نقاط الطالب المعتمد في لوحة الشرف والصدارة: ${typeof candidateStudentForRecitation.points === 'number' ? candidateStudentForRecitation.points : (candidateStudentForRecitation.totalPoints || 0)} نقطة.
-- الالتزام الصارم: اذكر الأرقام والتفاصيل أعلاه بدقة تامة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
+- الالتزام الصارم: اذكر الأرقام والتفاصيل أعلاه بدقة تامة!` : ''}${hasCoachingIntent ? `
+
+═════════════════════════════════════════════════════════════════════════════
+🌙 وضع السهرة والاستشارة التربوية والحوار المفتوح (أخذ وعطاء كأنك جيمناي وشات جي بي تي):
+المعلم / المشرف "${firstName}" يجري معك جلسة سهرة واستشارة تربوية حية ("أخذ وعطاء") مستفسراً عن:
+"${message}"
+${coachingStudentProfile ? `
+📌 الملف القرآني والتربوي الكامل للطالب موضوع الاستشارة:
+${coachingStudentProfile}
+` : '📌 الاستشارة تربوية عامة أو تتعلق بطلاب الحلقة وإدارتها دون تحديد طالب بعينه.'}
+
+قواعدك الإلزامية كشيخ ومربٍ واستشاري نفسي قرآني خبير (مثل نموذج جيمناي الذكي):
+1. خاطب المعلم بروح الأخوة والدفء والوقار النبوي: أنت لست روبوتاً بل "شيخه ومستشاره التربوي الخبير" الذي يشاركه همّ الحلقة والطلاب، وتتسهر معه لترشده وتأخذ وتعطي معه بكل أريحية وذكاء.
+2. حلّل السلوك أو الصعوبة من منظور نفسي وتربوي نبوي دقيق:
+   - وضّح له *لماذا* قد يصدر هذا السلوك من الطالب (مثل: فرط طاقة غير موجهة، طلب الاهتمام، خوف من الفشل أمام زملائه، ملل من النمط التقليدي، صعوبة الورد التراكمي، ظروف أسرية).
+3. قدّم خطة علاجية وتكتيكات عملية محددة (3 إلى 4 خطوات عملية) يستطيع المعلم تجربتها في جلسة الغد، مثل:
+   - "تكتيك المهمة القيادية": تفريغ طاقة الطالب المشاغب بتكليفه بمصاحف الحلقة أو متابعة زميل أضعف منه ليشعر بقيمته.
+   - "الاتفاق السري المحفز": جلسة مصارحة ودية انفرادية بدقيقة واحدة دون أي تأنيب، وتحديد مكافأة خاصة إذا ضبط نفسه.
+   - "تجزئة الورد وتقنية الدقائق الذهبية": إذا كان بطيء الحفظ، تقسيمه إلى آيتين آيتين وتكرار ثلاثي.
+   - "التواصل اللبق مع ولي الأمر": صياغة رسالة واتساب داعمة تبدأ بالمدح والثناء ثم طرح التعاون المشترك.
+4. قاعدة "الأخذ والعطاء" (استمرار الحوار):
+   - في نهاية ردك، اطرح على المعلم سؤالاً أو سؤالين استكشافيين ذكيين لتتعرف على تفاصيل أكثر (مثلاً: "هل لاحظت يا شيخنا متى يكثر تشتته في بداية الحلقة أم نهايتها؟"، "وماذا عن علاقته بزملائه المقربين؟").
+   - بشّره وأكد له أنك مستعد لمواصلة النقاش معه واقتراح خطة مخصصة مفصلة آية بآية.
+═════════════════════════════════════════════════════════════════════════════` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
 
     // 5. Cleanly build alternating multi-turn conversation history for Gemini
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
@@ -4269,6 +4386,18 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
           geminiReply = `أهلاً بك يا أخي ${firstName} 📋✨\n\nإليك كشف الحضور والغياب ليوم **${targetRecitationDateLabel} (${targetRecitationDate})** في ${complexName}:\n• **نسبة الحضور:** ${pct}%\n• **الحاضرون:** ${effPresent} طالب\n• **الغائبون:** ${effAbsent} طالب\n• **المعتذرون:** ${effExcused} طالب${presentNamesStr}${absentNamesStr}\n\nتفضل بالاطلاع على الكشف الكامل القابل للاستخراج والتصدير الموضح أدناه:`;
         } else {
           geminiReply = `أهلاً بك يا أخي ${firstName}.\n\n📋 نسبة الحضور اليوم هي **${pct}%** (${metrics.presentCount} حاضر من أصل ${metrics.totalStudents} طالب)، والغائبون ${metrics.absentCount} طلاب.\nإليك بطاقة نسب الحضور الموضحة أدناه:`;
+        }
+      } else if (hasCoachingIntent) {
+        const sName = candidateStudentForCoaching ? candidateStudentForCoaching.name : "طالبك المبارك";
+        const isTroublesome = normUserMessage.includes("معقدني") || normUserMessage.includes("مشاغب") || normUserMessage.includes("مشاكس") || normUserMessage.includes("يتشاغب") || normUserMessage.includes("فوضى") || normUserMessage.includes("يشوش");
+        const isSlowMem = normUserMessage.includes("بطيء") || normUserMessage.includes("صعوبة") || normUserMessage.includes("تثبيت") || normUserMessage.includes("ينسى") || normUserMessage.includes("نسيان");
+
+        if (isTroublesome) {
+          geminiReply = `حيّاك الله وبارك في صبرك واحتسابك يا أخي ${firstName} 🌙✨\n\nأشعر تماماً بما تلاقيه في الحلقة، وتذكّر قول النبي ﷺ: «الْمُؤْمِنُ الَّذِي يُخَالِطُ النَّاسَ وَيَصْبِرُ عَلَى أَذَاهُمْ أَعْظَمُ أَجْراً». الطلاب أصحاب الحركة الدائمة والتشويش هم غالباً أصحاب طاقات قيادية فطرية لم تجد تصريفاً مناسباً بعد!\n\nإليك **خطة العمل التربوية النبوية المجربة للتعامل مع ${sName} غداً**:\n\n1. 🌟 **تفريغ الطاقة بمهمة شرفية (تحويل المشاغب إلى قائد):**\nكلفه بمسؤولية محددة أمام زملائه؛ مثلاً: «أنت اليوم أمين مصاحف الحلقة» أو «مساعد المعلم في ضبط هدوء المقرأة». عندما يشعر الطفل بتقديرك لذاته، يستحي أن يشوّش.\n\n2. 🤝 **الاتفاق السري (جلسة الدقيقة الواحدة):**\nقبل بدء الحلقة، اسحبه بلطف على انفراد وقل له بهمس ودود: «يا ${sName}، أنت ذكي ومميز عندي وأعتمد عليك اليوم لتكون قدوة لأصحابك. إذا أنهينا الحلقة بهدوء، لك مني مفاجأة خاصة بيني وبينك».\n\n3. ⏳ **تجزئة فترات الجلوس والاستماع:**\nلا تدعه يجلس أكثر من 15 دقيقة دون حركة ذهنية؛ اسأله فجأة في أحكام التجويد، أو اجعله يقرأ آية نموذجية لزملائه.\n\n4. 🚫 **تجنب توبيخه علناً أمام زملائه:**\nالتوبيخ أمام الأقران يدفعه للعناد وإثبات نفسه بالتمرد. اكتفِ بنظرة عتاب هادئة، أو لمس كتفه بحنان، ثم حاوره بعد انتهاء التسميع.\n\n💭 **سؤالي لك يا أخي ${firstName} لنواصل السهرة ونحل الأمر جذرياً:**\nهل لاحظت متى يشتد شغب ${sName} بالذات؟ هل في بداية الحلقة، أم عندما يطول انتظار دوره في التسميع؟ وما هو أكثر شيء يحبه ويحفزه؟ تفضل وشاركني لنضبط الخطة معاً!`;
+        } else if (isSlowMem) {
+          geminiReply = `حيّاك الله يا أخي ${firstName}، وأهلاً بك في سهرتنا التربوية الهادئة 🌙📖\n\nضعف الحفظ أو بطء الاستيعاب لدى الطالب ${sName} ليس عيباً في قدراته؛ بل هو اختلاف في نمط التعلم وتخزين الذاكرة. وكم من طالب كان بطيئاً في بدايته ثم صار من أتقن الحفاظ!\n\nإليك **البرنامج العلاجي العملي لرفع كفاءة حفظ وتثبيت ${sName}**:\n\n1. 🎯 **طريقة التكرار التراكمي (2×2):**\nلا تكلفه بحفظ صفحة كاملة دفعة واحدة. اجعله يحفظ آيتين فقط، ويكررهما 5 مرات غيباً، ثم ينتقل للآيتين التاليتين ويصل القديم بالجديد.\n\n2. 🎧 **استثمار الذاكرة السمعية (الاستماع المكرر):**\nكلفه بالاستماع إلى الشيخ الحصري أو المنشاوي 3 مرات متتالية قبل محاولة الحفظ. الأذن تسبق اللسان في تثبيت مخارج الكلمات ونبرة الآيات.\n\n3. ✍️ **تقنية الكتابة واللوح:**\nاجعله يكتب الآيات الصعبة بيده في كراسة خاصة أو على لوح؛ فالكتابة ترسخ صورة الآية في الذاكرة البصرية.\n\n4. ⭐ **الاحتفاء بالإنجاز الصغير:**\nإذا أتقن نصف وجه بدون خطأ، كافئه فوراً بنقاط إضافية في لوحة الشرف وأثنِ عليه أمام الحلقة ليبدد عقدة الخوف من الحفظ.\n\n💭 **شاركنـي يا شيخنا الفاضل:**\nكم مقدار الورد اليومي الذي يكلّف به حالياً؟ وهل تجده يواظب على المراجعة والتكرار في البيت أم يعتمد فقط على وقت الحلقة؟`;
+        } else {
+          geminiReply = `أهلاً وسهلاً بك يا أخي ${firstName} في هذه السهرة التربوية الهادئة 🌙🌿\n\nتطوير الطالب ${sName} يبدأ من كسب قلبه وفهم مفاتيحه النفسية. إليك أهم ركائز الارتقاء به:\n\n• 🏆 **التحفيز القائم على المنافسة المحمودة:** إدراج اسمه في مسابقات التحدي القرآني ومنحه ألقاباً تشجيعية (مثل: سفير الإتقان، قارئ الأسبوع).\n• 📈 **التدرج المدروس:** تثبيت محفوظ الأمس قبل طلب جديد اليوم، فالتثبيت رأس المال والحفظ الجديد ربح.\n• 🤝 **الشراكة الودية مع الأسرة:** إرسال بطاقة تشجيعية عبر الواتساب لوالده تتضمن إشادة بتقدمه، مما ينعكس إيجابياً على نفسيته في البيت.\n\n💭 **أخبرني يا أخي ${firstName}:** ما هو الجانب الذي ترى أن ${sName} يحتاج دعماً أكبر فيه (الحفظ الجديد، مخارج الحروف والتجويد، أم المواظبة والانضباط)؟`;
         }
       } else if (chatHistoryParts.length > 2) {
         // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
@@ -5479,9 +5608,34 @@ ${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (
           late: metrics.lateCount,
         },
       };
+    } else if (hasCoachingIntent && candidateStudentForCoaching && !deleteItemTarget && !hasDeleteStudentIntent && !hasStudentReportIntent) {
+      action = {
+        type: "SHOW_STUDENT_COACHING_CARD",
+        title: `جلسة سهرة واستشارة تربوية: ${candidateStudentForCoaching.name}`,
+        data: {
+          studentId: candidateStudentForCoaching.id,
+          studentName: candidateStudentForCoaching.name,
+          halaqahName: candidateStudentForCoaching.halaqahName || "الحلقة القرآنية",
+          level: candidateStudentForCoaching.level || "متوسط",
+          currentSurah: candidateStudentForCoaching.currentSurahName || "الفاتحة",
+          currentAyah: candidateStudentForCoaching.currentAyah || 1,
+          dailyTarget: candidateStudentForCoaching.dailyNewTarget || "نصف وجه",
+          totalPoints: typeof candidateStudentForCoaching.points === 'number' ? candidateStudentForCoaching.points : candidateStudentForCoaching.totalPoints || 0,
+          attendanceRate: studentWeekPct,
+          overallAttendanceRate: studentOverallPct,
+          parentPhone: candidateStudentForCoaching.parentPhone || candidateStudentForCoaching.phone || "",
+        }
+      };
     }
 
-    return res.json({ reply: stripFaceEmojis(geminiReply), action });
+    const coachingSuggestions = hasCoachingIntent ? [
+      candidateStudentForCoaching ? `كيف أتواصل مع ولي أمر ${candidateStudentForCoaching.name}؟` : "كيف أحفز طلاب الحلقة عموماً؟",
+      candidateStudentForCoaching ? `ضع لي خطة أسبوعية لعلاج ضعف ${candidateStudentForCoaching.name}` : "أفكار مسابقات حماسية لكسر روتين الحلقة",
+      candidateStudentForCoaching ? `ماذا أفعل لو عاد ${candidateStudentForCoaching.name} للشغب مرة أخرى؟` : "كيف أتعامل مع الطلاب متعددي الأعمار في حلقة واحدة؟",
+      "جلسة سهرة: اسألني سؤالاً تربوياً لتطوير مهاراتي كمعلم قرآن"
+    ] : undefined;
+
+    return res.json({ reply: stripFaceEmojis(geminiReply), action, suggestions: coachingSuggestions });
   } catch (error: any) {
     console.error("Gemini assistant error:", error);
     res.json({

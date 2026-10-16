@@ -48,7 +48,9 @@ import {
   TrendingDown,
   Calendar,
   Headphones,
-  UserPlus
+  UserPlus,
+  Moon,
+  Lightbulb
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { jsPDF } from 'jspdf';
@@ -135,6 +137,7 @@ interface ChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  suggestions?: string[];
   action?: {
     type:
       | 'SHOW_REGISTRATION_SURVEY'
@@ -159,7 +162,8 @@ interface ChatMessage {
       | 'SHOW_STUDENT_EVALUATION'
       | 'SHOW_STUDENT_ATTENDANCE'
       | 'SHOW_STUDENT_REPORT'
-      | 'SHOW_MULTI_STUDENT_REPORT';
+      | 'SHOW_MULTI_STUDENT_REPORT'
+      | 'SHOW_STUDENT_COACHING_CARD';
     title?: string;
     data?: any;
     chartType?: string;
@@ -278,6 +282,12 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     tomorrowNote: '',
   });
   const [isPlayingAudioUrl, setIsPlayingAudioUrl] = useState<string | null>(null);
+
+  // Pedagogical Coaching Mode & Student Mentorship States ("سهرة تربوية وحوار مفتوح مع جيمناي")
+  const [isCoachingModeActive, setIsCoachingModeActive] = useState<boolean>(false);
+  const [selectedCoachingStudent, setSelectedCoachingStudent] = useState<Student | null>(null);
+  const [isStudentPickerOpen, setIsStudentPickerOpen] = useState<boolean>(false);
+  const [studentCoachingSearch, setStudentCoachingSearch] = useState<string>('');
 
   // Complex Theme Colors strictly mapped to platform theme
   const theme = activeComplex?.theme;
@@ -872,6 +882,16 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             : (activeComplex?.name || 'مجمع النور القرآني'),
         },
         activeHalaqah,
+        activeStudent: selectedCoachingStudent ? {
+          id: selectedCoachingStudent.id,
+          name: selectedCoachingStudent.name,
+          halaqahId: selectedCoachingStudent.halaqahId,
+          halaqahName: selectedCoachingStudent.halaqahName,
+          level: selectedCoachingStudent.level,
+          currentSurahName: selectedCoachingStudent.currentSurahName,
+          dailyNewTarget: selectedCoachingStudent.dailyNewTarget,
+          parentPhone: selectedCoachingStudent.parentPhone || selectedCoachingStudent.phone,
+        } : undefined,
         dataContext: {
           violations: violations.map(v => ({
             id: v.id,
@@ -1051,6 +1071,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         text: stripFaceEmojis(data.reply || 'أهلاً بك يا أخي، تم استلام طلبك.'),
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         action: data.action || undefined,
+        suggestions: Array.isArray(data.suggestions) && data.suggestions.length > 0 ? data.suggestions : undefined,
       };
 
       const finalMessages = [...updatedWithUser, assistantMsg];
@@ -3063,6 +3084,28 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
                         {/* Text Body */}
                         <div className="text-white/95 leading-normal">{stripFaceEmojis(msg.text)}</div>
+
+                        {/* Interactive Follow-up Questions / Suggestions ("أخذ وعطاء مثل جيمناي") */}
+                        {msg.suggestions && msg.suggestions.length > 0 && (
+                          <div className="mt-3 pt-2.5 border-t border-white/10 flex flex-wrap gap-1.5 animate-in fade-in">
+                            <span className="w-full text-[10px] text-amber-300 font-bold flex items-center gap-1 mb-0.5">
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>محاور لمواصلة الحوار والاستشارة (أخذ وعطاء):</span>
+                            </span>
+                            {msg.suggestions.map((sug, sIdx) => (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onClick={() => handleSendMessage(sug)}
+                                disabled={isLoading}
+                                className="text-[11px] px-2.5 py-1 rounded-lg bg-black/40 hover:bg-black/60 border border-amber-400/30 hover:border-amber-400 text-amber-100 hover:text-white transition-all text-right flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                <MessageSquare className="w-3 h-3 text-amber-300 shrink-0" />
+                                <span>{sug}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         {/* ---------------------------------------------------- */}
                         {/* 1. Interactive Student Registration Survey Card      */}
@@ -6292,6 +6335,75 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                             </button>
                           </div>
                         )}
+
+                        {/* ---------------------------------------------------- */}
+                        {/* 13. Student Pedagogical Coaching Card               */}
+                        {/* ---------------------------------------------------- */}
+                        {msg.action?.type === 'SHOW_STUDENT_COACHING_CARD' && (
+                          <div
+                            style={{
+                              backgroundColor: `${primaryColor}F8`,
+                              borderColor: `${accentColor}90`,
+                            }}
+                            className="mt-3 p-3.5 rounded-2xl border text-xs text-emerald-100 space-y-3 shadow-xl animate-fade-in"
+                          >
+                            <div className="flex items-center justify-between border-b border-emerald-800 pb-2">
+                              <span className="font-bold flex items-center gap-1.5" style={{ color: accentColor }}>
+                                <Sparkles className="w-4 h-4 text-amber-300" />
+                                <span>جلسة استشارة وتطوير الطالب: {msg.action.data?.studentName}</span>
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 flex items-center gap-1">
+                                <span>سهرة تربوية</span>
+                              </span>
+                            </div>
+
+                            {/* Student Mini Stats Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                              <div className="p-2 rounded-xl bg-black/30 border border-white/5">
+                                <span className="block text-[10px] text-emerald-300/70">الحلقة القرآنية</span>
+                                <span className="text-xs font-bold text-white truncate block">{msg.action.data?.halaqahName || 'الحلقة'}</span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-black/30 border border-white/5">
+                                <span className="block text-[10px] text-emerald-300/70">المستوى القرآني</span>
+                                <span className="text-xs font-bold text-amber-300 truncate block">{msg.action.data?.level || 'متوسط'}</span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-black/30 border border-white/5">
+                                <span className="block text-[10px] text-emerald-300/70">السورة الحالية</span>
+                                <span className="text-xs font-bold text-white truncate block">سورة {msg.action.data?.currentSurah || 'الفاتحة'}</span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-black/30 border border-white/5">
+                                <span className="block text-[10px] text-emerald-300/70">رصيد النقاط</span>
+                                <span className="text-xs font-bold text-amber-400 block">{msg.action.data?.totalPoints || 0} نقطة</span>
+                              </div>
+                            </div>
+
+                            {/* Quick Coaching Actions */}
+                            <div className="pt-1 flex flex-wrap gap-2">
+                              {msg.action.data?.parentPhone && (
+                                <a
+                                  href={`https://wa.me/${String(msg.action.data?.parentPhone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                    `السلام عليكم ورحمة الله وبركاته، ولي أمر الطالب المبارك ${msg.action.data?.studentName}.. نحييكم من مجمع القرآن الكريم ونبشركم بجهوده ونسعد بتعاوننا المستمر لتيسير حفظه وإتقانه لكتاب الله تعالى 🌿`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-1 min-w-[140px] py-2 px-3 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 border border-emerald-600/50 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow"
+                                >
+                                  <Share2 className="w-3.5 h-3.5 text-emerald-300" />
+                                  <span>مراسلة ولي الأمر بالواتساب</span>
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleSendMessage(`ضع لي خطة علاجية مخصصة ومفصلة لـ ${msg.action.data?.studentName} للأسبوع القادم`)}
+                                disabled={isLoading}
+                                className="flex-1 min-w-[140px] py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-amber-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow"
+                              >
+                                <BookOpen className="w-3.5 h-3.5 text-amber-300" />
+                                <span>طلب خطة علاجية مخصصة</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -6315,34 +6427,279 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                   <div ref={chatBottomRef} />
                 </div>
 
+                {/* Student Picker Popover for Coaching Mode */}
+                {isStudentPickerOpen && (
+                  <div
+                    style={{ backgroundColor: `${primaryColor}F8` }}
+                    className="absolute inset-0 z-40 backdrop-blur-md flex flex-col p-4 animate-in fade-in duration-150"
+                  >
+                    <div className="flex items-center justify-between pb-3 border-b border-emerald-800/80 mb-3">
+                      <h4 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                        <Users className="w-4 h-4" />
+                        <span>اختيار طالب لجلسة الاستشارة والتطوير 🎯</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsStudentPickerOpen(false);
+                          setStudentCoachingSearch('');
+                        }}
+                        className="text-xs text-emerald-300 hover:text-white p-1 rounded hover:bg-white/10 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="relative mb-3">
+                      <Search className="w-4 h-4 absolute right-3 top-2.5 text-emerald-400/60" />
+                      <input
+                        type="text"
+                        value={studentCoachingSearch}
+                        onChange={e => setStudentCoachingSearch(e.target.value)}
+                        placeholder="ابحث باسم الطالب أو الحلقة..."
+                        className="w-full bg-black/40 border border-white/15 rounded-xl pr-9 pl-3 py-2 text-xs text-white placeholder-emerald-400/50 focus:outline-none focus:border-amber-400"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                      {students
+                        .filter(s => {
+                          if (!studentCoachingSearch.trim()) return true;
+                          const normQ = normalizeArabic(studentCoachingSearch);
+                          return normalizeArabic(s.name).includes(normQ) || normalizeArabic(s.halaqahName || '').includes(normQ);
+                        })
+                        .map(st => (
+                          <div
+                            key={st.id}
+                            onClick={() => {
+                              setSelectedCoachingStudent(st);
+                              setIsStudentPickerOpen(false);
+                              setIsCoachingModeActive(true);
+                              setStudentCoachingSearch('');
+                            }}
+                            className="p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-amber-400/15 hover:border-amber-400/50 cursor-pointer flex items-center justify-between gap-2 transition-all"
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <div
+                                style={{ backgroundColor: accentColor, color: primaryColor }}
+                                className="w-7 h-7 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                              >
+                                {st.name.slice(0, 1)}
+                              </div>
+                              <div className="truncate">
+                                <p className="font-semibold text-emerald-100 text-xs truncate">{st.name}</p>
+                                <span className="text-[10px] text-emerald-400/70">
+                                  {st.halaqahName || 'الحلقة'} • المستوى: {st.level || 'متوسط'}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] bg-black/40 text-amber-300 border border-white/10 shrink-0 font-bold">
+                              سورة {st.currentSurahName || 'الفاتحة'}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mode Selector & Quick Coaching Student Bar */}
+                <div className="px-3 py-1.5 border-t border-white/10 bg-black/45 flex items-center justify-between gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCoachingModeActive(false);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        !isCoachingModeActive
+                          ? 'bg-amber-400 text-slate-950 shadow'
+                          : 'text-emerald-300/80 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>أوامر وإحصائيات</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCoachingModeActive(true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isCoachingModeActive
+                          ? 'bg-amber-400 text-slate-950 shadow'
+                          : 'text-amber-300 hover:text-amber-200 hover:bg-amber-400/10 border border-amber-400/30'
+                      }`}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span>سهرة واستشارة تربوية 🌙</span>
+                    </button>
+                  </div>
+
+                  {isCoachingModeActive && (
+                    <div className="flex items-center gap-1.5">
+                      {selectedCoachingStudent ? (
+                        <div className="flex items-center gap-1 bg-amber-400/20 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                          <span>🎯 {selectedCoachingStudent.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCoachingStudent(null)}
+                            className="hover:text-white cursor-pointer ml-0.5"
+                            title="إلغاء تحديد الطالب"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsStudentPickerOpen(true)}
+                          className="px-2 py-1 rounded-lg bg-emerald-700/60 hover:bg-emerald-600 text-white text-[10px] font-bold border border-emerald-500/50 flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>اختر طالباً للاستشارة</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Quick Suggestion Chips Bar */}
                 <div className="p-2 border-t border-white/10 bg-black/35 overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
-                  {quickActions.map((action, idx) => {
-                    const IconComp =
-                      action.icon === 'award' ? Award :
-                      action.icon === 'chart' ? BarChart3 :
-                      action.icon === 'palette' ? Palette :
-                      action.icon === 'headphones' ? Headphones :
-                      action.icon === 'trophy' ? Trophy :
-                      action.icon === 'trendDown' ? TrendingDown :
-                      action.icon === 'alert' ? AlertTriangle :
-                      action.icon === 'calendar' ? Calendar :
-                      action.icon === 'book' ? BookOpen :
-                      UserPlus;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleSendMessage(action.query)}
-                        style={{
-                          borderColor: `${accentColor}40`,
-                        }}
-                        className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
-                      >
-                        <IconComp className="w-3.5 h-3.5 text-amber-300" />
-                        <span>{action.label}</span>
-                      </button>
-                    );
-                  })}
+                  {isCoachingModeActive ? (
+                    selectedCoachingStudent ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(`كيف أطور حفظ وتثبيت الطالب ${selectedCoachingStudent.name} وأسرّع إنجازه؟`)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-amber-400/15 hover:bg-amber-400/25 text-amber-200 hover:text-white border border-amber-400/40 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <Lightbulb className="w-3.5 h-3.5 text-amber-300" />
+                          <span>💡 كيف أطور حفظه وتثبيته؟</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(`الطالب ${selectedCoachingStudent.name} معقدني في الحلقة وما يركز ويشوش على زملائه، كيف أتعامل معه بحكمة نبوية وتربوية دون إحراجه؟`)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-red-500/15 hover:bg-red-500/25 text-red-200 hover:text-white border border-red-500/40 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-300" />
+                          <span>🤯 طالب معقدني ومشوش، كيف أتصرف؟</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(`الطالب ${selectedCoachingStudent.name} بطيء في الحفظ ويتكاسل وتراكمت عليه المراجعة، ما الحل التربوي المناسب معه؟`)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 hover:text-white border border-emerald-500/40 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-emerald-300" />
+                          <span>🐢 بطيء الحفظ ويتكاسل، ما الحل؟</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(`ضع لي خطة علاجية وتثبيت شاملة لـ ${selectedCoachingStudent.name} تبدأ من السورة الحالية`)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-300" />
+                          <span>📋 خطة علاجية وتثبيت مخصصة</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage(`كيف أكسب قلب الطالب ${selectedCoachingStudent.name} وأتعاون مع ولي أمره لتحفيزه؟`)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <Users className="w-3.5 h-3.5 text-amber-300" />
+                          <span>🤝 كسب قلبه والتواصل مع أسرته</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsStudentPickerOpen(true)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-emerald-800/40 hover:bg-emerald-700/60 text-amber-300 border border-amber-400/40 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 font-bold"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>تغيير الطالب</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsStudentPickerOpen(true)}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 hover:text-white border border-amber-400/50 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 font-bold shadow-sm"
+                        >
+                          <UserPlus className="w-3.5 h-3.5 text-amber-300" />
+                          <span>🎯 اختيار طالب محدد للاستشارة</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage('سهرة تربوية: عندي طالب معقدني ما يركز ومشاغب في الحلقة ويشوش على البقية، كيف أتصرف معه بحكمة نبوية وتربوية؟')}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                          <span>🤯 التعامل مع طالب معقدني ومشاغب</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage('كيف أطور مهارات الحفظ السريع والتثبيت لطلاب الحلقة وأعالج نسيان الماضي؟')}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <Lightbulb className="w-3.5 h-3.5 text-amber-300" />
+                          <span>🚀 تطوير الحفظ السريع والتثبيت</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage('أفكار مسابقات إبداعية غير مسبوقة وتحديات لكسر روتين الحلقة وتحفيز الطلاب')}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                          <span>🏆 مسابقات لكسر روتين الحلقة</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendMessage('جلسة سهرة تربوية مفتوحة: اسألني أسئلة استكشافية عن حلقتي وساعدني في تقييم أسلوبي كمعلم قرآن')}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border border-white/20 shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <Moon className="w-3.5 h-3.5 text-amber-300" />
+                          <span>☕ سهرة حوار مفتوحة (اسألني وأسألك)</span>
+                        </button>
+                      </>
+                    )
+                  ) : (
+                    quickActions.map((action, idx) => {
+                      const IconComp =
+                        action.icon === 'award' ? Award :
+                        action.icon === 'chart' ? BarChart3 :
+                        action.icon === 'palette' ? Palette :
+                        action.icon === 'headphones' ? Headphones :
+                        action.icon === 'trophy' ? Trophy :
+                        action.icon === 'trendDown' ? TrendingDown :
+                        action.icon === 'alert' ? AlertTriangle :
+                        action.icon === 'calendar' ? Calendar :
+                        action.icon === 'book' ? BookOpen :
+                        UserPlus;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleSendMessage(action.query)}
+                          style={{
+                            borderColor: `${accentColor}40`,
+                          }}
+                          className="px-2.5 py-1 rounded-full text-[11px] bg-white/5 hover:bg-white/15 text-emerald-100 hover:text-white border shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm font-medium"
+                        >
+                          <IconComp className="w-3.5 h-3.5 text-amber-300" />
+                          <span>{action.label}</span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
 
                 {/* Message Input Form */}
@@ -6364,7 +6721,13 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                       type="text"
                       value={inputMessage}
                       onChange={e => setInputMessage(e.target.value)}
-                      placeholder="اسأل المساعد، اطلب كشف الطلاب أو الحضور، أو احذف أو سجّل..."
+                      placeholder={
+                        selectedCoachingStudent
+                          ? `اسأل عن تطوير ${selectedCoachingStudent.name}، أو سلوكه، أو خطته...`
+                          : isCoachingModeActive
+                            ? 'اسأل المستشار التربوي، فضفض عن طالب معقدك، أو استشره في تطوير الحلقة...'
+                            : 'اسأل المساعد، اطلب كشف الطلاب أو الحضور، أو احذف أو سجّل...'
+                      }
                       disabled={isLoading}
                       className="flex-1 bg-black/40 border rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white placeholder-emerald-400/50 focus:outline-none transition-colors"
                       style={{
