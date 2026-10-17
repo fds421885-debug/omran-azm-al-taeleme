@@ -22,14 +22,17 @@ import {
   ShieldCheck,
   Award,
   AlertCircle,
-  Hash
+  Hash,
+  HelpCircle,
+  CheckSquare
 } from 'lucide-react';
 import {
   QuranComplex,
   Halaqah,
   StudentRegistrationApplication,
   ComplexPortalConfig,
-  Student
+  Student,
+  PortalCustomQuestion
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
@@ -91,7 +94,13 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       parentPhoneRequired: true,
       memorizedJuzRequired: true,
       preferredHalaqahRequired: true,
-      notesAllowed: true
+      notesAllowed: true,
+      showHalaqahQuestion: true,
+      halaqahQuestionLabel: 'الحلقة القرآنية المفضلة',
+      halaqahSelectionMode: 'all',
+      allowedHalaqahIds: [],
+      allowAutoPlacement: true,
+      customQuestions: []
     }
   };
 
@@ -124,16 +133,41 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const themeCardShadow = darkenHex(themeCard, 0.35);
   const accentTextColor = getContrastTextColor(themeAccent);
 
+  // Compute Allowed Halaqahs for the Registration Dropdown
+  const showHalaqahQuestion = portalConfig.fieldConfig.showHalaqahQuestion !== false;
+  const halaqahQuestionLabel = portalConfig.fieldConfig.halaqahQuestionLabel || 'الحلقة المرغوبة في المجمع:';
+  const allowAutoPlacement = portalConfig.fieldConfig.allowAutoPlacement !== false;
+
+  const visibleHalaqahs = useMemo(() => {
+    if (!showHalaqahQuestion) return [];
+    if (portalConfig.fieldConfig.halaqahSelectionMode === 'specific' && Array.isArray(portalConfig.fieldConfig.allowedHalaqahIds) && portalConfig.fieldConfig.allowedHalaqahIds.length > 0) {
+      const allowedSet = new Set(portalConfig.fieldConfig.allowedHalaqahIds);
+      return halaqahs.filter(h => allowedSet.has(h.id));
+    }
+    return halaqahs;
+  }, [showHalaqahQuestion, portalConfig.fieldConfig.halaqahSelectionMode, portalConfig.fieldConfig.allowedHalaqahIds, halaqahs]);
+
   // Form State: Register / Join Request
   const [studentName, setStudentName] = useState('');
   const [studentAge, setStudentAge] = useState<number>(10);
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [selectedJuz, setSelectedJuz] = useState<number[]>([30]);
-  const [preferredHalaqahId, setPreferredHalaqahId] = useState<string>(
-    halaqahs.length > 0 ? halaqahs[0].id : ''
-  );
+  const [preferredHalaqahId, setPreferredHalaqahId] = useState<string>(() => {
+    if (visibleHalaqahs.length > 0) return visibleHalaqahs[0].id;
+    return '';
+  });
   const [applicationNotes, setApplicationNotes] = useState('');
+
+  // Custom Questions State
+  const activeCustomQuestions: PortalCustomQuestion[] = useMemo(() => {
+    const list = portalConfig.fieldConfig.customQuestions;
+    if (!Array.isArray(list)) return [];
+    return list.filter(q => q.isEnabled !== false);
+  }, [portalConfig.fieldConfig.customQuestions]);
+
+  const [customAnswers, setCustomAnswers] = useState<Record<string, any>>({});
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccessApp, setSubmitSuccessApp] = useState<StudentRegistrationApplication | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -170,6 +204,23 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     setSelectedJuz([]);
   };
 
+  // Handle Custom Question Value Change
+  const handleCustomAnswerChange = (questionId: string, val: any) => {
+    setCustomAnswers(prev => ({
+      ...prev,
+      [questionId]: val
+    }));
+  };
+
+  // Toggle Checkbox Item in multi-selection
+  const handleToggleCheckboxOption = (questionId: string, option: string) => {
+    const currentList: string[] = Array.isArray(customAnswers[questionId]) ? customAnswers[questionId] : [];
+    const updated = currentList.includes(option)
+      ? currentList.filter(o => o !== option)
+      : [...currentList, option];
+    handleCustomAnswerChange(questionId, updated);
+  };
+
   // Handle Join Application Submission
   const handleSubmitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,16 +236,33 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       return;
     }
 
+    // Validate Required Custom Questions
+    for (const q of activeCustomQuestions) {
+      if (q.required) {
+        const ans = customAnswers[q.id];
+        if (ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0)) {
+          setFormError(`يرجى الإجابة على السؤال الإلزامي: "${q.label}".`);
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      // Generate clean tracking code: OMR-[COMPLEX_INITIALS]-[RANDOM6]
-      const complexInit = (complex.name || 'OMR')
-        .replace(/[^\u0621-\u064A\w]/g, '')
-        .slice(0, 3) || 'OMR';
       const randomDigits = Math.floor(100000 + Math.random() * 900000);
       const trackingCode = `OMR-${randomDigits}`;
 
       const selectedHalaqahObj = halaqahs.find(h => h.id === preferredHalaqahId);
+
+      // Build structured custom responses
+      const customQuestionResponses = activeCustomQuestions
+        .filter(q => customAnswers[q.id] !== undefined && customAnswers[q.id] !== '')
+        .map(q => ({
+          questionId: q.id,
+          questionLabel: q.label,
+          questionType: q.type,
+          answer: customAnswers[q.id]
+        }));
 
       const newApp: StudentRegistrationApplication = {
         id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -206,11 +274,15 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         parentName: parentName.trim() || 'ولي الأمر',
         parentPhone: parentPhone.trim(),
         memorizedJuzList: selectedJuz,
-        preferredHalaqahId: preferredHalaqahId || undefined,
-        preferredHalaqahName: selectedHalaqahObj?.name || 'توجيه تلقائي من المشرف',
+        preferredHalaqahId: showHalaqahQuestion && preferredHalaqahId ? preferredHalaqahId : undefined,
+        preferredHalaqahName: showHalaqahQuestion
+          ? selectedHalaqahObj?.name || 'توجيه تلقائي من المشرف'
+          : 'توجيه تلقائي من المشرف (سؤال الحلقة معطل)',
         notes: applicationNotes.trim() || undefined,
         status: 'pending',
-        appliedAt: new Date().toISOString()
+        appliedAt: new Date().toISOString(),
+        customAnswers,
+        customQuestionResponses
       };
 
       await OmranDataService.saveRegistrationApplication(newApp);
@@ -378,7 +450,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 >
                   البوابة المخصصة للمجمع
                 </span>
-                <span className="text-xs text-slate-300 hidden sm:inline">• منظومة عمران</span>
+                <span className="text-xs text-slate-300 hidden sm:inline">• منظومة عُمْرَان</span>
               </div>
               <h1 className="text-lg sm:text-xl font-black font-heading tracking-wide text-white">
                 {complex.name}
@@ -740,6 +812,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                       setStudentName('');
                       setParentPhone('');
                       setParentName('');
+                      setCustomAnswers({});
                     }}
                     className="px-4 py-3 rounded-2xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white cursor-pointer transition-all"
                     style={{
@@ -849,7 +922,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid grid-cols-1 ${showHalaqahQuestion ? 'sm:grid-cols-2' : ''} gap-4`}>
                   {/* 4. Parent Name */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-slate-200 block">اسم ولي الأمر:</label>
@@ -866,31 +939,231 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                     />
                   </div>
 
-                  {/* 5. Preferred Halaqah */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-200 block">
-                      الحلقة المرغوبة في المجمع:
-                    </label>
-                    <select
-                      value={preferredHalaqahId}
-                      onChange={e => setPreferredHalaqahId(e.target.value)}
-                      className="w-full border-2 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer"
-                      style={{
-                        backgroundColor: themeBg,
-                        borderColor: themeCardBorder
-                      }}
-                    >
-                      <option value="">توجيه تلقائي من المشرف حسب المستوى</option>
-                      {halaqahs.map(h => (
-                        <option key={h.id} value={h.id}>
-                          {h.name} {h.primaryTeacherName ? `(المعلم: ${h.primaryTeacherName})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* 5. Preferred Halaqah (يظهر فقط إذا كان مفعلاً من المشرف) */}
+                  {showHalaqahQuestion && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-slate-200 block">
+                        {halaqahQuestionLabel}
+                      </label>
+                      <select
+                        value={preferredHalaqahId}
+                        onChange={e => setPreferredHalaqahId(e.target.value)}
+                        className="w-full border-2 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer"
+                        style={{
+                          backgroundColor: themeBg,
+                          borderColor: themeCardBorder
+                        }}
+                      >
+                        {allowAutoPlacement && (
+                          <option value="">توجيه تلقائي من المشرف حسب المستوى</option>
+                        )}
+                        {visibleHalaqahs.map(h => (
+                          <option key={h.id} value={h.id}>
+                            {h.name} {h.primaryTeacherName ? `(المعلم: ${h.primaryTeacherName})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
-                {/* 6. Quranic Juz Memorization (أجزاء القرآن الكريم الـ 30) */}
+                {/* 6. DYNAMIC CUSTOM QUESTIONS (الأسئلة الإضافية المخصصة من المشرف) */}
+                {activeCustomQuestions.length > 0 && (
+                  <div className="space-y-4 pt-3 border-t border-white/10">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-xs font-black text-amber-300">أسئلة إضافية خاصة بالمجمع:</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {activeCustomQuestions.map(q => {
+                        const val = customAnswers[q.id];
+
+                        return (
+                          <div
+                            key={q.id}
+                            className={`space-y-1.5 ${
+                              q.type === 'textarea' || q.type === 'checkbox' || q.type === 'radio'
+                                ? 'sm:col-span-2'
+                                : ''
+                            }`}
+                          >
+                            <label className="text-xs font-black text-slate-200 flex items-center justify-between">
+                              <span>{q.label}</span>
+                              {q.required ? (
+                                <span className="text-[10px] text-amber-400 font-bold">مطلوب *</span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-bold">اختياري</span>
+                              )}
+                            </label>
+
+                            {q.description && (
+                              <p className="text-[11px] text-slate-400 font-bold">{q.description}</p>
+                            )}
+
+                            {/* TEXT INPUT */}
+                            {q.type === 'text' && (
+                              <input
+                                type="text"
+                                required={q.required}
+                                value={val || ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                placeholder={q.placeholder || 'اكتب الإجابة هنا...'}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                              />
+                            )}
+
+                            {/* TEXTAREA INPUT */}
+                            {q.type === 'textarea' && (
+                              <textarea
+                                rows={2}
+                                required={q.required}
+                                value={val || ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                placeholder={q.placeholder || 'اكتب التفاصيل والملاحظات هنا...'}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400 resize-none"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                              />
+                            )}
+
+                            {/* NUMBER INPUT */}
+                            {q.type === 'number' && (
+                              <input
+                                type="number"
+                                required={q.required}
+                                value={val !== undefined ? val : ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value === '' ? '' : Number(e.target.value))}
+                                placeholder={q.placeholder || 'أدخل الرقم...'}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                              />
+                            )}
+
+                            {/* PHONE INPUT */}
+                            {q.type === 'phone' && (
+                              <input
+                                type="tel"
+                                required={q.required}
+                                value={val || ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                placeholder={q.placeholder || '05xxxxxxxx'}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                                dir="ltr"
+                              />
+                            )}
+
+                            {/* DATE INPUT */}
+                            {q.type === 'date' && (
+                              <input
+                                type="date"
+                                required={q.required}
+                                value={val || ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white outline-none font-bold transition-all focus:border-amber-400"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                              />
+                            )}
+
+                            {/* SELECT DROPDOWN */}
+                            {q.type === 'select' && (
+                              <select
+                                required={q.required}
+                                value={val || ''}
+                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none cursor-pointer"
+                                style={{
+                                  backgroundColor: themeBg,
+                                  borderColor: themeCardBorder
+                                }}
+                              >
+                                <option value="">{q.placeholder || '-- اختر إجابتك --'}</option>
+                                {q.options?.map((opt, oIdx) => (
+                                  <option key={oIdx} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            {/* RADIO BUTTONS GROUP */}
+                            {q.type === 'radio' && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                                {q.options?.map((opt, oIdx) => {
+                                  const isSelected = val === opt;
+                                  return (
+                                    <button
+                                      key={oIdx}
+                                      type="button"
+                                      onClick={() => handleCustomAnswerChange(q.id, opt)}
+                                      className={`p-2.5 rounded-xl border-2 text-right text-xs font-black flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                        isSelected
+                                          ? 'border-amber-400 bg-amber-400/20 text-white shadow-sm'
+                                          : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/20'
+                                      }`}
+                                    >
+                                      <span>{opt}</span>
+                                      {isSelected ? (
+                                        <Check className="w-3.5 h-3.5 text-amber-400" />
+                                      ) : (
+                                        <div className="w-3 h-3 rounded-full border border-white/30" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* CHECKBOXES GROUP */}
+                            {q.type === 'checkbox' && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                                {q.options?.map((opt, oIdx) => {
+                                  const currentArray = Array.isArray(val) ? val : [];
+                                  const isChecked = currentArray.includes(opt);
+                                  return (
+                                    <button
+                                      key={oIdx}
+                                      type="button"
+                                      onClick={() => handleToggleCheckboxOption(q.id, opt)}
+                                      className={`p-2.5 rounded-xl border-2 text-right text-xs font-black flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                        isChecked
+                                          ? 'border-amber-400 bg-amber-400/20 text-white shadow-sm'
+                                          : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/20'
+                                      }`}
+                                    >
+                                      <span>{opt}</span>
+                                      <CheckSquare
+                                        className={`w-4 h-4 ${isChecked ? 'text-amber-400' : 'text-slate-500'}`}
+                                      />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. Quranic Juz Memorization (أجزاء القرآن الكريم الـ 30) */}
                 {portalConfig.fieldConfig.memorizedJuzRequired && (
                   <div className="space-y-2.5 pt-2 border-t border-white/10">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -979,7 +1252,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 )}
 
-                {/* 7. Notes */}
+                {/* 8. Notes */}
                 {portalConfig.fieldConfig.notesAllowed && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-slate-200 block">
@@ -1207,6 +1480,23 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                         <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-400/30 text-white text-xs sm:text-sm font-bold leading-relaxed">
                           طلبكم قيد المراجعة والفرز من قِبل المشرف التعليمي للمجمع. سيتم تحديث حالة الطلب وإرسال
                           إشعار لكم بمجرد اعتماد الحلقة والتوقيت المناسب.
+                        </div>
+                      )}
+
+                      {/* Display Custom Question Responses if any */}
+                      {trackedApplication.customQuestionResponses && trackedApplication.customQuestionResponses.length > 0 && (
+                        <div className="pt-3 border-t border-white/10 space-y-1.5">
+                          <span className="text-[11px] font-black text-amber-400 block">بيانات وإجابات النموذج:</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {trackedApplication.customQuestionResponses.map((r, idx) => (
+                              <div key={idx} className="p-2 rounded-xl bg-white/5 border border-white/10">
+                                <span className="text-slate-400 font-bold block">{r.questionLabel}:</span>
+                                <span className="font-black text-white">
+                                  {Array.isArray(r.answer) ? r.answer.join(', ') : String(r.answer)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>

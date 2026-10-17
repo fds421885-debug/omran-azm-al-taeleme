@@ -62,6 +62,28 @@ export interface QuranComplex {
 
 export type ComplexPortalMode = 'login_and_register' | 'login_only' | 'register_only';
 
+export type PortalQuestionType =
+  | 'text' // نص قصير
+  | 'textarea' // نص طويل / تفاصيل
+  | 'number' // رقم
+  | 'select' // قائمة منسدلة
+  | 'radio' // اختيار فردي
+  | 'checkbox' // اختيار متعدد
+  | 'date' // تاريخ
+  | 'phone'; // رقم هاتف / واتساب
+
+export interface PortalCustomQuestion {
+  id: string; // e.g. "q_grade", "q_school"
+  label: string; // نص السؤال
+  description?: string; // إرشاد أو توضيح إضافي
+  placeholder?: string; // نص باهت داخل الحقل
+  type: PortalQuestionType;
+  required: boolean;
+  options?: string[]; // خيارات القائمة المنسدلة أو الراديو أو مربعات الاختيار
+  order?: number;
+  isEnabled?: boolean;
+}
+
 export interface ComplexPortalFieldConfig {
   studentNameRequired: boolean; // مقالي (اسم الطالب الرباعي أو الثلاثي)
   ageRequired: boolean; // عمر الطالب (من 0 - 100)
@@ -70,6 +92,16 @@ export interface ComplexPortalFieldConfig {
   memorizedJuzRequired: boolean; // أجزاء القرآن المحفوظة (أجزاء من 1 - 30)
   preferredHalaqahRequired: boolean; // اختيار الحلقة
   notesAllowed: boolean; // ملاحظات إضافية
+
+  // التحكم المتقدم في سؤال اختيار الحلقة
+  showHalaqahQuestion?: boolean; // هل يظهر سؤال اختيار الحلقة أصلاً (افتراضياً true)
+  halaqahQuestionLabel?: string; // نص وصيغة سؤال اختيار الحلقة (مثل: "اختر الحلقة المناسبة لك")
+  halaqahSelectionMode?: 'all' | 'specific'; // 'all': جميع حلقات المجمع، 'specific': حلقات محددة
+  allowedHalaqahIds?: string[]; // قائمة الحلقات المسموح بظهورها فقط عند اختيار specific
+  allowAutoPlacement?: boolean; // إتاحة خيار "توجيه تلقائي من المشرف"
+
+  // الأسئلة المخصصة الإضافية التي يضيفها المشرف بأي نوع وصيغة
+  customQuestions?: PortalCustomQuestion[];
 }
 
 export interface ComplexPortalConfig {
@@ -105,6 +137,15 @@ export interface StudentRegistrationApplication {
   appliedAt: string;
   reviewedAt?: string;
   reviewedByName?: string;
+
+  // إجابات الأسئلة المخصصة التي صممها المشرف
+  customAnswers?: Record<string, any>;
+  customQuestionResponses?: Array<{
+    questionId: string;
+    questionLabel: string;
+    questionType: PortalQuestionType;
+    answer: any;
+  }>;
 }
 
 export interface Halaqah {
