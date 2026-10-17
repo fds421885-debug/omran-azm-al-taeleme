@@ -1950,52 +1950,60 @@ export class OmranDataService {
   // Seed baseline data directly into Firestore on first deployment
   static async seedInitialDataIfEmpty() {
     try {
-      // First check if platform has already been initialized once
-      const initSnap = await getDoc(doc(db, 'settings', 'system_init'));
-      if (initSnap.exists() && initSnap.data()?.seeded) {
-        // Platform has already completed initial seeding! NEVER re-inject deleted students or data!
-        return;
-      }
+      const deletedStudentIds = OmranDataService.getDeletedStudentIds();
+      const deletedHalaqahIds = getDeletedHalaqahIds();
+      const deletedTeacherIds = getDeletedTeacherIds();
+      const deletedComplexIds = getDeletedComplexIds();
 
       // 0. Complexes (المجمعات القرآنية)
-      const complexSnap = await getDocs(collection(db, 'complexes'));
-      if (complexSnap.empty) {
-        for (const c of DEFAULT_COMPLEXES) {
-          await setDoc(doc(db, 'complexes', c.id), cleanFirestoreData(c));
+      try {
+        const complexSnap = await getDocs(collection(db, 'complexes'));
+        if (complexSnap.empty && deletedComplexIds.size === 0) {
+          for (const c of DEFAULT_COMPLEXES) {
+            await setDoc(doc(db, 'complexes', c.id), cleanFirestoreData(c));
+          }
         }
-      }
+      } catch {}
 
       // 1. Halaqahs
-      const halaqahSnap = await getDocs(collection(db, 'halaqahs'));
-      if (halaqahSnap.empty) {
-        for (const h of DEFAULT_HALAQAHS) {
-          await setDoc(doc(db, 'halaqahs', h.id), cleanFirestoreData(h));
+      try {
+        const halaqahSnap = await getDocs(collection(db, 'halaqahs'));
+        if (halaqahSnap.empty && deletedHalaqahIds.size === 0) {
+          for (const h of DEFAULT_HALAQAHS) {
+            await setDoc(doc(db, 'halaqahs', h.id), cleanFirestoreData(h));
+          }
         }
-      }
+      } catch {}
 
       // 2. Teachers
-      const teachSnap = await getDocs(collection(db, 'teachers'));
-      if (teachSnap.empty) {
-        for (const t of INITIAL_TEACHERS) {
-          await setDoc(doc(db, 'teachers', t.id), cleanFirestoreData(t));
+      try {
+        const teachSnap = await getDocs(collection(db, 'teachers'));
+        if (teachSnap.empty && deletedTeacherIds.size === 0) {
+          for (const t of INITIAL_TEACHERS) {
+            await setDoc(doc(db, 'teachers', t.id), cleanFirestoreData(t));
+          }
         }
-      }
+      } catch {}
 
       // 3. Students
-      const snap = await getDocs(collection(db, 'students'));
-      if (snap.empty) {
-        for (const s of INITIAL_STUDENTS) {
-          await setDoc(doc(db, 'students', s.id), s);
+      try {
+        const snap = await getDocs(collection(db, 'students'));
+        if (snap.empty && deletedStudentIds.size === 0) {
+          for (const s of INITIAL_STUDENTS) {
+            await setDoc(doc(db, 'students', s.id), cleanFirestoreData(s));
+          }
         }
-      }
+      } catch {}
 
       // 4. Criteria
-      const critSnap = await getDocs(collection(db, 'criteria'));
-      if (critSnap.empty) {
-        for (const c of DEFAULT_CRITERIA) {
-          await setDoc(doc(db, 'criteria', c.id), c);
+      try {
+        const critSnap = await getDocs(collection(db, 'criteria'));
+        if (critSnap.empty) {
+          for (const c of DEFAULT_CRITERIA) {
+            await setDoc(doc(db, 'criteria', c.id), cleanFirestoreData(c));
+          }
         }
-      }
+      } catch {}
 
       // 5. Settings
       const setSnap = await getDoc(doc(db, 'settings', 'main'));
@@ -4320,7 +4328,7 @@ export class OmranDataService {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'students'), snap => {
         const deletedIds = OmranDataService.getDeletedStudentIds();
-        const list: Student[] = [];
+        const cloudList: Student[] = [];
         snap.forEach(d => {
           const s = d.data() as Student;
           if (deletedIds.has(s.id)) {
@@ -4329,12 +4337,48 @@ export class OmranDataService {
           if (s.id === 'teacher-1' || (s.id.startsWith('teacher-') && (s as any).username)) {
             return;
           }
-          list.push(s);
+          cloudList.push(s);
         });
-        setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, list);
-        callback(list);
+
+        // Dual persistence: preserve local cache items
+        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []).filter(
+          s => s?.id && !deletedIds.has(s.id)
+        );
+
+        const mergedMap = new Map<string, Student>();
+        // 1. Fill with local items
+        for (const s of local) {
+          if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
+        }
+        // 2. Overlay cloud items
+        for (const s of cloudList) {
+          if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
+        }
+
+        // 3. Fallback to INITIAL_STUDENTS if central database and no explicit deletions have occurred
+        const isCentralDb = !this.getActiveComplex()?.databaseConfig?.isCustom;
+        if (isCentralDb && mergedMap.size === 0 && deletedIds.size === 0) {
+          for (const s of INITIAL_STUDENTS) {
+            if (!deletedIds.has(s.id)) {
+              mergedMap.set(s.id, s);
+            }
+          }
+        }
+
+        const merged = Array.from(mergedMap.values()).map(s => {
+          const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
+          return { ...s, parentPhone };
+        });
+
+        setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
+        callback(merged);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'students');
+        const deletedIds = OmranDataService.getDeletedStudentIds();
+        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS).filter(
+          s => s?.id && !deletedIds.has(s.id)
+        );
+        callback(local.length > 0 ? local : INITIAL_STUDENTS);
       });
     } catch (e) {
       return () => {};
@@ -4344,12 +4388,22 @@ export class OmranDataService {
   static subscribeAttendance(callback: (attendance: AttendanceRecord[]) => void): () => void {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'attendance'), snap => {
-        const list: AttendanceRecord[] = [];
-        snap.forEach(d => list.push(d.data() as AttendanceRecord));
-        setLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, list);
-        callback(list);
+        const cloudList: AttendanceRecord[] = [];
+        snap.forEach(d => cloudList.push(d.data() as AttendanceRecord));
+
+        const local = getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, []);
+        const map = new Map<string, AttendanceRecord>();
+        for (const a of local) if (a?.id) map.set(a.id, a);
+        for (const a of cloudList) if (a?.id) map.set(a.id, a);
+
+        const merged = Array.from(map.values());
+        if (merged.length > 0) {
+          setLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, merged);
+        }
+        callback(merged.length > 0 ? merged : local);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'attendance');
+        callback(getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE));
       });
     } catch (e) {
       return () => {};
@@ -4359,12 +4413,22 @@ export class OmranDataService {
   static subscribeEvaluations(callback: (evaluations: StudentEvaluation[]) => void): () => void {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'evaluations'), snap => {
-        const list: StudentEvaluation[] = [];
-        snap.forEach(d => list.push(d.data() as StudentEvaluation));
-        setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, list);
-        callback(list);
+        const cloudList: StudentEvaluation[] = [];
+        snap.forEach(d => cloudList.push(d.data() as StudentEvaluation));
+
+        const local = getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, []);
+        const map = new Map<string, StudentEvaluation>();
+        for (const ev of local) if (ev?.id) map.set(ev.id, ev);
+        for (const ev of cloudList) if (ev?.id) map.set(ev.id, ev);
+
+        const merged = Array.from(map.values());
+        if (merged.length > 0) {
+          setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, merged);
+        }
+        callback(merged.length > 0 ? merged : local);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'evaluations');
+        callback(getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, INITIAL_EVALUATIONS));
       });
     } catch (e) {
       return () => {};
@@ -4374,12 +4438,20 @@ export class OmranDataService {
   static subscribeCriteria(callback: (criteria: EvaluationCriteria[]) => void): () => void {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'criteria'), snap => {
-        const list: EvaluationCriteria[] = [];
-        snap.forEach(d => list.push(d.data() as EvaluationCriteria));
-        setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, list);
-        callback(list);
+        const cloudList: EvaluationCriteria[] = [];
+        snap.forEach(d => cloudList.push(d.data() as EvaluationCriteria));
+
+        const local = getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA);
+        const map = new Map<string, EvaluationCriteria>();
+        for (const c of local) if (c?.id) map.set(c.id, c);
+        for (const c of cloudList) if (c?.id) map.set(c.id, c);
+
+        const merged = Array.from(map.values());
+        setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, merged);
+        callback(merged.length > 0 ? merged : DEFAULT_CRITERIA);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'criteria');
+        callback(getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA));
       });
     } catch (e) {
       return () => {};
@@ -4424,10 +4496,22 @@ export class OmranDataService {
             list.push(t);
           }
         });
-        setLocalCache(OMRAN_CACHE_KEYS.TEACHERS, list);
-        callback(list);
+        const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS).filter(
+          t => t?.id && !deletedTeacherIds.has(t.id)
+        );
+        const map = new Map<string, TeacherAccount>();
+        for (const t of local) map.set(t.id, t);
+        for (const t of list) map.set(t.id, t);
+        const finalTeachers = Array.from(map.values());
+        setLocalCache(OMRAN_CACHE_KEYS.TEACHERS, finalTeachers);
+        callback(finalTeachers);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'teachers');
+        const deletedTeacherIds = getDeletedTeacherIds();
+        const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS).filter(
+          t => t?.id && !deletedTeacherIds.has(t.id)
+        );
+        callback(local);
       });
 
       if (this.getActiveDb() !== this.getCentralDb()) {
@@ -4465,31 +4549,62 @@ export class OmranDataService {
     try {
       const unsubActive = onSnapshot(collection(this.getActiveDb(), 'halaqahs'), snap => {
         const deletedHalaqahIds = getDeletedHalaqahIds();
-        const list: Halaqah[] = [];
+        const cloudList: Halaqah[] = [];
         snap.forEach(d => {
           const h = d.data() as Halaqah;
           if (h?.id && !deletedHalaqahIds.has(h.id)) {
-            list.push(h);
+            cloudList.push(h);
           }
         });
-        setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, list);
-        callback(list);
+
+        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, []).filter(
+          h => h?.id && !deletedHalaqahIds.has(h.id)
+        );
+
+        const mergedMap = new Map<string, Halaqah>();
+        for (const h of local) {
+          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+        }
+        for (const h of cloudList) {
+          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+        }
+
+        const isCentral = !this.getActiveComplex()?.databaseConfig?.isCustom;
+        if (mergedMap.size === 0 && isCentral && deletedHalaqahIds.size === 0) {
+          for (const h of DEFAULT_HALAQAHS) {
+            if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+          }
+        }
+
+        const merged = Array.from(mergedMap.values());
+        setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
+        callback(merged);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'halaqahs');
+        const deletedHalaqahIds = getDeletedHalaqahIds();
+        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS).filter(
+          h => h?.id && !deletedHalaqahIds.has(h.id)
+        );
+        callback(local.length > 0 ? local : DEFAULT_HALAQAHS);
       });
 
       if (this.getActiveDb() !== this.getCentralDb()) {
         const unsubCentral = onSnapshot(collection(this.getCentralDb(), 'halaqahs'), snap => {
           const deletedHalaqahIds = getDeletedHalaqahIds();
-          const list: Halaqah[] = [];
+          const cloudList: Halaqah[] = [];
           snap.forEach(d => {
             const h = d.data() as Halaqah;
             if (h?.id && !deletedHalaqahIds.has(h.id)) {
-              list.push(h);
+              cloudList.push(h);
             }
           });
-          setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, list);
-          callback(list);
+          const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, []);
+          const map = new Map<string, Halaqah>();
+          for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, h);
+          for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, h);
+          const finalHalaqahs = Array.from(map.values());
+          setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, finalHalaqahs);
+          callback(finalHalaqahs);
         }, () => {});
 
         return () => {
@@ -4742,10 +4857,18 @@ export class OmranDataService {
             list.push(OmranDataService.sanitizeExam({ ...raw, id }));
           }
         });
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        callback(list);
+        const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []).filter(e => !deletedExamIds.has(e.id));
+        const map = new Map<string, Exam>();
+        for (const e of local) map.set(e.id, e);
+        for (const e of list) map.set(e.id, e);
+        const merged = Array.from(map.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        if (merged.length > 0) setLocalCache(OMRAN_CACHE_KEYS.EXAMS, merged);
+        callback(merged.length > 0 ? merged : local);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'exams');
+        const deletedExamIds = getDeletedExamIds();
+        const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []).filter(e => !deletedExamIds.has(e.id));
+        callback(local);
       });
     } catch (e) {
       return () => {};

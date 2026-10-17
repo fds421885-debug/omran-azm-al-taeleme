@@ -449,7 +449,9 @@ export function App() {
 
   // Load all data from Firestore / LocalCache with non-blocking live sync
   const loadAllData = async (isManualSync = false) => {
-    setIsSyncing(true);
+    if (isManualSync) {
+      setIsSyncing(true);
+    }
     // Safety auto-dismiss: ensure loading state never hangs
     const safetyTimer = setTimeout(() => {
       setIsSyncing(false);
@@ -906,6 +908,15 @@ export function App() {
     // Real-time synchronization of active halaqah across all devices and browser tabs
     const unsubActiveHalaqah = OmranDataService.subscribeActiveHalaqah(data => {
       if (!isMounted || !data?.activeHalaqahId) return;
+      // CRITICAL: Only sync if this update came from the same authenticated user or session,
+      // and within the same active complex! Never allow a remote update from another user or
+      // complex to hijack the active halaqah while the user is using the app!
+      if (data.updatedBy && currentUser?.username && data.updatedBy !== currentUser.username) {
+        return;
+      }
+      if (data.complexId && activeComplex?.id && data.complexId !== activeComplex.id) {
+        return;
+      }
       const remoteHId = data.activeHalaqahId;
       targetHalaqahIdRef.current = remoteHId;
       setActiveHalaqahId(prev => {
@@ -1115,7 +1126,11 @@ export function App() {
     if (!activeComplex) return halaqahs;
     if (isDeveloper && selectedComplexId === 'all') return halaqahs;
 
-    return halaqahs.filter(h => isHalaqahInComplex(h, activeComplex, complexes, students, teachers));
+    const filtered = halaqahs.filter(h => isHalaqahInComplex(h, activeComplex, complexes, students, teachers));
+    if (filtered.length === 0 && halaqahs.length > 0) {
+      return halaqahs;
+    }
+    return filtered;
   }, [activeComplex, halaqahs, complexes, isDeveloper, selectedComplexId, students, teachers]);
 
   const scopedHalaqahIds = useMemo(() => {
