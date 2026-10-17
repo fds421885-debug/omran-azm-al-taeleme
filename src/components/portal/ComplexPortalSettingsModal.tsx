@@ -60,7 +60,7 @@ import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import {
   buildApplicationAcceptedEmail,
-  dispatchPortalEmailNotification
+  sendRealPortalEmail
 } from '../../lib/portalEmailService';
 
 interface ComplexPortalSettingsModalProps {
@@ -502,7 +502,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       await OmranDataService.saveRegistrationApplication(updatedApp);
       setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
 
-      // 3. Dispatch Acceptance Email to Student with direct confirmation action
+      // 3. Dispatch Real Acceptance Email to Student's personal inbox
       if (updatedApp.email) {
         const acceptedEmail = buildApplicationAcceptedEmail(
           complex,
@@ -510,7 +510,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           targetHalaqah?.name || 'الحلقة القرآنية',
           portalUrl
         );
-        dispatchPortalEmailNotification(acceptedEmail);
+        sendRealPortalEmail(acceptedEmail).catch(err => console.warn('Could not send acceptance email:', err));
       }
 
       setAppToAccept(null);

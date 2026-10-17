@@ -64,7 +64,7 @@ export const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Target Firestore Database ID
-export const TARGET_FIRESTORE_DATABASE_ID = baseAppletConfig.firestoreDatabaseId || "ai-studio-9d31420a-1d75-4c6c-a7b6-8e5ec8416a66";
+export const TARGET_FIRESTORE_DATABASE_ID = (baseAppletConfig as any).firestoreDatabaseId || "ai-studio-9d31420a-1d75-4c6c-a7b6-8e5ec8416a66";
 
 // Initialize Firestore on the targeted database id (ai-studio-9d31420a-1d75-4c6c-a7b6-8e5ec8416a66)
 export const db = (() => {

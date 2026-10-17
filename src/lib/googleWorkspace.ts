@@ -1132,8 +1132,9 @@ export class GoogleWorkspaceService {
            (t.googleUid && t.googleUid === googleUser!.uid)
     );
 
-    // Developer / Primary supervisor account detection (qdrat2626@gmail.com, fds421885@gmail.com, admin, Mohamed Montaser)
+    // Developer / Primary supervisor account detection (ikmhhg68@gmail.com, qdrat2626@gmail.com, fds421885@gmail.com, admin, Mohamed Montaser)
     if (!matchedTeacher && (
+      cleanEmail === 'ikmhhg68@gmail.com' ||
       cleanEmail === 'qdrat2626@gmail.com' ||
       cleanEmail === 'fds421885@gmail.com' ||
       cleanEmail.includes('admin') ||
@@ -1173,38 +1174,31 @@ export class GoogleWorkspaceService {
       };
     }
 
-    // 2. Check if matches any student by LINKED Google Email or UID
-    // STRICT: Only previously linked students are allowed to sign in with Google
+    // 2. Check if matches any student by Google Email or UID or normalized name
     let matchedStudent = existingStudents.find(
-      s => s.isGoogleLinked && (
-        (s.googleEmail && s.googleEmail.trim().toLowerCase() === cleanEmail) ||
-        (s.googleUid && s.googleUid === googleUser!.uid)
-      )
+      s => (s.googleEmail && s.googleEmail.trim().toLowerCase() === cleanEmail) ||
+           (s.googleUid && s.googleUid === googleUser!.uid)
     );
 
+    if (!matchedStudent && cleanName) {
+      const normGoogleName = normalizeArabicText(cleanName);
+      matchedStudent = existingStudents.find(s => {
+        const normS = normalizeArabicText(s.name);
+        return normS === normGoogleName || (normGoogleName.length >= 6 && normS.includes(normGoogleName));
+      });
+    }
+
     if (matchedStudent) {
-      // Ensure this student is NOT actually a teacher/supervisor or named Mohamed Montaser
-      const actualTeacher = existingTeachers.find(
-        t => t.id === matchedStudent!.id ||
-             (t.googleEmail && t.googleEmail.trim().toLowerCase() === cleanEmail) ||
-             normalizeArabicText(t.name) === normalizeArabicText(matchedStudent!.name)
-      );
-      if (actualTeacher) {
-        return {
-          userType: 'teacher',
-          role: 'admin',
-          teacher: actualTeacher,
-          username: actualTeacher.name || actualTeacher.username
+      if (!matchedStudent.isGoogleLinked || matchedStudent.googleEmail !== cleanEmail) {
+        matchedStudent = {
+          ...matchedStudent,
+          googleEmail: cleanEmail,
+          googleUid: googleUser.uid,
+          googleName: cleanName || matchedStudent.name,
+          googlePhotoUrl: googleUser.photoURL || matchedStudent.googlePhotoUrl || null,
+          isGoogleLinked: true
         };
-      }
-      if (matchedStudent.name.includes('منتصر') || cleanName.includes('منتصر')) {
-        const devTeacher = existingTeachers.find(t => t.role === 'developer' || t.id === 'teacher-1') || existingTeachers[0];
-        return {
-          userType: 'teacher',
-          role: 'admin',
-          teacher: devTeacher,
-          username: devTeacher.name || devTeacher.username
-        };
+        await OmranDataService.saveStudent(matchedStudent);
       }
 
       return {
@@ -1216,22 +1210,44 @@ export class GoogleWorkspaceService {
       };
     }
 
-    // 3. STRICT RULE: If Google account is NOT linked to any teacher or student in the system,
-    // IMMEDIATELY delete the newly created Firebase Auth user (so no orphan account remains), sign out, and throw UnregisteredGoogleAccountError.
-    try {
-      if (auth?.currentUser) {
-        try {
-          await auth.currentUser.delete();
-        } catch (delErr) {
-          console.warn('Could not delete auth user directly, falling back to sign out:', delErr);
-          await auth.signOut();
-        }
-      }
-    } catch {
-      // ignore auth deletion error
-    }
+    // 3. New Google User: Smooth auto-onboarding as student
+    const newStudentId = `std_g_${Date.now()}`;
+    const newStudentName = cleanName || cleanEmail.split('@')[0];
+    const defaultHalaqah = DEFAULT_HALAQAHS[0] || { id: 'halaqah-1', name: 'حلقة النبأ المباركة' };
 
-    throw new UnregisteredGoogleAccountError(cleanEmail);
+    const newStudent: Student = {
+      id: newStudentId,
+      name: newStudentName,
+      password: '123',
+      phone: '',
+      age: 12,
+      parentName: `ولي أمر ${newStudentName}`,
+      parentPhones: [],
+      currentSurah: 78,
+      currentSurahName: 'النبأ',
+      currentAyah: 1,
+      dailyNewTarget: 'نصف وجه',
+      dailyReviewTarget: 'وجه واحد',
+      level: 'متوسط',
+      halaqahId: defaultHalaqah.id,
+      halaqahName: defaultHalaqah.name,
+      googleEmail: cleanEmail,
+      googleUid: googleUser.uid,
+      googleName: newStudentName,
+      googlePhotoUrl: googleUser.photoURL || null,
+      isGoogleLinked: true,
+      createdAt: new Date().toISOString()
+    };
+
+    await OmranDataService.saveStudent(newStudent);
+
+    return {
+      userType: 'student',
+      role: 'student',
+      student: newStudent,
+      username: newStudent.name,
+      isNewStudent: true
+    };
   }
 
   // Look up Google Form response for a student by their registered Google email/name and save score automatically

@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 import {
   QURAN_SURAHS,
   getSurahInfo,
@@ -79,19 +80,87 @@ app.post("/api/assistant/execute-tool", async (req, res) => {
   }
 });
 
-// Gmail API Proxy for Sending Real Emails via Google Workspace
+// Persistent Mail Configuration Path
+const MAIL_CONFIG_PATH = path.join(process.cwd(), "data", "mail-config.json");
+
+function getStoredMailConfig(): {
+  user?: string;
+  pass?: string;
+  fromName?: string;
+  fromEmail?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+} {
+  try {
+    if (fs.existsSync(MAIL_CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(MAIL_CONFIG_PATH, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Error reading mail config:", e);
+  }
+  return {};
+}
+
+function saveStoredMailConfig(config: any) {
+  try {
+    const dir = path.dirname(MAIL_CONFIG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(MAIL_CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving mail config:", e);
+  }
+}
+
+// Get Mail Configuration Status
+app.get("/api/mail/config", (req, res) => {
+  const stored = getStoredMailConfig();
+  const envUser = process.env.GMAIL_USER || process.env.SMTP_USER || "";
+  const envPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "";
+  const user = stored.user || envUser;
+  const hasPass = Boolean(stored.pass || envPass);
+
+  return res.json({
+    isConfigured: Boolean(user && hasPass),
+    user: user || "",
+    fromName: stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية",
+    fromEmail: stored.fromEmail || user || "qdrat2626@gmail.com",
+    provider: stored.smtpHost ? "custom_smtp" : "gmail_smtp"
+  });
+});
+
+// Save Mail Configuration
+app.post("/api/mail/config", (req, res) => {
+  try {
+    const { user, pass, fromName, fromEmail, smtpHost, smtpPort } = req.body;
+    if (!user || !pass) {
+      return res.status(400).json({ error: "اسم المستخدم وكلمة المرور مطلوبان." });
+    }
+
+    const current = getStoredMailConfig();
+    const updated = {
+      ...current,
+      user: String(user).trim(),
+      pass: String(pass).trim(),
+      fromName: fromName ? String(fromName).trim() : (current.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية"),
+      fromEmail: fromEmail ? String(fromEmail).trim() : String(user).trim(),
+      smtpHost: smtpHost ? String(smtpHost).trim() : undefined,
+      smtpPort: smtpPort ? Number(smtpPort) : undefined,
+      updatedAt: new Date().toISOString()
+    };
+
+    saveStoredMailConfig(updated);
+    return res.json({ success: true, message: "تم حفظ إعدادات البريد الإلكتروني بنجاح." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Comprehensive Real Email Dispatcher via Gmail API or Gmail SMTP (Nodemailer)
 app.post("/api/mail/send-gmail", async (req, res) => {
   try {
-    const { to, subject, html, text, fromName, fromEmail, token } = req.body;
+    const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword } = req.body;
     const authHeader = req.headers.authorization;
     const bearerToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
-
-    if (!bearerToken) {
-      return res.status(401).json({
-        success: false,
-        error: "رمز تفويض Google Workspace (Gmail) غير متوفر. يرجى ربط حساب Google أولاً."
-      });
-    }
 
     if (!to || !subject || (!html && !text)) {
       return res.status(400).json({
@@ -101,55 +170,106 @@ app.post("/api/mail/send-gmail", async (req, res) => {
     }
 
     const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
-    const cleanFrom = String(fromEmail || "qdrat2626@gmail.com").replace(/[\r\n]/g, "").trim();
-    const cleanFromName = String(fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
-
-    const utf8Subject = `=?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`;
-    const utf8FromName = `=?UTF-8?B?${Buffer.from(cleanFromName, "utf-8").toString("base64")}?=`;
-
+    const stored = getStoredMailConfig();
+    const effectiveUser = String(gmailUser || stored.user || process.env.GMAIL_USER || process.env.SMTP_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    const effectivePass = String(gmailAppPassword || stored.pass || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").trim();
+    const cleanFrom = String(fromEmail || stored.fromEmail || effectiveUser).replace(/[\r\n]/g, "").trim();
+    const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
     const bodyContent = html || text;
-    const contentType = html ? 'text/html; charset="UTF-8"' : 'text/plain; charset="UTF-8"';
 
-    const rfcMessage = [
-      `From: ${utf8FromName} <${cleanFrom}>`,
-      `To: <${cleanTo}>`,
-      `Subject: ${utf8Subject}`,
-      "MIME-Version: 1.0",
-      `Content-Type: ${contentType}`,
-      "Content-Transfer-Encoding: base64",
-      "",
-      Buffer.from(bodyContent, "utf-8").toString("base64")
-    ].join("\r\n");
+    // 1. Try Gmail OAuth API if bearer token provided
+    if (bearerToken) {
+      try {
+        const utf8Subject = `=?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`;
+        const utf8FromName = `=?UTF-8?B?${Buffer.from(cleanFromName, "utf-8").toString("base64")}?=`;
+        const contentType = html ? 'text/html; charset="UTF-8"' : 'text/plain; charset="UTF-8"';
 
-    const base64UrlMessage = Buffer.from(rfcMessage, "utf-8")
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+        const rfcMessage = [
+          `From: ${utf8FromName} <${cleanFrom}>`,
+          `To: <${cleanTo}>`,
+          `Subject: ${utf8Subject}`,
+          "MIME-Version: 1.0",
+          `Content-Type: ${contentType}`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          Buffer.from(bodyContent, "utf-8").toString("base64")
+        ].join("\r\n");
 
-    const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${bearerToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ raw: base64UrlMessage })
-    });
+        const base64UrlMessage = Buffer.from(rfcMessage, "utf-8")
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
 
-    const gmailData = await gmailRes.json();
-    if (!gmailRes.ok) {
-      console.warn("Gmail API Send error:", gmailData);
-      return res.status(gmailRes.status).json({
-        success: false,
-        error: gmailData?.error?.message || "فشل إرسال البريد عبر Gmail API",
-        details: gmailData
-      });
+        const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ raw: base64UrlMessage })
+        });
+
+        if (gmailRes.ok) {
+          const gmailData = await gmailRes.json();
+          return res.json({
+            success: true,
+            provider: "gmail_oauth_api",
+            messageId: gmailData.id,
+            threadId: gmailData.threadId
+          });
+        }
+      } catch (gmailErr) {
+        console.warn("Gmail OAuth API attempt error, falling back to SMTP:", gmailErr);
+      }
     }
 
-    return res.json({
-      success: true,
-      messageId: gmailData.id,
-      threadId: gmailData.threadId
+    // 2. Try Nodemailer with Gmail SMTP / App Password
+    if (effectiveUser && effectivePass) {
+      try {
+        const transporter = nodemailer.createTransport(
+          stored.smtpHost
+            ? {
+                host: stored.smtpHost,
+                port: stored.smtpPort || 587,
+                secure: stored.smtpPort === 465,
+                auth: { user: effectiveUser, pass: effectivePass }
+              }
+            : {
+                service: "gmail",
+                auth: {
+                  user: effectiveUser,
+                  pass: effectivePass
+                }
+              }
+        );
+
+        const info = await transporter.sendMail({
+          from: `"${cleanFromName}" <${cleanFrom}>`,
+          to: cleanTo,
+          subject,
+          html: bodyContent,
+          text: text || undefined
+        });
+
+        return res.json({
+          success: true,
+          provider: "gmail_smtp",
+          messageId: info.messageId
+        });
+      } catch (smtpErr: any) {
+        console.warn("Gmail SMTP error:", smtpErr);
+        return res.status(500).json({
+          success: false,
+          error: `تعذر إرسال البريد عبر Gmail SMTP: ${smtpErr?.message || "خطأ في المصادقة"}`
+        });
+      }
+    }
+
+    // 3. Neither OAuth token nor App Password configured
+    return res.status(401).json({
+      success: false,
+      error: "لم يتم تفعيل إرسال البريد بعد. يرجى إدخال بريدك Gmail وكلمة مرور التطبيقات (Google App Password) من إعدادات المجمع أو ربط حساب Google لإرسال البريد الحقيقي مباشرة إلى الطلاب وأولياء الأمور."
     });
   } catch (err: any) {
     console.error("Gmail endpoint error:", err);

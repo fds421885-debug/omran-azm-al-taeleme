@@ -30,7 +30,10 @@ import {
   Award,
   RefreshCw,
   Wand2,
-  Globe
+  Globe,
+  Mail,
+  Send,
+  ExternalLink
 } from 'lucide-react';
 import {
   TeacherAccount,
@@ -78,7 +81,7 @@ export interface SettingsModalProps {
   initialHighlightId?: string;
 }
 
-type TabType = 'teachers' | 'halaqahs' | 'transfers' | 'general';
+type TabType = 'teachers' | 'halaqahs' | 'transfers' | 'general' | 'mail';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -109,11 +112,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Mail / Gmail Configuration State
+  const [gmailUser, setGmailUser] = useState('');
+  const [gmailAppPass, setGmailAppPass] = useState('');
+  const [mailFromName, setMailFromName] = useState(activeComplex?.name || 'منظومة عُمْرَان لإدارة المجمعات القرآنية');
+  const [mailFromEmail, setMailFromEmail] = useState('');
+  const [mailConfigStatus, setMailConfigStatus] = useState<{ isConfigured: boolean; user: string } | null>(null);
+  const [isSavingMailConfig, setIsSavingMailConfig] = useState(false);
+  const [testEmailTo, setTestEmailTo] = useState('ikmhhg68@gmail.com');
+  const [isTestingMail, setIsTestingMail] = useState(false);
+  const [mailTestResult, setMailTestResult] = useState<{ success: boolean; msg: string } | null>(null);
+
+  // Load Mail Config Status on mount / when mail tab selected
+  const fetchMailConfig = async () => {
+    try {
+      const res = await fetch('/api/mail/config');
+      if (res.ok) {
+        const data = await res.json();
+        setMailConfigStatus({ isConfigured: data.isConfigured, user: data.user });
+        if (data.user && !gmailUser) setGmailUser(data.user);
+        if (data.fromName && !mailFromName) setMailFromName(data.fromName);
+        if (data.fromEmail && !mailFromEmail) setMailFromEmail(data.fromEmail);
+      }
+    } catch (e) {
+      console.warn('Could not load mail config status:', e);
+    }
+  };
+
   // Lock body scroll when modal is open and handle initial tab & highlight
   useEffect(() => {
     if (isOpen) {
+      fetchMailConfig();
       if (initialTab) {
-        if (initialTab === 'halaqahs' || initialTab === 'teachers' || initialTab === 'transfers' || initialTab === 'general') {
+        if (initialTab === 'halaqahs' || initialTab === 'teachers' || initialTab === 'transfers' || initialTab === 'general' || initialTab === 'mail') {
           setActiveTab(initialTab as TabType);
         }
       }
@@ -889,6 +920,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Sliders className="w-4 h-4" />
             <span>الإعدادات العامة والثيم</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('mail')}
+            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
+            style={
+              activeTab === 'mail'
+                ? {
+                    borderColor: themeColors.accentColor,
+                    color: themeColors.accentColor,
+                    backgroundColor: `${themeColors.secondaryColor}80`,
+                    fontWeight: 900
+                  }
+                : {
+                    borderColor: 'transparent',
+                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
+                  }
+            }
+          >
+            <Mail className="w-4 h-4" />
+            <span>البريد الإلكتروني وGmail</span>
+            {mailConfigStatus?.isConfigured && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm"></span>
+            )}
           </button>
         </div>
 
@@ -2387,6 +2443,353 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
             </form>
+          )}
+
+          {/* 5. Real Mail & Gmail Service Tab */}
+          {activeTab === 'mail' && (
+            <div className="space-y-6 animate-fade-in p-1">
+              {/* Header Banner */}
+              <div
+                className="p-4 sm:p-5 rounded-2xl border-2 space-y-2 relative overflow-hidden"
+                style={{
+                  backgroundColor: `${themeColors.primaryColor}80`,
+                  borderColor: themeColors.accentColor || '#fbbf24'
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center font-black shrink-0 border"
+                    style={{
+                      backgroundColor: `${themeColors.accentColor}25`,
+                      borderColor: themeColors.accentColor,
+                      color: themeColors.accentColor || '#fbbf24'
+                    }}
+                  >
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>خدمة إرسال البريد الإلكتروني الحقيقي (Gmail)</span>
+                      {mailConfigStatus?.isConfigured ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                          مفعلة ومتصلة ✓
+                        </span>
+                      ) : (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                          بانتظار الإعداد
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-0.5">
+                      إرسال رسائل بريد إلكتروني حقيقية مباشرة إلى البريد الشخصي للطلاب وأولياء الأمور (رموز التحقق OTP، إشعارات استلام الطلب، وبشرى القبول والاعتماد).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Indicator */}
+              <div
+                className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                  mailConfigStatus?.isConfigured
+                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                    : 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      mailConfigStatus?.isConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                    }`}
+                  />
+                  <span>
+                    {mailConfigStatus?.isConfigured
+                      ? `خدمة البريد نشطة وجاهزة للإرسال الفعلي عبر الحساب: (${mailConfigStatus.user})`
+                      : 'خدمة البريد غير مربوطة حالياً. أدخل بيانات حساب Gmail بالأسفل لتفعيل الإرسال الحقيقي فوراً.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchMailConfig}
+                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold transition cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>تحديث الحالة</span>
+                </button>
+              </div>
+
+              {/* Gmail Settings Form */}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!gmailUser.trim() || !gmailAppPass.trim()) {
+                    setStatusMsg({ type: 'error', text: 'يرجى إدخال بريد Gmail وكلمة مرور التطبيقات.' });
+                    return;
+                  }
+                  setIsSavingMailConfig(true);
+                  setStatusMsg(null);
+                  try {
+                    const res = await fetch('/api/mail/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        user: gmailUser.trim(),
+                        pass: gmailAppPass.trim(),
+                        fromName: mailFromName.trim(),
+                        fromEmail: mailFromEmail.trim() || gmailUser.trim()
+                      })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح!' });
+                      setMailConfigStatus({ isConfigured: true, user: gmailUser.trim() });
+                    } else {
+                      setStatusMsg({ type: 'error', text: data.error || 'تعذر حفظ إعدادات البريد.' });
+                    }
+                  } catch (err: any) {
+                    setStatusMsg({ type: 'error', text: err?.message || 'فشل الاتصال بخادم البريد.' });
+                  } finally {
+                    setIsSavingMailConfig(false);
+                  }
+                }}
+                className="p-5 rounded-2xl border space-y-4"
+                style={{
+                  backgroundColor: `${themeColors.secondaryColor}40`,
+                  borderColor: themeColors.secondaryColor || '#065f46'
+                }}
+              >
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Key className="w-4 h-4 text-amber-400" />
+                  <span>بيانات حساب Gmail المعتمد للإرسال</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      بريد Gmail الشخصي أو الرسمي <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="مثال: ikmhhg68@gmail.com"
+                      value={gmailUser}
+                      onChange={e => setGmailUser(e.target.value)}
+                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      كلمة مرور التطبيقات (Google App Password) <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="16 حرفاً من Google (مثال: abcd efgh ijkl mnop)"
+                      value={gmailAppPass}
+                      onChange={e => setGmailAppPass(e.target.value)}
+                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      اسم المرسل الذي يظهر في عنوان البريد
+                    </label>
+                    <input
+                      type="text"
+                      value={mailFromName}
+                      onChange={e => setMailFromName(e.target.value)}
+                      placeholder="مثال: مجمع عُمران القرآني"
+                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      عنوان بريد الرد (Reply-To)
+                    </label>
+                    <input
+                      type="email"
+                      value={mailFromEmail}
+                      onChange={e => setMailFromEmail(e.target.value)}
+                      placeholder="اتركه فارغاً لاستخدام بريد Gmail نفسه"
+                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* Google App Password Guide */}
+                <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <Sparkles className="w-4 h-4" />
+                    <span>كيف تحصل على كلمة مرور التطبيقات من Google خلال دقيقة؟</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 pr-1 text-slate-300">
+                    <li>
+                      افتح صفحة كلمات مرور التطبيقات في Google:{' '}
+                      <a
+                        href="https://myaccount.google.com/apppasswords"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-amber-400 underline font-mono inline-flex items-center gap-0.5"
+                      >
+                        myaccount.google.com/apppasswords <ExternalLink className="w-3 h-3 inline" />
+                      </a>
+                    </li>
+                    <li>اكتب اسم التطبيق (مثال: عُمران) واضغط على <strong>إنشاء (Create)</strong>.</li>
+                    <li>انسخ كلمة المرور المكونة من 16 حرفاً وضعها في الخانة أعلاه واضغط حفظ.</li>
+                  </ol>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSavingMailConfig}
+                    className="px-6 py-2.5 rounded-xl font-black text-sm transition cursor-pointer flex items-center gap-2 shadow-lg disabled:opacity-50"
+                    style={{
+                      backgroundColor: themeColors.accentColor || '#fbbf24',
+                      color: themeColors.primaryColor || '#022c22'
+                    }}
+                  >
+                    {isSavingMailConfig ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>جاري حفظ وتفعيل خدمة البريد...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>حفظ وتفعيل خدمة البريد الآن</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* Live Test Email Section */}
+              <div
+                className="p-5 rounded-2xl border space-y-4"
+                style={{
+                  backgroundColor: `${themeColors.secondaryColor}30`,
+                  borderColor: themeColors.secondaryColor || '#065f46'
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Send className="w-4 h-4 text-emerald-400" />
+                    <span>تجربة إرسال بريد حقيقي فوري للتأكد</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400">إرسال فوري إلى صندوق الوارد</span>
+                </div>
+
+                <p className="text-xs text-slate-300">
+                  أدخل بريدك الإلكتروني الشخصي واضغط إرسال، وسيقوم النظام فوراً بإرسال رسالة تجريبية حقيقية لصندوق واردك لتتأكد بنفسك من عمل الخدمة.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="email"
+                    value={testEmailTo}
+                    onChange={e => setTestEmailTo(e.target.value)}
+                    placeholder="أدخل بريدك الشخصي (مثال: ikmhhg68@gmail.com)"
+                    className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!testEmailTo.trim()) {
+                        setMailTestResult({ success: false, msg: 'يرجى كتابة عنوان البريد للمستلم.' });
+                        return;
+                      }
+                      setIsTestingMail(true);
+                      setMailTestResult(null);
+                      try {
+                        const res = await fetch('/api/mail/send-gmail', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            to: testEmailTo.trim(),
+                            subject: `رسالة اختبار الإرسال الحقيقي من ${activeComplex?.name || 'منظومة عُمران'}`,
+                            html: `<div dir="rtl" style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc; color: #1e293b; border-radius: 16px;">
+                              <h2 style="color: #064e3b; margin-top: 0;">🎉 تهانينا! خدمة البريد الحقيقية تعمل بنجاح</h2>
+                              <p>وصلتك هذه الرسالة بنجاح في صندوق بريدك الشخصي عبر خدمة Gmail في منظومة عُمْرَان لإدارة المجمعات والحلقات القرآنية.</p>
+                              <div style="background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 12px; padding: 16px; margin: 16px 0;">
+                                <strong>حالة الإرسال:</strong> بريد حقيقي مباشر تم استلامه في صندوق الوارد<br/>
+                                <strong>المستلم:</strong> ${testEmailTo.trim()}<br/>
+                                <strong>التاريخ والوقت:</strong> ${new Date().toLocaleString('ar-SA')}
+                              </div>
+                              <p style="font-size: 13px; color: #64748b;">جميع رسائل التحقق (OTP) وتسجيل الطلاب وإشعارات أولياء الأمور ستصلكم فوراً بنفس هذه الآلية الحقيقية.</p>
+                            </div>`,
+                            fromName: mailFromName.trim(),
+                            fromEmail: mailFromEmail.trim() || gmailUser.trim(),
+                            gmailUser: gmailUser.trim() || undefined,
+                            gmailAppPassword: gmailAppPass.trim() || undefined
+                          })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          setMailTestResult({
+                            success: true,
+                            msg: `تم إرسال الرسالة بنجاح إلى صندوق الوارد (${testEmailTo.trim()})! تفقد بريدك الآن.`
+                          });
+                        } else {
+                          setMailTestResult({
+                            success: false,
+                            msg: data.error || 'تعذر إرسال البريد التجريبي. تأكد من صحة البريد وكلمة مرور التطبيقات.'
+                          });
+                        }
+                      } catch (err: any) {
+                        setMailTestResult({
+                          success: false,
+                          msg: err?.message || 'فشل الاتصال بخادم البريد.'
+                        });
+                      } finally {
+                        setIsTestingMail(false);
+                      }
+                    }}
+                    disabled={isTestingMail}
+                    className="px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shrink-0 shadow disabled:opacity-50"
+                    style={{
+                      backgroundColor: themeColors.accentColor || '#fbbf24',
+                      color: themeColors.primaryColor || '#022c22'
+                    }}
+                  >
+                    {isTestingMail ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>جاري الإرسال التجريبي...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>إرسال بريد تجريبي الآن 🚀</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {mailTestResult && (
+                  <div
+                    className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+                      mailTestResult.success
+                        ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
+                        : 'bg-red-950/80 border-red-500 text-red-200'
+                    }`}
+                  >
+                    {mailTestResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    )}
+                    <span>{mailTestResult.msg}</span>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>

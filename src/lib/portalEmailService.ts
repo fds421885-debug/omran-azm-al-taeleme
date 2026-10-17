@@ -473,14 +473,11 @@ export function renderBrandedEmailHtml(payload: BrandedEmailPayload): string {
 }
 
 /**
- * Sends a real email via Gmail API and also dispatches the in-app notification event!
+ * Sends a real email to the recipient's personal inbox via Gmail API / SMTP
  */
 export async function sendRealPortalEmail(
   payload: BrandedEmailPayload
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  // Always trigger the in-app notification for instant UI feedback
-  dispatchPortalEmailNotification(payload);
-
   if (!payload.toEmail) {
     return { success: false, error: 'عنوان البريد الإلكتروني للمستلم مفقود.' };
   }

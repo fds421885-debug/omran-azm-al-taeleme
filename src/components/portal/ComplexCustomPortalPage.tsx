@@ -47,9 +47,8 @@ import {
   verifyEmailOtp,
   buildOtpVerificationEmail,
   buildApplicationReceivedEmail,
-  dispatchPortalEmailNotification
+  sendRealPortalEmail
 } from '../../lib/portalEmailService';
-import { PortalEmailNotificationToast } from './PortalEmailNotificationToast';
 
 // 30 Holy Quran Juz metadata (Part 1 to Part 30 with authentic names)
 export const QURAN_JUZ_LIST = [
@@ -332,8 +331,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     }
   };
 
-  // 2. Send OTP to Manual Email
-  const handleSendEmailOtp = () => {
+  // 2. Send Real OTP to Personal Email
+  const handleSendEmailOtp = async () => {
     setEmailError(null);
     const check = validateEmailAuthenticity(studentEmail);
     if (!check.isValid) {
@@ -346,16 +345,22 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       // Generate 6-digit OTP
       const code = generateEmailOtp(studentEmail);
 
-      // Build Branded Email from support@omran.com
+      // Build Branded Email from the complex
       const emailPayload = buildOtpVerificationEmail(complex, studentEmail.trim().toLowerCase(), code);
 
-      // Dispatch real-time in-app email toast with copy action
-      dispatchPortalEmailNotification(emailPayload);
+      // Send real email directly to personal inbox
+      const sendResult = await sendRealPortalEmail(emailPayload);
 
-      setOtpSent(true);
-      setOtpCountdown(60); // 60 seconds cooldown for resending
-    } catch (e) {
-      setEmailError('حدث خطأ أثناء إنشاء رمز التحقق. يرجى المحاولة مرة أخرى.');
+      if (sendResult.success) {
+        setOtpSent(true);
+        setOtpCountdown(60); // 60 seconds cooldown for resending
+      } else {
+        setEmailError(
+          sendResult.error || 'تعذر إرسال الرمز إلى بريدك الإلكتروني حالياً. يرجى التحقق من صحة البريد أو المحاولة لاحقاً.'
+        );
+      }
+    } catch (e: any) {
+      setEmailError(e?.message || 'حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsSendingOtp(false);
     }
@@ -473,9 +478,9 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
       await OmranDataService.saveRegistrationApplication(newApp);
 
-      // Send Queue Status & Tracking Email to student/parent
+      // Send Real Queue Status & Tracking Email to student/parent's personal inbox
       const receivedEmailPayload = buildApplicationReceivedEmail(complex, newApp, portalUrl);
-      dispatchPortalEmailNotification(receivedEmailPayload);
+      sendRealPortalEmail(receivedEmailPayload).catch(err => console.warn('Could not send application email:', err));
 
       setSubmitSuccessApp(newApp);
     } catch (err: any) {
@@ -611,9 +616,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       className="min-h-screen text-white font-sans flex flex-col justify-between selection:bg-amber-400 selection:text-slate-900 transition-colors duration-300 relative overflow-x-hidden"
       style={{ backgroundColor: themeBg }}
     >
-      {/* Floating In-App Email & OTP Simulation Toast */}
-      <PortalEmailNotificationToast />
-
       {/* Background Decorative Duolingo Grids */}
       <div className="absolute inset-0 pointer-events-none opacity-5">
         <div className="w-full h-full bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:24px_24px]" />
