@@ -58,6 +58,86 @@ export interface QuranComplex {
     connectedAt?: string;
   };
   portalConfig?: ComplexPortalConfig; // إعدادات بوابة التسجيل والدخول المخصصة للمجمع
+
+  // المنظومة القرآنية متعددة المساجد والسعة وقائمة الانتظار
+  complexType?: 'single_complex' | 'multi_mosque_system'; // نوع المجمع: مجمع قرآني مباشر أو منظومة قرآنية تضم مساجد متعددة
+  mosques?: Mosque[]; // المساجد التابعة للمنظومة القرآنية
+  waitingList?: WaitingListStudent[]; // قائمة الانتظار للطلاب في حال اكتمال سعة الحلقات
+}
+
+export interface Mosque {
+  id: string;
+  complexId: string;
+  name: string; // e.g. "جامع الملك فهد", "مسجد قباء"
+  address?: string; // e.g. "حي النور، شارع أبي بكر الصديق"
+  coordinates?: {
+    lat: number;
+    lng: number;
+  };
+  mapUrl?: string; // رابط خرائط Google أو الموقع الجغرافي
+  halaqahIds: string[]; // معرّفات الحلقات التابعة لهذا الجامع
+  supervisorTeacherId?: string;
+  supervisorTeacherName?: string;
+  createdAt: string;
+}
+
+export interface WaitingListStudent {
+  id: string;
+  applicationTrackingCode: string;
+  studentName: string;
+  age: number;
+  phone: string;
+  parentName: string;
+  parentPhone: string;
+  memorizedJuz: number;
+  consolidatedJuz: number;
+  tajweedLevel: string;
+  hasIjazah: boolean;
+  dailyNewPace?: number;
+  dailyReviewPace?: number;
+  queueNumber: number;
+  complexId: string;
+  complexName?: string;
+  mosqueId?: string;
+  mosqueName?: string;
+  targetHalaqahId?: string;
+  targetHalaqahName?: string;
+  notes?: string;
+  status: 'waiting' | 'assigned' | 'contacted';
+  addedAt: string;
+}
+
+export interface AyahErrorRecord {
+  id: string; // e.g. "err_studentId_114_3_timestamp"
+  studentId: string;
+  surahNumber: number;
+  ayahNumber: number;
+  surahName?: string;
+  ayahText?: string;
+  errorCount: number; // عداد تكرار الخطأ (1, 2, 3...)
+  lastErrorDate: string;
+  cleared?: boolean;
+}
+
+export interface StudentMemorizationPlan {
+  dailyNewPages: number; // كم وجه جديد يومياً (مثلاً 1 أو 2)
+  dailyReviewPages: number; // كم وجه مراجعة يومياً (مثلاً 5 أو 10 أو 20)
+  consolidatedJuzCount: number; // الأجزاء المثبتة المتقنة
+  memorizedJuzCount: number; // إجمالي الأجزاء المحفوظة
+  targetJuz: number; // عادة 30 للختم
+  targetCompletionDate: string; // تاريخ الختم المتوقع (e.g. "2027-10-15")
+  estimatedDaysRemaining: number; // الأيام المتبقية للختمة
+  progressPercentage: number; // نسبة الإنجاز والمسار نحو الختمة
+  status: 'on_track' | 'needs_reinforcement' | 'ahead_of_schedule';
+  dailyFocusAyahs?: Array<{
+    surahNumber: number;
+    ayahNumber: number;
+    surahName?: string;
+    reason: string;
+    repetitionTarget?: number;
+  }>;
+  aiNotes?: string;
+  lastUpdated: string;
 }
 
 export type ComplexPortalMode = 'login_and_register' | 'login_only' | 'register_only';
@@ -180,6 +260,9 @@ export interface Halaqah {
   teacherNames?: string[]; // Cached teacher names
   createdAt: string;
   isDefault?: boolean;
+  capacity?: number; // السعة الاستيعابية القصوى لعدد الطلاب (مثلاً 15 أو 20)
+  mosqueId?: string; // معرف المسجد التابع له في المنظومة القرآنية
+  mosqueName?: string; // اسم المسجد التابع له
 }
 
 export interface TeacherAccount {
@@ -697,6 +780,10 @@ export interface Student {
   dailyReviewTarget: string;
   level: StudentLevel;
   aiPlan?: StudentAIPlan;
+  memorizationPlan?: StudentMemorizationPlan; // الخطة الذكية للتثبيت حتى الختم مع الحساب الزمني والأهداف
+  mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المطول
+  assignedMosqueId?: string; // المسجد الملحق به الطالب في حال المنظومة
+  assignedMosqueName?: string;
   persistentReviewItems?: QuranRecitationItem[]; // بنود المراجعة والتراكمي والاختبار المحفوظة دائماً للطالب
   notes?: string;
   complexId?: string; // ID of the complex this student belongs to

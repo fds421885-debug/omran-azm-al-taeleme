@@ -19,9 +19,22 @@ import {
   Palette,
   Upload,
   Image as ImageIcon,
-  RefreshCw
+  RefreshCw,
+  Compass,
+  MapPin,
+  Clock
 } from 'lucide-react';
-import { QuranComplex, Halaqah, TeacherAccount, Student, getThreePartNameValidation, isHalaqahInComplex, normalizeTeacherText } from '../types';
+import {
+  QuranComplex,
+  Halaqah,
+  TeacherAccount,
+  Student,
+  Mosque,
+  WaitingListStudent,
+  getThreePartNameValidation,
+  isHalaqahInComplex,
+  normalizeTeacherText
+} from '../types';
 import { ISLAMIC_THEME_PRESETS, applyComplexThemeToDOM } from '../lib/themeUtils';
 import { compressImageToDataUrl } from '../lib/imageCompressor';
 import { OmranDataService } from '../lib/firebase';
@@ -65,8 +78,41 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
   isDeveloper = false,
   initialComplexToEdit = null
 }) => {
-  // Tabs: 'complexes' | 'unassigned' | 'new_complex' | 'new_halaqah'
-  const [activeView, setActiveView] = useState<'list' | 'new_complex' | 'new_halaqah'>('list');
+  // Tabs: 'list' | 'new_complex' | 'new_halaqah' | 'waiting_list'
+  const [activeView, setActiveView] = useState<'list' | 'new_complex' | 'new_halaqah' | 'waiting_list'>('list');
+  const [selectedComplexForWaiting, setSelectedComplexForWaiting] = useState<QuranComplex | null>(null);
+
+  // Mosque creation state for Multi-Mosque Quranic System
+  const [newMosqueName, setNewMosqueName] = useState('');
+  const [newMosqueAddress, setNewMosqueAddress] = useState('');
+  const [newMosqueMapUrl, setNewMosqueMapUrl] = useState('');
+
+  const handleAddMosqueToComplex = () => {
+    if (!newMosqueName.trim()) return;
+    const mObj: Mosque = {
+      id: `mosque-${Date.now()}`,
+      complexId: editingComplex?.id || 'complex-main',
+      name: newMosqueName.trim(),
+      address: newMosqueAddress.trim() || undefined,
+      mapUrl: newMosqueMapUrl.trim() || undefined,
+      halaqahIds: [],
+      createdAt: new Date().toISOString()
+    };
+    setEditingComplex(prev => ({
+      ...prev,
+      mosques: [...(prev?.mosques || []), mObj]
+    }));
+    setNewMosqueName('');
+    setNewMosqueAddress('');
+    setNewMosqueMapUrl('');
+  };
+
+  const handleDeleteMosqueFromComplex = (mosqueId: string) => {
+    setEditingComplex(prev => ({
+      ...prev,
+      mosques: (prev?.mosques || []).filter(m => m.id !== mosqueId)
+    }));
+  };
 
   // Complex edit / create state
   const [editingComplex, setEditingComplex] = useState<Partial<QuranComplex> | null>(null);
@@ -117,6 +163,9 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
       id: `complex-${Date.now()}`,
       name: '',
       description: '',
+      complexType: 'single_complex',
+      mosques: [],
+      waitingList: [],
       supervisorTeacherId: teachers.find(t => t.role === 'supervisor' || t.role === 'developer')?.id || teachers[0]?.id || '',
       supervisorTeacherName: teachers.find(t => t.role === 'supervisor' || t.role === 'developer')?.name || teachers[0]?.name || '',
       createdAt: new Date().toISOString()
@@ -619,7 +668,7 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-emerald-200 mb-1.5">
-                  وصف ونبذة عن المجمع:
+                  وصف ونبذة عن المجمع / المنظومة:
                 </label>
                 <textarea
                   rows={2}
@@ -628,6 +677,127 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                   onChange={e => setEditingComplex(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full bg-[#022c22] border border-[#065f46] rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-[#fbbf24]"
                 />
+              </div>
+
+              {/* Entity Type: Single Complex vs Multi-Mosque Quranic System */}
+              <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 space-y-3">
+                <label className="block text-xs font-bold text-amber-300">
+                  نوع الكيان القرآني والهيكل التنظيمي:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingComplex(prev => ({ ...prev, complexType: 'single_complex' }))}
+                    className={`p-3 rounded-xl border text-right transition-all cursor-pointer flex flex-col gap-1 ${
+                      editingComplex.complexType !== 'multi_mosque_system'
+                        ? 'border-amber-400 bg-[#064e3b] shadow-md ring-2 ring-amber-400/40'
+                        : 'border-[#065f46] bg-[#022c22] hover:bg-[#064e3b]/40 text-white/70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-xs">مجمع قرآني اعتيادي</span>
+                      <Building2 className="w-4 h-4 text-[#fbbf24]" />
+                    </div>
+                    <span className="text-[10px] text-white/70">
+                      الحلقات القرآنية تتبع المجمع مباشرة وبشكل موحد
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditingComplex(prev => ({ ...prev, complexType: 'multi_mosque_system' }))}
+                    className={`p-3 rounded-xl border text-right transition-all cursor-pointer flex flex-col gap-1 ${
+                      editingComplex.complexType === 'multi_mosque_system'
+                        ? 'border-amber-400 bg-[#064e3b] shadow-md ring-2 ring-amber-400/40'
+                        : 'border-[#065f46] bg-[#022c22] hover:bg-[#064e3b]/40 text-white/70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#fbbf24] text-xs">منظومة قرآنية شاملة</span>
+                      <Compass className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <span className="text-[10px] text-white/70">
+                      للجمعيات الكبرى: يتبع للمنظومة عدة مساجد وجوامع، وتحت كل مسجد حلقاته
+                    </span>
+                  </button>
+                </div>
+
+                {/* Multi-Mosque Management Section if Multi-Mosque System */}
+                {editingComplex.complexType === 'multi_mosque_system' && (
+                  <div className="pt-3 border-t border-[#065f46] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-200 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                        المساجد والجوامع التابعة للمنظومة ({editingComplex.mosques?.length || 0}):
+                      </span>
+                    </div>
+
+                    {/* New Mosque Inline Form */}
+                    <div className="p-3 rounded-xl bg-[#064e3b]/40 border border-[#065f46] space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          placeholder="اسم المسجد / الجامع (مثال: جامع الملك فهد)"
+                          value={newMosqueName}
+                          onChange={e => setNewMosqueName(e.target.value)}
+                          className="w-full bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                        />
+                        <input
+                          type="text"
+                          placeholder="الحي أو العنوان (مثال: حي النور، شارع الإمام)"
+                          value={newMosqueAddress}
+                          onChange={e => setNewMosqueAddress(e.target.value)}
+                          className="w-full bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="رابط الموقع على الخريطة (Google Maps URL - اختياري)"
+                          value={newMosqueMapUrl}
+                          onChange={e => setNewMosqueMapUrl(e.target.value)}
+                          className="flex-1 bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddMosqueToComplex}
+                          className="px-3 py-1.5 rounded-lg bg-[#fbbf24] text-[#064e3b] font-bold text-xs hover:bg-amber-300 transition cursor-pointer shrink-0"
+                        >
+                          إضافة المسجد
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Mosques List */}
+                    {editingComplex.mosques && editingComplex.mosques.length > 0 ? (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {editingComplex.mosques.map(m => (
+                          <div
+                            key={m.id}
+                            className="p-2.5 rounded-xl bg-[#022c22] border border-[#065f46] flex items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <span className="font-bold text-white block truncate">{m.name}</span>
+                              <span className="text-[10px] text-white/60 block truncate">{m.address || 'العنوان غير مدخل'}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMosqueFromComplex(m.id)}
+                              className="text-red-400 hover:text-red-300 p-1 rounded-lg cursor-pointer"
+                              title="حذف المسجد"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-amber-200/70 text-center py-1">
+                        لم يتم إضافة مساجد بعد. يرجى إضافة مسجد واحد على الأقل ليتمكن الطلاب والمشرف من التسكين عبره.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Supervisor Assignment Section */}

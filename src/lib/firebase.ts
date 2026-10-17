@@ -229,6 +229,7 @@ export const DEFAULT_COMPLEXES: QuranComplex[] = [
     id: 'complex-main',
     name: 'المجمع القرآني النموذجي',
     description: 'المجمع القرآني النموذجي التابع لمنظومة عمران',
+    complexType: 'single_complex',
     supervisorTeacherId: 'teacher-1',
     supervisorTeacherName: 'المشرف العام',
     createdAt: new Date().toISOString()
@@ -243,6 +244,7 @@ export const DEFAULT_HALAQAHS: Halaqah[] = [
     complexId: 'complex-main',
     complexName: 'المجمع القرآني النموذجي',
     primaryTeacherName: 'معلم ومحفظ الحلقة',
+    capacity: 15,
     createdAt: new Date().toISOString(),
     isDefault: true
   },
@@ -253,6 +255,7 @@ export const DEFAULT_HALAQAHS: Halaqah[] = [
     complexId: 'complex-main',
     complexName: 'المجمع القرآني النموذجي',
     primaryTeacherName: 'الشيخ إبراهيم الخليل',
+    capacity: 15,
     createdAt: new Date().toISOString(),
     isDefault: false
   },
@@ -263,6 +266,7 @@ export const DEFAULT_HALAQAHS: Halaqah[] = [
     complexId: 'complex-main',
     complexName: 'المجمع القرآني النموذجي',
     primaryTeacherName: 'م. محمد منتصر',
+    capacity: 15,
     createdAt: new Date().toISOString(),
     isDefault: false
   }
@@ -3601,18 +3605,19 @@ export class OmranDataService {
     }
 
     const mergedMap = new Map<string, Halaqah>();
-    for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
-    for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+    for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
+    for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
 
-    const isCentral = !this.getActiveComplex()?.databaseConfig?.isCustom;
-    if (mergedMap.size === 0 && isCentral && deletedHalaqahIds.size === 0) {
+    if (mergedMap.size === 0) {
       for (const h of DEFAULT_HALAQAHS) {
-        if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+        if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
       }
     }
 
     const merged = Array.from(mergedMap.values());
-    setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
+    if (merged.length > 0) {
+      setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
+    }
     return merged;
   }
 
@@ -3801,9 +3806,8 @@ export class OmranDataService {
       if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
     }
 
-    // Only fallback to INITIAL_STUDENTS on the central database if no explicit deletions have occurred
-    const isCentralDb = !this.getActiveComplex()?.databaseConfig?.isCustom;
-    if (isCentralDb && mergedMap.size === 0 && deletedIds.size === 0) {
+    // Only fallback to INITIAL_STUDENTS if mergedMap is empty
+    if (mergedMap.size === 0) {
       for (const s of INITIAL_STUDENTS) {
         if (!deletedIds.has(s.id)) {
           mergedMap.set(s.id, s);
@@ -3820,10 +3824,13 @@ export class OmranDataService {
       const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
       return {
         ...s,
-        parentPhone
+        parentPhone,
+        age: s.age || 14
       };
     });
-    setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
+    if (merged.length > 0) {
+      setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
+    }
     return merged;
   }
 
@@ -4341,7 +4348,7 @@ export class OmranDataService {
         });
 
         // Dual persistence: preserve local cache items
-        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []).filter(
+        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS).filter(
           s => s?.id && !deletedIds.has(s.id)
         );
 
@@ -4355,9 +4362,8 @@ export class OmranDataService {
           if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
         }
 
-        // 3. Fallback to INITIAL_STUDENTS if central database and no explicit deletions have occurred
-        const isCentralDb = !this.getActiveComplex()?.databaseConfig?.isCustom;
-        if (isCentralDb && mergedMap.size === 0 && deletedIds.size === 0) {
+        // 3. Fallback to INITIAL_STUDENTS if empty
+        if (mergedMap.size === 0) {
           for (const s of INITIAL_STUDENTS) {
             if (!deletedIds.has(s.id)) {
               mergedMap.set(s.id, s);
@@ -4367,11 +4373,15 @@ export class OmranDataService {
 
         const merged = Array.from(mergedMap.values()).map(s => {
           const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
-          return { ...s, parentPhone };
+          return { ...s, parentPhone, age: s.age || 14 };
         });
 
-        setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
-        callback(merged);
+        if (merged.length > 0) {
+          setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
+          callback(merged);
+        } else if (local.length > 0) {
+          callback(local);
+        }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'students');
         const deletedIds = OmranDataService.getDeletedStudentIds();
@@ -4553,32 +4563,35 @@ export class OmranDataService {
         snap.forEach(d => {
           const h = d.data() as Halaqah;
           if (h?.id && !deletedHalaqahIds.has(h.id)) {
-            cloudList.push(h);
+            cloudList.push({ ...h, capacity: h.capacity || 15 });
           }
         });
 
-        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, []).filter(
+        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS).filter(
           h => h?.id && !deletedHalaqahIds.has(h.id)
         );
 
         const mergedMap = new Map<string, Halaqah>();
         for (const h of local) {
-          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
         }
         for (const h of cloudList) {
-          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
         }
 
-        const isCentral = !this.getActiveComplex()?.databaseConfig?.isCustom;
-        if (mergedMap.size === 0 && isCentral && deletedHalaqahIds.size === 0) {
+        if (mergedMap.size === 0) {
           for (const h of DEFAULT_HALAQAHS) {
-            if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, h);
+            if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
           }
         }
 
         const merged = Array.from(mergedMap.values());
-        setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
-        callback(merged);
+        if (merged.length > 0) {
+          setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
+          callback(merged);
+        } else if (local.length > 0) {
+          callback(local);
+        }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'halaqahs');
         const deletedHalaqahIds = getDeletedHalaqahIds();
@@ -4595,16 +4608,18 @@ export class OmranDataService {
           snap.forEach(d => {
             const h = d.data() as Halaqah;
             if (h?.id && !deletedHalaqahIds.has(h.id)) {
-              cloudList.push(h);
+              cloudList.push({ ...h, capacity: h.capacity || 15 });
             }
           });
-          const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, []);
+          const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS);
           const map = new Map<string, Halaqah>();
-          for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, h);
-          for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, h);
+          for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, { ...h, capacity: h.capacity || 15 });
+          for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, { ...h, capacity: h.capacity || 15 });
           const finalHalaqahs = Array.from(map.values());
-          setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, finalHalaqahs);
-          callback(finalHalaqahs);
+          if (finalHalaqahs.length > 0) {
+            setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, finalHalaqahs);
+            callback(finalHalaqahs);
+          }
         }, () => {});
 
         return () => {

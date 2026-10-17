@@ -426,6 +426,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         complexName: targetComplex?.name || editingHalaqah.complexName || complexName || 'المجمع القرآني',
         primaryTeacherId: matchedTeacher?.id || editingHalaqah.primaryTeacherId,
         primaryTeacherName: matchedTeacher?.name || selectedTeacherName || '',
+        capacity: Number(editingHalaqah.capacity) > 0 ? Number(editingHalaqah.capacity) : 15,
+        mosqueId: editingHalaqah.mosqueId,
+        mosqueName: editingHalaqah.mosqueName,
         createdAt: editingHalaqah.createdAt || new Date().toISOString()
       };
 
@@ -1455,6 +1458,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                     )}
 
+                    {/* Halaqah Capacity (السعة الاستيعابية للطلاب) */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                        السعة الاستيعابية للحلقة (الحد الأقصى للطلاب) <span className="text-amber-300">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={editingHalaqah.capacity !== undefined ? editingHalaqah.capacity : 15}
+                        onChange={e => setEditingHalaqah({ ...editingHalaqah, capacity: Math.max(1, parseInt(e.target.value) || 15) })}
+                        placeholder="15"
+                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-amber-400"
+                      />
+                      <span className="text-[10px] text-slate-300 mt-1 block">
+                        إذا اكتمل عدد الطلاب سيظهر تنبيه التعبئة الكاملة وتوجيه الطلاب لقائمة الانتظار.
+                      </span>
+                    </div>
+
+                    {/* Mosque Selection for Multi-Mosque System */}
+                    {activeComplex?.mosques && activeComplex.mosques.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                          المسجد التابعة له الحلقة في المنظومة
+                        </label>
+                        <select
+                          value={editingHalaqah.mosqueId || ''}
+                          onChange={e => {
+                            const mId = e.target.value;
+                            const mObj = activeComplex.mosques?.find(m => m.id === mId);
+                            setEditingHalaqah({
+                              ...editingHalaqah,
+                              mosqueId: mId || undefined,
+                              mosqueName: mObj?.name
+                            });
+                          }}
+                          className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-amber-400 cursor-pointer"
+                        >
+                          <option value="">-- اختياري: غير محدد بمسجد معين --</option>
+                          {activeComplex.mosques.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} {m.address ? `(${m.address})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-semibold text-[#86efac] mb-1">
                         وصف أو ملاحظات عن الحلقة
@@ -1521,9 +1572,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <span className="bg-[#065f46]/80 text-[#86efac] text-[11px] px-2 py-0.5 rounded-md border border-[#065f46]">
                                 المجمع: {h.complexName || activeComplex?.name || 'المجمع الرئيسي'}
                               </span>
+                              {h.mosqueName && (
+                                <span className="bg-[#fbbf24]/20 text-[#fbbf24] text-[11px] px-2 py-0.5 rounded-md border border-[#fbbf24]/30 font-bold">
+                                  جامع: {h.mosqueName}
+                                </span>
+                              )}
                               <span>المعلم: {h.primaryTeacherName || 'غير محدد'}</span>
-                              <span>• عدد الطلاب: {halaqahStudentsCount}</span>
+                              <span className="font-bold">
+                                • الطلاب: {halaqahStudentsCount} / {h.capacity || 15}
+                              </span>
                             </div>
+
+                            {/* Full Capacity Warning Banner */}
+                            {halaqahStudentsCount >= (h.capacity || 15) && (
+                              <div className="mt-2.5 p-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                                <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                <span>لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب</span>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">

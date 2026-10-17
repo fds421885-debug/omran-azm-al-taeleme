@@ -37,10 +37,12 @@ import {
   StudentRegistrationApplication,
   ComplexPortalConfig,
   Student,
-  PortalCustomQuestion
+  PortalCustomQuestion,
+  WaitingListStudent
 } from '../../types';
 import { OmranDataService, auth } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
 import {
   validateEmailAuthenticity,
   generateEmailOtp,
@@ -223,6 +225,18 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const [submitSuccessApp, setSubmitSuccessApp] = useState<StudentRegistrationApplication | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // AI Interview & Smart Placement States
+  const [isConnectingAI, setIsConnectingAI] = useState(false);
+  const [isAIInterviewOpen, setIsAIInterviewOpen] = useState(false);
+  const [interviewStudentData, setInterviewStudentData] = useState<any>(null);
+  const [existingStudents, setExistingStudents] = useState<Student[]>([]);
+
+  useEffect(() => {
+    OmranDataService.loadStudents()
+      .then(list => setExistingStudents(list))
+      .catch(() => {});
+  }, []);
 
   // Form State: Track Request
   const [searchQuery, setSearchQuery] = useState(() => {
@@ -483,6 +497,24 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       sendRealPortalEmail(receivedEmailPayload).catch(err => console.warn('Could not send application email:', err));
 
       setSubmitSuccessApp(newApp);
+
+      // Smooth transition to AI Placement Interview
+      setIsConnectingAI(true);
+      setTimeout(() => {
+        setIsConnectingAI(false);
+        setInterviewStudentData({
+          studentName: studentName.trim(),
+          age: Number(studentAge) || 12,
+          phone: parentPhone.trim(),
+          parentName: parentName.trim() || 'ولي الأمر',
+          parentPhone: parentPhone.trim(),
+          email: studentEmail.trim().toLowerCase(),
+          memorizedJuzList: selectedJuz,
+          notes: applicationNotes.trim() || undefined,
+          trackingCode
+        });
+        setIsAIInterviewOpen(true);
+      }, 1400);
     } catch (err: any) {
       setFormError('تعذر إرسال الطلب حالياً، يرجى المحاولة مرة أخرى.');
     } finally {
@@ -1440,32 +1472,16 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                     />
                   </div>
 
-                  {/* 6. Preferred Halaqah (يظهر فقط إذا كان مفعلاً من المشرف) */}
-                  {showHalaqahQuestion && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-slate-200 block">
-                        {halaqahQuestionLabel}
-                      </label>
-                      <select
-                        value={preferredHalaqahId}
-                        onChange={e => setPreferredHalaqahId(e.target.value)}
-                        className="w-full border-2 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer"
-                        style={{
-                          backgroundColor: themeBg,
-                          borderColor: themeCardBorder
-                        }}
-                      >
-                        {allowAutoPlacement && (
-                          <option value="">توجيه تلقائي من المشرف حسب المستوى</option>
-                        )}
-                        {visibleHalaqahs.map(h => (
-                          <option key={h.id} value={h.id}>
-                            {h.name} {h.primaryTeacherName ? `(المعلم: ${h.primaryTeacherName})` : ''}
-                          </option>
-                        ))}
-                      </select>
+                  {/* 6. AI Placement Notice (التوجيه والتسكين الذكي عبر المساعد) */}
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-white space-y-1.5 shadow-sm">
+                    <div className="flex items-center gap-2 text-amber-300 font-black text-xs">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>تسكين وتوجيه ذكي عبر الذكاء الاصطناعي (AI Placement)</span>
                     </div>
-                  )}
+                    <p className="text-[11px] text-slate-300 font-bold leading-relaxed">
+                      💡 تم إلغاء الاختيار اليدوي للحلقة؛ بمجرد الضغط على إرسال سيتم وصلك بالمساعد الذكي في مقابلة فورية لتحديد مستوى الحفظ والتجويد واختيار الحلقة والمسجد والشيخ الأنسب لك.
+                    </p>
+                  </div>
                 </div>
 
                 {/* 7. DYNAMIC CUSTOM QUESTIONS (الأسئلة الإضافية المخصصة من المشرف) */}
@@ -2084,6 +2100,64 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           </span>
         </div>
       </footer>
+      {/* Connecting to AI Transition Overlay */}
+      {isConnectingAI && (
+        <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none" dir="rtl">
+          <div className="p-8 rounded-3xl bg-[#022c22] border-2 border-[#fbbf24] shadow-2xl flex flex-col items-center gap-4 max-w-md w-full">
+            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-[#fbbf24] to-amber-300 text-[#064e3b] flex items-center justify-center shadow-xl animate-bounce">
+              <Sparkles className="w-8 h-8 animate-spin" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-heading font-black text-lg text-white">
+                جارٍ وصلك الآن مع المساعد الذكي...
+              </h3>
+              <p className="text-xs text-[#86efac] leading-relaxed">
+                نقوم الآن بتحميل بياناتك وربطك بالمساعد الذكي لبدء مقابلة تحديد المستوى والتسكين في أفضل حلقة وشاغر متاح.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive AI Student Placement Interview Modal */}
+      {isAIInterviewOpen && interviewStudentData && (
+        <AIStudentPlacementInterview
+          studentInitialData={interviewStudentData}
+          complex={complex}
+          halaqahs={halaqahs}
+          existingStudents={existingStudents}
+          onPlacementSuccess={async (newStudent: Student) => {
+            try {
+              await OmranDataService.saveStudent(newStudent);
+              setExistingStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+              setIsAIInterviewOpen(false);
+              onLoginSuccess({ username: newStudent.name, role: 'student', studentId: newStudent.id }, undefined, newStudent);
+            } catch (err) {
+              console.warn('Placement save note:', err);
+              setIsAIInterviewOpen(false);
+              onLoginSuccess({ username: newStudent.name, role: 'student', studentId: newStudent.id }, undefined, newStudent);
+            }
+          }}
+          onWaitingListAdded={async (waitingEntry: WaitingListStudent) => {
+            try {
+              const currentWait = complex.waitingList || [];
+              const updatedWait = [...currentWait.filter(w => w.id !== waitingEntry.id), waitingEntry];
+              const updatedComplex: QuranComplex = {
+                ...complex,
+                waitingList: updatedWait
+              };
+              await OmranDataService.saveComplex(updatedComplex);
+            } catch (err) {
+              console.warn('Waiting list save note:', err);
+            }
+            setIsAIInterviewOpen(false);
+            setSearchQuery(waitingEntry.applicationTrackingCode);
+            setActiveTab('track');
+            handleLookupApplication(undefined, waitingEntry.applicationTrackingCode);
+          }}
+          onCancel={() => setIsAIInterviewOpen(false)}
+        />
+      )}
     </div>
   );
 };

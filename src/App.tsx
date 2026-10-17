@@ -840,7 +840,13 @@ export function App() {
 
     // 4. Attach Firestore real-time subscriptions for the active database
     const unsubStudents = OmranDataService.subscribeStudents(newStudents => {
-      if (isMounted) setStudents(newStudents);
+      if (isMounted) {
+        if (newStudents && newStudents.length > 0) {
+          setStudents(newStudents);
+        } else {
+          setStudents(prev => (prev.length > 0 ? prev : newStudents));
+        }
+      }
     });
     const unsubAttendance = OmranDataService.subscribeAttendance(newAtt => {
       if (isMounted) setAttendance(newAtt);
@@ -861,7 +867,13 @@ export function App() {
       if (isMounted) setViolations(newViolations);
     });
     const unsubHalaqahs = OmranDataService.subscribeHalaqahs(newHalaqahs => {
-      if (isMounted) setHalaqahs(newHalaqahs);
+      if (isMounted) {
+        if (newHalaqahs && newHalaqahs.length > 0) {
+          setHalaqahs(newHalaqahs);
+        } else {
+          setHalaqahs(prev => (prev.length > 0 ? prev : newHalaqahs));
+        }
+      }
     });
     // complexes subscription always listens to Central DB
     const unsubComplexes = OmranDataService.subscribeComplexes(newComplexes => {
