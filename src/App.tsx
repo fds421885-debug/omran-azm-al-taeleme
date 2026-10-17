@@ -832,10 +832,7 @@ export function App() {
     // 1. Tell OmranDataService to set active complex and resolve its Firestore instance
     OmranDataService.setActiveComplex(activeComplex);
 
-    // 2. Perform connection check & seed if empty for this database
-    OmranDataService.testConnection().catch(() => {});
-
-    // 3. Load all data from the active database
+    // 2. Load all data from the active database
     loadAllData();
 
     // 4. Attach Firestore real-time subscriptions for the active database

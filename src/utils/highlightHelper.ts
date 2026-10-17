@@ -8,17 +8,26 @@ export function triggerComplexThemePulse(elementOrId: string | HTMLElement | nul
   const runPulse = () => {
     let el: HTMLElement | null = null;
     if (typeof elementOrId === 'string') {
-      el = document.getElementById(elementOrId) ||
-           document.getElementById(`item-${elementOrId}`) ||
-           document.getElementById(`student-item-${elementOrId}`) ||
-           document.getElementById(`halaqah-item-${elementOrId}`) ||
-           document.getElementById(`library-item-${elementOrId}`) ||
-           document.getElementById(`cert-item-${elementOrId}`) ||
-           document.getElementById(`violation-item-${elementOrId}`) ||
-           document.getElementById(`teacher-att-item-${elementOrId}`) ||
-           document.getElementById(`account-item-${elementOrId}`) ||
-           (document.querySelector(`[data-item-id="${elementOrId}"]`) as HTMLElement) ||
-           (document.querySelector(elementOrId) as HTMLElement);
+      try {
+        el = document.getElementById(elementOrId) ||
+             document.getElementById(`item-${elementOrId}`) ||
+             document.getElementById(`student-item-${elementOrId}`) ||
+             document.getElementById(`halaqah-item-${elementOrId}`) ||
+             document.getElementById(`library-item-${elementOrId}`) ||
+             document.getElementById(`cert-item-${elementOrId}`) ||
+             document.getElementById(`violation-item-${elementOrId}`) ||
+             document.getElementById(`teacher-att-item-${elementOrId}`) ||
+             document.getElementById(`account-item-${elementOrId}`);
+
+        if (!el && typeof CSS !== 'undefined' && CSS.escape) {
+          el = document.querySelector(`[data-item-id="${CSS.escape(elementOrId)}"]`) as HTMLElement;
+        }
+        if (!el && (elementOrId.startsWith('#') || elementOrId.startsWith('.'))) {
+          el = document.querySelector(elementOrId) as HTMLElement;
+        }
+      } catch {
+        el = null;
+      }
     } else {
       el = elementOrId;
     }

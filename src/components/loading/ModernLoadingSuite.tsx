@@ -45,42 +45,42 @@ export const TopProgressBar: React.FC<TopProgressBarProps> = ({
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    let timer1: NodeJS.Timeout;
-    let timer2: NodeJS.Timeout;
-    let timer3: NodeJS.Timeout;
-    let watchdogTimer: NodeJS.Timeout;
+    let t1: any;
+    let t2: any;
+    let t3: any;
+    let watchdog: any;
+    let hideTimer: any;
 
     if (isLoading) {
       setVisible(true);
       setProgress(25);
-      timer1 = setTimeout(() => setProgress(60), 80);
-      timer2 = setTimeout(() => setProgress(88), 200);
-      timer3 = setTimeout(() => setProgress(96), 400);
+      t1 = setTimeout(() => setProgress(60), 80);
+      t2 = setTimeout(() => setProgress(88), 200);
+      t3 = setTimeout(() => setProgress(96), 400);
 
-      // Watchdog: Never let loading bar get stuck
-      watchdogTimer = setTimeout(() => {
+      watchdog = setTimeout(() => {
         setProgress(100);
-        setTimeout(() => {
+        hideTimer = setTimeout(() => {
           setVisible(false);
           setProgress(0);
         }, 250);
-      }, 1200);
-    } else if (visible) {
+      }, 1400);
+    } else {
       setProgress(100);
-      const hideTimer = setTimeout(() => {
+      hideTimer = setTimeout(() => {
         setVisible(false);
         setProgress(0);
       }, 250);
-      return () => clearTimeout(hideTimer);
     }
 
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-      clearTimeout(watchdogTimer);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(watchdog);
+      clearTimeout(hideTimer);
     };
-  }, [isLoading, visible]);
+  }, [isLoading]);
 
   if (!visible && progress === 0) return null;
 
