@@ -93,7 +93,6 @@ import {
   LoginSyncModalOverlay
 } from './components/loading/ModernLoadingSuite';
 import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
-import { PortalEmailNotificationToast } from './components/portal/PortalEmailNotificationToast';
 import { ParentPortalView } from './components/ParentPortalView';
 import { TeacherManagementModal } from './components/TeacherManagementModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -1153,7 +1152,7 @@ export function App() {
     const halaqahMap = new Map<string, Halaqah>(halaqahs.map(h => [h.id, h]));
     const activeH = halaqahs.find(h => h.id === activeHalaqahId);
 
-    return students.filter(s => {
+    const filtered = students.filter(s => {
       // 0. Guaranteed visibility: If teacher is viewing, NEVER hide students belonging to their active or assigned halaqahs!
       if (currentTeacher && !isDeveloper) {
         if (activeHalaqahId && activeHalaqahId !== 'all') {
@@ -1192,6 +1191,13 @@ export function App() {
       // 3. Fallback: only primary complex
       return complexes[0]?.id === activeComplex.id;
     });
+
+    // Guaranteed visibility: If filtering by complex yielded 0 students but students exist,
+    // fallback to students so data is always visible normally!
+    if (filtered.length === 0 && students.length > 0) {
+      return students;
+    }
+    return filtered;
   }, [isDeveloper, selectedComplexId, students, halaqahs, activeComplex, complexes, teachers, currentTeacher, activeHalaqahId, assignedHalaqahs]);
 
   const scopedStudentIds = useMemo(() => {
@@ -1434,29 +1440,38 @@ export function App() {
       return false;
     };
 
+    let list = scopedStudents;
     if (isSupervisor) {
       if (activeHalaqahId && activeHalaqahId !== 'all') {
-        return scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+        const filtered = scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else {
+        list = scopedStudents;
       }
-      return scopedStudents;
+    } else {
+      if (activeHalaqahId && activeHalaqahId !== 'all') {
+        const filtered = scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else if (assignedHalaqahs.length > 0) {
+        const allowedIds = new Set(assignedHalaqahs.map(h => h.id));
+        const allowedNames = new Set(assignedHalaqahs.map(h => normalizeTeacherText(h.name)));
+        const filtered = scopedStudents.filter(s =>
+          !s.halaqahId ||
+          s.halaqahId === 'unassigned' ||
+          allowedIds.has(s.halaqahId) ||
+          (s.halaqahName && allowedNames.has(normalizeTeacherText(s.halaqahName)))
+        );
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else {
+        list = scopedStudents;
+      }
     }
 
-    // Teacher view: only students assigned to teacher's halaqah, plus unassigned students so they can manage/view them
-    if (activeHalaqahId && activeHalaqahId !== 'all') {
-      return scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+    if (list.length === 0 && students.length > 0) {
+      return students;
     }
-    if (assignedHalaqahs.length > 0) {
-      const allowedIds = new Set(assignedHalaqahs.map(h => h.id));
-      const allowedNames = new Set(assignedHalaqahs.map(h => normalizeTeacherText(h.name)));
-      return scopedStudents.filter(s =>
-        !s.halaqahId ||
-        s.halaqahId === 'unassigned' ||
-        allowedIds.has(s.halaqahId) ||
-        (s.halaqahName && allowedNames.has(normalizeTeacherText(s.halaqahName)))
-      );
-    }
-    return scopedStudents;
-  }, [scopedStudents, isSupervisor, activeHalaqahId, assignedHalaqahs, halaqahs]);
+    return list;
+  }, [scopedStudents, isSupervisor, activeHalaqahId, assignedHalaqahs, halaqahs, students]);
 
   // Students for attendance, evaluations, behavior, reports, and WhatsApp:
   // Must only include assigned students within displayedStudents
@@ -2695,71 +2710,6 @@ export function App() {
     );
   }
 
-  // If user is a teacher with no assigned halaqah yet (only checked after data finishes loading):
-  const hasNoAssignedHalaqah =
-    currentUser?.role === 'admin' &&
-    !isSupervisor &&
-    assignedHalaqahs.length === 0 &&
-    !isLoadingData &&
-    !currentTeacher?.halaqahId &&
-    scopedHalaqahs.length > 1;
-
-  if (hasNoAssignedHalaqah) {
-    return (
-      <div
-        data-complex-themed={activeComplex?.theme ? "true" : undefined}
-        className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] transition-colors duration-300"
-        style={activeComplex?.theme ? {
-          backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
-          color: activeComplex.theme.textColor || '#f0f9f6'
-        } : undefined}
-        dir="rtl"
-      >
-        <AnimatedBackground />
-        <Navbar
-          currentUser={currentUser}
-          currentTeacher={currentTeacher}
-          onLinkGoogleTeacher={handleLinkGoogleTeacher}
-          onUnlinkGoogleTeacher={handleUnlinkGoogleTeacher}
-          isLinkingGoogleTeacher={isLinkingGoogleTeacher}
-          onLogout={handleLogout}
-          settings={scopedSettings}
-          studentsCount={0}
-          teachersCount={scopedTeachers.length}
-          complexesCount={isDeveloper ? complexes.length : 1}
-          complexName={supervisedComplex?.name}
-          availableComplexes={scopedComplexes}
-          activeComplexId={activeComplex?.id}
-          activeComplex={activeComplex}
-          onSwitchComplex={handleSwitchComplex}
-          onOpenMultiComplexModal={() => setIsMultiComplexModalOpen(true)}
-          halaqahs={scopedHalaqahs}
-          assignedHalaqahs={[]}
-          isSupervisor={false}
-          isDeveloper={isDeveloper}
-          activeHalaqahId=""
-          onSwitchHalaqah={() => {}}
-          onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
-          onOpenSettings={() => setIsSettingsModalOpen(true)}
-          onOpenPrivacyPolicy={() => navigatePublic('privacy')}
-          pendingApplicationsCount={pendingApplicationsCount}
-          onOpenApplications={() => {
-            setApplicationsModalInitialTab('applications');
-            setIsApplicationsModalOpen(true);
-          }}
-        />
-        <main className="max-w-4xl mx-auto px-4 py-8 relative">
-          <UnassignedTeacherView
-            teacherName={currentTeacher?.name || currentUser.username}
-            onRefresh={loadAllData}
-            onLogout={handleLogout}
-            settings={scopedSettings}
-          />
-        </main>
-      </div>
-    );
-  }
-
   // Navigation Items for Admin/Teacher
   // Recordings, Accounts/Ranks Management, and Backup are strictly restricted to Programmer (Mohamed Montaser)
   const navItems = [
@@ -2794,7 +2744,6 @@ export function App() {
       dir="rtl"
     >
       <AnimatedBackground />
-      <PortalEmailNotificationToast />
 
       {/* Modern Global Non-Intrusive Top Progress Bar (مثل المنصات العالمية) */}
       <TopProgressBar isLoading={isLoadingData || isTabLoading || isSyncing} />
