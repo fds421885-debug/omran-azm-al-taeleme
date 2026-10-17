@@ -331,10 +331,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const formatTemplateWithStudent = (rawTemplate: string, studentName: string): string => {
     if (!rawTemplate) return '';
     const clean = studentName.trim();
-    // Extract first name only (e.g. "محمد" from "محمد عبد الله المنصور") per user requirement
     const firstName = clean.split(/\s+/)[0] || clean;
     return rawTemplate
-      .replace(/\{اسم_الولد\}|\{اسم_الطالب\}|\[اسم الطالب\]|\[اسم الولد\]|\(اسم الولد\)|\(اسم الطالب\)|\{الاسم_الأول\}|\[الاسم الأول\]/g, firstName)
+      .replace(/\{الاسم_الأول\}|\[الاسم الأول\]/g, firstName)
+      .replace(/\{اسم_الولد\}|\{اسم_الطالب\}|\[اسم الطالب\]|\[اسم الولد\]|\(اسم الولد\)|\(اسم الطالب\)/g, clean)
       .trim();
   };
 

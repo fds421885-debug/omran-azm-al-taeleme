@@ -634,12 +634,12 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
                 {/* Header Row */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#065f46] pb-3.5">
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-[#022c22] border border-[#065f46] flex items-center justify-center text-[#fbbf24] font-black text-sm">
-                      {violation.studentName.charAt(0)}
+                    <div className="w-11 h-11 rounded-xl bg-[#022c22] border border-[#065f46] flex items-center justify-center text-[#fbbf24] font-black text-sm shrink-0 shadow-sm">
+                      <User className="w-5 h-5 text-[#fbbf24]" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm sm:text-base font-bold text-white">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm sm:text-base font-black text-white leading-snug break-words">
                           {violation.studentName}
                         </h4>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${severityInfo.bg}`}>

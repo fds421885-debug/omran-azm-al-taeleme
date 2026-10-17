@@ -451,10 +451,10 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                   <div className="lg:w-1/3 space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] flex items-center justify-center font-bold text-sm shrink-0 shadow-md">
-                        {student.name.charAt(0)}
+                        <UserCheck className="w-5 h-5 stroke-[2.2]" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white line-clamp-1">{student.name}</h4>
+                        <h4 className="text-sm font-black text-white leading-snug break-words" title={student.name}>{student.name}</h4>
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-[#86efac]/80">
                           <span>ولي الأمر: {student.parentName}</span>
                         </div>

@@ -9,5 +9,7 @@ export {
   GenericTabSkeleton,
   TabSkeleton,
   CloudLoadingScreen,
-  QuranInlineLoader
+  QuranInlineLoader,
+  ModernQuranLoader
 } from './loading/ModernLoadingSuite';
+

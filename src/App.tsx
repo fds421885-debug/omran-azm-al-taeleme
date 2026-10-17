@@ -978,7 +978,12 @@ export function App() {
           }
           return [payload, ...prev];
         });
+        if (payload.theme && (!activeComplex || activeComplex.id === payload.id)) {
+          applyComplexThemeToDOM(payload.theme, true);
+          setSettings(prev => ({ ...prev, theme: payload.theme }));
+        }
       } else if (type === 'complex-deleted' && payload) {
+
         setComplexes(prev => prev.filter(c => c.id !== payload));
       } else if (type === 'settings' && payload) {
         setSettings(prev => ({ ...prev, ...payload }));
@@ -2339,18 +2344,35 @@ export function App() {
 
   // 14. Complexes Handlers (المجمعات القرآنية)
   const handleSaveComplex = async (complex: QuranComplex) => {
-    await OmranDataService.saveComplex(complex);
-    const list = await OmranDataService.loadComplexes();
-    setComplexes(list);
+    // 1. Synchronously update local state so UI reacts instantly without waiting
+    setComplexes(prev => {
+      const idx = prev.findIndex(c => c.id === complex.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = complex;
+        return copy;
+      }
+      return [complex, ...prev];
+    });
+
+    // 2. Immediately apply complex theme to DOM & state
     if (complex.theme) {
       applyComplexThemeToDOM(complex.theme, true);
       setSettings(prev => ({ ...prev, theme: complex.theme }));
       try {
         localStorage.setItem('omran_active_theme', JSON.stringify(complex.theme));
       } catch (e) {}
+    }
+
+    // 3. Persist to storage & cloud
+    await OmranDataService.saveComplex(complex);
+    const list = await OmranDataService.loadComplexes();
+    setComplexes(list);
+    if (complex.theme) {
       await OmranDataService.saveSettings({ ...settings, theme: complex.theme }).catch(() => {});
     }
   };
+
 
   const handleDeleteComplex = async (complexId: string) => {
     await OmranDataService.deleteComplex(complexId);
@@ -2802,8 +2824,9 @@ export function App() {
         onSwitchHalaqah={handleSwitchHalaqah}
         onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onOpenComplexManagement={isDeveloper ? () => setIsComplexModalOpen(true) : undefined}
+        onOpenComplexManagement={(isDeveloper || isSupervisor) ? () => setIsComplexModalOpen(true) : undefined}
         onOpenPrivacyPolicy={() => navigatePublic('privacy')}
+
         onOpenEditAccount={() => setIsEditAccountModalOpen(true)}
         pendingApplicationsCount={pendingApplicationsCount}
         onOpenApplications={() => {

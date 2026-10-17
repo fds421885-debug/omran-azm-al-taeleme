@@ -63,8 +63,10 @@ import {
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
 import { OmranDataService } from '../../lib/firebase';
 import { StudentExamTaker } from '../StudentExamTaker';
+import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface ExamsTabProps {
+
   exams: Exam[];
   submissions: ExamSubmission[];
   students: Student[];
@@ -127,7 +129,18 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   activeComplex,
   onSaveCertificate
 }) => {
+  const currentTheme = activeComplex?.theme;
+  const themePrimary = currentTheme?.primaryColor || 'var(--complex-primary, #131f24)';
+  const themeSecondary = currentTheme?.secondaryColor || 'var(--complex-secondary, #1b2e35)';
+  const themeAccent = currentTheme?.accentColor || 'var(--complex-accent, #ffc800)';
+  const themeCardBg = currentTheme?.cardColor || 'var(--complex-card, #203843)';
+  const themeBorder = currentTheme?.cardColor ? lightenHex(currentTheme.cardColor, 0.18) : 'var(--complex-border, #2b4550)';
+  const themeBorderBottom = currentTheme?.cardColor ? darkenHex(currentTheme.cardColor, 0.35) : 'var(--complex-card-shadow, #16262e)';
+  const themeAccentShadow = currentTheme?.accentColor ? darkenHex(currentTheme.accentColor, 0.28) : 'var(--complex-accent-shadow, #e5a500)';
+  const accentTextColor = currentTheme?.accentColor ? getContrastTextColor(currentTheme.accentColor) : 'var(--complex-accent-text, #131f24)';
+
   const [activeSubTab, setActiveSubTab] = useState<'exams' | 'submissions' | 'google_sheets'>('exams');
+
   const [isCreatingExam, setIsCreatingExam] = useState(false);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [selectedExamForSubmissions, setSelectedExamForSubmissions] = useState<string>('all');
@@ -1180,17 +1193,31 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   return (
     <div className="space-y-6">
       {/* Tab Header Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border border-[#fbbf24]/30 p-6 shadow-2xl">
+      <div
+        className="relative overflow-hidden rounded-[28px] border-2 border-b-4 p-6 sm:p-7 shadow-xl transition-all select-none"
+        style={{
+          backgroundColor: themeSecondary,
+          borderColor: themeBorder,
+          borderBottomColor: themeBorderBottom
+        }}
+      >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40 text-xs font-bold mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-[#fbbf24]" />
-              <span>نظام الاختبارات والتقييمات المتكامل</span>
+            <div
+              className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border-2 border-b-2 text-xs font-black mb-2"
+              style={{
+                backgroundColor: `${themeAccent}20`,
+                color: themeAccent,
+                borderColor: `${themeAccent}50`
+              }}
+            >
+              <Sparkles className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+              <span>نظام الاختبارات والتقييمات المتكامل • {activeComplex?.name || 'المنظومة القرآنية'}</span>
             </div>
-            <h2 className="text-2xl font-bold font-heading text-white flex items-center gap-2">
+            <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2">
               منظومة الاختبارات والتقييمات القرآنية السحابية
             </h2>
-            <p className="text-emerald-100/90 text-sm mt-1 max-w-2xl">
+            <p className="text-slate-200 text-xs sm:text-sm font-bold mt-1.5 max-w-2xl leading-relaxed">
               إنشاء اختبارات إلكترونية تفاعلية، تحديد المؤقتات والمحاولات، تصحيح المقالي، مزامنة النتائج سحابياً، وتصديرها إلى Google Sheets.
             </p>
           </div>
@@ -1199,63 +1226,101 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
             <button
               onClick={() => handleExportToGoogleSheet()}
               disabled={isExportingSheets}
-              className="px-4 py-2.5 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] font-bold text-xs sm:text-sm flex items-center gap-2 border border-[#fbbf24]/40 hover:border-[#fbbf24] shadow-md transition-all cursor-pointer"
+              className="px-4 py-2.5 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm flex items-center gap-2 shadow-md transition-all cursor-pointer active:translate-y-0.5"
+              style={{
+                backgroundColor: themeCardBg,
+                borderColor: themeBorder,
+                borderBottomColor: themeBorderBottom,
+                color: '#ffffff'
+              }}
               title="تصدير النتائج إلى جدول Google Sheets"
             >
-              <FileSpreadsheet className={`w-4 h-4 text-[#fbbf24] ${isExportingSheets ? 'animate-spin' : ''}`} />
+              <FileSpreadsheet className={`w-4 h-4 ${isExportingSheets ? 'animate-spin' : ''}`} style={{ color: themeAccent }} />
               <span>{isExportingSheets ? 'جارٍ تصدير Sheets...' : 'تصدير إلى Google Sheets'}</span>
             </button>
 
             <button
               onClick={() => handleOpenCreateModal()}
-              className="px-5 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] border border-[#fbbf24] font-black text-sm flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-2xl border-2 border-b-4 font-black text-sm flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: lightenHex(themeAccent, 0.18),
+                borderBottomColor: themeAccentShadow,
+                color: accentTextColor
+              }}
             >
-              <Plus className="w-5 h-5 text-[#064e3b]" />
+              <Plus className="w-5 h-5" style={{ color: accentTextColor }} />
               <span>إنشاء اختبار جديد</span>
             </button>
           </div>
         </div>
 
         {/* Sub-Tabs Selector */}
-        <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t border-[#fbbf24]/20">
+        <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t" style={{ borderColor: themeBorder }}>
           <button
             onClick={() => setActiveSubTab('exams')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'exams'
-                ? 'bg-[#fbbf24] text-[#064e3b] border border-[#fbbf24] shadow-md shadow-amber-500/20'
-                : 'bg-[#022c22] text-[#f0f9f6]/80 hover:text-white hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-            }`}
+            className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
+            style={activeSubTab === 'exams' ? {
+              backgroundColor: themeAccent,
+              color: accentTextColor,
+              borderColor: lightenHex(themeAccent, 0.18),
+              borderBottomColor: themeAccentShadow,
+              borderBottomWidth: '4px'
+            } : {
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom,
+              borderBottomWidth: '4px',
+              color: '#ffffff'
+            }}
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-4 h-4" style={{ color: activeSubTab === 'exams' ? accentTextColor : themeAccent }} />
             <span>قائمة الاختبارات ({exams.length})</span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('submissions')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'submissions'
-                ? 'bg-[#fbbf24] text-[#064e3b] border border-[#fbbf24] shadow-md shadow-amber-500/20'
-                : 'bg-[#022c22] text-[#f0f9f6]/80 hover:text-white hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-            }`}
+            className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
+            style={activeSubTab === 'submissions' ? {
+              backgroundColor: themeAccent,
+              color: accentTextColor,
+              borderColor: lightenHex(themeAccent, 0.18),
+              borderBottomColor: themeAccentShadow,
+              borderBottomWidth: '4px'
+            } : {
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom,
+              borderBottomWidth: '4px',
+              color: '#ffffff'
+            }}
           >
-            <CheckSquare className="w-4 h-4" />
+            <CheckSquare className="w-4 h-4" style={{ color: activeSubTab === 'submissions' ? accentTextColor : themeAccent }} />
             <span>التسليمات والتصحيح ({submissions.length})</span>
             {submissions.filter(s => s.status === 'needs_grading').length > 0 && (
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
             )}
           </button>
 
-
           <button
             onClick={() => setActiveSubTab('google_sheets')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'google_sheets'
-                ? 'bg-[#fbbf24] text-[#064e3b] border border-[#fbbf24] shadow-md shadow-amber-500/20'
-                : 'bg-[#022c22] text-[#f0f9f6]/80 hover:text-white hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-            }`}
+            className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
+            style={activeSubTab === 'google_sheets' ? {
+              backgroundColor: themeAccent,
+              color: accentTextColor,
+              borderColor: lightenHex(themeAccent, 0.18),
+              borderBottomColor: themeAccentShadow,
+              borderBottomWidth: '4px'
+            } : {
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom,
+              borderBottomWidth: '4px',
+              color: '#ffffff'
+            }}
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>تصدير Google Sheets</span>
+            <FileSpreadsheet className="w-4 h-4" style={{ color: activeSubTab === 'google_sheets' ? accentTextColor : themeAccent }} />
+            <span>ربط وتصدير Google Sheets</span>
             {googleAuthConfig?.isLinked ? (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
                 حساب متصل

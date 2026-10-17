@@ -301,6 +301,19 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         createdAt: new Date().toISOString()
       }));
 
+      if (bulkHalaqahId) {
+        const chosenHalaqah = halaqahs.find(h => h.id === bulkHalaqahId);
+        if (chosenHalaqah) {
+          const currentCount = students.filter(s => s.halaqahId === bulkHalaqahId).length;
+          const capacity = chosenHalaqah.capacity && chosenHalaqah.capacity > 0 ? chosenHalaqah.capacity : 15;
+          if (currentCount + studentsToInsert.length > capacity) {
+            alert(`لقد وصلت الحلقة (${chosenHalaqah.name}) إلى التعبئة الكاملة للطلاب. السعة المتبقية: ${Math.max(0, capacity - currentCount)} طالب فقط، بينما تحاول إضافة ${studentsToInsert.length} طلاب.`);
+            setIsBulkAdding(false);
+            return;
+          }
+        }
+      }
+
       if (onBatchAddStudents) {
         await onBatchAddStudents(studentsToInsert);
       } else {
@@ -552,6 +565,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     const chosenHalaqah = halaqahs.find(h => h.id === formHalaqahId);
     const assignedHalaqahName = chosenHalaqah ? chosenHalaqah.name : '';
 
+    if (formHalaqahId && chosenHalaqah) {
+      const currentCount = students.filter(s => s.halaqahId === formHalaqahId && s.id !== editingStudent?.id).length;
+      const capacity = chosenHalaqah.capacity && chosenHalaqah.capacity > 0 ? chosenHalaqah.capacity : 15;
+      if (currentCount >= capacity) {
+        setFormError(`لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب (${currentCount}/${capacity} طالب). لا يمكن إضافة طلاب جدد إليها إلا بعد زيادة السعة الاستيعابية للحلقة أو نقل طالب.`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       if (editingStudent) {
@@ -606,9 +628,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   // Quick Assign Handler
   const handleQuickAssign = async () => {
     if (!quickAssignStudent || !quickSelectedHalaqahId) return;
+    const chosen = halaqahs.find(h => h.id === quickSelectedHalaqahId);
+    if (chosen) {
+      const currentCount = students.filter(s => s.halaqahId === quickSelectedHalaqahId && s.id !== quickAssignStudent.id).length;
+      const capacity = chosen.capacity && chosen.capacity > 0 ? chosen.capacity : 15;
+      if (currentCount >= capacity) {
+        alert(`لقد وصلت الحلقة (${chosen.name}) إلى التعبئة الكاملة للطلاب (${currentCount}/${capacity} طالب). لا يمكن إلحاق طلاب جدد بها.`);
+        return;
+      }
+    }
+
     setIsQuickAssigning(true);
     try {
-      const chosen = halaqahs.find(h => h.id === quickSelectedHalaqahId);
       const chosenName = chosen ? chosen.name : '';
       if (onTransferStudent) {
         await onTransferStudent(quickAssignStudent.id, quickSelectedHalaqahId, chosenName);
@@ -1092,21 +1123,25 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                         )}
                       </button>
 
-                      {/* Student Avatar Initial Badge (Dynamically colored by active Complex Theme) */}
+                      {/* Student Avatar Icon Badge (Dynamically colored by active Complex Theme) */}
                       <div
-                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center text-xl font-black shadow-md shrink-0 transition-all select-none"
+                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md shrink-0 transition-all select-none"
                         style={{
                           backgroundColor: `${accentCol}22`,
                           borderColor: `${accentCol}90`,
                           borderBottomColor: accentShadow,
                           color: accentCol
                         }}
+                        title={student.name}
                       >
-                        {student.name.trim().charAt(0) || 'ط'}
+                        <UserCheck className="w-6 h-6 stroke-[2.2]" />
                       </div>
 
-                      <div>
-                        <h3 className="text-sm font-black text-white line-clamp-1">{student.name}</h3>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm sm:text-base font-black text-white leading-snug break-words" title={student.name}>
+                          {student.name}
+                        </h3>
+
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300 font-bold flex-wrap">
                           <span>{student.age} سنة</span>
                           {(!student.halaqahId || student.halaqahId.trim() === '' || student.halaqahId === 'unassigned' || student.halaqahId === 'none') ? (
@@ -1484,11 +1519,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       <option value="" className="bg-[#064e3b] text-amber-300 font-bold">
                         غير مرفق بحلقة بعد (في قائمة الانتظار)
                       </option>
-                      {halaqahs.map(h => (
-                        <option key={h.id} value={h.id} className="bg-[#064e3b] text-white">
-                          {h.name} {h.primaryTeacherName ? `(المعلم: ${h.primaryTeacherName})` : ''}
-                        </option>
-                      ))}
+                      {halaqahs.map(h => {
+                        const count = students.filter(s => s.halaqahId === h.id).length;
+                        const cap = h.capacity && h.capacity > 0 ? h.capacity : 15;
+                        const isFull = count >= cap;
+                        return (
+                          <option key={h.id} value={h.id} className={isFull ? "bg-[#064e3b] text-red-300 font-bold" : "bg-[#064e3b] text-white"}>
+                            {h.name} ({count} من {cap} طلاب) {isFull ? '⛔ [مكتملة السعة]' : ''} {h.primaryTeacherName ? `(المعلم: ${h.primaryTeacherName})` : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 )}

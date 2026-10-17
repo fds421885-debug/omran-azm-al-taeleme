@@ -269,6 +269,8 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
         logoUrl: editingComplex.logoUrl || undefined,
         stampUrl: editingComplex.stampUrl || undefined,
         theme: editingComplex.theme || undefined,
+        complexType: editingComplex.complexType || 'single_complex',
+        mosques: editingComplex.mosques || [],
         createdAt: editingComplex.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };

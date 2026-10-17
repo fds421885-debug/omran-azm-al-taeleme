@@ -168,22 +168,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2.5 flex-wrap">
-                <span>مرحباً بك،</span>
-                <span
-                  className="px-4 py-1.5 rounded-2xl border-2 border-b-4 inline-flex items-center gap-2 font-black shadow-md text-xl sm:text-2xl transition-all"
-                  style={{
-                    backgroundColor: `${themeAccent}25`,
-                    color: themeAccent,
-                    borderColor: `${themeAccent}80`,
-                    borderBottomColor: themeAccentShadow
-                  }}
-                >
-                  <span>{formattedGreetingName}</span>
-                  <span className="text-xl">👋</span>
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-slate-200">حفظك الله ورعاك وبارك في جهودك 🌿</span>
-              </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-black font-heading text-white flex items-center gap-2.5 flex-wrap drop-shadow-md">
+                  <span>مرحباً بك،</span>
+                  <span className="text-amber-300 font-extrabold tracking-normal">
+                    {formattedGreetingName}
+                  </span>
+                  <span className="text-2xl select-none inline-block hover:scale-125 transition-transform">👋</span>
+                </h2>
+              </div>
+              <p className="text-emerald-100/90 text-xs sm:text-sm font-bold flex items-center gap-2 leading-relaxed">
+                <span>حفظك الله ورعاك وسدد خطاك في خدمة كتاب الله الكريم 🌿</span>
+              </p>
             </div>
 
             <p className="text-slate-200 text-xs sm:text-sm font-bold max-w-xl leading-relaxed">
@@ -197,30 +193,37 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('attendance')}
-              className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-xl cursor-pointer transition-all hover:brightness-110 select-none"
-              style={{
-                backgroundColor: themeAccent,
-                color: accentTextColor,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow
+              className="px-5 py-3.5 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-xl cursor-pointer transition-all hover:brightness-110 select-none"
+              style={unrecordedCount === 0 && students.length > 0 ? {
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                borderColor: '#34d399',
+                borderBottomColor: '#059669',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+              } : {
+                backgroundColor: '#58cc02',
+                color: '#ffffff',
+                borderColor: '#7ee82a',
+                borderBottomColor: '#46a302',
+                boxShadow: '0 4px 14px rgba(88, 204, 2, 0.4)'
               }}
               title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم بنجاح' : `تسجيل ومتابعة حضور اليوم`}
             >
-              <CheckCircle className="w-5 h-5 shrink-0 stroke-[2.5]" style={{ color: accentTextColor }} />
-              <span className="text-sm font-black">تسجيل حضور اليوم</span>
+              <CheckCircle
+                className="w-5 h-5 shrink-0 stroke-[2.5] text-white"
+              />
+              <span className="text-sm font-black text-white">
+                {unrecordedCount === 0 && students.length > 0 ? 'تم تسجيل حضور اليوم' : 'تسجيل حضور اليوم'}
+              </span>
               {students.length > 0 && (
                 <span
-                  className="px-2.5 py-1 rounded-xl text-xs font-black border shadow-xs"
-                  style={{
-                    backgroundColor: accentTextColor === '#ffffff' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.18)',
-                    borderColor: 'rgba(0,0,0,0.18)',
-                    color: accentTextColor
-                  }}
+                  className="px-2.5 py-1 rounded-xl text-xs font-black border shadow-xs bg-white/20 border-white/30 text-white"
                 >
-                  {unrecordedCount === 0 ? `تم التحضير (${presentCount}/${students.length}) ✓` : `${todayAttendance.length}/${students.length}`}
+                  {unrecordedCount === 0 ? `مكتمل (${presentCount}/${students.length}) ✓` : `${todayAttendance.length}/${students.length} (متبقٍ ${unrecordedCount})`}
                 </span>
               )}
             </button>
+
 
             {/* Evaluation Button */}
             <button

@@ -1102,16 +1102,24 @@ export const TabSkeleton: React.FC<TabSkeletonProps> = ({ activeTab, activeCompl
 };
 
 /* ========================================================================= */
-/* 6. Modern Login & Transition Overlay                                      */
+/* 6. Modern Quranic Themed Loader & Transition Overlay                      */
 /* ========================================================================= */
 
-export const LoginSyncModalOverlay: React.FC<{
-  isOpen: boolean;
-  userName?: string;
+export interface ModernQuranLoaderProps {
+  title?: string;
+  subtitle?: string;
   activeComplex?: QuranComplex | null;
-}> = ({ isOpen, userName, activeComplex }) => {
-  if (!isOpen) return null;
+  size?: 'sm' | 'md' | 'lg';
+  isOverlay?: boolean;
+}
 
+export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
+  title = 'جَارٍ تَحْمِيلُ المَنْظُومَةِ القُرْآنِيَّةِ...',
+  subtitle = 'يَتِمُّ الآنَ تَأْكِيدُ ومُزَامَنَةُ البَيَانَاتِ سَحَابِيّاً وَلَحْظِيّاً',
+  activeComplex,
+  size = 'md',
+  isOverlay = false
+}) => {
   const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
   const accentShadow = activeComplex?.theme?.accentColor
     ? darkenHex(activeComplex.theme.accentColor, 0.28)
@@ -1124,93 +1132,132 @@ export const LoginSyncModalOverlay: React.FC<{
     ? darkenHex(activeComplex.theme.cardColor, 0.35)
     : 'var(--complex-card-shadow, #16262e)';
 
+  const dimensions = {
+    sm: { container: 'w-24 h-24', ring: 60, icon: 'w-6 h-6', box: 'w-14 h-14', text: 'text-[9px]' },
+    md: { container: 'w-36 h-36', ring: 100, icon: 'w-9 h-9', box: 'w-20 h-20', text: 'text-[10px]' },
+    lg: { container: 'w-44 h-44', ring: 120, icon: 'w-12 h-12', box: 'w-24 h-24', text: 'text-xs' }
+  }[size];
+
+  const content = (
+    <div
+      className={`border-2 border-b-4 rounded-[36px] p-6 sm:p-8 text-center space-y-5 shadow-2xl relative overflow-hidden max-w-sm w-full mx-auto select-none`}
+      style={{
+        backgroundColor: cardBg,
+        borderColor: borderCol,
+        borderBottomColor: borderBottomCol
+      }}
+      dir="rtl"
+    >
+      {/* Ambient Aura */}
+      <div
+        className="absolute inset-4 rounded-full blur-2xl opacity-35 pointer-events-none"
+        style={{ backgroundColor: accentColor }}
+      />
+
+      {/* Steadfast Holy Quran in Center + Smooth Dual Orbital Rotating Ring around it */}
+      <div className={`relative ${dimensions.container} mx-auto flex items-center justify-center`}>
+        {/* Orbital SVG Spinning Neon Ring (Rotates continuously AROUND the fixed Quran) */}
+        <svg
+          className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
+          viewBox="0 0 100 100"
+          style={{ animationDuration: '2.4s', animationTimingFunction: 'linear' }}
+        >
+          {/* Subtle outer track */}
+          <circle
+            cx="50"
+            cy="50"
+            r="44"
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.12)"
+            strokeWidth="3.5"
+          />
+          {/* Primary glowing theme arc */}
+          <circle
+            cx="50"
+            cy="50"
+            r="44"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="4.5"
+            strokeDasharray="95 180"
+            strokeLinecap="round"
+            style={{ filter: `drop-shadow(0 0 8px ${accentColor})` }}
+          />
+          {/* Secondary bright highlight arc */}
+          <circle
+            cx="50"
+            cy="50"
+            r="44"
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="3"
+            strokeDasharray="30 240"
+            strokeLinecap="round"
+            className="opacity-75"
+          />
+        </svg>
+
+        {/* Holy Quran Emblem: Strictly STILL, STEADFAST and DIGNIFIED in the center */}
+        <div
+          className={`${dimensions.box} rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 transition-transform`}
+          style={{
+            backgroundColor: 'var(--complex-primary, #131f24)',
+            borderColor: `${accentColor}95`,
+            borderBottomColor: accentShadow,
+            color: accentColor
+          }}
+        >
+          <BookOpen className={`${dimensions.icon} drop-shadow-md stroke-[2.2]`} />
+          <span className={`${dimensions.text} font-black tracking-wider mt-1 opacity-95 font-quran`}>
+            المصحف الشريف
+          </span>
+        </div>
+      </div>
+
+      {/* Dignified Islamic Messaging */}
+      <div className="space-y-1.5 pt-1 relative z-10">
+        <h3 className="text-lg sm:text-xl font-black text-white font-heading">
+          {title}
+        </h3>
+        {subtitle && (
+          <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
+  if (isOverlay) {
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md select-none transition-all">
+        {content}
+      </div>
+    );
+  }
+
+  return content;
+};
+
+export const LoginSyncModalOverlay: React.FC<{
+  isOpen: boolean;
+  userName?: string;
+  activeComplex?: QuranComplex | null;
+}> = ({ isOpen, userName, activeComplex }) => {
+  if (!isOpen) return null;
+
   return (
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-all select-none"
       dir="rtl"
     >
-      <div
-        className="border-2 border-b-4 rounded-[36px] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
-        style={{
-          backgroundColor: cardBg,
-          borderColor: borderCol,
-          borderBottomColor: borderBottomCol
-        }}
-      >
-        {/* Noble Holy Quran in Center with Modern Dynamic Orbital Ring (Quran is steadfast & still, only orbital ring spins) */}
-        <div className="relative w-40 h-40 mx-auto flex items-center justify-center">
-          {/* Ambient Glowing Aura */}
-          <div
-            className="absolute inset-4 rounded-full blur-xl opacity-35 pointer-events-none"
-            style={{ backgroundColor: accentColor }}
-          />
-
-          {/* Modern Glowing Dual Orbital Loading Ring (Smoothly rotating around the Holy Quran) */}
-          <svg
-            className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
-            viewBox="0 0 100 100"
-            style={{ animationDuration: '2.4s', animationTimingFunction: 'linear' }}
-          >
-            {/* Background Track Circle */}
-            <circle
-              cx="50"
-              cy="50"
-              r="44"
-              fill="none"
-              stroke="rgba(255, 255, 255, 0.12)"
-              strokeWidth="3.5"
-            />
-            {/* Spinning Neon Arc 1 */}
-            <circle
-              cx="50"
-              cy="50"
-              r="44"
-              fill="none"
-              stroke={accentColor}
-              strokeWidth="4.5"
-              strokeDasharray="95 180"
-              strokeLinecap="round"
-              className="drop-shadow-[0_0_10px_currentColor]"
-            />
-            {/* Spinning Neon Arc 2 */}
-            <circle
-              cx="50"
-              cy="50"
-              r="44"
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth="3"
-              strokeDasharray="30 240"
-              strokeLinecap="round"
-              className="opacity-70"
-            />
-          </svg>
-
-          {/* The Noble Holy Quran Emblem (Fixed steadfast in the center, never rotates) */}
-          <div
-            className="w-22 h-22 rounded-[24px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 select-none transition-transform"
-            style={{
-              backgroundColor: 'var(--complex-primary, #131f24)',
-              borderColor: `${accentColor}95`,
-              borderBottomColor: accentShadow,
-              color: accentColor
-            }}
-          >
-            <BookOpen className="w-10 h-10 drop-shadow-md stroke-[2.2]" />
-            <span className="text-[10px] font-black tracking-wider mt-1 opacity-95 font-quran">المصحف الشريف</span>
-          </div>
-        </div>
-
-        {/* Clean, Dignified Loading & Welcome Messaging */}
-        <div className="space-y-1.5 pt-1">
-          <h3 className="text-xl font-black text-white font-heading">
-            {userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
-          </h3>
-          <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
-            جَارٍ تَحْمِيلُ المَنْظُومَةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً...
-          </p>
-        </div>
-      </div>
+      <ModernQuranLoader
+        title={userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
+        subtitle="جَارٍ تَحْمِيلُ المَنْظُومَةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً..."
+        activeComplex={activeComplex}
+        size="md"
+        isOverlay={false}
+      />
     </div>
   );
 };
@@ -1230,13 +1277,16 @@ export const CloudLoadingScreen: React.FC<{
   return <TopProgressBar isLoading={isLoading} />;
 };
 
-export const QuranInlineLoader: React.FC<{ message?: string }> = ({
-  message = 'جَارٍ تَحْدِيثُ البَيَانَاتِ سَحَابِيّاً...'
+export const QuranInlineLoader: React.FC<{ message?: string; activeComplex?: QuranComplex | null }> = ({
+  message = 'جَارٍ تَحْدِيثُ البَيَانَاتِ سَحَابِيّاً...',
+  activeComplex
 }) => {
+  const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
   return (
     <div className="flex items-center justify-center gap-3 py-6 px-4 text-center select-none" dir="rtl">
-      <RefreshCw className="w-4 h-4 text-[#ffc800] animate-spin" />
-      <span className="text-xs font-black text-[#ffd233] tracking-wide">{message}</span>
+      <RefreshCw className="w-4 h-4 animate-spin" style={{ color: accentColor }} />
+      <span className="text-xs font-black tracking-wide" style={{ color: accentColor }}>{message}</span>
     </div>
   );
 };
+

@@ -42,6 +42,7 @@ import {
 } from '../../types';
 import { OmranDataService, auth } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import { ModernQuranLoader } from '../loading/ModernLoadingSuite';
 import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
 import {
   validateEmailAuthenticity,
@@ -51,6 +52,7 @@ import {
   buildApplicationReceivedEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
+
 
 // 30 Holy Quran Juz metadata (Part 1 to Part 30 with authentic names)
 export const QURAN_JUZ_LIST = [
@@ -2100,24 +2102,17 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           </span>
         </div>
       </footer>
-      {/* Connecting to AI Transition Overlay */}
+      {/* Connecting to AI Transition Overlay (Steadfast Holy Quran with Themed Modern Orbital Rotating Ring) */}
       {isConnectingAI && (
-        <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none" dir="rtl">
-          <div className="p-8 rounded-3xl bg-[#022c22] border-2 border-[#fbbf24] shadow-2xl flex flex-col items-center gap-4 max-w-md w-full">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-[#fbbf24] to-amber-300 text-[#064e3b] flex items-center justify-center shadow-xl animate-bounce">
-              <Sparkles className="w-8 h-8 animate-spin" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-heading font-black text-lg text-white">
-                جارٍ وصلك الآن مع المساعد الذكي...
-              </h3>
-              <p className="text-xs text-[#86efac] leading-relaxed">
-                نقوم الآن بتحميل بياناتك وربطك بالمساعد الذكي لبدء مقابلة تحديد المستوى والتسكين في أفضل حلقة وشاغر متاح.
-              </p>
-            </div>
-          </div>
-        </div>
+        <ModernQuranLoader
+          title="جارٍ وصلك الآن مع المساعد القرآني..."
+          subtitle="نقوم الآن بتحميل بياناتك المعتمدة لبدء مقابلة تحديد المستوى والتسكين في أفضل حلقة وشاغر متاح."
+          activeComplex={complex}
+          size="lg"
+          isOverlay={true}
+        />
       )}
+
 
       {/* Interactive AI Student Placement Interview Modal */}
       {isAIInterviewOpen && interviewStudentData && (
