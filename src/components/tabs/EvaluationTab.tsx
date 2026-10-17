@@ -52,7 +52,7 @@ import {
   getSurahInfo,
   formatQuranPortion
 } from '../../data/quranData';
-import { KingFahdQuranModal, QuranHighlightItem } from '../quran/KingFahdQuranModal';
+import { KingFahdQuranModal, QuranHighlightItem, toArabicNumerals } from '../quran/KingFahdQuranModal';
 import {
   getPageOfAyah,
   calculateStudentCompletedPages,
@@ -85,6 +85,7 @@ interface EvaluationTabProps {
   ) => Promise<void>;
   onNavigateToWhatsApp?: (studentId: string) => void;
   onNavigateToBehavior?: (studentId: string) => void;
+  onUpdateStudent?: (student: Student) => Promise<void> | void;
   settings?: AppSettings;
 }
 
@@ -103,6 +104,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   onUpdateStudentAIPlan,
   onNavigateToWhatsApp,
   onNavigateToBehavior,
+  onUpdateStudent,
   settings
 }) => {
   const currentTheme = activeComplex?.theme || settings?.theme;
@@ -908,6 +910,44 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       isFullSurah: true
     };
     setTomReviews(prev => [...prev, newItem]);
+  };
+
+  // Automatically insert active errored ayahs from King Fahd Mushaf into tomorrow's review list
+  const handleInsertErroredAyahsIntoTomorrowReviews = () => {
+    if (!activeStudent?.mushafErrors || activeStudent.mushafErrors.length === 0) return;
+    const activeErrors = activeStudent.mushafErrors.filter(e => !e.cleared && e.errorCount > 0);
+    if (activeErrors.length === 0) return;
+
+    const grouped: Record<number, number[]> = {};
+    activeErrors.forEach(err => {
+      if (!grouped[err.surahNumber]) grouped[err.surahNumber] = [];
+      grouped[err.surahNumber].push(err.ayahNumber);
+    });
+
+    const newTomReviews = [...tomReviews];
+    Object.entries(grouped).forEach(([sNumStr, ayahs]) => {
+      const sNum = Number(sNumStr);
+      const sInfo = getSurahInfo(sNum);
+      const minA = Math.min(...ayahs);
+      const maxA = Math.max(...ayahs);
+      const alreadyExists = newTomReviews.some(r => r.surahNumber === sNum && r.fromAyah <= minA && r.toAyah >= maxA);
+      if (!alreadyExists) {
+        newTomReviews.push({
+          id: `err_rev_${Date.now()}_${sNum}`,
+          type: 'مراجعة وتثبيت الأخطاء',
+          surahNumber: sNum,
+          surahName: sInfo.name,
+          fromAyah: minA,
+          toSurahNumber: sNum,
+          toSurahName: sInfo.name,
+          toAyah: maxA,
+          isFullSurah: minA === 1 && maxA >= sInfo.numberOfAyahs
+        });
+      }
+    });
+
+    setTomReviews(newTomReviews);
+    setAutoFilledNotice(`تم إدراج مواضع أخطاء مصحف الطالب (${activeErrors.length} آية) في مقرر مراجعة الغد للتكرار والتثبيت.`);
   };
 
   // Update Review Item for Tomorrow
@@ -1858,30 +1898,184 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 const isHalfway = percent >= 50 && percent < 75;
                 const pagesInfo = calculateStudentCompletedPages(activeStudent, evaluations);
 
-                const triggerCelebrationConfetti = () => {
-                  try {
-                    confetti({
-                      particleCount: 80,
-                      spread: 70,
-                      origin: { y: 0.6 }
-                    });
-                  } catch (e) {}
-                };
+                const totalQuranPages = 604;
+                const completedPagesTotal = pagesInfo.totalPagesCount || Math.min(totalQuranPages, Math.max(1, Math.round((activeStudent.currentSurah || 1) * 5.2)));
+                const remainingKhatmahPages = Math.max(0, totalQuranPages - completedPagesTotal);
+                const khatmahProgressPct = Math.min(100, Math.round((completedPagesTotal / totalQuranPages) * 100));
+                const dailyPace = activeStudent.memorizationPlan?.dailyNewPages || 1;
+                const estimatedDaysToFinish = Math.ceil(remainingKhatmahPages / Math.max(0.5, dailyPace));
+                const estimatedMonthsToFinish = Math.max(1, Math.round(estimatedDaysToFinish / 30));
+                const studentActiveMistakes = (activeStudent.mushafErrors || []).filter(e => !e.cleared && e.errorCount > 0);
+                const totalMistakesCount = studentActiveMistakes.reduce((sum, e) => sum + (e.errorCount || 1), 0);
 
                 return (
-                  <motion.div
-                    key={`surah-prog-${activeStudent.id}-${sNumber}-${currentAyah}`}
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                    className={`p-4 sm:p-5 rounded-3xl border transition-all shadow-lg backdrop-blur-md relative overflow-hidden ${
-                      isCompleted
-                        ? 'bg-gradient-to-r from-emerald-950/70 via-[#064e3b] to-emerald-900/60 border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
-                        : isNearing
-                        ? 'bg-gradient-to-r from-[#022c22] via-[#064e3b]/80 to-[#022c22] border-amber-400/40 shadow-[0_0_15px_rgba(251,191,36,0.1)]'
-                        : 'bg-[#022c22]/90 border-[#065f46]'
-                    }`}
-                  >
+                  <div className="space-y-4">
+                    {/* ============================================================ */}
+                    {/* 1. KHATMAH & SOLIDIFICATION PLAN PROGRESS BAR (شريط الخطة والختمة) */}
+                    {/* ============================================================ */}
+                    <motion.div
+                      key={`khatmah-plan-${activeStudent.id}-${completedPagesTotal}`}
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="p-4 sm:p-5 rounded-3xl border-2 border-b-4 shadow-xl backdrop-blur-md relative overflow-hidden transition-all"
+                      style={{
+                        backgroundColor: `${themeCardBg}f2`,
+                        borderColor: lightenHex(themeCardBg, 0.22),
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3 relative z-10">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-11 h-11 rounded-2xl flex items-center justify-center text-lg font-black shrink-0 border-2 shadow-md"
+                            style={{
+                              backgroundColor: `${themeAccent}25`,
+                              borderColor: themeAccent,
+                              color: themeAccent
+                            }}
+                          >
+                            <Trophy className="w-6 h-6 animate-pulse" style={{ color: themeAccent }} />
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-black text-white font-heading">
+                                شريط خطة الختمة والتثبيت المعتمدة للطالب:
+                              </span>
+                              <span className="text-xs font-black px-2.5 py-0.5 rounded-full" style={{ backgroundColor: `${themeAccent}30`, color: themeAccent }}>
+                                {activeStudent.name}
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">
+                                خطة ديناميكية متأقلمة
+                              </span>
+                            </div>
+
+                            <div className="text-xs font-bold text-slate-200 mt-1 flex items-center gap-2 flex-wrap">
+                              <span>
+                                أنجز <strong className="text-white font-mono text-sm">{toArabicNumerals(completedPagesTotal)}</strong> من أصل <strong className="font-mono text-slate-300">{toArabicNumerals(604)}</strong> وجهاً
+                              </span>
+                              <span>•</span>
+                              <span className="text-amber-300">
+                                متبقٍ <strong className="font-mono">{toArabicNumerals(remainingKhatmahPages)}</strong> وجهاً للختمة
+                              </span>
+                              <span>•</span>
+                              <span className="text-emerald-300">
+                                ختمة متوقعة بعد: <strong className="font-mono">{toArabicNumerals(estimatedMonthsToFinish)}</strong> {estimatedMonthsToFinish === 1 ? 'شهر' : estimatedMonthsToFinish === 2 ? 'شهرين' : 'أشهر'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Percentage and Open Mushaf */}
+                        <div className="flex items-center gap-3 self-end md:self-center flex-wrap">
+                          <div className="text-left">
+                            <div className="text-2xl font-black font-mono tracking-tight flex items-center gap-1.5 justify-end" style={{ color: themeAccent }}>
+                              <span>{khatmahProgressPct}%</span>
+                              <TrendingUp className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold text-left">
+                              مسار إتمام القرآن
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
+                            className="px-3.5 py-2 rounded-xl text-xs font-black border-2 border-b-4 flex items-center gap-1.5 cursor-pointer shadow-md active:translate-y-0.5 transition-all"
+                            style={{
+                              backgroundColor: themeAccent,
+                              borderColor: lightenHex(themeAccent, 0.18),
+                              borderBottomColor: themeAccentShadow,
+                              color: accentTextColor
+                            }}
+                          >
+                            <BookOpen className="w-4 h-4" style={{ color: accentTextColor }} />
+                            <span>مصحف الطالب</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Khatmah Progress Track */}
+                      <div className="space-y-1.5 relative z-10">
+                        <div
+                          className="h-4 sm:h-5 w-full rounded-full p-0.5 relative overflow-hidden shadow-inner border-2 border-b-2"
+                          style={{
+                            backgroundColor: themePrimary,
+                            borderColor: themeBorder
+                          }}
+                        >
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${khatmahProgressPct}%` }}
+                            transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+                            className="h-full rounded-full relative overflow-hidden transition-all shadow-md"
+                            style={{
+                              width: `${khatmahProgressPct}%`,
+                              backgroundColor: khatmahProgressPct >= 100 ? '#58cc02' : themeAccent,
+                              boxShadow: `0 0 14px ${khatmahProgressPct >= 100 ? '#58cc02' : themeAccent}`
+                            }}
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 animate-[pulse_2s_infinite]" />
+                          </motion.div>
+                        </div>
+
+                        {/* Quran Milestones */}
+                        <div className="flex items-center justify-between text-[10px] sm:text-[11px] px-1 font-bold text-slate-400">
+                          <span>البداية (وجه ١)</span>
+                          <span className="hidden sm:inline">ربع القرآن (وجه ١٥١)</span>
+                          <span className="hidden sm:inline">نصف القرآن (وجه ٣٠٢)</span>
+                          <span className="hidden sm:inline">ثلاثة أرباع (وجه ٤٥٣)</span>
+                          <span className="font-black text-amber-300">الختم التام (وجه ٦٠٤)</span>
+                        </div>
+                      </div>
+
+                      {/* Active Mistakes Alert & Action Strip */}
+                      <div className="mt-3 pt-3 border-t border-[#065f46]/50 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                        {studentActiveMistakes.length > 0 ? (
+                          <div className="flex items-center gap-2 text-rose-300 font-bold flex-wrap">
+                            <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                              <span>مرصود ({toArabicNumerals(totalMistakesCount)}) خطأ في مصحف الطالب تحتاج تثبيتاً في خطة الغد</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleInsertErroredAyahsIntoTomorrowReviews}
+                              className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>+ إدراج مواضع الأخطاء في مراجعة الغد للتكرار والتثبيت</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-emerald-300 font-medium">
+                            <Sparkles className="w-4 h-4 text-amber-400" />
+                            <span>الطالب يسير بانتظام تام نحو الختمة؛ وتتكيف الخطة دورياً لضمان رسوخ الحفظ وتثبيته.</span>
+                          </div>
+                        )}
+
+                        <div className="text-[11px] text-slate-400">
+                          معدل الحفظ: <strong className="text-white font-mono">{dailyPace}</strong> وجه جديد يومياً
+                        </div>
+                      </div>
+                    </motion.div>
+
+                    {/* ============================================================ */}
+                    {/* 2. SURAH PROGRESS BAR (شريط إتمام السورة الحالية) */}
+                    {/* ============================================================ */}
+                    <motion.div
+                      key={`surah-prog-${activeStudent.id}-${sNumber}-${currentAyah}`}
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className={`p-4 sm:p-5 rounded-3xl border transition-all shadow-lg backdrop-blur-md relative overflow-hidden ${
+                        isCompleted
+                          ? 'bg-gradient-to-r from-emerald-950/70 via-[#064e3b] to-emerald-900/60 border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
+                          : isNearing
+                          ? 'bg-gradient-to-r from-[#022c22] via-[#064e3b]/80 to-[#022c22] border-amber-400/40 shadow-[0_0_15px_rgba(251,191,36,0.1)]'
+                          : 'bg-[#022c22]/90 border-[#065f46]'
+                      }`}
+                    >
                     {/* Background subtle glow decoration */}
                     <div className="absolute -top-12 -left-12 w-32 h-32 bg-[#fbbf24]/5 rounded-full blur-2xl pointer-events-none" />
 
@@ -2107,8 +2301,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="text-[11px] font-mono text-[#86efac]/90 bg-[#064e3b]/80 px-2 py-0.5 rounded-lg border border-[#065f46] shrink-0 hidden sm:block">
                         السورة {sNumber} من 114
                       </div>
-                    </div>
-                  </motion.div>
+                    </motion.div>
+                  </div>
                 );
               })()}
 
@@ -3626,6 +3820,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         initialAyah={mushafInitialAyah}
         highlightItems={mushafHighlightItems}
         activeItemId={mushafActiveItemId}
+        activeStudent={activeStudent}
+        onUpdateStudentErrors={(errors) => {
+          if (activeStudent && onUpdateStudent) {
+            onUpdateStudent({
+              ...activeStudent,
+              mushafErrors: errors
+            });
+          }
+        }}
+        onSaveStudent={(updatedStudent) => {
+          if (onUpdateStudent) {
+            onUpdateStudent(updatedStudent);
+          }
+        }}
       />
     </div>
   );

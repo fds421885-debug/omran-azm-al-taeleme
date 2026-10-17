@@ -23,6 +23,7 @@ import {
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import {
   ALL_PAGES,
+  SURAH_START_PAGE_MAP,
   getKingFahdPageInfo,
   getPageOfAyah,
   formatPageTitle,
@@ -114,11 +115,16 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     setLocalErrors(activeStudent?.mushafErrors || []);
   }, [activeStudent?.mushafErrors]);
 
-  // STABLE OPEN EFFECT: Only sync starting page when modal transitions from closed to open!
-  // This permanently prevents page jumping back when teacher flips forward/backward!
+  // STABLE OPEN EFFECT: Only sync starting page when modal transitions from closed to open,
+  // or when teacher explicitly switches to a different recitation item from outside!
   const prevIsOpenRef = useRef<boolean>(false);
+  const lastActiveItemIdRef = useRef<string | undefined>(activeItemId);
+
   useEffect(() => {
-    if (isOpen && !prevIsOpenRef.current) {
+    const isFirstOpen = isOpen && !prevIsOpenRef.current;
+    const isNewItemTarget = isOpen && activeItemId && activeItemId !== lastActiveItemIdRef.current;
+
+    if (isFirstOpen || isNewItemTarget) {
       setCurrentPage(resolvedStartPage);
       if (activeItemId) {
         setSelectedHighlightId(activeItemId);
@@ -127,7 +133,8 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, resolvedStartPage, activeItemId]);
+    lastActiveItemIdRef.current = activeItemId;
+  }, [isOpen, resolvedStartPage, activeItemId, highlightItems]);
 
   // Active Highlight Item
   const activeHighlight = useMemo(() => {
@@ -215,7 +222,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   };
 
   const handleJumpToSurah = (surahNum: number) => {
-    const page = getPageOfAyah(surahNum, 1);
+    const page = SURAH_START_PAGE_MAP[surahNum] || getPageOfAyah(surahNum, 1);
     setCurrentPage(page);
   };
 
@@ -247,25 +254,50 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, currentPage, onClose]);
 
-  // Helper: check if ayah is inside a portion
+  // Helper: check if ayah is inside a portion (supports forward and reverse multi-surah ranges)
   const isAyahInPortion = (item: QuranHighlightItem, surahNum: number, ayahNum: number): boolean => {
-    const startS = item.surahNumber;
-    const startA = item.fromAyah;
-    const endS = item.toSurahNumber || startS;
-    const endA = item.toAyah;
+    const rawStartS = item.surahNumber;
+    const rawStartA = item.fromAyah;
+    const rawEndS = item.toSurahNumber || rawStartS;
+    const rawEndA = item.toAyah;
 
-    if (startS === endS) {
-      return surahNum === startS && ayahNum >= startA && ayahNum <= endA;
+    // Single-surah portion
+    if (rawStartS === rawEndS) {
+      const minA = Math.min(rawStartA, rawEndA);
+      const maxA = Math.max(rawStartA, rawEndA);
+      return surahNum === rawStartS && ayahNum >= minA && ayahNum <= maxA;
     }
-    if (surahNum === startS) {
-      return ayahNum >= startA;
-    }
-    if (surahNum === endS) {
-      return ayahNum <= endA;
-    }
-    if (surahNum > startS && surahNum < endS) {
+
+    const minS = Math.min(rawStartS, rawEndS);
+    const maxS = Math.max(rawStartS, rawEndS);
+
+    // Any intermediate surah is 100% inside the portion
+    if (surahNum > minS && surahNum < maxS) {
       return true;
     }
+
+    // At the lower-numbered boundary surah
+    if (surahNum === minS) {
+      if (rawStartS < rawEndS) {
+        // Forward: starts at rawStartA
+        return ayahNum >= rawStartA;
+      } else {
+        // Backward (e.g. from 114 An-Nas down to 104 Al-Humazah): ends at rawEndA
+        return ayahNum <= rawEndA;
+      }
+    }
+
+    // At the higher-numbered boundary surah
+    if (surahNum === maxS) {
+      if (rawStartS < rawEndS) {
+        // Forward: ends at rawEndA
+        return ayahNum <= rawEndA;
+      } else {
+        // Backward (e.g. from 114 down to 104): starts at rawStartA
+        return ayahNum >= rawStartA;
+      }
+    }
+
     return false;
   };
 
@@ -726,25 +758,42 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             </span>
           </div>
 
-          {/* Quick jump to page */}
-          <form onSubmit={handleSearchPageSubmit} className="flex items-center gap-1.5">
-            <span className="text-[10px] text-slate-400">انتقال لوجه:</span>
-            <input
-              type="number"
-              min={1}
-              max={604}
-              placeholder="1 - 604"
-              value={searchPageInput}
-              onChange={e => setSearchPageInput(e.target.value)}
-              className="w-16 bg-[#022c22] border border-[#065f46] rounded-lg px-1.5 py-0.5 text-center text-xs text-white outline-none focus:border-amber-400"
-            />
-            <button
-              type="submit"
-              className="px-2 py-0.5 rounded-lg bg-amber-400 text-slate-900 font-black text-[10px]"
-            >
-              ذهاب
-            </button>
-          </form>
+          {/* Quick jump to Surah & Page */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-amber-300 font-bold">انتقال لسورة:</span>
+              <select
+                value={pageInfo.startSurah}
+                onChange={e => handleJumpToSurah(Number(e.target.value))}
+                className="bg-[#022c22] border border-[#065f46] text-[#fbbf24] text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer max-w-[150px] sm:max-w-none"
+              >
+                {QURAN_SURAHS.map(s => (
+                  <option key={s.number} value={s.number}>
+                    {s.number}. سورة {s.name} (ص {SURAH_START_PAGE_MAP[s.number] || getPageOfAyah(s.number, 1)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <form onSubmit={handleSearchPageSubmit} className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400">انتقال لوجه:</span>
+              <input
+                type="number"
+                min={1}
+                max={604}
+                placeholder="1 - 604"
+                value={searchPageInput}
+                onChange={e => setSearchPageInput(e.target.value)}
+                className="w-16 bg-[#022c22] border border-[#065f46] rounded-lg px-1.5 py-0.5 text-center text-xs text-white outline-none focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                className="px-2 py-0.5 rounded-lg bg-amber-400 text-slate-900 font-black text-[10px] cursor-pointer hover:bg-amber-300"
+              >
+                ذهاب
+              </button>
+            </form>
+          </div>
         </div>
 
         {/* ========================================================================= */}

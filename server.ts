@@ -510,6 +510,122 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
   }
 });
 
+// 3. AI Student Placement & Dynamic Khatmah Plan Generation
+app.post("/api/gemini/student-placement-interview", async (req, res) => {
+  try {
+    const {
+      studentName = "الطالب",
+      age = 10,
+      memorizedJuz = 0,
+      consolidatedJuz = 0,
+      tajweedAnswers = {},
+      hasIjazah = false,
+      targetGoal = "ختم وتثبيت القرآن الكريم كاملاً",
+      dailyNewPace = 1,
+      dailyReviewPace = 5,
+      selectedMosque = ""
+    } = req.body;
+
+    const totalQuranPages = 604;
+    const completedPages = Math.min(totalQuranPages, Math.max(0, Math.round(Number(memorizedJuz || 0) * 20.13)));
+    const consolidatedPages = Math.min(completedPages, Math.max(0, Math.round(Number(consolidatedJuz || 0) * 20.13)));
+    const remainingPages = Math.max(0, totalQuranPages - completedPages);
+
+    const dailyPaceSafe = Math.max(0.5, Number(dailyNewPace) || 1);
+    const estimatedDays = Math.ceil(remainingPages / dailyPaceSafe);
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + estimatedDays);
+    const targetCompletionDateStr = targetDate.toISOString().split("T")[0];
+
+    // Compute Tajweed score
+    const tScore =
+      (tajweedAnswers?.easyCorrect ? 1 : 0) +
+      (tajweedAnswers?.mediumCorrect ? 1 : 0) +
+      (tajweedAnswers?.hardCorrect ? 1 : 0);
+
+    let determinedLevel = "متوسط";
+    if (memorizedJuz >= 25 && tScore >= 2) {
+      determinedLevel = "متقدم";
+    } else if (hasIjazah || (memorizedJuz === 30 && tScore === 3)) {
+      determinedLevel = "حافظ متقن";
+    } else if (memorizedJuz <= 3 && tScore <= 1) {
+      determinedLevel = "مبتدئ";
+    }
+
+    let startingSurahNum = 78;
+    let startingAyah = 1;
+    if (memorizedJuz === 0) {
+      startingSurahNum = 114;
+    } else if (memorizedJuz >= 1 && memorizedJuz <= 3) {
+      startingSurahNum = 78;
+    } else if (memorizedJuz < 30) {
+      startingSurahNum = Math.max(1, 114 - (memorizedJuz * 3));
+    }
+    const surahInfo = getSurahInfo(startingSurahNum);
+
+    let aiAdvice = `مرحباً بك يا ${studentName}! تم رسم خطتك القرآنية بمعدل ${dailyPaceSafe} وجه حفظ جديد و${dailyReviewPace} أوجه مراجعة يومياً مع العناية بالتثبيت المستمر حتى الختم بإذن الله.`;
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const prompt = `أنت موجه قرآني وخبير في الحلقات القرآنية لمنظومة عُمْرَان.
+بيانات مقابلة الطالب الجديد:
+- اسم الطالب: ${studentName} (العمر: ${age} سنة)
+- الأجزاء المحفوظة: ${memorizedJuz} جزء، منها ${consolidatedJuz} جزء مثبت متقن.
+- نتيجة اختبار التجويد: ${tScore} من 3 (سهل/متوسط/صعب).
+- هل يحمل إجازة: ${hasIjazah ? "نعم" : "لا"}.
+- هدف الطالب: ${targetGoal}.
+- طاقة الحفظ اليومي الجديد: ${dailyPaceSafe} وجه.
+- طاقة المراجعة اليومية: ${dailyReviewPace} وجه.
+- المستوى التقديري: ${determinedLevel}.
+- الأيام التقديرية للختم والتثبيت: ${estimatedDays} يوماً (التاريخ المستهدف: ${targetCompletionDateStr}).
+
+المطلوب:
+كتابة توجيه تربوي تحفيزي موجز ومتقن من سطرين إلى 3 أسطر يرحب بالطالب باسمه ويشجعه ويحدد له نصيحة لتثبيت الأجزاء ${consolidatedJuz < memorizedJuz ? `غير المتقنة (${memorizedJuz - consolidatedJuz} أجزاء تحتاج تثبيت)` : "المحفوظة"} مع حفظه الجديد. أخرج نص التوجيه فقط باللغة العربية الفصيحة الكريمة.`;
+
+        const respText = await generateGeminiContentWithFallback(ai, prompt);
+        if (respText) {
+          aiAdvice = respText.replace(/[\*\#\`]/g, "").trim();
+        }
+      } catch (gemErr) {
+        console.warn("Placement interview Gemini advice notice:", gemErr);
+      }
+    }
+
+    const result = {
+      studentLevel: determinedLevel,
+      memorizationPlan: {
+        dailyNewPages: dailyPaceSafe,
+        dailyReviewPages: Math.max(2, Number(dailyReviewPace) || 5),
+        consolidatedJuzCount: Number(consolidatedJuz || 0),
+        memorizedJuzCount: Number(memorizedJuz || 0),
+        targetJuz: 30,
+        targetCompletionDate: targetCompletionDateStr,
+        estimatedDaysRemaining: estimatedDays,
+        progressPercentage: Math.min(100, Math.round((consolidatedPages / totalQuranPages) * 100)),
+        status: "on_track",
+        aiNotes: aiAdvice,
+        lastUpdated: new Date().toISOString()
+      },
+      initialPosition: {
+        surahNumber: surahInfo.number,
+        surahName: surahInfo.name,
+        ayahNumber: startingAyah
+      },
+      suggestedAssignment: {
+        newMemorization: `سورة ${surahInfo.name}: الآيات (1 - ${Math.min(surahInfo.numberOfAyahs, 10)})`,
+        review: Number(consolidatedJuz || 0) > 0 ? `مراجعة وتثبيت الجزء الأول من الأجزاء المحفوظة` : `سورة الفاتحة وقصار السور`,
+        suggestedSheikh: "الشيخ محمود خليل الحصري (المصحف المعلم)",
+        tajweedFocus: tScore < 2 ? "أحكام النون الساكنة والتنوين والمدود" : "مخارج الحروف وصفاتها والوقف والابتداء",
+        dailyNote: "الاستماع للقارئ المتقن وتكرار الورد 3 مرات قبل النوم ترسيخاً للحفظ."
+      }
+    };
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Student placement interview error:", err);
+    return res.status(500).json({ error: err.message || "Failed to process placement" });
+  }
+});
+
 // Helper: Format seconds into MM:SS or HH:MM:SS
 function formatSeconds(sec: number): string {
   const s = Math.max(0, Math.floor(sec));

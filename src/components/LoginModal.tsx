@@ -14,11 +14,12 @@ import {
   RefreshCw,
   X
 } from 'lucide-react';
-import { Student, UserRole, AppSettings, TeacherAccount, getThreePartNameValidation, QuranComplex } from '../types';
+import { Student, UserRole, AppSettings, TeacherAccount, getThreePartNameValidation, QuranComplex, Halaqah, WaitingListStudent } from '../types';
 import { GoogleWorkspaceService, UnregisteredGoogleAccountError, normalizeArabicText } from '../lib/googleWorkspace';
 import { OmranDataService } from '../lib/firebase';
 import { verifyPassword, hashPassword } from '../utils/security';
 import { FirebaseAuthService } from '../lib/firebaseAuthService';
+import { StudentAIPlacementModal } from './assistant/StudentAIPlacementModal';
 
 interface LoginModalProps {
   onLoginSuccess: (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => void;
@@ -26,6 +27,7 @@ interface LoginModalProps {
   students: Student[];
   teachers?: TeacherAccount[];
   complexes?: QuranComplex[];
+  halaqahs?: Halaqah[];
   settings: AppSettings;
   onBackToLanding?: () => void;
   onOpenPrivacyPolicy?: () => void;
@@ -37,6 +39,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   students,
   teachers = [],
   complexes = [],
+  halaqahs = [],
   settings,
   onBackToLanding,
   onOpenPrivacyPolicy
@@ -62,6 +65,37 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [googleError, setGoogleError] = useState('');
   const [showUnregisteredModal, setShowUnregisteredModal] = useState(false);
   const [unregisteredEmail, setUnregisteredEmail] = useState('');
+
+  // AI Placement Interview State
+  const [isPlacementModalOpen, setIsPlacementModalOpen] = useState(false);
+  const [placementStudentData, setPlacementStudentData] = useState<{
+    name: string;
+    age: number;
+    phone: string;
+    parentName: string;
+    parentPhones: string[];
+    password?: string;
+    complexId?: string;
+  } | null>(null);
+  const [isConnectingAI, setIsConnectingAI] = useState(false);
+
+  const handlePlacementComplete = (createdStudent: Student, targetComplex: QuranComplex, halaqah: Halaqah) => {
+    setIsPlacementModalOpen(false);
+    setRegSuccess(`مبارك يا ${createdStudent.name}! تم تسكينك في ${halaqah.name}. جاري الدخول...`);
+    setTimeout(() => {
+      onLoginSuccess({
+        username: createdStudent.name,
+        role: 'student',
+        studentId: createdStudent.id,
+        complexId: targetComplex.id
+      });
+    }, 1000);
+  };
+
+  const handlePlacedInWaitingList = (ticket: WaitingListStudent) => {
+    setIsPlacementModalOpen(false);
+    setRegSuccess(`تم تسجيلك في قائمة الانتظار برقم: (#${ticket.queueNumber}) وكود متابعة (${ticket.applicationTrackingCode}).`);
+  };
 
   const handleGoogleUnifiedLogin = async () => {
     setGoogleError('');
