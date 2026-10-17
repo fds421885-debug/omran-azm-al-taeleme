@@ -137,154 +137,35 @@ export const SURAH_START_PAGE_MAP: Record<number, number> = {
   114: 604  // الناس
 };
 
-/**
- * Verified page boundaries for key anchor pages and detailed Juz 28, 29, 30
- */
-export const QURAN_PAGE_BOUNDARIES: Array<{
-  page: number;
-  juz: number;
-  startSurah: number;
-  startAyah: number;
-  endSurah: number;
-  endAyah: number;
-}> = [
-  // Page 1
-  { page: 1, juz: 1, startSurah: 1, startAyah: 1, endSurah: 1, endAyah: 7 },
-  // Page 2 - 49 (Al-Baqarah)
-  { page: 2, juz: 1, startSurah: 2, startAyah: 1, endSurah: 2, endAyah: 5 },
-  { page: 3, juz: 1, startSurah: 2, startAyah: 6, endSurah: 2, endAyah: 16 },
-  { page: 4, juz: 1, startSurah: 2, startAyah: 17, endSurah: 2, endAyah: 24 },
-  { page: 5, juz: 1, startSurah: 2, startAyah: 25, endSurah: 2, endAyah: 29 },
-  { page: 6, juz: 1, startSurah: 2, startAyah: 30, endSurah: 2, endAyah: 37 },
-  { page: 7, juz: 1, startSurah: 2, startAyah: 38, endSurah: 2, endAyah: 48 },
-  { page: 8, juz: 1, startSurah: 2, startAyah: 49, endSurah: 2, endAyah: 57 },
-  { page: 9, juz: 1, startSurah: 2, startAyah: 58, endSurah: 2, endAyah: 61 },
-  { page: 10, juz: 1, startSurah: 2, startAyah: 62, endSurah: 2, endAyah: 69 },
-  { page: 11, juz: 1, startSurah: 2, startAyah: 70, endSurah: 2, endAyah: 76 },
-  { page: 12, juz: 1, startSurah: 2, startAyah: 77, endSurah: 2, endAyah: 83 },
-  { page: 13, juz: 1, startSurah: 2, startAyah: 84, endSurah: 2, endAyah: 88 },
-  { page: 14, juz: 1, startSurah: 2, startAyah: 89, endSurah: 2, endAyah: 93 },
-  { page: 15, juz: 1, startSurah: 2, startAyah: 94, endSurah: 2, endAyah: 101 },
-  { page: 16, juz: 1, startSurah: 2, startAyah: 102, endSurah: 2, endAyah: 105 },
-  { page: 17, juz: 1, startSurah: 2, startAyah: 106, endSurah: 2, endAyah: 112 },
-  { page: 18, juz: 1, startSurah: 2, startAyah: 113, endSurah: 2, endAyah: 119 },
-  { page: 19, juz: 1, startSurah: 2, startAyah: 120, endSurah: 2, endAyah: 126 },
-  { page: 20, juz: 1, startSurah: 2, startAyah: 127, endSurah: 2, endAyah: 134 },
-  { page: 21, juz: 1, startSurah: 2, startAyah: 135, endSurah: 2, endAyah: 141 },
-  { page: 22, juz: 2, startSurah: 2, startAyah: 142, endSurah: 2, endAyah: 145 },
-  { page: 49, juz: 3, startSurah: 2, startAyah: 282, endSurah: 2, endAyah: 286 },
-  // Juz 29
-  { page: 562, juz: 29, startSurah: 67, startAyah: 1, endSurah: 67, endAyah: 12 },
-  { page: 563, juz: 29, startSurah: 67, startAyah: 13, endSurah: 67, endAyah: 26 },
-  { page: 564, juz: 29, startSurah: 67, startAyah: 27, endSurah: 68, endAyah: 15 },
-  { page: 565, juz: 29, startSurah: 68, startAyah: 16, endSurah: 68, endAyah: 42 },
-  { page: 566, juz: 29, startSurah: 68, startAyah: 43, endSurah: 69, endAyah: 8 },
-  { page: 567, juz: 29, startSurah: 69, startAyah: 9, endSurah: 69, endAyah: 34 },
-  { page: 568, juz: 29, startSurah: 69, startAyah: 35, endSurah: 70, endAyah: 10 },
-  { page: 569, juz: 29, startSurah: 70, startAyah: 11, endSurah: 70, endAyah: 39 },
-  { page: 570, juz: 29, startSurah: 70, startAyah: 40, endSurah: 71, endAyah: 10 },
-  { page: 571, juz: 29, startSurah: 71, startAyah: 11, endSurah: 71, endAyah: 28 },
-  { page: 572, juz: 29, startSurah: 72, startAyah: 1, endSurah: 72, endAyah: 13 },
-  { page: 573, juz: 29, startSurah: 72, startAyah: 14, endSurah: 72, endAyah: 28 },
-  { page: 574, juz: 29, startSurah: 73, startAyah: 1, endSurah: 73, endAyah: 19 },
-  { page: 575, juz: 29, startSurah: 73, startAyah: 20, endSurah: 74, endAyah: 17 },
-  { page: 576, juz: 29, startSurah: 74, startAyah: 18, endSurah: 74, endAyah: 47 },
-  { page: 577, juz: 29, startSurah: 74, startAyah: 48, endSurah: 75, endAyah: 19 },
-  { page: 578, juz: 29, startSurah: 75, startAyah: 20, endSurah: 76, endAyah: 5 },
-  { page: 579, juz: 29, startSurah: 76, startAyah: 6, endSurah: 76, endAyah: 25 },
-  { page: 580, juz: 29, startSurah: 76, startAyah: 26, endSurah: 77, endAyah: 19 },
-  { page: 581, juz: 29, startSurah: 77, startAyah: 20, endSurah: 77, endAyah: 50 },
-  // Juz 30 (Amma) - 100% exact King Fahd standard edition
-  { page: 582, juz: 30, startSurah: 78, startAyah: 1, endSurah: 78, endAyah: 30 },
-  { page: 583, juz: 30, startSurah: 78, startAyah: 31, endSurah: 79, endAyah: 15 },
-  { page: 584, juz: 30, startSurah: 79, startAyah: 16, endSurah: 79, endAyah: 46 },
-  { page: 585, juz: 30, startSurah: 80, startAyah: 1, endSurah: 80, endAyah: 42 },
-  { page: 586, juz: 30, startSurah: 81, startAyah: 1, endSurah: 81, endAyah: 29 },
-  { page: 587, juz: 30, startSurah: 82, startAyah: 1, endSurah: 83, endAyah: 6 },
-  { page: 588, juz: 30, startSurah: 83, startAyah: 7, endSurah: 83, endAyah: 36 },
-  { page: 589, juz: 30, startSurah: 84, startAyah: 1, endSurah: 84, endAyah: 25 },
-  { page: 590, juz: 30, startSurah: 85, startAyah: 1, endSurah: 85, endAyah: 22 },
-  { page: 591, juz: 30, startSurah: 86, startAyah: 1, endSurah: 87, endAyah: 15 },
-  { page: 592, juz: 30, startSurah: 87, startAyah: 16, endSurah: 88, endAyah: 26 },
-  { page: 593, juz: 30, startSurah: 89, startAyah: 1, endSurah: 89, endAyah: 30 },
-  { page: 594, juz: 30, startSurah: 90, startAyah: 1, endSurah: 90, endAyah: 20 },
-  { page: 595, juz: 30, startSurah: 91, startAyah: 1, endSurah: 92, endAyah: 21 },
-  { page: 596, juz: 30, startSurah: 93, startAyah: 1, endSurah: 94, endAyah: 8 },
-  { page: 597, juz: 30, startSurah: 95, startAyah: 1, endSurah: 96, endAyah: 19 },
-  { page: 598, juz: 30, startSurah: 97, startAyah: 1, endSurah: 98, endAyah: 8 },
-  { page: 599, juz: 30, startSurah: 99, startAyah: 1, endSurah: 100, endAyah: 11 },
-  { page: 600, juz: 30, startSurah: 101, startAyah: 1, endSurah: 102, endAyah: 8 }, // القارعة والتكاثر
-  { page: 601, juz: 30, startSurah: 103, startAyah: 1, endSurah: 105, endAyah: 5 }, // العصر والهمزة والفيل
-  { page: 602, juz: 30, startSurah: 106, startAyah: 1, endSurah: 108, endAyah: 3 }, // قريش والماعون والكوثر
-  { page: 603, juz: 30, startSurah: 109, startAyah: 1, endSurah: 111, endAyah: 5 }, // الكافرون والنصر والمسد
-  { page: 604, juz: 30, startSurah: 112, startAyah: 1, endSurah: 114, endAyah: 6 }  // الإخلاص والفلق والناس
-];
+import { KING_FAHD_604_PAGE_BOUNDARIES } from './kingFahd604Boundaries';
 
 /**
- * Generate full 604 pages lookup using known boundaries and proportional interpolation for intermediate pages
+ * 100% Exact King Fahd Complex (مصحف مجمع الملك فهد لطباعة المصحف الشريف - 604 أوجه معتمدة)
+ * Every single page from 1 to 604 with exact start/end surahs and ayahs.
+ */
+export const QURAN_PAGE_BOUNDARIES = KING_FAHD_604_PAGE_BOUNDARIES;
+
+/**
+ * Full 604 pages lookup with populated Arabic Surah names and Juz numbers
  */
 export const ALL_PAGES: QuranPageInfo[] = [];
 
-// Build comprehensive 604 page definitions
+// Build comprehensive 604 page definitions from exact King Fahd boundaries
 (function buildAll604Pages() {
-  // Map of surahs starting on each page
-  const pageToSurahs: Record<number, number[]> = {};
-  for (let s = 1; s <= 114; s++) {
-    const p = SURAH_START_PAGE_MAP[s] || 1;
-    if (!pageToSurahs[p]) pageToSurahs[p] = [];
-    pageToSurahs[p].push(s);
-  }
-
-  for (let p = 1; p <= 604; p++) {
-    const direct = QURAN_PAGE_BOUNDARIES.find(b => b.page === p);
-    if (direct) {
-      const sNames: string[] = [];
-      for (let s = direct.startSurah; s <= direct.endSurah; s++) {
-        sNames.push(getSurahInfo(s).name);
-      }
-      ALL_PAGES.push({
-        pageNumber: p,
-        juz: direct.juz,
-        startSurah: direct.startSurah,
-        startAyah: direct.startAyah,
-        endSurah: direct.endSurah,
-        endAyah: direct.endAyah,
-        surahNames: sNames.length > 0 ? sNames : [getSurahInfo(direct.startSurah).name]
-      });
-    } else {
-      // Find surah that covers this page
-      let activeSurah = 1;
-      for (let s = 114; s >= 1; s--) {
-        if (SURAH_START_PAGE_MAP[s] <= p) {
-          activeSurah = s;
-          break;
-        }
-      }
-
-      const nextSurah = activeSurah < 114 ? activeSurah + 1 : 114;
-      const startP = SURAH_START_PAGE_MAP[activeSurah];
-      const endP = activeSurah < 114 ? (SURAH_START_PAGE_MAP[nextSurah] >= startP ? SURAH_START_PAGE_MAP[nextSurah] : startP + 1) : 604;
-      
-      const sInfo = getSurahInfo(activeSurah);
-      const totalPagesForSurah = Math.max(1, endP - startP);
-      const pageIndexInSurah = Math.max(0, p - startP);
-
-      const approxAyahsPerPage = Math.max(1, Math.ceil(sInfo.numberOfAyahs / totalPagesForSurah));
-      const startA = Math.min(sInfo.numberOfAyahs, pageIndexInSurah * approxAyahsPerPage + 1);
-      const endA = Math.min(sInfo.numberOfAyahs, (pageIndexInSurah + 1) * approxAyahsPerPage);
-
-      const approxJuz = sInfo.juz || Math.min(30, Math.max(1, Math.ceil(p / 20)));
-
-      ALL_PAGES.push({
-        pageNumber: p,
-        juz: approxJuz,
-        startSurah: activeSurah,
-        startAyah: startA,
-        endSurah: activeSurah,
-        endAyah: endA,
-        surahNames: [sInfo.name]
-      });
+  for (const entry of KING_FAHD_604_PAGE_BOUNDARIES) {
+    const sNames: string[] = [];
+    for (let s = entry.startSurah; s <= entry.endSurah; s++) {
+      sNames.push(getSurahInfo(s).name);
     }
+    ALL_PAGES.push({
+      pageNumber: entry.page,
+      juz: entry.juz,
+      startSurah: entry.startSurah,
+      startAyah: entry.startAyah,
+      endSurah: entry.endSurah,
+      endAyah: entry.endAyah,
+      surahNames: sNames.length > 0 ? sNames : [getSurahInfo(entry.startSurah).name]
+    });
   }
 })();
 

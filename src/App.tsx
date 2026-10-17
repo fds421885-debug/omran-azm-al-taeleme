@@ -1714,6 +1714,16 @@ export function App() {
 
   // Student Transfer Handler (Preserves full student history & evaluation records)
   const handleTransferStudent = async (studentId: string, targetHalaqahId: string, targetHalaqahName: string) => {
+    if (targetHalaqahId && targetHalaqahId !== 'unassigned') {
+      const match = halaqahs.find(h => h.id === targetHalaqahId) || scopedHalaqahs.find(h => h.id === targetHalaqahId);
+      if (match) {
+        const enrolled = students.filter(s => s.halaqahId === targetHalaqahId && s.id !== studentId).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    }
     await OmranDataService.transferStudentToHalaqah(studentId, targetHalaqahId, targetHalaqahName);
     const updated = await OmranDataService.loadStudents();
     setStudents(updated);
@@ -1721,6 +1731,16 @@ export function App() {
 
   // Batch Student Transfer Handler (Transfers multiple students in one operation to Firestore)
   const handleBatchTransferStudents = async (studentIds: string[], targetHalaqahId: string, targetHalaqahName: string) => {
+    if (targetHalaqahId && targetHalaqahId !== 'unassigned') {
+      const match = halaqahs.find(h => h.id === targetHalaqahId) || scopedHalaqahs.find(h => h.id === targetHalaqahId);
+      if (match) {
+        const enrolled = students.filter(s => s.halaqahId === targetHalaqahId && !studentIds.includes(s.id)).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled + studentIds.length > cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    }
     await OmranDataService.transferMultipleStudentsToHalaqah(studentIds, targetHalaqahId, targetHalaqahName);
     const updated = await OmranDataService.loadStudents();
     setStudents(updated);
@@ -1759,12 +1779,24 @@ export function App() {
       const match = halaqahs.find(h => h.id === chosenHalaqahId) || scopedHalaqahs.find(h => h.id === chosenHalaqahId);
       if (match) {
         chosenHalaqahName = match.name;
+        // Capacity check
+        const enrolled = students.filter(s => s.halaqahId === chosenHalaqahId).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
       }
     } else if (studentData.halaqahId === undefined && activeHalaqahId && activeHalaqahId !== 'all') {
       const match = halaqahs.find(h => h.id === activeHalaqahId) || scopedHalaqahs.find(h => h.id === activeHalaqahId);
       if (match) {
         chosenHalaqahId = match.id;
         chosenHalaqahName = match.name;
+        // Capacity check
+        const enrolled = students.filter(s => s.halaqahId === match.id).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
       }
     }
 

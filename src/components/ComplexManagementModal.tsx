@@ -316,6 +316,7 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
       id: `halaqah-${Date.now()}`,
       name: '',
       description: '',
+      capacity: 15,
       complexId: complexId || undefined,
       complexName: parentComplex?.name || undefined,
       primaryTeacherName: parentComplex?.supervisorTeacherName || teachers[0]?.name || '',
@@ -341,10 +342,20 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
         ? teachers.find(t => t.name.trim() === selectedTeacherName || normalizeTeacherText(t.name) === normalizeTeacherText(selectedTeacherName))
         : null;
 
+      const enrolledCount = students.filter(s => s.halaqahId === editingHalaqah.id).length;
+      const effectiveCapacity = (editingHalaqah.capacity !== undefined && Number(editingHalaqah.capacity) > 0)
+        ? Number(editingHalaqah.capacity)
+        : (enrolledCount > 0 ? enrolledCount : 15);
+
+      const assignedMosque = parentComplex?.mosques?.find(m => m.id === editingHalaqah.mosqueId);
+
       const fullHalaqah: Halaqah = {
         id: editingHalaqah.id || `halaqah-${Date.now()}`,
         name: editingHalaqah.name.trim(),
         description: editingHalaqah.description?.trim() || '',
+        capacity: effectiveCapacity,
+        mosqueId: editingHalaqah.mosqueId || assignedMosque?.id || undefined,
+        mosqueName: assignedMosque?.name || editingHalaqah.mosqueName || undefined,
         complexId: parentComplex?.id || effectiveComplexId || 'complex-main',
         complexName: parentComplex?.name || editingHalaqah.complexName || 'المجمع القرآني',
         primaryTeacherId: matchedTeacher?.id || editingHalaqah.primaryTeacherId,
@@ -1193,6 +1204,68 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
               </div>
 
               <div>
+                <label className="block text-xs font-bold text-emerald-200 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    <span>السعة الاستيعابية للحلقة (الحد الأقصى للطلاب): <span className="text-amber-400">*</span></span>
+                  </span>
+                  <span className="text-[10px] text-amber-300 font-normal">
+                    (عدد الطلاب الحاليين: {students.filter(s => s.halaqahId === editingHalaqah.id).length})
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  required
+                  placeholder="مثال: 15"
+                  value={editingHalaqah.capacity ?? 15}
+                  onChange={e => setEditingHalaqah(prev => ({ ...prev, capacity: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                  className="w-full bg-[#022c22] border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-amber-300 font-bold outline-none focus:border-[#fbbf24]"
+                />
+                <p className="text-[11px] text-slate-300 mt-1">
+                  💡 أقصى عدد طلاب تستوعبه الحلقة. إذا اكتملت السعة سيظهر تنبيه: «لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب» ويتم توجيه الطلاب الجدد لقائمة الانتظار أو حلقة أخرى.
+                </p>
+              </div>
+
+              {/* If parent complex has mosques or is multi_mosque_system, allow Mosque selection */}
+              {(() => {
+                const effectiveCId = editingHalaqah.complexId || targetComplexIdForNewHalaqah;
+                const pComplex = complexes.find(c => c.id === effectiveCId);
+                if (pComplex?.mosques && pComplex.mosques.length > 0) {
+                  return (
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-200 mb-1.5 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                        <span>المسجد / الجامع التابعة له الحلقة داخل المنظومة:</span>
+                      </label>
+                      <select
+                        value={editingHalaqah.mosqueId || ''}
+                        onChange={e => {
+                          const mId = e.target.value;
+                          const mObj = pComplex.mosques?.find(m => m.id === mId);
+                          setEditingHalaqah(prev => ({
+                            ...prev,
+                            mosqueId: mId || undefined,
+                            mosqueName: mObj?.name || undefined
+                          }));
+                        }}
+                        className="w-full bg-[#022c22] border border-[#065f46] rounded-xl px-3 py-2 text-xs text-white font-semibold outline-none focus:border-[#fbbf24] cursor-pointer"
+                      >
+                        <option value="">-- مقر المجمع العام (أو اختر مسجداً تابعاً) --</option>
+                        {pComplex.mosques.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} {m.address ? `(${m.address})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <div>
                 <label className="block text-xs font-bold text-emerald-200 mb-1.5">
                   وصف الحلقة:
                 </label>
@@ -1369,21 +1442,40 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div>
-                                          <div className="flex items-center gap-1.5">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
                                             <span className="w-2 h-2 rounded-full bg-amber-400" />
                                             <span className="text-xs font-bold text-white line-clamp-1">{h.name}</span>
+                                            {(() => {
+                                              const cap = (h.capacity && h.capacity > 0) ? h.capacity : (hStudentsCount > 0 ? hStudentsCount : 15);
+                                              const isFull = cap > 0 && hStudentsCount >= cap;
+                                              return (
+                                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-bold border ${
+                                                  isFull
+                                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                                }`}>
+                                                  {isFull ? `مكتملة (${hStudentsCount}/${cap})` : `شاغر (${hStudentsCount}/${cap})`}
+                                                </span>
+                                              );
+                                            })()}
                                           </div>
-                                          <div className="text-[10px] text-[#86efac] mt-1 space-x-1 space-x-reverse">
+                                          <div className="text-[10px] text-[#86efac] mt-1 space-x-1 space-x-reverse flex items-center flex-wrap gap-1">
                                             <span>المحفظ: {h.primaryTeacherName || 'غير مسند'}</span>
-                                            <span>•</span>
-                                            <span>{hStudentsCount} طلاب</span>
+                                            {h.mosqueName && (
+                                              <>
+                                                <span>•</span>
+                                                <span className="text-amber-300 font-medium">جامع: {h.mosqueName}</span>
+                                              </>
+                                            )}
                                           </div>
                                         </div>
 
                                         <div className="flex items-center gap-1 shrink-0">
                                           <button
                                             onClick={() => {
-                                              setEditingHalaqah({ ...h });
+                                              const enrolled = students.filter(s => s.halaqahId === h.id).length;
+                                              const defaultCap = (h.capacity && h.capacity > 0) ? h.capacity : (enrolled > 0 ? enrolled : 15);
+                                              setEditingHalaqah({ ...h, capacity: defaultCap });
                                               setActiveView('new_halaqah');
                                             }}
                                             className="p-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"

@@ -305,9 +305,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         const chosenHalaqah = halaqahs.find(h => h.id === bulkHalaqahId);
         if (chosenHalaqah) {
           const currentCount = students.filter(s => s.halaqahId === bulkHalaqahId).length;
-          const capacity = chosenHalaqah.capacity && chosenHalaqah.capacity > 0 ? chosenHalaqah.capacity : 15;
-          if (currentCount + studentsToInsert.length > capacity) {
-            alert(`لقد وصلت الحلقة (${chosenHalaqah.name}) إلى التعبئة الكاملة للطلاب. السعة المتبقية: ${Math.max(0, capacity - currentCount)} طالب فقط، بينما تحاول إضافة ${studentsToInsert.length} طلاب.`);
+          const capacity = (chosenHalaqah.capacity && chosenHalaqah.capacity > 0) ? chosenHalaqah.capacity : (currentCount > 0 ? currentCount : 15);
+          if (capacity > 0 && currentCount + studentsToInsert.length > capacity) {
+            alert(`لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب (${chosenHalaqah.name}). السعة المتاحة: ${Math.max(0, capacity - currentCount)} طالب فقط.`);
             setIsBulkAdding(false);
             return;
           }
@@ -567,9 +567,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
     if (formHalaqahId && chosenHalaqah) {
       const currentCount = students.filter(s => s.halaqahId === formHalaqahId && s.id !== editingStudent?.id).length;
-      const capacity = chosenHalaqah.capacity && chosenHalaqah.capacity > 0 ? chosenHalaqah.capacity : 15;
-      if (currentCount >= capacity) {
-        setFormError(`لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب (${currentCount}/${capacity} طالب). لا يمكن إضافة طلاب جدد إليها إلا بعد زيادة السعة الاستيعابية للحلقة أو نقل طالب.`);
+      const capacity = (chosenHalaqah.capacity && chosenHalaqah.capacity > 0) ? chosenHalaqah.capacity : (currentCount > 0 ? currentCount : 15);
+      if (capacity > 0 && currentCount >= capacity) {
+        setFormError('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
         return;
       }
     }
@@ -631,9 +631,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     const chosen = halaqahs.find(h => h.id === quickSelectedHalaqahId);
     if (chosen) {
       const currentCount = students.filter(s => s.halaqahId === quickSelectedHalaqahId && s.id !== quickAssignStudent.id).length;
-      const capacity = chosen.capacity && chosen.capacity > 0 ? chosen.capacity : 15;
-      if (currentCount >= capacity) {
-        alert(`لقد وصلت الحلقة (${chosen.name}) إلى التعبئة الكاملة للطلاب (${currentCount}/${capacity} طالب). لا يمكن إلحاق طلاب جدد بها.`);
+      const capacity = (chosen.capacity && chosen.capacity > 0) ? chosen.capacity : (currentCount > 0 ? currentCount : 15);
+      if (capacity > 0 && currentCount >= capacity) {
+        alert('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
         return;
       }
     }
@@ -1521,7 +1521,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       </option>
                       {halaqahs.map(h => {
                         const count = students.filter(s => s.halaqahId === h.id).length;
-                        const cap = h.capacity && h.capacity > 0 ? h.capacity : 15;
+                        const cap = (h.capacity && h.capacity > 0) ? h.capacity : (count > 0 ? count : 15);
                         const isFull = count >= cap;
                         return (
                           <option key={h.id} value={h.id} className={isFull ? "bg-[#064e3b] text-red-300 font-bold" : "bg-[#064e3b] text-white"}>

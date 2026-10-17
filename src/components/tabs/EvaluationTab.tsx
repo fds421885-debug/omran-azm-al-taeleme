@@ -2301,10 +2301,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="text-[11px] font-mono text-[#86efac]/90 bg-[#064e3b]/80 px-2 py-0.5 rounded-lg border border-[#065f46] shrink-0 hidden sm:block">
                         السورة {sNumber} من 114
                       </div>
-                    </motion.div>
-                  </div>
-                );
-              })()}
+                    </div>
+                  </motion.div>
+                </div>
+              );
+            })()}
 
               {/* ============================================================ */}
               {/* SECTION 1: TODAY'S RECITATION (ما تم تسميعه بالتفصيل) */}
