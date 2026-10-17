@@ -93,6 +93,7 @@ import {
   LoginSyncModalOverlay
 } from './components/loading/ModernLoadingSuite';
 import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
+import { PortalEmailNotificationToast } from './components/portal/PortalEmailNotificationToast';
 import { ParentPortalView } from './components/ParentPortalView';
 import { TeacherManagementModal } from './components/TeacherManagementModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -2793,6 +2794,7 @@ export function App() {
       dir="rtl"
     >
       <AnimatedBackground />
+      <PortalEmailNotificationToast />
 
       {/* Modern Global Non-Intrusive Top Progress Bar (مثل المنصات العالمية) */}
       <TopProgressBar isLoading={isLoadingData || isTabLoading || isSyncing} />

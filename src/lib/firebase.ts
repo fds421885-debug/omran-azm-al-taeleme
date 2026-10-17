@@ -6015,4 +6015,28 @@ export class OmranDataService {
       return matchTrack || matchPhone;
     }) || null;
   }
+
+  /**
+   * Confirms student acceptance and entry to the assigned halaqah.
+   * Updates state to 'confirmed_by_student', records timestamp, and broadcasts real-time alert to supervisor.
+   */
+  static async confirmStudentApplicationEntry(
+    applicationId: string,
+    complexId?: string
+  ): Promise<StudentRegistrationApplication | null> {
+    const apps = await this.loadRegistrationApplications(complexId);
+    const target = apps.find(a => a.id === applicationId);
+    if (!target) return null;
+
+    const updated: StudentRegistrationApplication = {
+      ...target,
+      studentAcceptanceStatus: 'confirmed_by_student',
+      studentConfirmedAt: new Date().toISOString()
+    };
+
+    await this.saveRegistrationApplication(updated);
+    broadcastDataUpdate('student_confirmed_entry', updated);
+    return updated;
+  }
 }
+

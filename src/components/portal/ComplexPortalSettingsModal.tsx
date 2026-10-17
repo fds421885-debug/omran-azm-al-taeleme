@@ -39,7 +39,9 @@ import {
   AlignLeft,
   Hash,
   List,
-  RotateCcw
+  RotateCcw,
+  Lock,
+  Timer
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -56,6 +58,10 @@ import {
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import {
+  buildApplicationAcceptedEmail,
+  dispatchPortalEmailNotification
+} from '../../lib/portalEmailService';
 
 interface ComplexPortalSettingsModalProps {
   isOpen: boolean;
@@ -128,6 +134,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       ageRequired: true,
       parentNameRequired: true,
       parentPhoneRequired: true,
+      emailRequired: true,
       memorizedJuzRequired: true,
       preferredHalaqahRequired: true,
       notesAllowed: true,
@@ -149,6 +156,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [memorizedJuzRequired, setMemorizedJuzRequired] = useState(initialConfig.fieldConfig.memorizedJuzRequired ?? true);
   const [preferredHalaqahRequired, setPreferredHalaqahRequired] = useState(initialConfig.fieldConfig.preferredHalaqahRequired ?? true);
   const [notesAllowed, setNotesAllowed] = useState(initialConfig.fieldConfig.notesAllowed ?? true);
+
+  // Registration Closing & Deadline Controls
+  const [registrationDeadline, setRegistrationDeadline] = useState<string>(
+    initialConfig.registrationDeadline ? initialConfig.registrationDeadline.substring(0, 16) : ''
+  );
+  const [isRegistrationClosedManually, setIsRegistrationClosedManually] = useState<boolean>(
+    Boolean(initialConfig.isRegistrationClosedManually)
+  );
+  const [closedMessage, setClosedMessage] = useState<string>(
+    initialConfig.closedMessage || 'عذراً، تم إغلاق باب التسجيل وتقديم الطلبات للفترة الحالية لاكتمال المقاعد المتاحة في حلقات المجمع.'
+  );
 
   // Halaqah Question Advanced Control
   const [showHalaqahQuestion, setShowHalaqahQuestion] = useState<boolean>(
@@ -369,11 +387,15 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         portalMode,
         portalTitle: `بوابة ${complex.name}`,
         welcomeMessage,
+        registrationDeadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
+        isRegistrationClosedManually,
+        closedMessage: closedMessage.trim(),
         fieldConfig: {
           studentNameRequired,
           ageRequired,
           parentNameRequired,
           parentPhoneRequired,
+          emailRequired: true,
           memorizedJuzRequired,
           preferredHalaqahRequired,
           notesAllowed,
@@ -472,12 +494,25 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         assignedHalaqahId: targetHalaqah?.id,
         assignedHalaqahName: targetHalaqah?.name,
         createdStudentId: newStudentId,
+        studentAcceptanceStatus: 'pending_student_confirmation',
         reviewedAt: new Date().toISOString(),
         reviewedByName: complex.supervisorTeacherName || 'مشرف المجمع'
       };
 
       await OmranDataService.saveRegistrationApplication(updatedApp);
       setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+
+      // 3. Dispatch Acceptance Email to Student with direct confirmation action
+      if (updatedApp.email) {
+        const acceptedEmail = buildApplicationAcceptedEmail(
+          complex,
+          updatedApp,
+          targetHalaqah?.name || 'الحلقة القرآنية',
+          portalUrl
+        );
+        dispatchPortalEmailNotification(acceptedEmail);
+      }
+
       setAppToAccept(null);
     } catch (e) {
       console.error('Error accepting application:', e);
@@ -859,6 +894,155 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   })}
                 </div>
               </div>
+
+              {/* 2. Registration Closing & Schedule Card */}
+              {portalMode !== 'login_only' && (
+                <div
+                  className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-md"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: isRegistrationClosedManually ? '#ef4444' : registrationDeadline ? themeAccent : themeCardBorder,
+                    borderBottomColor: isRegistrationClosedManually ? '#b91c1c' : registrationDeadline ? themeAccentShadow : themeCardShadow
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0"
+                        style={{
+                          backgroundColor: isRegistrationClosedManually ? '#ef444425' : `${themeAccent}25`,
+                          color: isRegistrationClosedManually ? '#ef4444' : themeAccent
+                        }}
+                      >
+                        <Timer className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-white">توقيت إغلاق التسجيل وقفل الرابط</h4>
+                          {isRegistrationClosedManually ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
+                              مغلق يدوياً حالياً ⛔
+                            </span>
+                          ) : registrationDeadline && new Date() > new Date(registrationDeadline) ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
+                              منتهي ومغلق تلقائياً ⛔
+                            </span>
+                          ) : registrationDeadline ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 font-black">
+                              مؤقت للإغلاق ⏳
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
+                              مفتوح دائماً 🟢
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-bold">
+                          تحديد موعد زمني لإغلاق رابط التسجيل تلقائياً أو إيقاف استقبال الطلبات يدوياً
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Manual immediate toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                      <span className="text-xs font-black text-white">
+                        {isRegistrationClosedManually ? 'إغلاق فوري مفعل (الرابط مقفل)' : 'إغلاق فوري للرابط الآن'}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={isRegistrationClosedManually}
+                        onChange={e => setIsRegistrationClosedManually(e.target.checked)}
+                        className="w-4 h-4 accent-red-500 cursor-pointer"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-3 pt-2 border-t border-white/10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-black text-slate-200 block">
+                          تاريخ وتوقيت الإغلاق التلقائي للرابط:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={registrationDeadline}
+                          onChange={e => setRegistrationDeadline(e.target.value)}
+                          className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
+                          style={{
+                            backgroundColor: themeCard,
+                            borderColor: themeCardBorder
+                          }}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-black text-slate-200 block">
+                          محددات زمنية سريعة:
+                        </label>
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const d = new Date(Date.now() + 24 * 3600 * 1000);
+                              setRegistrationDeadline(d.toISOString().substring(0, 16));
+                            }}
+                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                          >
+                            بعد 24 ساعة
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const d = new Date(Date.now() + 3 * 24 * 3600 * 1000);
+                              setRegistrationDeadline(d.toISOString().substring(0, 16));
+                            }}
+                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                          >
+                            بعد 3 أيام
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const d = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+                              setRegistrationDeadline(d.toISOString().substring(0, 16));
+                            }}
+                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                          >
+                            بعد أسبوع
+                          </button>
+                          {registrationDeadline && (
+                            <button
+                              type="button"
+                              onClick={() => setRegistrationDeadline('')}
+                              className="px-2.5 py-1 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-[11px] font-bold text-red-300 cursor-pointer"
+                            >
+                              إلغاء الموعد (مفتوح دائماً)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Custom closed message */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-slate-200 block">
+                        رسالة إغلاق الرابط المخصصة (تظهر للزوار عند انتهاء الوقت أو القفل):
+                      </label>
+                      <input
+                        type="text"
+                        value={closedMessage}
+                        onChange={e => setClosedMessage(e.target.value)}
+                        placeholder="عذراً، تم إغلاق باب التسجيل للفترة الحالية لاكتمال المقاعد المتاحة..."
+                        className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
+                        style={{
+                          backgroundColor: themeCard,
+                          borderColor: themeCardBorder
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Questionnaire Customizer (إذا كان مسموح بالتسجيل) */}
               {portalMode !== 'login_only' && (
@@ -1619,10 +1803,25 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               </button>
                             </>
                           ) : app.status === 'accepted' ? (
-                            <div className="flex items-center gap-2">
-                              <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#58cc02]/20 border border-[#58cc02] text-[#58cc02] text-xs font-black">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>مقبول في: {app.assignedHalaqahName}</span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {app.studentAcceptanceStatus === 'confirmed_by_student' ? (
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-300 text-xs font-black shadow-sm">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>لقد دخل الطالب للحلقة وأكد الانضمام رسمياً 🎉</span>
+                                  {app.studentConfirmedAt && (
+                                    <span className="text-[10px] text-emerald-200 opacity-80 font-mono">
+                                      ({new Date(app.studentConfirmedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black shadow-sm animate-pulse">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>في انتظار قبول وتأكيد الطالب للدخول</span>
+                                </div>
+                              )}
+                              <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300">
+                                <span>الحلقة: {app.assignedHalaqahName}</span>
                               </div>
                               <button
                                 type="button"

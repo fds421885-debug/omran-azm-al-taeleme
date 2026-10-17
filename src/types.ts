@@ -89,6 +89,7 @@ export interface ComplexPortalFieldConfig {
   ageRequired: boolean; // عمر الطالب (من 0 - 100)
   parentNameRequired: boolean; // اسم ولي الأمر
   parentPhoneRequired: boolean; // رقم هاتف ولي الأمر
+  emailRequired?: boolean; // سؤال البريد الإلكتروني الإلزامي الموثق
   memorizedJuzRequired: boolean; // أجزاء القرآن المحفوظة (أجزاء من 1 - 30)
   preferredHalaqahRequired: boolean; // اختيار الحلقة
   notesAllowed: boolean; // ملاحظات إضافية
@@ -111,10 +112,17 @@ export interface ComplexPortalConfig {
   welcomeMessage?: string;
   fieldConfig: ComplexPortalFieldConfig;
   autoAcceptToHalaqahId?: string;
+
+  // توقيت إغلاق التسجيل ومواعيد انتهاء الاستقبال
+  registrationDeadline?: string | null; // تاريخ ووقت إغلاق التسجيل (ISO string)
+  isRegistrationClosedManually?: boolean; // إغلاق يدوي فوري من قِبل المشرف
+  closedMessage?: string; // رسالة مخصصة تظهر للطلاب عند إغلاق الرابط
+
   updatedAt?: string;
 }
 
 export type RegistrationApplicationStatus = 'pending' | 'accepted' | 'rejected';
+export type StudentAcceptanceConfirmationStatus = 'pending_student_confirmation' | 'confirmed_by_student';
 
 export interface StudentRegistrationApplication {
   id: string; // e.g. "app_123456"
@@ -125,6 +133,9 @@ export interface StudentRegistrationApplication {
   age: number;
   parentName: string;
   parentPhone: string;
+  email?: string; // البريد الإلكتروني الموثق
+  isEmailVerified?: boolean; // هل تم توثيق البريد
+  emailVerificationMethod?: 'google' | 'otp'; // طريقة التوثيق: Google أو رمز OTP
   memorizedJuzList: number[]; // e.g. [30, 29, 28] (أجزاء القرآن الكريم)
   preferredHalaqahId?: string;
   preferredHalaqahName?: string;
@@ -137,6 +148,14 @@ export interface StudentRegistrationApplication {
   appliedAt: string;
   reviewedAt?: string;
   reviewedByName?: string;
+
+  // الدور في قائمة الانتظار والمراجعة
+  queueNumber?: number; // رقم ترتيب الطلب
+  pendingAheadCount?: number; // كم طلب قبله في قائمة الانتظار
+
+  // حالة تأكيد ودخول الطالب بعد القبول
+  studentAcceptanceStatus?: StudentAcceptanceConfirmationStatus;
+  studentConfirmedAt?: string; // وقت تأكيد الطالب ودخوله رسمياً
 
   // إجابات الأسئلة المخصصة التي صممها المشرف
   customAnswers?: Record<string, any>;
