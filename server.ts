@@ -79,6 +79,84 @@ app.post("/api/assistant/execute-tool", async (req, res) => {
   }
 });
 
+// Gmail API Proxy for Sending Real Emails via Google Workspace
+app.post("/api/mail/send-gmail", async (req, res) => {
+  try {
+    const { to, subject, html, text, fromName, fromEmail, token } = req.body;
+    const authHeader = req.headers.authorization;
+    const bearerToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
+
+    if (!bearerToken) {
+      return res.status(401).json({
+        success: false,
+        error: "رمز تفويض Google Workspace (Gmail) غير متوفر. يرجى ربط حساب Google أولاً."
+      });
+    }
+
+    if (!to || !subject || (!html && !text)) {
+      return res.status(400).json({
+        success: false,
+        error: "حقول البريد (إلى، الموضوع، المحتوى) إلزامية."
+      });
+    }
+
+    const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
+    const cleanFrom = String(fromEmail || "qdrat2626@gmail.com").replace(/[\r\n]/g, "").trim();
+    const cleanFromName = String(fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
+
+    const utf8Subject = `=?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`;
+    const utf8FromName = `=?UTF-8?B?${Buffer.from(cleanFromName, "utf-8").toString("base64")}?=`;
+
+    const bodyContent = html || text;
+    const contentType = html ? 'text/html; charset="UTF-8"' : 'text/plain; charset="UTF-8"';
+
+    const rfcMessage = [
+      `From: ${utf8FromName} <${cleanFrom}>`,
+      `To: <${cleanTo}>`,
+      `Subject: ${utf8Subject}`,
+      "MIME-Version: 1.0",
+      `Content-Type: ${contentType}`,
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(bodyContent, "utf-8").toString("base64")
+    ].join("\r\n");
+
+    const base64UrlMessage = Buffer.from(rfcMessage, "utf-8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ raw: base64UrlMessage })
+    });
+
+    const gmailData = await gmailRes.json();
+    if (!gmailRes.ok) {
+      console.warn("Gmail API Send error:", gmailData);
+      return res.status(gmailRes.status).json({
+        success: false,
+        error: gmailData?.error?.message || "فشل إرسال البريد عبر Gmail API",
+        details: gmailData
+      });
+    }
+
+    return res.json({
+      success: true,
+      messageId: gmailData.id,
+      threadId: gmailData.threadId
+    });
+  } catch (err: any) {
+    console.error("Gmail endpoint error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Google Maps Geocoding Proxy Route (prevents CORS and secures key)
 app.get("/api/maps/geocode", async (req, res) => {
   try {

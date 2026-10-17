@@ -9,6 +9,7 @@
 
 import { QuranComplex, StudentRegistrationApplication } from '../types';
 import { darkenHex, lightenHex } from './themeUtils';
+import { GoogleWorkspaceService } from './googleWorkspace';
 
 // Comprehensive list of known disposable / throwaway / temporary email domains
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
@@ -292,7 +293,7 @@ export function buildOtpVerificationEmail(
 ): BrandedEmailPayload {
   return {
     toEmail,
-    fromEmail: 'support@omran.com',
+    fromEmail: 'qdrat2626@gmail.com',
     subject: `رمز التحقق لتسجيل حسابك في ${complex.name} [${otpCode}]`,
     title: `توثيق البريد الإلكتروني • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته،`,
@@ -326,7 +327,7 @@ export function buildApplicationReceivedEmail(
 
   return {
     toEmail: application.email || '',
-    fromEmail: 'support@omran.com',
+    fromEmail: 'qdrat2626@gmail.com',
     subject: `تم استلام طلب انضمامك في ${complex.name} • رقم المتابعة [${application.trackingCode}]`,
     title: `تأكيد استلام طلب الانضمام • ${complex.name}`,
     greeting: `حياك الله وبياك أخي ولي أمر الطالب / ${application.studentName} حفظه الله ورعاه..`,
@@ -362,7 +363,7 @@ export function buildApplicationAcceptedEmail(
 ): BrandedEmailPayload {
   return {
     toEmail: application.email || '',
-    fromEmail: 'support@omran.com',
+    fromEmail: 'qdrat2626@gmail.com',
     subject: `🎉 بشرى سارة: تم قبول الطالب ${application.studentName} في ${complex.name}!`,
     title: `بشرى القبول والاعتماد • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته 🌿`,
@@ -387,6 +388,120 @@ export function buildApplicationAcceptedEmail(
     complexName: complex.name,
     complexTheme: complex.theme
   };
+}
+
+/**
+ * Renders a full, modern, RTL responsive HTML email themed with the complex colors
+ */
+export function renderBrandedEmailHtml(payload: BrandedEmailPayload): string {
+  const primaryColor = payload.complexTheme?.primaryColor || '#064e3b';
+  const secondaryColor = payload.complexTheme?.secondaryColor || '#022c22';
+  const accentColor = payload.complexTheme?.accentColor || '#fbbf24';
+
+  const paragraphsHtml = payload.bodyParagraphs
+    .map(
+      p =>
+        `<p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.8; color: #334155;">${p}</p>`
+    )
+    .join('');
+
+  const highlightHtml = payload.highlightBox
+    ? `
+      <div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border: 2px dashed ${primaryColor}40; border-radius: 16px; text-align: center;">
+        <div style="font-size: 13px; font-weight: 700; color: #64748b; margin-bottom: 8px;">${payload.highlightBox.label}</div>
+        <div style="font-size: 32px; font-weight: 900; letter-spacing: 4px; color: ${primaryColor}; font-family: monospace, Arial, sans-serif; direction: ltr; margin: 4px 0;">${payload.highlightBox.value}</div>
+        ${payload.highlightBox.sublabel ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 6px;">${payload.highlightBox.sublabel}</div>` : ''}
+      </div>
+    `
+    : '';
+
+  const actionButtonHtml = payload.actionButton
+    ? `
+      <div style="margin: 28px 0; text-align: center;">
+        <a href="${payload.actionButton.url}" target="_blank" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor}); color: #ffffff; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+          ${payload.actionButton.text}
+        </a>
+      </div>
+    `
+    : '';
+
+  const badgeHtml = payload.badgeText
+    ? `<span style="display: inline-block; padding: 4px 12px; background-color: ${accentColor}25; color: ${secondaryColor}; border: 1px solid ${accentColor}60; border-radius: 20px; font-size: 11px; font-weight: bold; margin-bottom: 12px;">${payload.badgeText}</span>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${payload.subject}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; text-align: right; color: #1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08); border: 1px solid #e2e8f0;">
+    <!-- Header -->
+    <tr>
+      <td style="padding: 32px 28px; background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor}); text-align: center; color: #ffffff;">
+        <div style="font-size: 13px; font-weight: 700; color: ${accentColor}; margin-bottom: 6px; letter-spacing: 0.5px;">منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية</div>
+        <h1 style="margin: 0; font-size: 22px; font-weight: 900; line-height: 1.4; color: #ffffff;">${payload.complexName}</h1>
+      </td>
+    </tr>
+
+    <!-- Body Card -->
+    <tr>
+      <td style="padding: 32px 28px;">
+        <div style="text-align: right;">
+          ${badgeHtml}
+          <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 800; color: #0f172a;">${payload.title}</h2>
+          <p style="margin: 0 0 20px 0; font-size: 15px; font-weight: 700; color: #334155;">${payload.greeting}</p>
+          ${paragraphsHtml}
+          ${highlightHtml}
+          ${actionButtonHtml}
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding: 24px 28px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b; line-height: 1.6;">
+        <div style="margin-bottom: 6px; font-weight: 600;">${payload.footerNote}</div>
+        <div style="font-size: 11px; color: #94a3b8;">تم إرسال هذا الإشعار تلقائياً عبر خدمة البريد الرسمية المعتمدة (Gmail: ${payload.fromEmail}) • ${new Date(payload.sentAt).toLocaleString('ar-SA')}</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * Sends a real email via Gmail API and also dispatches the in-app notification event!
+ */
+export async function sendRealPortalEmail(
+  payload: BrandedEmailPayload
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  // Always trigger the in-app notification for instant UI feedback
+  dispatchPortalEmailNotification(payload);
+
+  if (!payload.toEmail) {
+    return { success: false, error: 'عنوان البريد الإلكتروني للمستلم مفقود.' };
+  }
+
+  try {
+    const html = renderBrandedEmailHtml(payload);
+    const result = await GoogleWorkspaceService.sendGmailMessage(
+      payload.toEmail,
+      payload.subject,
+      html,
+      payload.fromEmail || 'qdrat2626@gmail.com',
+      payload.complexName || 'منظومة عُمْرَان'
+    );
+    return result;
+  } catch (err: any) {
+    console.warn('Real Gmail sending attempt notice:', err);
+    return {
+      success: false,
+      error: err?.message || 'تعذر إرسال البريد عبر Gmail'
+    };
+  }
 }
 
 /**

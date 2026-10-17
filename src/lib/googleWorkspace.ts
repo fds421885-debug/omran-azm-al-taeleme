@@ -5,10 +5,17 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { Exam, ExamQuestion, ExamSubmission, ExamSubmissionAnswer, GoogleOAuthConfig, FullBackupData, Student, TeacherAccount, AttendanceRecord, StudentEvaluation, Halaqah } from '../types';
 
 export const GOOGLE_SCOPES = [
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/forms.body',
   'https://www.googleapis.com/auth/forms.responses.readonly',
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file'
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
 declare global {
@@ -93,7 +100,7 @@ export function normalizeArabicText(text: string): string {
     .replace(/\s+/g, ' ');
 }
 
-function loadGoogleGISScript(): Promise<void> {
+export function loadGoogleGISScript(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
   if (window.google?.accounts?.oauth2) return Promise.resolve();
 
@@ -116,7 +123,7 @@ function loadGoogleGISScript(): Promise<void> {
   });
 }
 
-function requestAccessTokenViaGIS(
+export function requestAccessTokenViaGIS(
   clientId: string,
   scopes: string[]
 ): Promise<{ email: string; displayName?: string; photoURL?: string | null; accessToken: string }> {
@@ -218,6 +225,52 @@ function silentRefreshTokenViaGIS(
       resolve(null);
     }
   });
+}
+
+export function encodeEmailForGmail(
+  to: string,
+  fromEmail: string,
+  fromName: string,
+  subject: string,
+  htmlBody: string
+): string {
+  const cleanTo = to.replace(/[\r\n]/g, '').trim();
+  const cleanFrom = fromEmail.replace(/[\r\n]/g, '').trim();
+
+  const subjectBytes = new TextEncoder().encode(subject);
+  let subjectBinary = '';
+  subjectBytes.forEach(b => { subjectBinary += String.fromCharCode(b); });
+  const encodedSubject = `=?UTF-8?B?${btoa(subjectBinary)}?=`;
+
+  const nameBytes = new TextEncoder().encode(fromName);
+  let nameBinary = '';
+  nameBytes.forEach(b => { nameBinary += String.fromCharCode(b); });
+  const encodedFromName = `=?UTF-8?B?${btoa(nameBinary)}?=`;
+
+  const htmlBytes = new TextEncoder().encode(htmlBody);
+  let htmlBinary = '';
+  htmlBytes.forEach(b => { htmlBinary += String.fromCharCode(b); });
+  const base64Html = btoa(htmlBinary);
+
+  const lines = [
+    `From: ${encodedFromName} <${cleanFrom}>`,
+    `To: <${cleanTo}>`,
+    `Subject: ${encodedSubject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    base64Html
+  ];
+
+  const fullMessage = lines.join('\r\n');
+  const fullBytes = new TextEncoder().encode(fullMessage);
+  let fullBinary = '';
+  fullBytes.forEach(b => { fullBinary += String.fromCharCode(b); });
+  return btoa(fullBinary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 const LOCAL_STORAGE_OAUTH_KEY = 'omran_google_oauth_v2';
@@ -413,6 +466,94 @@ export class GoogleWorkspaceService {
       expiresAt: Date.now() + 3500 * 1000
     };
     await this.saveGoogleAuthConfig(config);
+  }
+
+  // Send real email via Gmail API using active OAuth access token or server proxy
+  static async sendGmailMessage(
+    to: string,
+    subject: string,
+    html: string,
+    fromEmail = 'qdrat2626@gmail.com',
+    fromName = 'منظومة عُمْرَان لإدارة المجمعات القرآنية'
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    let token = await this.getValidAccessToken();
+    if (!token) {
+      token = await this.silentRefreshToken();
+    }
+
+    // Try direct Gmail API if token available
+    if (token) {
+      try {
+        const raw = encodeEmailForGmail(to, fromEmail, fromName, subject, html);
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ raw })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          return { success: true, messageId: data.id };
+        }
+
+        // If 401 Unauthorized, refresh and retry once
+        if (res.status === 401) {
+          const freshToken = await this.silentRefreshToken();
+          if (freshToken) {
+            const retryRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${freshToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ raw })
+            });
+            if (retryRes.ok) {
+              const retryData = await retryRes.json();
+              return { success: true, messageId: retryData.id };
+            }
+          }
+        }
+      } catch (directErr) {
+        console.warn('Direct Gmail API call attempt note:', directErr);
+      }
+    }
+
+    // Fallback: Call local server endpoint /api/mail/send-gmail
+    try {
+      const srvRes = await fetch('/api/mail/send-gmail', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          to,
+          subject,
+          html,
+          fromName,
+          fromEmail,
+          token: token || undefined
+        })
+      });
+
+      const srvData = await srvRes.json();
+      if (srvRes.ok && srvData.success) {
+        return { success: true, messageId: srvData.messageId };
+      }
+      return {
+        success: false,
+        error: srvData.error || 'تعذر إرسال البريد عبر خادم Gmail.'
+      };
+    } catch (srvErr: any) {
+      return {
+        success: false,
+        error: srvErr?.message || 'فشل الاتصال بخدمة Gmail لإرسال البريد.'
+      };
+    }
   }
 
   // -------------------------------------------------------------
@@ -906,49 +1047,56 @@ export class GoogleWorkspaceService {
     isNewStudent?: boolean;
   }> {
     let googleUser: { email: string; displayName: string; uid: string; photoURL?: string | null } | null = null;
+    let acquiredAccessToken: string | null = null;
 
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
-      if (result?.user) {
-        googleUser = {
-          email: result.user.email || '',
-          displayName: result.user.displayName || '',
-          uid: result.user.uid,
-          photoURL: result.user.photoURL || null
-        };
-      }
-    } catch (popupErr: any) {
-      if (popupErr.code === 'auth/popup-closed-by-user') {
-        throw new PopupClosedByUserError();
-      }
-      if (popupErr.code === 'auth/popup-blocked') {
-        throw new PopupBlockedError();
-      }
-
-      if (typeof window !== 'undefined' && firebaseConfig.oAuthClientId) {
-        try {
-          await loadGoogleGISScript();
-          if (window.google?.accounts?.oauth2) {
-            const gisRes = await requestAccessTokenViaGIS(firebaseConfig.oAuthClientId, ['email', 'profile']);
-            if (gisRes?.email) {
-              googleUser = {
-                email: gisRes.email,
-                displayName: gisRes.displayName || gisRes.email.split('@')[0],
-                uid: `gis_${Date.now()}`,
-                photoURL: gisRes.photoURL || null
-              };
-            }
+    // 1. Try Google Identity Services (GIS) FIRST (Zero-dependency on Firebase Auth authorized domains)
+    if (typeof window !== 'undefined' && firebaseConfig.oAuthClientId) {
+      try {
+        await loadGoogleGISScript();
+        if (window.google?.accounts?.oauth2) {
+          const gisRes = await requestAccessTokenViaGIS(firebaseConfig.oAuthClientId, GOOGLE_SCOPES);
+          if (gisRes?.email) {
+            googleUser = {
+              email: gisRes.email,
+              displayName: gisRes.displayName || gisRes.email.split('@')[0],
+              uid: `gis_${Date.now()}`,
+              photoURL: gisRes.photoURL || null
+            };
+            acquiredAccessToken = gisRes.accessToken;
           }
-        } catch {
-          // ignore GIS
         }
+      } catch (gisErr: any) {
+        console.warn('GIS Token client universal login note:', gisErr);
       }
+    }
 
-      if (!googleUser) {
+    // 2. Fallback to Firebase Auth popup if GIS was not used or didn't return user
+    if (!googleUser) {
+      try {
+        const provider = new GoogleAuthProvider();
+        GOOGLE_SCOPES.forEach(scope => provider.addScope(scope));
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const result = await signInWithPopup(auth, provider);
+        if (result?.user) {
+          googleUser = {
+            email: result.user.email || '',
+            displayName: result.user.displayName || '',
+            uid: result.user.uid,
+            photoURL: result.user.photoURL || null
+          };
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          if (credential?.accessToken) {
+            acquiredAccessToken = credential.accessToken;
+          }
+        }
+      } catch (popupErr: any) {
+        if (popupErr.code === 'auth/popup-closed-by-user') {
+          throw new PopupClosedByUserError();
+        }
+        if (popupErr.code === 'auth/popup-blocked') {
+          throw new PopupBlockedError();
+        }
+
         const domain = typeof window !== 'undefined' ? window.location.hostname : '';
         if (popupErr.code === 'auth/unauthorized-domain') {
           throw new UnauthorizedDomainError(domain, firebaseConfig.projectId);
@@ -964,20 +1112,40 @@ export class GoogleWorkspaceService {
     const cleanEmail = googleUser.email.trim().toLowerCase();
     const cleanName = googleUser.displayName ? googleUser.displayName.trim() : '';
 
+    // Cache and persist Google OAuth token if acquired
+    if (acquiredAccessToken) {
+      inMemoryGoogleAccessToken = acquiredAccessToken;
+      this.saveGoogleAuthConfig({
+        connectedEmail: cleanEmail,
+        connectedAt: new Date().toISOString(),
+        isLinked: true,
+        lastSyncAt: new Date().toISOString(),
+        accessToken: acquiredAccessToken,
+        savedInCloud: true,
+        expiresAt: Date.now() + 3500 * 1000
+      }).catch(e => console.warn('Could not auto-save google auth config:', e));
+    }
+
     // 1. Check if matches any teacher / supervisor / developer by linked Google Email, UID, or developer account
     let matchedTeacher = existingTeachers.find(
       t => (t.googleEmail && t.googleEmail.trim().toLowerCase() === cleanEmail) ||
            (t.googleUid && t.googleUid === googleUser!.uid)
     );
 
-    // Developer / Primary supervisor account detection (fds421885@gmail.com, admin, Mohamed Montaser)
-    if (!matchedTeacher && (cleanEmail === 'fds421885@gmail.com' || cleanEmail.includes('admin') || cleanEmail.includes('supervisor') || cleanEmail.includes('montaser'))) {
-      matchedTeacher = existingTeachers.find(t => t.role === 'developer' || t.id === 'teacher-1' || t.isPrimary);
+    // Developer / Primary supervisor account detection (qdrat2626@gmail.com, fds421885@gmail.com, admin, Mohamed Montaser)
+    if (!matchedTeacher && (
+      cleanEmail === 'qdrat2626@gmail.com' ||
+      cleanEmail === 'fds421885@gmail.com' ||
+      cleanEmail.includes('admin') ||
+      cleanEmail.includes('supervisor') ||
+      cleanEmail.includes('montaser')
+    )) {
+      matchedTeacher = existingTeachers.find(t => t.role === 'developer' || t.id === 'teacher-1' || t.isPrimary) || existingTeachers[0];
     }
 
     if (!matchedTeacher && cleanName) {
       const normGoogleName = normalizeArabicText(cleanName);
-      if (normGoogleName.includes('محمد منتصر') || normGoogleName.includes('منتصر')) {
+      if (normGoogleName.includes('محمد منتصر') || normGoogleName.includes('منتصر') || normGoogleName.includes('مشرف')) {
         matchedTeacher = existingTeachers.find(t => t.role === 'developer' || t.id === 'teacher-1' || t.name.includes('منتصر'));
       }
     }
