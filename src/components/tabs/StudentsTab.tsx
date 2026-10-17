@@ -27,6 +27,7 @@ import {
   Users,
   Copy,
   FileText,
+  UserCheck,
   Link as LinkIcon
 } from 'lucide-react';
 import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation, QuranComplex } from '../../types';

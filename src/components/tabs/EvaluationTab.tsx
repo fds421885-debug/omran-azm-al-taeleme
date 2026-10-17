@@ -31,7 +31,9 @@ import {
   Trophy,
   Flame,
   TrendingUp,
-  Zap
+  Zap,
+  UserCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -59,6 +61,16 @@ import {
   calculateRecitationFractionalFaces
 } from '../../data/quranPagesData';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+
+const triggerCelebrationConfetti = () => {
+  try {
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  } catch {}
+};
 
 interface EvaluationTabProps {
   students: Student[];

@@ -64,8 +64,8 @@ interface AttendanceTabProps {
 }
 
 export const AttendanceTab: React.FC<AttendanceTabProps> = ({
-  students,
-  attendanceRecords,
+  students = [],
+  attendanceRecords = [],
   onSaveAttendance,
   settings,
   teacherName,
@@ -135,9 +135,12 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   // Current working attendance state for selectedDate (studentId -> { status, note })
   const [statusMap, setStatusMap] = useState<Record<string, { status: AttendanceStatus; note: string }>>(() => {
     const map: Record<string, { status: AttendanceStatus; note: string }> = {};
-    const dateRecords = attendanceRecords.filter(r => r.date === selectedDate);
-    students.forEach(s => {
-      const existing = dateRecords.find(r => r.studentId === s.id);
+    const safeRecords = Array.isArray(attendanceRecords) ? attendanceRecords : [];
+    const safeStudents = Array.isArray(students) ? students : [];
+    const dateRecords = safeRecords.filter(r => r && r.date === selectedDate);
+    safeStudents.forEach(s => {
+      if (!s) return;
+      const existing = dateRecords.find(r => r && r.studentId === s.id);
       map[s.id] = {
         status: existing?.status || 'حاضر',
         note: existing?.note || ''
@@ -148,10 +151,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
   // Re-sync statusMap whenever attendanceRecords, students, or selectedDate changes
   useEffect(() => {
-    const dateRecords = attendanceRecords.filter(r => r.date === selectedDate);
+    const safeRecords = Array.isArray(attendanceRecords) ? attendanceRecords : [];
+    const safeStudents = Array.isArray(students) ? students : [];
+    const dateRecords = safeRecords.filter(r => r && r.date === selectedDate);
     const newMap: Record<string, { status: AttendanceStatus; note: string }> = {};
-    students.forEach(s => {
-      const existing = dateRecords.find(r => r.studentId === s.id);
+    safeStudents.forEach(s => {
+      if (!s) return;
+      const existing = dateRecords.find(r => r && r.studentId === s.id);
       newMap[s.id] = {
         status: existing?.status || 'حاضر',
         note: existing?.note || ''

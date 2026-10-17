@@ -149,26 +149,40 @@ export function getAyahAudioUrl(surahNumber: number, ayahNumber: number, reciter
 /**
  * Find surah by name, number, or fuzzy matching
  */
-export function getSurahInfo(identifier: string | number): SurahInfo {
+export function getSurahInfo(identifier?: string | number | null): SurahInfo {
+  if (identifier === null || identifier === undefined || identifier === '') {
+    return QURAN_SURAHS[77] || QURAN_SURAHS[0]; // Default to An-Naba
+  }
+
   if (typeof identifier === 'number') {
+    if (isNaN(identifier) || identifier < 1 || identifier > 114) {
+      return QURAN_SURAHS[77] || QURAN_SURAHS[0];
+    }
     const found = QURAN_SURAHS.find(s => s.number === identifier);
     return found || QURAN_SURAHS[0];
   }
 
-  const cleanName = identifier
+  const str = String(identifier).trim();
+  const numParsed = parseInt(str, 10);
+  if (!isNaN(numParsed) && numParsed >= 1 && numParsed <= 114 && String(numParsed) === str) {
+    const found = QURAN_SURAHS.find(s => s.number === numParsed);
+    if (found) return found;
+  }
+
+  const cleanName = str
     .replace(/^سورة\s+/, '')
     .replace(/^(ال)/, '')
     .trim();
 
   const exact = QURAN_SURAHS.find(
     s =>
-      s.name === identifier ||
-      s.name === `سورة ${identifier}` ||
+      s.name === str ||
+      s.name === `سورة ${str}` ||
       s.name.replace(/^(ال)/, '') === cleanName ||
-      s.englishName.toLowerCase() === identifier.toLowerCase()
+      s.englishName.toLowerCase() === str.toLowerCase()
   );
 
-  return exact || QURAN_SURAHS[113]; // Default to An-Nas if not found
+  return exact || QURAN_SURAHS[77] || QURAN_SURAHS[0];
 }
 
 /**
@@ -288,18 +302,18 @@ export const REVIEW_TYPES = [
  * Format Quran recitation range into clear Arabic text, supporting single or multi-surah ranges
  */
 export function formatQuranPortion(
-  surahName: string,
-  fromAyah: number,
-  toAyah: number,
+  surahName?: string | null,
+  fromAyah: number = 1,
+  toAyah: number = 1,
   totalAyahs?: number,
   type?: string,
-  toSurahName?: string,
+  toSurahName?: string | null,
   toSurahTotalAyahs?: number
 ): string {
-  const cleanFromSurah = surahName.startsWith("سورة ") ? surahName.replace("سورة ", "").trim() : surahName.trim();
-  const cleanToSurah = toSurahName
-    ? (toSurahName.startsWith("سورة ") ? toSurahName.replace("سورة ", "").trim() : toSurahName.trim())
-    : cleanFromSurah;
+  const safeFromSurah = String(surahName || 'النبأ').trim();
+  const cleanFromSurah = safeFromSurah.startsWith("سورة ") ? safeFromSurah.replace("سورة ", "").trim() : safeFromSurah;
+  const safeToSurah = toSurahName ? String(toSurahName).trim() : cleanFromSurah;
+  const cleanToSurah = safeToSurah.startsWith("سورة ") ? safeToSurah.replace("سورة ", "").trim() : safeToSurah;
 
   let text = "";
 

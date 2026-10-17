@@ -423,11 +423,11 @@ export function calculateStudentCompletedPages(
   const newPagesSet = new Set<number>(student.completedNewPages || []);
   const reviewPagesSet = new Set<number>(student.completedReviewPages || []);
 
-  const studentEvals = evaluations.filter(e => e.studentId === student.id);
+  const studentEvals = (evaluations || []).filter(e => e && e.studentId === student.id);
 
   for (const ev of studentEvals) {
     const details = ev.recitationDetails;
-    if (!details) continue;
+    if (!details || typeof details !== 'object') continue;
 
     if (Array.isArray(details.pagesCompletedToday)) {
       details.pagesCompletedToday.forEach(p => {
@@ -437,7 +437,7 @@ export function calculateStudentCompletedPages(
       });
     }
 
-    if (details.todayNewItem && !details.todayNewItem.didNotRecite) {
+    if (details.todayNewItem && typeof details.todayNewItem === 'object' && !details.todayNewItem.didNotRecite) {
       const startSurah = details.todayNewItem.surahNumber || 78;
       const startAyah = details.todayNewItem.fromAyah || 1;
       const endSurah = details.todayNewItem.toSurahNumber || startSurah;
@@ -455,7 +455,7 @@ export function calculateStudentCompletedPages(
 
     if (Array.isArray(details.todayReviewItems)) {
       for (const item of details.todayReviewItems) {
-        if (item && !item.didNotRecite) {
+        if (item && typeof item === 'object' && !item.didNotRecite) {
           const sSurah = item.surahNumber || 78;
           const sAyah = item.fromAyah || 1;
           const eSurah = item.toSurahNumber || sSurah;
