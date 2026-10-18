@@ -28,6 +28,7 @@ import {
   XCircle,
   Info,
   ShieldAlert,
+  AlertTriangle,
   Trophy,
   Flame,
   TrendingUp,

@@ -29,7 +29,7 @@ import {
   FileText,
   Link as LinkIcon
 } from 'lucide-react';
-import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation, QuranComplex } from '../../types';
+import { Student, StudentLevel, AppSettings, Halaqah, getThreePartNameValidation, QuranComplex, StudentMemorizationPlan } from '../../types';
 import { darkenHex, lightenHex } from '../../lib/themeUtils';
 import { normalizeArabicText } from '../../lib/googleWorkspace';
 import { QURAN_SURAHS } from '../../data/quranData';
@@ -39,6 +39,11 @@ import { OmranDataService } from '../../lib/firebase';
 import { ComplexPortalSettingsModal } from '../portal/ComplexPortalSettingsModal';
 import { StudentAIPlacementModal } from '../assistant/StudentAIPlacementModal';
 import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+
+function toArabicNumerals(num: number | string): string {
+  const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return String(num).replace(/[0-9]/g, d => digits[parseInt(d, 10)]);
+}
 
 interface StudentsTabProps {
   students: Student[];
@@ -2110,7 +2115,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                           targetRepetitions: 3
                         },
                         difficultyAdjustment: 'متزن',
-                        estimatedDaysToFinishJuz: 20
+                        estimatedDaysToFinishJuz: 20,
+                        lastUpdated: new Date().toISOString()
                       }
                     };
                     await OmranDataService.saveStudent(updatedStudent);

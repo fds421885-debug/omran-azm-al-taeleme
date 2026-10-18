@@ -74,6 +74,9 @@ export interface Mosque {
     lat: number;
     lng: number;
   };
+  latitude?: number;
+  longitude?: number;
+  locationName?: string;
   mapUrl?: string; // رابط خرائط Google أو الموقع الجغرافي
   halaqahIds: string[]; // معرّفات الحلقات التابعة لهذا الجامع
   supervisorTeacherId?: string;
@@ -783,7 +786,7 @@ export interface StudentAIPlan {
   currentDailyAssignment: DailyAssignment;
   difficultyAdjustment: string;
   estimatedDaysToFinishJuz: number;
-  lastUpdated: string;
+  lastUpdated?: string;
 }
 
 export interface Student {

@@ -233,7 +233,8 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
               targetRepetitions: 3
             },
             difficultyAdjustment: hasErrors ? 'مراجعة وتكرار مكثف' : 'متزن',
-            estimatedDaysToFinishJuz: Math.ceil(20 / dailyNew)
+            estimatedDaysToFinishJuz: Math.ceil(20 / dailyNew),
+            lastUpdated: new Date().toISOString()
           }
         };
 
