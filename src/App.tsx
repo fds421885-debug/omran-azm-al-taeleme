@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Home,
@@ -324,7 +324,23 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(() =>
     getLocalCache(OMRAN_CACHE_KEYS.SETTINGS, DEFAULT_SETTINGS)
   );
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const fromSession = sessionStorage.getItem('omran_ai_active_messages');
+        if (fromSession) {
+          const parsed = JSON.parse(fromSession);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+        const fromLocal = localStorage.getItem('omran_ai_active_messages');
+        if (fromLocal) {
+          const parsed = JSON.parse(fromLocal);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [exams, setExams] = useState<Exam[]>(() => {
     const deleted = getDeletedExamIds();
     const hasInit = typeof localStorage !== 'undefined' && localStorage.getItem('omran_exams_initialized') === 'true';
@@ -512,7 +528,9 @@ export function App() {
       setEvaluations(loadedEvaluations);
       setCriteria(loadedCriteria);
       setSettings(loadedSettings);
-      setChatHistory(loadedChats);
+      if (Array.isArray(loadedChats) && loadedChats.length > 0) {
+        setChatHistory(prev => (prev && prev.length > 0 ? prev : loadedChats));
+      }
       setTeachers(loadedTeachers);
       setViolations(loadedViolations);
       setHalaqahs(loadedHalaqahs);
@@ -2492,6 +2510,22 @@ export function App() {
     handleNavigateTab('behavior');
   };
 
+  const handleUpdateChatMessages = useCallback((msgs: ChatMessage[]) => {
+    if (!Array.isArray(msgs)) return;
+    setChatHistory(prev => {
+      if (prev.length === msgs.length && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
+        return prev;
+      }
+      return msgs;
+    });
+    try {
+      if (typeof window !== 'undefined' && msgs.length > 0) {
+        sessionStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
+        localStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
+      }
+    } catch {}
+  }, []);
+
   // Scoped settings for students / parent portal
   const portalSettings = useMemo<AppSettings>(() => {
     if (!activePortalStudent) return scopedSettings;
@@ -3608,6 +3642,8 @@ export function App() {
         leaderboardSettings={leaderboardSettings}
         onSaveEvaluation={handleSaveEvaluation}
         onSaveComplex={handleSaveComplex}
+        chatMessages={chatHistory}
+        onUpdateChatMessages={handleUpdateChatMessages}
       />
 
       {/* Modern Login & Cloud Sync Confirmation Overlay */}

@@ -603,6 +603,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   }, [chatMessages]);
 
   // Sync active messages & activeSessionId to sessionStorage and localStorage continuously
+  const lastEmittedMsgIdRef = useRef<string>('');
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -614,7 +615,9 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
           sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify(messages));
         }
       }
-      if (onUpdateChatMessages) {
+      const lastId = messages && messages.length > 0 ? messages[messages.length - 1]?.id : '';
+      if (onUpdateChatMessages && lastId && lastId !== lastEmittedMsgIdRef.current) {
+        lastEmittedMsgIdRef.current = lastId;
         onUpdateChatMessages(messages);
       }
     } catch (err) {}
@@ -819,30 +822,34 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   }, [allHalaqahs, halaqahs]);
 
   const platformMetrics = useMemo(() => {
-    const todayAttendance = attendance.filter(a => a.date === todayStr);
+    const todayAttendance = Array.isArray(attendance) ? attendance.filter(a => a && a.date === todayStr) : [];
     const presentStudents: string[] = [];
     const absentStudents: string[] = [];
     const excusedStudents: string[] = [];
     let lateCount = 0;
 
-    scopedStudents.forEach(st => {
-      const rec = todayAttendance.find(a => a.studentId === st.id);
-      if (rec) {
-        if (rec.status === 'حاضر') presentStudents.push(st.name);
-        else if (rec.status === 'غائب') absentStudents.push(st.name);
-        else if (rec.status === 'معتذر') excusedStudents.push(st.name);
-        else if (rec.status === 'متأخر') {
-          presentStudents.push(st.name);
-          lateCount++;
+    if (Array.isArray(scopedStudents)) {
+      scopedStudents.forEach(st => {
+        if (!st || !st.id) return;
+        const rec = todayAttendance.find(a => a && a.studentId === st.id);
+        if (rec) {
+          if (rec.status === 'حاضر') presentStudents.push(st.name || 'طالب');
+          else if (rec.status === 'غائب') absentStudents.push(st.name || 'طالب');
+          else if (rec.status === 'معتذر') excusedStudents.push(st.name || 'طالب');
+          else if (rec.status === 'متأخر') {
+            presentStudents.push(st.name || 'طالب');
+            lateCount++;
+          }
         }
-      }
-    });
+      });
+    }
 
-    const todayEvals = evaluations.filter(e => e.date === todayStr);
+    const todayEvals = Array.isArray(evaluations) ? evaluations.filter(e => e && e.date === todayStr) : [];
     let totalNewPages = 0;
     let totalReviewPages = 0;
 
     todayEvals.forEach(ev => {
+      if (!ev) return;
       const det = ev.recitationDetails;
       if (det) {
         if (Array.isArray(det.pagesCompletedToday) && det.pagesCompletedToday.length > 0) {
@@ -852,8 +859,8 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         }
 
         if (Array.isArray(det.todayReviewItems)) {
-          totalReviewPages += det.todayReviewItems.filter(i => !i?.didNotRecite).length;
-        } else if (det.reviewAchieved && det.reviewAchieved.trim()) {
+          totalReviewPages += det.todayReviewItems.filter(i => i && !i.didNotRecite).length;
+        } else if (det.reviewAchieved && typeof det.reviewAchieved === 'string' && det.reviewAchieved.trim()) {
           totalReviewPages += 1;
         }
       }
@@ -862,23 +869,29 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     const totalRecitedPages = totalNewPages + totalReviewPages;
     const now = new Date();
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const registeredThisMonth = scopedStudents.filter(
-      s => s.createdAt && s.createdAt.startsWith(currentMonthPrefix)
+    const safeScopedStudents = Array.isArray(scopedStudents) ? scopedStudents.filter(s => s && s.id) : [];
+    const registeredThisMonth = safeScopedStudents.filter(
+      s => s && s.createdAt && typeof s.createdAt === 'string' && s.createdAt.startsWith(currentMonthPrefix)
     );
 
     let targetSum = 0;
-    scopedStudents.forEach(s => {
+    safeScopedStudents.forEach(s => {
+      if (!s) return;
       const t = s.dailyNewTarget || 'نصف وجه';
-      if (t.includes('وجهين') || t.includes('2')) targetSum += 2;
-      else if (t.includes('وجه') && !t.includes('نصف') && !t.includes('ربع')) targetSum += 1;
-      else if (t.includes('نصف')) targetSum += 0.5;
-      else if (t.includes('ربع')) targetSum += 0.25;
-      else targetSum += 0.5;
+      if (typeof t === 'string') {
+        if (t.includes('وجهين') || t.includes('2')) targetSum += 2;
+        else if (t.includes('وجه') && !t.includes('نصف') && !t.includes('ربع')) targetSum += 1;
+        else if (t.includes('نصف')) targetSum += 0.5;
+        else if (t.includes('ربع')) targetSum += 0.25;
+        else targetSum += 0.5;
+      } else {
+        targetSum += 0.5;
+      }
     });
-    const avgTarget = scopedStudents.length > 0 ? (targetSum / scopedStudents.length).toFixed(1) : '0.5';
+    const avgTarget = safeScopedStudents.length > 0 ? (targetSum / safeScopedStudents.length).toFixed(1) : '0.5';
 
     return {
-      totalStudents: scopedStudents.length,
+      totalStudents: safeScopedStudents.length,
       presentCount: presentStudents.length,
       absentCount: absentStudents.length,
       excusedCount: excusedStudents.length,
@@ -998,10 +1011,10 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
       const payload = {
         message: textToSend,
-        history: messages.slice(-8).map(m => {
+        history: messages.slice(-20).map(m => {
           let text = m.text || '';
-          if (m.sender !== 'user' && text.length > 350) {
-            text = `${text.slice(0, 300)}... [تم تدوين الكشف وسياق البيانات المعتمدة سابقاً]`;
+          if (m.sender !== 'user' && text.length > 3500) {
+            text = `${text.slice(0, 3000)}... [تم تدوين بقية الكشف وسياق البيانات المعتمدة سابقاً]`;
           }
           return {
             role: m.sender === 'user' ? 'user' : 'model',

@@ -2274,6 +2274,20 @@ export function stripFaceEmojis(text: string): string {
     .trim();
 }
 
+// Strict sanitizer to strip any opening or inline apologies and hesitations ("عذراً", "أعتذر", "عفواً")
+export function sanitizeAssistantReply(text: string): string {
+  if (!text) return '';
+  let clean = stripFaceEmojis(text).trim();
+  // 1. Strip leading greetings followed by apologies
+  clean = clean.replace(/^(?:(?:السلام عليكم ورحمة الله وبركاته|السلام عليكم|مرحباً|أهلاً|أهلاً وسهلاً|حيّاك الله|حياك الله)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|المعلم)?[!،,.\s]*)?(?:عذراً|عفواً|أعتذر|المعذرة|أعتذر منك|معذرة|سامحني)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|عزيزي)?[!،,:.\-–\s]*(?:لعلك\s+تقصد\s+|ربما\s+تقصد\s+|هل\s+تقصد\s+|عن\s+ماذا\s+تقصد\s+|المقصود\s+بذلك\s+|المقصود\s+بهذا\s+)?/gi, '');
+  // 2. Strip standalone apology at start of string or newlines
+  clean = clean.replace(/^(?:عذراً|عفواً|أعتذر|المعذرة|معذرة|سامحني)\s*[,،.:\-–\s]*/gi, '');
+  clean = clean.replace(/(?:^|\n)\s*(?:عذراً|عفواً|أعتذر|المعذرة)\s*[,،.:\-–]\s*/gi, '');
+  // 3. Strip starting question about meaning when answering conversational queries
+  clean = clean.replace(/^(?:ما\s+المقصود\s+بذلك\s*؟|عن\s+أي\s+شيء\s+تسأل\s*؟|هل\s+يمكنك\s+التوضيح\s*؟)\s*/gi, '');
+  return clean.trim();
+}
+
 // Full Platform Assistant Route with Real Gemini AI, Role Enforcement & Interactive Actions
 app.post("/api/gemini/assistant", async (req, res) => {
   try {
@@ -3217,7 +3231,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       isExplicitRecitationInquiry;
 
     const isConversationalQuery = Boolean(
-      /^(?:ما\s+هذا|ماهذا|ما\s+هو|ماهو|ما\s+هي|ماهي|ماذا|كيف|لماذا|هل|متى|أين|اين|اشرح|وضح|علمني|قل\s+لي|أخبرني|اخبرني|سؤال|عندي\s+سؤال|استفسار|اريد\s+ان\s+اسالك|أريد\s+أن\s+أسألك|اعطني\s+مثال|أعطني\s+مثال|مثال|امثلة|أمثلة|ما\s+معنى|ما\s+المعنى|ماذا\s+يعني|ماذا\s+تعني|ايش\s+يعني|وش\s+يعني|ايش\s+هذا|وش\s+هذا|شو\s+هذا|شنو\s+هذا)/i.test(normUserMessage) ||
+      /(?:^|\s)(?:ما\s*هذا|ماهذا|ما\s*هو|ماهو|ما\s*هي|ماهي|ماذا\s+تقصد|ماذا\s+تعني|ما\s+معنى|ايش\s+هذا|وش\s+هذا|شو\s+هذا|شنو\s+هذا|من\s+هو|منهو|مين\s+هو|عن\s+ماذا\s+تتكلم|عن\s+ايش\s+تتكلم|عن\s+ماذا\s+تتحدث|اشرح|وضح|علمني|قل\s+لي|أخبرني|اخبرني|سؤال|عندي\s+سؤال|استفسار|اعطني\s+مثال|أعطني\s+مثال|مثال|امثلة|أمثلة|كيف\s+ذلك|ليش|لماذا|كيف|متى|هل)(?:\s|$|[؟?])/i.test(normUserMessage) ||
       normUserMessage.endsWith("؟") ||
       normUserMessage.endsWith("?")
     );
@@ -3243,7 +3257,8 @@ app.post("/api/gemini/assistant", async (req, res) => {
       }
 
       // If Gemini is offline, fallback safely to standard polite response
-      if (!process.env.GEMINI_API_KEY) {
+      const hasAnyApiKey = Boolean(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || req.headers["x-gemini-api-key"] || req.body.apiKey);
+      if (!hasAnyApiKey) {
         if (closeMatch) {
           return res.json({
             reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`),
@@ -4490,7 +4505,7 @@ ${coachingStudentProfile}
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
 
     if (Array.isArray(history)) {
-      for (const h of history.slice(-10)) {
+      for (const h of history.slice(-20)) {
         let textContent = (h.parts?.[0]?.text || h.text || "").trim();
         if (!textContent) continue;
 
@@ -4500,9 +4515,9 @@ ${coachingStudentProfile}
         }
 
         const role: "user" | "model" = h.role === "model" || h.role === "assistant" ? "model" : "user";
-        // Compact long previous model messages (like massive student tables) to preserve tokens and prevent serverless timeouts
-        if (role === "model" && textContent.length > 400) {
-          textContent = `${textContent.slice(0, 350)}... [تم تدوين الكشف وسياق البيانات المعتمدة سابقاً]`;
+        // Compact long previous model messages only if exceedingly huge (> 3500 chars)
+        if (role === "model" && textContent.length > 3500) {
+          textContent = `${textContent.slice(0, 3000)}... [تم تدوين بقية الكشف وسياق البيانات المعتمدة سابقاً]`;
         }
 
         const last = chatHistoryParts[chatHistoryParts.length - 1];
@@ -4663,10 +4678,7 @@ ${coachingStudentProfile}
           ]);
 
           if (response?.text) {
-            geminiReply = response.text.trim();
-            geminiReply = geminiReply
-              .replace(/^(?:عذراً|عفواً|أعتذر|المعذرة)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|عزيزي)?\s*[,،:\-–.]*\s*(?:لعلك\s+تقصد\s+(?:الاستفسار\s+عن\s+)?(?:تفصيل\s+أكثر\s+حول|بيانات)?|ربما\s+تقصد)?\s*/i, '')
-              .trim();
+            geminiReply = sanitizeAssistantReply(response.text);
             break;
           }
         } catch (modelErr: any) {
@@ -4834,9 +4846,18 @@ ${coachingStudentProfile}
         }
       } else if (hasGeneralProblemIntent) {
         geminiReply = `حيّاك الله ويسّر أمرك يا أخي ${firstName} 🌿\n\nأنا معك وتحت أمرك في أي مشكلة أو استشارة تواجهها:\n• إذا كانت **مشكلة تربوية أو سلوكية** مع أحد الطلاب (مثل كثرة الحركة، التشويش، أو صعوبة وتأخر الحفظ)، اذكر لي اسم الطالب أو طبيعة الصعوبة وسأضع لك خطة علاجية نبوية فورية خطوة بخطوة.\n• وإذا كانت **مسألة تقنية أو تنظيمية** في الحلقات أو الحسابات أو رصد التسميع، تفضل بتوضيحها وسأرشدك للحل المباشر في المنظومة. تفضل بما في خاطرك!`;
-      } else if (chatHistoryParts.length > 2) {
-        // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
-        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام بخصوص طلاب وحلقات ${complexName}.\nهل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
+      } else if (chatHistoryParts.length > 1) {
+        // Multi-turn context fallback: Inspect previous assistant message to see what topic was being discussed
+        const prevAssistantMsg = [...chatHistoryParts].reverse().find(p => p.role === "model")?.parts?.[0]?.text || "";
+        if (normUserMessage.includes("ماهذا") || normUserMessage.includes("ما هذا") || normUserMessage.includes("اشرح") || normUserMessage.includes("وضح") || normUserMessage.includes("ما هو") || normUserMessage.includes("ايش هذا")) {
+          if (prevAssistantMsg.includes("إظهار") || prevAssistantMsg.includes("إدغام") || prevAssistantMsg.includes("إقلاب") || prevAssistantMsg.includes("إخفاء") || prevAssistantMsg.includes("تجويد")) {
+            geminiReply = `حيّاك الله يا أخي ${firstName} 📖✨\n\nبناءً على ما ذكرناه في حديثنا المبارك:\nأحكام النون الساكنة والتنوين أربعة أحكام رئيسية:\n1. **الإظهار الحلقي**: بيان النون الساكنة والتنوين عند ملاقاة حروف الحلق الستة (الهمزة، الهاء، العين، الحاء، الغين، الخاء).\n2. **الإدغام**: إدخال النون الساكنة أو التنوين في الحرف التالي (مجموع حروفه في 'يرملون')، وهو بنوعين: بغنة (ينمو) وبغير غنة (اللام والراء).\n3. **الإقلاب**: قلب النون الساكنة أو التنوين ميماً مخفاة بغنة عند حرف الباء.\n4. **الإخفاء الحقيقي**: النطق بالنون بين الإظهار والإدغام مع بقاء الغنة عند بقية الحروف الـ 15.\n\nتفضل إذا كنت ترغب في تطبيق عملي أو أمثلة من الآيات المقررة على الطلاب اليوم.`;
+          } else {
+            geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا المبارك بكل تفاصيله.\nتفضل بتحديد أي جزئية ترغب في تفصيلها أو توضيحها من حديثنا السابق وسأفصلها لك بأمثلة واضحة ومباشرة فوراً وبكل سرور!`;
+          }
+        } else {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام بخصوص طلاب وحلقات ${complexName}.\nهل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
+        }
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
@@ -6070,7 +6091,7 @@ ${coachingStudentProfile}
       "جلسة سهرة: اسألني سؤالاً تربوياً لتطوير مهاراتي كمعلم قرآن"
     ] : undefined;
 
-    return res.json({ reply: stripFaceEmojis(geminiReply), action, suggestions: coachingSuggestions });
+    return res.json({ reply: sanitizeAssistantReply(geminiReply), action, suggestions: coachingSuggestions });
   } catch (error: any) {
     console.error("Gemini assistant error:", error);
     res.json({
