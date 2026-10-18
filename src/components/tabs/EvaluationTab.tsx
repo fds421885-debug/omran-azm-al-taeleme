@@ -1246,6 +1246,26 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         onUpdateStudentAIPlan(activeStudent.id, newDailyAssignment, updatedPosition, listeningAssignmentForStudent).catch(() => {});
       }
 
+      // 3. Dispatch background AI plan optimization event
+      try {
+        const errorsList = Object.entries(mushafAyahErrors).map(([key, count]) => {
+          const [s, a] = key.split(':').map(Number);
+          return { surahNumber: s, ayahNumber: a, errorCount: count, surahName: getSurahInfo(s).name };
+        });
+        window.dispatchEvent(
+          new CustomEvent('omran:ai-tune-plan', {
+            detail: {
+              student: activeStudent,
+              todayEvaluation: fullEvaluation,
+              ayahErrors: errorsList,
+              didNotRecite: todayNewDidNotRecite,
+              newDailyAssignment,
+              updatedPosition
+            }
+          })
+        );
+      } catch (err) {}
+
       setSaveSuccessMsg(
         todayNewDidNotRecite
           ? `تم حفظ التقييم وتثبيت موضع الطالب عند سورة ${targetSurahName} (الآية ${targetAyah}) لعدم التسميع بنجاح!`
@@ -1826,6 +1846,27 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     <p className="text-xs text-slate-300 font-bold mt-0.5">
                       موضع الحفظ الحالي: سورة {activeStudent.currentSurahName || getSurahInfo(activeStudent.currentSurah || 78).name} (الآية {activeStudent.currentAyah || 1})
                     </p>
+
+                    {/* Active AI Plan & Target Completion Date */}
+                    {activeStudent.memorizationPlan?.targetCompletionDate && (
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center gap-1 shadow-sm">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          <span>الختم المستهدف: <strong>{activeStudent.memorizationPlan.targetCompletionDate}</strong></span>
+                        </span>
+                        <span className="text-[10px] text-slate-300 font-bold">
+                          • المثبت: {activeStudent.memorizationPlan.consolidatedJuzCount || 0} أجزاء • نسبة المسار: {activeStudent.memorizationPlan.progressPercentage || 0}%
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Ayah Mistakes Recorded Indicator */}
+                    {Object.values(mushafAyahErrors).reduce((s, c) => s + c, 0) > 0 && (
+                      <div className="mt-1.5 px-3 py-1 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>تم رصد ({Object.values(mushafAyahErrors).reduce((s, c) => s + c, 0)}) أخطاء تسميع في المصحف (بالنقر المزدوج) • سيتم تخصيص ورد تثبيت وتكرار غداً بالذكاء الاصطناعي</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -37,6 +37,8 @@ import { getPageOfAyah } from '../../data/quranPagesData';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { OmranDataService } from '../../lib/firebase';
 import { ComplexPortalSettingsModal } from '../portal/ComplexPortalSettingsModal';
+import { StudentAIPlacementModal } from '../assistant/StudentAIPlacementModal';
+import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
 
 interface StudentsTabProps {
   students: Student[];
@@ -395,6 +397,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   
   // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAIPlacementModalOpen, setIsAIPlacementModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [viewingPlanStudent, setViewingPlanStudent] = useState<Student | null>(null);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
@@ -766,6 +769,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               )}
             </button>
           )}
+
+          {/* Register with AI Interview Button */}
+          <button
+            onClick={() => setIsAIPlacementModalOpen(true)}
+            className="px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-lg flex items-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5 hover:brightness-110"
+            style={{
+              backgroundColor: 'var(--complex-secondary, #1b2e35)',
+              color: accentCol,
+              borderColor: `${accentCol}80`,
+              borderBottomColor: accentShadow
+            }}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>تسجيل طالب بالمقابلة الذكية (AI)</span>
+          </button>
 
           {/* Add Single Student Button */}
           <button
@@ -1239,32 +1257,28 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
                 {/* Plan Banner / Action */}
                 <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
-                  {student.aiPlan ? (
-                    <button
-                      onClick={() => setViewingPlanStudent(student)}
-                      className="flex-1 py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-0.5 hover:brightness-110"
-                      style={{
-                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                        borderColor: 'var(--complex-border, #2b4550)',
-                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                        color: 'var(--complex-accent, #ffc800)'
-                      }}
-                    >
-                      <BookOpen className="w-3.5 h-3.5" style={{ color: 'var(--complex-accent, #ffc800)' }} />
-                      <span>عرض الخطة المنهجية</span>
-                    </button>
-                  ) : (
-                    <div
-                      className="flex-1 py-2 px-3 rounded-2xl border text-[11px] font-bold text-center"
-                      style={{
-                        backgroundColor: 'var(--complex-primary, #131f24)',
-                        borderColor: 'var(--complex-border, #2b4550)',
-                        color: 'var(--complex-subtext, #ffd233)'
-                      }}
-                    >
-                      الخطة المنهجية معتمدة
-                    </div>
-                  )}
+                  <button
+                    onClick={() => setViewingPlanStudent(student)}
+                    className="flex-1 py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-0.5 hover:brightness-110"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                      color: 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" style={{ color: 'var(--complex-accent, #ffc800)' }} />
+                    <span>عرض الخطة المنهجية والتثبيت</span>
+                    {student.memorizationPlan?.targetCompletionDate ? (
+                      <span className="text-[10px] text-emerald-300 font-bold">
+                        (الختم: {student.memorizationPlan.targetCompletionDate})
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-300/90 font-bold">
+                        (الذكاء الاصطناعي جاهز للضبط)
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
             );
@@ -1921,82 +1935,232 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       )}
 
       {/* View Plan Modal */}
-      {viewingPlanStudent && viewingPlanStudent.aiPlan && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-xl bg-[#064e3b] border border-[#fbbf24]/40 rounded-2xl sm:rounded-[32px] shadow-2xl shadow-emerald-950/80 flex flex-col max-h-[90vh] my-auto overflow-hidden overscroll-contain animate-fadeIn">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#064e3b]">
-              <div className="flex items-center gap-2 text-[#fbbf24] font-bold font-heading text-sm sm:text-base">
-                <BookOpen className="w-5 h-5 text-[#fbbf24] shrink-0" />
-                <span className="line-clamp-1">الخطة المنهجية للطالب: {viewingPlanStudent.name}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingPlanStudent(null)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#022c22]"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {viewingPlanStudent && (() => {
+        const studentMemJuz = viewingPlanStudent.currentSurah
+          ? (viewingPlanStudent.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - viewingPlanStudent.currentSurah) / 3.8)))
+          : 1;
+        const fallbackTimeline = calculateRealisticKhatmTimeline({
+          memorizedJuz: studentMemJuz,
+          consolidatedJuz: Math.max(0, studentMemJuz - 2),
+          dailyNewPages: 1,
+          dailyReviewPages: 5,
+          weeklyDaysCount: 5,
+          dailyHoursCount: 2
+        });
+        const plan = viewingPlanStudent.memorizationPlan;
+        const targetDate = plan?.targetCompletionDate || fallbackTimeline.targetCompletionDate;
+        const daysRemaining = plan?.estimatedDaysRemaining || fallbackTimeline.estimatedDaysRemaining;
+        const progressPct = plan?.progressPercentage || fallbackTimeline.progressPercentage;
 
-            {/* Scrollable Content */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3.5 text-xs">
-              <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-[#065f46]">
-                <span className="text-[11px] font-bold text-[#fbbf24] block mb-1">
-                  خارطة الطريق الاستراتيجية:
-                </span>
-                <p className="text-[#f0f9f6] leading-relaxed">
-                  {viewingPlanStudent.aiPlan.roadmapSummary}
-                </p>
+        return (
+          <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto overscroll-contain">
+            <div className="relative w-full max-w-xl bg-[#064e3b] border-2 border-amber-400/50 rounded-2xl sm:rounded-[32px] shadow-2xl shadow-emerald-950/90 flex flex-col max-h-[90vh] my-auto overflow-hidden overscroll-contain animate-fadeIn text-right" dir="rtl">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#064e3b]">
+                <div className="flex items-center gap-2.5 text-amber-300 font-bold font-heading text-sm sm:text-base">
+                  <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30">
+                    <BookOpen className="w-5 h-5 shrink-0" />
+                  </div>
+                  <div>
+                    <span className="line-clamp-1 text-white font-black">الخطة القرآنية المنهجية: {viewingPlanStudent.name}</span>
+                    <span className="text-[11px] text-[#86efac] font-bold block">{viewingPlanStudent.halaqahName || 'حلقة القرآن الكريم'}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingPlanStudent(null)}
+                  className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#022c22]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-[#065f46] space-y-2.5">
-                <span className="text-[11px] font-bold text-[#86efac] block">
-                  الورد اليومي المقرر حالياً:
-                </span>
-                <div className="flex items-center justify-between text-[#f0f9f6] flex-wrap gap-1">
-                  <span className="text-[#86efac] font-medium">الحفظ الجديد:</span>
-                  <span className="font-bold text-[#fbbf24]">
-                    {viewingPlanStudent.aiPlan.currentDailyAssignment?.newMemorization}
+              {/* Scrollable Content */}
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+                {/* Target Date Main Duolingo Card */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#022c22] border-2 border-amber-400/40 space-y-3 shadow-md">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>موعد الختم المحسوب بدقة:</span>
+                    </span>
+                    <span className="text-xs font-mono font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                      متبقي قرابة {toArabicNumerals(daysRemaining)} يوماً
+                    </span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-white font-heading">
+                    {targetDate}
+                  </div>
+                  {/* Progress towards 30 Juz */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[11px] text-[#86efac] font-bold">
+                      <span>نسبة الإنجاز نحو الختمة (30 جزء):</span>
+                      <span className="font-mono font-black text-amber-300">{progressPct}%</span>
+                    </div>
+                    <div className="w-full h-3 rounded-full bg-black/40 border border-[#065f46] overflow-hidden p-0.5">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(5, progressPct))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pedagogical Roadmap Card */}
+                <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-[#065f46] space-y-1.5">
+                  <span className="text-[11px] font-bold text-amber-300 block">
+                    خارطة الطريق والتوجيه التربوي المعتمد:
                   </span>
+                  <p className="text-[#f0f9f6] leading-relaxed text-xs">
+                    {plan?.aiNotes || viewingPlanStudent.aiPlan?.roadmapSummary || fallbackTimeline.pedagogicalNote}
+                  </p>
                 </div>
-                <div className="flex items-center justify-between text-[#f0f9f6] flex-wrap gap-1">
-                  <span className="text-[#86efac] font-medium">المراجعة والتثبيت:</span>
-                  <span className="font-bold text-emerald-300">
-                    {viewingPlanStudent.aiPlan.currentDailyAssignment?.review}
+
+                {/* Daily Assignment Grid */}
+                <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-[#065f46] space-y-2.5">
+                  <span className="text-[11px] font-bold text-[#86efac] block">
+                    مقرر الورد اليومي والتثبيت المبرمج:
                   </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-black/20 border border-white/5">
+                      <span className="text-[#86efac] font-bold block text-[10px]">الحفظ الجديد اليومي:</span>
+                      <span className="font-bold text-amber-300">
+                        {plan?.nextDayAssignment?.newMemorization || viewingPlanStudent.aiPlan?.currentDailyAssignment?.newMemorization || viewingPlanStudent.dailyNewTarget || 'وجه واحد'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-black/20 border border-white/5">
+                      <span className="text-[#86efac] font-bold block text-[10px]">المراجعة والتثبيت:</span>
+                      <span className="font-bold text-emerald-300">
+                        {plan?.nextDayAssignment?.review || viewingPlanStudent.aiPlan?.currentDailyAssignment?.review || viewingPlanStudent.dailyReviewTarget || '5 أوجه'}
+                      </span>
+                    </div>
+                  </div>
+                  {viewingPlanStudent.aiPlan?.currentDailyAssignment?.suggestedSheikh && (
+                    <div className="pt-1 text-[11px] text-[#f0f9f6] flex items-center justify-between">
+                      <span className="text-[#86efac]">القارئ الموصى به للاستماع:</span>
+                      <span className="font-bold text-amber-300">{viewingPlanStudent.aiPlan.currentDailyAssignment.suggestedSheikh}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center justify-between text-[#f0f9f6] flex-wrap gap-1">
-                  <span className="text-[#86efac] font-medium">القارئ المقترح للاستماع:</span>
-                  <span className="font-bold text-[#fbbf24]">
-                    {viewingPlanStudent.aiPlan.currentDailyAssignment?.suggestedSheikh}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-[#065f46] text-[#f0f9f6]">
-                  <span className="text-[#fbbf24] font-semibold">توجيه منزلي: </span>
-                  {viewingPlanStudent.aiPlan.currentDailyAssignment?.dailyNote}
-                </div>
+
+                {/* Tathbeet Stops & Milestones */}
+                {(plan?.milestones || fallbackTimeline.milestones).length > 0 && (
+                  <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-[#065f46] space-y-2">
+                    <span className="text-[11px] font-bold text-white block">
+                      مراحل ووقفات التثبيت التراكمي المجدولة:
+                    </span>
+                    <div className="space-y-1.5">
+                      {(plan?.milestones || fallbackTimeline.milestones).map((m, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/5 text-xs">
+                          <span className="text-slate-200 font-bold">{m.label}</span>
+                          <span className="text-amber-300 font-mono font-black">{m.targetDate}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-[#86efac] px-2 flex-wrap gap-2">
-                <span>تعديل الصعوبة: {viewingPlanStudent.aiPlan.difficultyAdjustment}</span>
-                <span>الأيام المقدرة لختم الجزء: ~{viewingPlanStudent.aiPlan.estimatedDaysToFinishJuz} يوم</span>
+              {/* Footer */}
+              <div className="p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const timeline = calculateRealisticKhatmTimeline({
+                      memorizedJuz: studentMemJuz,
+                      consolidatedJuz: Math.max(0, studentMemJuz - 2),
+                      dailyNewPages: 1,
+                      dailyReviewPages: 5,
+                      weeklyDaysCount: 5,
+                      dailyHoursCount: 2
+                    });
+                    const updatedPlan: StudentMemorizationPlan = {
+                      dailyNewPages: 1,
+                      dailyReviewPages: 5,
+                      consolidatedJuzCount: Math.max(0, studentMemJuz - 2),
+                      memorizedJuzCount: studentMemJuz,
+                      targetJuz: 30,
+                      targetCompletionDate: timeline.targetCompletionDate,
+                      estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+                      progressPercentage: timeline.progressPercentage,
+                      status: 'on_track',
+                      weeklyDaysCount: 5,
+                      dailyHoursCount: 2,
+                      tathbeetStopsCount: timeline.tathbeetStopsCount,
+                      milestones: timeline.milestones,
+                      nextDayAssignment: {
+                        newMemorization: `سورة ${viewingPlanStudent.currentSurahName || 'النبأ'}: وجه جديد`,
+                        review: `مراجعة 5 أوجه من الماضي مع التثبيت`,
+                        action: 'advance_page',
+                        reason: 'تحديث منهجي بالذكاء الاصطناعي'
+                      },
+                      aiNotes: timeline.pedagogicalNote,
+                      lastUpdated: new Date().toISOString()
+                    };
+                    const updatedStudent: Student = {
+                      ...viewingPlanStudent,
+                      memorizationPlan: updatedPlan,
+                      aiPlan: {
+                        roadmapSummary: `خطة تثبيت منهجي، والختم بإذن الله: ${timeline.targetCompletionDate}.`,
+                        currentDailyAssignment: {
+                          newMemorization: updatedPlan.nextDayAssignment?.newMemorization || 'وجه جديد',
+                          review: updatedPlan.nextDayAssignment?.review || '5 أوجه مراجعة',
+                          suggestedSheikh: 'الشيخ محمود خليل الحصري',
+                          dailyNote: 'التكرار 3 مرات قبل النوم',
+                          targetRepetitions: 3
+                        },
+                        difficultyAdjustment: 'متزن',
+                        estimatedDaysToFinishJuz: 20
+                      }
+                    };
+                    await OmranDataService.saveStudent(updatedStudent);
+                    setViewingPlanStudent(updatedStudent);
+                    if (onUpdateStudent) onUpdateStudent(updatedStudent);
+                    alert(`✨ تم تحديث وضبط الخطة القرآنية للطالب (${viewingPlanStudent.name}) وموعد الختم المحسوب: ${timeline.targetCompletionDate}`);
+                  }}
+                  className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-amber-300 font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>إعادة توليد الخطة بالذكاء الاصطناعي</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingPlanStudent(null)}
+                  className="px-6 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs cursor-pointer shadow-md"
+                >
+                  إغلاق
+                </button>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setViewingPlanStudent(null)}
-                className="px-6 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs cursor-pointer shadow-md"
-              >
-                إغلاق
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* AI Placement Interview Modal for Direct Supervisor Registration */}
+      <StudentAIPlacementModal
+        isOpen={isAIPlacementModalOpen}
+        onClose={() => setIsAIPlacementModalOpen(false)}
+        studentInitialData={{
+          name: '',
+          age: 12,
+          phone: '',
+          parentName: '',
+          parentPhones: [''],
+          complexId: activeComplex?.id
+        }}
+        complexes={activeComplex ? [activeComplex] : []}
+        halaqahs={halaqahs || []}
+        existingStudents={students}
+        onPlacementComplete={async (newStudent) => {
+          await OmranDataService.saveStudent(newStudent);
+          setIsAIPlacementModalOpen(false);
+          if (onAddStudent) onAddStudent(newStudent);
+        }}
+        onPlacedInWaitingList={(ticket) => {
+          setIsAIPlacementModalOpen(false);
+          alert(`تم إدراج الطالب في قائمة الانتظار للمجمع برقم: #${ticket.queueNumber}`);
+        }}
+      />
 
       {/* Delete Student Confirmation Modal */}
       {studentToDelete && (

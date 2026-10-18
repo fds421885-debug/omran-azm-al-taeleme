@@ -6388,6 +6388,260 @@ app.get("/api/quran/all", (req, res) => {
   }
 });
 
+// ============================================================================
+// GEMINI AI STUDENT PLACEMENT & ADAPTIVE KHATMAH PLAN APIS
+// ============================================================================
+
+// 1. Dynamic Interactive Student Diagnostic Interview
+app.post("/api/gemini/student-diagnostic-interview", async (req, res) => {
+  try {
+    const {
+      studentData,
+      step,
+      chatHistory,
+      userAnswer,
+      complexInfo
+    } = req.body;
+
+    const memCount = Array.isArray(studentData?.memorizedJuzList) ? studentData.memorizedJuzList.length : Number(studentData?.memorizedJuzCount || 1);
+    const isKhatim = memCount >= 30;
+    const isIntermediate = memCount >= 5 && memCount < 30;
+    const studentAge = Number(studentData?.age) || 12;
+
+    const prompt = `أنت «المساعد القرآني والتربوي الذكي لمنصة عُمْرَان» لمجمعات تحفيظ القرآن الكريم.
+أنت تجري مقابلة ذكية تفاعلية وشخصية وديناميكية مع طالب جديد لتحديد مستواه وتسكينه في الحلقة والمسجد والشيخ الأنسب.
+
+بيانات الطالب الحالية:
+- اسم الطالب: ${studentData?.name || 'الطالب'}
+- العمر: ${studentAge} سنة
+- عدد الأجزاء المحفوظة المسجلة: ${memCount} جزءاً (${isKhatim ? 'خاتم للقرآن الكريم كاملاً' : isIntermediate ? 'مستوى متوسط' : 'مستوى تأسيسي وبداية الحفظ'})
+- إجابة الطالب الأخيرة: ${JSON.stringify(userAnswer || '')}
+- سجل المحادثة السابق: ${JSON.stringify(chatHistory?.slice(-4) || [])}
+- الخطوة الحالية: ${step || 1}
+
+القواعد التربوية الإلزامية:
+1. إياك والأسئلة الثابتة والمكررة! كل سؤال يجب أن يتولد خصيصاً لهذا الطالب بناءً على عمره (${studentAge} سنة) ومستواه الفعلي.
+2. الخاتم (حافظ 30 جزء) لا يعامل أبداً مثل من يحفظ جزء عم!
+   - الخاتم: فحص جودة ضبط المتشابهات اللفظية، مخارج الحروف والوقف والابتداء، الإجازات والأسانيد، ومعدل السرد التثبيتي.
+   - المتوسط (5-29 جزء): فحص جودة استحضار السور، أحكام التجويد العملية في آيات من محفوظه، ونقاط الضعف التي يشتكي منها.
+   - المبتدئ (1-4 أجزاء): أسئلة تشجيعية دافئة ولطيفة، أحكام تجويد أساسية سهلة (النون الساكنة)، ونفسيته وهمته.
+3. راجع إجابة الطالب السابقة بدقة وناقشها بأسلوب تربوي ذكي، ثم اطرح السؤال التالي أو الاختبار المناسب له.
+4. إخراج الإجابة بصيغة JSON فقط:
+{
+  "replyText": "النص التفاعلي الدافئ الموجه للطالب ومناقشة إجابته",
+  "questionType": "choice" أو "text" أو "quiz",
+  "options": [
+    {"label": "نص الخيار 1", "value": "قيمة 1", "subtext": "شرح لطيف"},
+    {"label": "نص الخيار 2", "value": "قيمة 2", "subtext": "شرح لطيف"}
+  ],
+  "isFinalStep": true/false,
+  "diagnosticResult": {
+    "consolidationQuality": "ممتاز / عالي / متوسط / يحتاج تثبيت",
+    "recommendedLevel": "مبتدئ / متوسط / متقدم / إتقان وإجازة",
+    "estimatedDaysToGoal": 180,
+    "recommendedDailyNewPages": 1,
+    "recommendedDailyReviewPages": 5,
+    "psychologicalProfile": "ملخص تربوي نفسي عن همة الطالب وطاقته",
+    "khatmahPaceExplanation": "شرح دقيق لكيفية الختم مع التثبيت بدون تعجل"
+  }
+}`;
+
+    let replyJson: any = null;
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+    if (aiText) {
+      try {
+        replyJson = JSON.parse(aiText);
+      } catch (e) {}
+    }
+
+    if (!replyJson) {
+      // Fallback dynamic responses tailored to student level
+      if (isKhatim) {
+        replyJson = {
+          replyText: `ما شاء الله تبارك الرحمن يا ${studentData?.name || 'يا أخي المبارك'}! حمل كتاب الله في الصدر شرف عظيم وأمانة جليلة. بما أنك أتممت حفظ القرآن الكريم كاملاً، فإن معيارنا معك يتركز على «الإتقان والسرد وضبط المتشابهات». أخبرني: هل معك إجازة مسندة بالسند المتصل؟ وما هو معدل وردك السردي اليومي الحالي؟`,
+          questionType: "choice",
+          options: [
+            { label: "معي إجازة وأريد تثبيتاً متقناً لجمع القراءات", value: "ijazah_mastered", subtext: "مستوى متقدم جداً" },
+            { label: "خاتم بدون إجازة وأسعى لنيل الإجازة برواية حفص", value: "khatim_seeking_ijazah", subtext: "تحضير لسرد الختمة" },
+            { label: "حفظت القرآن لكن تفلت مني بعض الأجزاء وأريد دورة تثبيت مكثفة", value: "khatim_needs_consolidation", subtext: "تثبيت وضبط المتشابهات" }
+          ],
+          isFinalStep: false
+        };
+      } else if (isIntermediate) {
+        replyJson = {
+          replyText: `حيّاك الله وبياك يا ${studentData?.name || 'بطل القرآن'}! إنجاز حفظ ${memCount} جزءاً هو ثمرة مباركة من التوفيق والجهد. لنفحص معاً متانة التثبيت: من بين هذه الأجزاء، ما هي السور التي تشعر أنها راسخة مثل سورة الفاتحة؟ وما هي السور التي تحتاج تعاهداً مستمراً؟`,
+          questionType: "choice",
+          options: [
+            { label: "المثبت أكثر من 70% وأحتاج فقط مراجعة مستمرة", value: "strong_intermediate", subtext: "جاهز للتقدم مع المراجعة" },
+            { label: "المثبت نصف الأجزاء تقريباً وأفضل تثبيت القديم قبل الجديد", value: "balanced_intermediate", subtext: "تثبيت رأس المال أولاً" },
+            { label: "أحتاج حلقة تركز على ضبط المتشابهات ومخارج الحروف", value: "tajweed_focus", subtext: "تركيز على التجويد والإتقان" }
+          ],
+          isFinalStep: false
+        };
+      } else {
+        replyJson = {
+          replyText: `أهلاً وسهلاً بك يا ${studentData?.name || 'بطلنا الصغير'} في رحاب القرآن الكريم! مرحلة البداية هي أجمل مراحل الحفظ وأثبتها في الصغر كالنقش في الحجر. كم وجهاً أو سورة تستطيع تسميعها يومياً بشوق وسعادة دون إرهاق؟`,
+          questionType: "choice",
+          options: [
+            { label: "وجه كامل يومياً مع المراجعة", value: "one_page", subtext: "همة عالية ونشاط" },
+            { label: "نصف وجه يومياً بهدوء وإتقان", value: "half_page", subtext: "تدرج متقن ومريح" },
+            { label: "بضع آيات مع التركيز على النطق الصحيح والتجويد", value: "few_ayahs", subtext: "تأسيس سليم ومتقن" }
+          ],
+          isFinalStep: false
+        };
+      }
+    }
+
+    return res.json({ success: true, ...replyJson });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Interview failed" });
+  }
+});
+
+// 2. High-Precision Mathematical & Pedagogical Khatmah Calculation API
+app.post("/api/gemini/calculate-khatmah-plan", async (req, res) => {
+  try {
+    const {
+      studentName,
+      age,
+      memorizedJuz,
+      consolidatedJuz,
+      goal,
+      dailyNewPages,
+      dailyReviewPages,
+      weeklyDaysCount,
+      dailyHours,
+      ayahErrorsCount
+    } = req.body;
+
+    const totalPages = 604;
+    const memJuzNum = Math.min(30, Math.max(0, Number(memorizedJuz) || 0));
+    const consJuzNum = Math.min(memJuzNum, Math.max(0, Number(consolidatedJuz) || 0));
+    const isKhatim = memJuzNum >= 30;
+
+    const memPages = memJuzNum * 20;
+    const consPages = consJuzNum * 20;
+    const unconsPages = Math.max(0, memPages - consPages);
+    const newPagesRemaining = Math.max(0, totalPages - memPages);
+
+    const weeklyDays = Math.min(7, Math.max(1, Number(weeklyDaysCount) || 5));
+    const newPagePace = Math.max(0.25, Number(dailyNewPages) || 1);
+    const reviewPace = Math.max(1, Number(dailyReviewPages) || 5);
+
+    // Rule: "مش الطالب يختم بسرعة لا ان الطالب يختم وهو مثبت"
+    // Calculate realistic weekly progress:
+    const effectiveWeeklyNew = newPagePace * Math.max(1, (weeklyDays - 1)); // 1 day dedicated purely to cumulative review
+    const weeksForNew = newPagesRemaining > 0 ? (newPagesRemaining / effectiveWeeklyNew) : 0;
+    const effectiveWeeklyReview = reviewPace * weeklyDays;
+    const weeksForConsolidation = unconsPages > 0 ? ((unconsPages * 2) / Math.max(5, effectiveWeeklyReview)) : (isKhatim ? 12 : 0);
+
+    const errMultiplier = 1 + Math.min(0.35, (Number(ayahErrorsCount) || 0) * 0.05);
+    const totalWeeksNeeded = Math.ceil((weeksForNew + weeksForConsolidation) * errMultiplier);
+    const totalCalendarDays = Math.max(30, totalWeeksNeeded * 7);
+
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + totalCalendarDays);
+
+    const targetDateFormatted = targetDate.toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+
+    const monthsRemaining = Math.max(1, Math.round(totalCalendarDays / 30));
+    const progressPct = Math.min(100, Math.round((memPages / totalPages) * 100));
+
+    const prompt = `احسب واشرح خطة ختم وتثبيت قرآنية دقيقة للطالب:
+- الاسم: ${studentName || 'الطالب'} (العمر: ${age || 12} سنة)
+- المحفوظ: ${memJuzNum} جزء (المثبت: ${consJuzNum} جزء)
+- أيام الحلقة أسبوعياً: ${weeklyDays} أيام
+- الحفظ الجديد اليومي: ${newPagePace} وجه
+- المراجعة اليومية: ${reviewPace} أوجه
+- الحساب الرياضي الدقيق: ${totalCalendarDays} يوماً (قرابة ${monthsRemaining} شهراً)
+- موعد الختم المحسوب: ${targetDateFormatted}
+- القاعدة الأساسية: «التثبيت رأس المال والحفظ ربح - التثبيت أولاً ثم التقدم».
+
+قدم توجيهاً تربوياً متزناً وخارطة طريق ومراحل تثبيت محددة بصيغة JSON فقط:
+{
+  "targetCompletionDate": "${targetDateFormatted}",
+  "estimatedDaysRemaining": ${totalCalendarDays},
+  "monthsRemaining": ${monthsRemaining},
+  "progressPercentage": ${progressPct},
+  "roadmapSummary": "نص الشرح والتوجيه التربوي",
+  "monthlyMilestones": ["المرحلة الأولى...", "المرحلة الثانية..."],
+  "consolidationRule": "قاعدة التثبيت المعتمدة"
+}`;
+
+    let resultJson: any = null;
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+    if (aiText) {
+      try {
+        resultJson = JSON.parse(aiText);
+      } catch (e) {}
+    }
+
+    if (!resultJson) {
+      resultJson = {
+        targetCompletionDate: targetDateFormatted,
+        estimatedDaysRemaining: totalCalendarDays,
+        monthsRemaining,
+        progressPercentage: progressPct,
+        roadmapSummary: `تم احتساب الخطة بدقة بناءً على جدول الحلقة (${weeklyDays} أيام أسبوعياً) ومعدل الحفظ (${newPagePace} وجه جديد) والتثبيت (${reviewPace} أوجه). موعد الختمة المستهدفة بإذن الله: ${targetDateFormatted}، مع تخصيص يوم أسبوعي للمراجعة التراكمية لتثبيت المحفوظ في الصدر.`,
+        monthlyMilestones: [
+          `المرحلة الأولى (الشهر 1 - 3): تثبيت وضبط الأجزاء السابقة مع الورد اليومي`,
+          `المرحلة الثانية: التقدم المنتظم بمعدل ${newPagePace} وجه لكل جلسة مع المراجعة المستمرة`,
+          `المرحلة الختامية: سرد الختمة كاملة غيباً على الشيخ ونيل إجازة الإتقان`
+        ],
+        consolidationRule: "كل 10 أوجه حفظ جديدة تخصص جلسة كاملة لتثبيتها تراكمياً قبل الانتقال لما بعدها"
+      };
+    }
+
+    return res.json({ success: true, ...resultJson });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Plan calculation failed" });
+  }
+});
+
+// 3. AI Dynamic Adaptation After Recitation Evaluation
+app.post("/api/gemini/adapt-student-plan", async (req, res) => {
+  try {
+    const { student, todayEvaluation, ayahErrors } = req.body;
+    const errorsList = Array.isArray(ayahErrors) ? ayahErrors : (student?.mushafErrors || []);
+    const uncorrectedErrors = errorsList.filter((e: any) => !e.cleared);
+
+    let needsConsolidation = uncorrectedErrors.length > 0;
+    let newDailyNewTarget = student?.dailyNewTarget || "وجه واحد";
+    let newDailyReviewTarget = student?.dailyReviewTarget || "5 أوجه";
+    let persistentItems: any[] = student?.persistentReviewItems || [];
+
+    // If student made errors today: automatically schedule those verses for repetition tomorrow!
+    if (needsConsolidation) {
+      const errorVersesNames = uncorrectedErrors.map((e: any) => `${e.surahName || 'السورة'} (آية ${e.ayahNumber})`).join('، ');
+      const newReviewItem = {
+        id: `rev_mistake_${Date.now()}`,
+        type: "تكرار وتثبيت مواضع الأخطاء",
+        surahNumber: uncorrectedErrors[0]?.surahNumber || 1,
+        surahName: uncorrectedErrors[0]?.surahName || "السورة",
+        fromAyah: uncorrectedErrors[0]?.ayahNumber || 1,
+        toAyah: uncorrectedErrors[0]?.ayahNumber || 1,
+        notes: `تكرار وتثبيت مكثف للمواضع التي تكرر فيها الخطأ اليوم: ${errorVersesNames}`,
+        isCompleted: false
+      };
+      persistentItems = [newReviewItem, ...persistentItems.filter(p => !p.notes?.includes(errorVersesNames))];
+    }
+
+    return res.json({
+      success: true,
+      needsConsolidation,
+      uncorrectedErrorsCount: uncorrectedErrors.length,
+      suggestedReviewItems: persistentItems,
+      planAdjusted: true
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Plan adaptation failed" });
+  }
+});
+
 // Vite middleware for development & production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

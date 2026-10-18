@@ -27,6 +27,8 @@ import {
   Radio,
   UserPlus,
   Bell,
+  BrainCircuit,
+  RefreshCw,
   X
 } from 'lucide-react';
 import { darkenHex, lightenHex } from './lib/themeUtils';
@@ -118,6 +120,8 @@ import { TeacherAttendanceTab } from './components/tabs/TeacherAttendanceTab';
 import { LibraryTab } from './components/tabs/LibraryTab';
 import { EditAccountModal } from './components/EditAccountModal';
 import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
+import { HalaqahPlansTab } from './components/tabs/HalaqahPlansTab';
+import { calculateRealisticKhatmTimeline } from './lib/aiPlanService';
 import { applyComplexThemeToDOM } from './lib/themeUtils';
 import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
 import { triggerComplexThemePulse, dispatchHighlightItem } from './utils/highlightHelper';
@@ -224,6 +228,7 @@ export function App() {
 
   // Active Tab for Admin
   const [activeTab, setActiveTab] = useState<string>('home');
+  const [backgroundAIQueue, setBackgroundAIQueue] = useState<string[]>([]);
   const [targetStudentForEval, setTargetStudentForEval] = useState<string | undefined>();
   const [targetStudentForWhatsApp, setTargetStudentForWhatsApp] = useState<string | undefined>();
   const [targetStudentForBehavior, setTargetStudentForBehavior] = useState<string | undefined>();
@@ -984,9 +989,11 @@ export function App() {
     const handleBroadcastUpdate = (e: any) => {
       const type = e.detail?.type;
       const payload = e.detail?.payload;
-      if (!isMounted || !type) return;
-
-      if (type === 'library' && payload) {
+      if (type === 'student' && payload) {
+        setStudents(prev => [payload, ...prev.filter(s => s.id !== payload.id)]);
+      } else if (type === 'student-deleted' && payload) {
+        setStudents(prev => prev.filter(s => s.id !== payload));
+      } else if (type === 'library' && payload) {
         setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
       } else if (type === 'library-deleted' && payload) {
         setLibraryDocs(prev => prev.filter(d => d.id !== payload));
@@ -1081,6 +1088,104 @@ export function App() {
       unsubActiveHalaqah();
     };
   }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+
+  // Real-time Background AI Tuning Worker for Student Plans
+  useEffect(() => {
+    const handleTunePlanEvent = async (e: any) => {
+      const detail = e.detail;
+      if (!detail?.student) return;
+      const student = detail.student as Student;
+      const sName = student.name || 'طالب';
+
+      setBackgroundAIQueue(prev => [...prev, sName]);
+
+      try {
+        // Evaluate mistakes and adjust tomorrow's plan in background
+        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/adapt-student-plan'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student,
+            todayEvaluation: detail.todayEvaluation,
+            ayahErrors: detail.ayahErrors
+          })
+        }).catch(() => null);
+
+        const hasErrors = (detail.ayahErrors && detail.ayahErrors.length > 0) || detail.didNotRecite;
+
+        // Determine updated plan respecting consolidation rule:
+        // "مش الطالب يختم بسرعة لا ان الطالب يختم وهو مثبت"
+        const currentPlan = student.memorizationPlan;
+        const currentMem = currentPlan?.memorizedJuzCount || (student.currentSurah ? Math.max(1, Math.round((114 - student.currentSurah) / 3.8)) : 1);
+        const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
+
+        const timeline = calculateRealisticKhatmTimeline({
+          memorizedJuz: currentMem,
+          consolidatedJuz: currentCons,
+          dailyNewPages: currentPlan?.dailyNewPages || 1,
+          dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+          weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
+          dailyHoursCount: currentPlan?.dailyHoursCount || 2
+        });
+
+        const updatedStudent: Student = {
+          ...student,
+          memorizationPlan: {
+            dailyNewPages: currentPlan?.dailyNewPages || 1,
+            dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+            consolidatedJuzCount: currentCons,
+            memorizedJuzCount: currentMem,
+            targetJuz: 30,
+            targetCompletionDate: timeline.targetCompletionDate,
+            estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+            progressPercentage: timeline.progressPercentage,
+            status: hasErrors ? 'needs_reinforcement' : 'on_track',
+            weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
+            dailyHoursCount: currentPlan?.dailyHoursCount || 2,
+            tathbeetStopsCount: timeline.tathbeetStopsCount,
+            milestones: timeline.milestones,
+            nextDayAssignment: {
+              newMemorization: hasErrors
+                ? `تكرار وتثبيت ما تم تسميعه اليوم حتى يرسخ في الصدر`
+                : (detail.newDailyAssignment?.newMemorization || 'مقرر جديد متزن'),
+              review: detail.newDailyAssignment?.review || 'مراجعة الماضي',
+              suggestedSheikh: detail.newDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+              action: hasErrors ? 'repeat_surah' : 'advance_page',
+              reason: hasErrors ? 'تكرار لتثبيت الآيات التي وقع فيها خطأ' : 'انطلاقة متزنة نحو الختم'
+            },
+            aiNotes: `تم الضبط التلقائي في الخلفية بواسطة الذكاء الاصطناعي بعد جلسة التسميع. ${timeline.pedagogicalNote}`,
+            lastUpdated: new Date().toISOString()
+          }
+        };
+
+        await OmranDataService.saveStudent(updatedStudent);
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+      } catch (err) {
+        console.warn('Background AI tuning note:', err);
+      } finally {
+        setBackgroundAIQueue(prev => prev.filter(name => name !== sName));
+      }
+    };
+
+    const handleStudentsUpdated = (e: any) => {
+      if (e.detail) {
+        const updated = e.detail as Student;
+        setStudents(prev => {
+          if (!prev.some(s => s.id === updated.id)) {
+            return [updated, ...prev];
+          }
+          return prev.map(s => s.id === updated.id ? updated : s);
+        });
+      }
+    };
+
+    window.addEventListener('omran:ai-tune-plan', handleTunePlanEvent);
+    window.addEventListener('omran:students-updated', handleStudentsUpdated);
+    return () => {
+      window.removeEventListener('omran:ai-tune-plan', handleTunePlanEvent);
+      window.removeEventListener('omran:students-updated', handleStudentsUpdated);
+    };
+  }, []);
 
   // Live Real-Time Subscription for Incoming Student Registration Applications
   // Immediately notifies supervisor in real-time the instant a student submits from any device!
@@ -2883,6 +2988,9 @@ export function App() {
     { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
     { id: 'reports', label: 'التقارير الدورية', icon: ClipboardList },
     { id: 'library', label: 'المكتبة والأرشيف', icon: FolderArchive, badge: libraryDocs.length > 0 ? libraryDocs.length : undefined },
+    ...((isSupervisor || isDeveloper) ? [
+      { id: 'halaqah_plans', label: 'ضبط الخطة ومواعيد الختم', icon: BrainCircuit }
+    ] : []),
     ...(isDeveloper ? [
       { id: 'backup', label: 'النسخ الاحتياطي', icon: Database }
     ] : [])
@@ -3025,6 +3133,24 @@ export function App() {
                 </div>
               </div>
             </div>
+
+            {/* Live Background AI Student Queue Badge (علامة طلاب وفيها أرقام كم طالب بيعمل ويظبط خطته بكرة) */}
+            {backgroundAIQueue.length > 0 && (
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-lg animate-pulse shrink-0"
+                style={{
+                  backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                  borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                  borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28),
+                  color: activeComplex?.theme?.accentColor || '#ffc800'
+                }}
+                title={`الذكاء الاصطناعي يضبط خطط الغد في الخلفية للطلاب: ${backgroundAIQueue.join('، ')}`}
+              >
+                <Users className="w-4 h-4" />
+                <span>الذكاء الاصطناعي يضبط خطط الغد: <strong>{backgroundAIQueue.length} طلاب</strong></span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              </div>
+            )}
 
             {/* Quick Switching Buttons & Live Cloud Sync */}
             <div className="flex items-center gap-1.5 flex-wrap self-stretch sm:self-auto justify-end shrink-0 max-w-full overflow-x-auto scrollbar-none slider-horizontal">
@@ -3507,6 +3633,24 @@ export function App() {
                 onDeleteDocument={handleDeleteLibraryDoc}
                 initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
                 initialSearchQuery={navMeta?.searchQuery}
+              />
+            )}
+
+            {activeTab === 'halaqah_plans' && (isSupervisor || isDeveloper) && (
+              <HalaqahPlansTab
+                students={displayedStudents}
+                halaqahs={scopedHalaqahs}
+                activeComplex={activeComplex}
+                activeHalaqahId={activeHalaqahId}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                onUpdateStudents={async (updatedStudents) => {
+                  setStudents(prev => {
+                    const map = new Map(prev.map(s => [s.id, s]));
+                    updatedStudents.forEach(u => map.set(u.id, u));
+                    return Array.from(map.values());
+                  });
+                }}
               />
             )}
 

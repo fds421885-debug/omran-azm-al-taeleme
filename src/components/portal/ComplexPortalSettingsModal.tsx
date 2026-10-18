@@ -62,6 +62,7 @@ import {
   buildApplicationAcceptedEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
+import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
 
 interface ComplexPortalSettingsModalProps {
   isOpen: boolean;
@@ -224,11 +225,25 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
   // Share link state
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isPreFlightOpen, setIsPreFlightOpen] = useState(false);
+  const [pendingPreFlightAction, setPendingPreFlightAction] = useState<(() => void) | null>(null);
 
   // Compute direct registration link for this complex
   const portalUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname.replace(/\/+$/, '') || ''}/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`
     : `?complexPortal=${encodeURIComponent(complex.id)}&tab=register`;
+
+  const executeWithPreFlightCheck = (action: () => void) => {
+    const hasMissingMosqueLoc = (complex.mosques || []).some(m => (!m.latitude && !m.longitude) || (!m.address && !m.locationName));
+    const hasMissingHalaqahCap = halaqahs.some(h => !h.capacity || h.capacity <= 0);
+
+    if (hasMissingMosqueLoc || hasMissingHalaqahCap) {
+      setPendingPreFlightAction(() => action);
+      setIsPreFlightOpen(true);
+    } else {
+      action();
+    }
+  };
 
   // Load and sync all applications for this complex (merging previous and incoming)
   const refreshAllApps = async (isManualClick: boolean = false) => {
@@ -427,18 +442,22 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
   // Copy Link
   const handleCopyLink = () => {
-    if (typeof navigator !== 'undefined') {
-      navigator.clipboard.writeText(portalUrl);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    }
+    executeWithPreFlightCheck(() => {
+      if (typeof navigator !== 'undefined') {
+        navigator.clipboard.writeText(portalUrl);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+      }
+    });
   };
 
   // Share via WhatsApp
   const handleShareWhatsApp = () => {
-    const text = `يسر مجمع ${complex.name} دعوة أولياء الأمور والطلاب للتسجيل أو تسجيل الدخول عبر البوابة الإلكترونية المخصصة للمجمع:\n${portalUrl}`;
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    executeWithPreFlightCheck(() => {
+      const text = `يسر مجمع ${complex.name} دعوة أولياء الأمور والطلاب للتسجيل أو تسجيل الدخول عبر البوابة الإلكترونية المخصصة للمجمع:\n${portalUrl}`;
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    });
   };
 
   // Accept an application and create student record
@@ -821,10 +840,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     <span className="hidden sm:inline">واتساب</span>
                   </button>
 
-                  <a
-                    href={portalUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => executeWithPreFlightCheck(() => window.open(portalUrl, '_blank'))}
                     className="p-2.5 rounded-xl border-2 border-b-2 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0"
                     style={{
                       backgroundColor: themeCard,
@@ -833,7 +851,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     title="معاينة وفتح البوابة في نافذة جديدة"
                   >
                     <ExternalLink className="w-4 h-4" />
-                  </a>
+                  </button>
                 </div>
               </div>
 
@@ -2538,6 +2556,25 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             </div>
           </div>
         )}
+
+        {/* Pre-Flight Checklist Modal Before Opening / Sharing Link */}
+        <PortalPreFlightChecklistModal
+          isOpen={isPreFlightOpen}
+          onClose={() => {
+            setIsPreFlightOpen(false);
+            setPendingPreFlightAction(null);
+          }}
+          complex={complex}
+          halaqahs={halaqahs}
+          onCompleteAndProceed={() => {
+            setIsPreFlightOpen(false);
+            if (pendingPreFlightAction) {
+              pendingPreFlightAction();
+              setPendingPreFlightAction(null);
+            }
+          }}
+          onSaveComplex={onUpdateComplex}
+        />
       </div>
     </div>
   );

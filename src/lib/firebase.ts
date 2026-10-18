@@ -3846,6 +3846,13 @@ export class OmranDataService {
     const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
     const updated = [clean, ...local.filter(s => s.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, updated);
+    broadcastDataUpdate('student', clean);
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: clean }));
+      }
+    } catch {}
 
     try {
       await setDoc(doc(this.getActiveDb(), 'students', clean.id), clean);

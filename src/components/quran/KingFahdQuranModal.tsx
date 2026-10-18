@@ -127,26 +127,45 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
     longPressTimerRef.current = setTimeout(() => {
       cancelLongPress();
-      const key = `${surahNumber}:${ayahNumber}`;
-      setAyahErrors(prev => {
-        const nextCount = (prev[key] || 0) + 1;
-        const updated = { ...prev, [key]: nextCount };
-        if (onRecordAyahError) {
-          onRecordAyahError(surahNumber, ayahNumber, nextCount);
-        }
-        return updated;
-      });
-
-      try {
-        if (typeof window !== 'undefined' && 'navigator' in window && (navigator as any).vibrate) {
-          (navigator as any).vibrate([80, 40, 80]);
-        }
-      } catch {}
-
-      const sInfo = getSurahInfo(surahNumber);
-      setLastErrorNotification(`⚠️ تم رصد خطأ تسميع في سورة ${sInfo?.name || surahNumber} (الآية ${ayahNumber})`);
-      setTimeout(() => setLastErrorNotification(null), 3500);
+      recordAyahError(surahNumber, ayahNumber);
     }, DURATION);
+  };
+
+  const recordAyahError = (surahNumber: number, ayahNumber: number) => {
+    const key = `${surahNumber}:${ayahNumber}`;
+    setAyahErrors(prev => {
+      const nextCount = (prev[key] || 0) + 1;
+      const updated = { ...prev, [key]: nextCount };
+      if (onRecordAyahError) {
+        onRecordAyahError(surahNumber, ayahNumber, nextCount);
+      }
+      return updated;
+    });
+
+    try {
+      if (typeof window !== 'undefined' && 'navigator' in window && (navigator as any).vibrate) {
+        (navigator as any).vibrate([80, 40, 80]);
+      }
+    } catch {}
+
+    const sInfo = getSurahInfo(surahNumber);
+    setLastErrorNotification(`⚠️ تم رصد خطأ تسميع بالضغط المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setTimeout(() => setLastErrorNotification(null), 3500);
+  };
+
+  const lastTapRef = useRef<{ time: number; surah: number; ayah: number }>({ time: 0, surah: 0, ayah: 0 });
+
+  const handleTouchStartWithDoubleTap = (surahNumber: number, ayahNumber: number) => {
+    const now = Date.now();
+    if (lastTapRef.current.surah === surahNumber && lastTapRef.current.ayah === ayahNumber && (now - lastTapRef.current.time) < 350) {
+      // Double tap detected!
+      cancelLongPress();
+      recordAyahError(surahNumber, ayahNumber);
+      lastTapRef.current = { time: 0, surah: 0, ayah: 0 };
+      return;
+    }
+    lastTapRef.current = { time: now, surah: surahNumber, ayah: ayahNumber };
+    startLongPress(surahNumber, ayahNumber);
   };
 
   const handleDecrementError = (e: React.MouseEvent, surahNumber: number, ayahNumber: number) => {
@@ -659,10 +678,14 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                           <React.Fragment key={ayah.ayahNumber}>
                             <span
                               id={`mushaf-ayah-${sec.surahNumber}-${ayah.ayahNumber}`}
+                              onDoubleClick={e => {
+                                e.preventDefault();
+                                recordAyahError(sec.surahNumber, ayah.ayahNumber);
+                              }}
                               onMouseDown={() => startLongPress(sec.surahNumber, ayah.ayahNumber)}
                               onMouseUp={cancelLongPress}
                               onMouseLeave={cancelLongPress}
-                              onTouchStart={() => startLongPress(sec.surahNumber, ayah.ayahNumber)}
+                              onTouchStart={() => handleTouchStartWithDoubleTap(sec.surahNumber, ayah.ayahNumber)}
                               onTouchEnd={cancelLongPress}
                               onTouchCancel={cancelLongPress}
                               className={`transition-all rounded-lg px-2 py-1 inline duration-200 relative cursor-pointer select-none ${
@@ -676,7 +699,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                                   ? 'ayah-highlighted bg-[#fbbf24]/35 text-[#064e3b] font-bold shadow-[0_0_8px_rgba(251,191,36,0.3)] ring-1 ring-[#d97706]'
                                   : 'hover:bg-amber-100/60'
                               }`}
-                              title={`اضغط مطولاً 2.5 ثانية لرصد خطأ تسميع | سورة ${sec.surahInfo.name} - آية ${ayah.ayahNumber}`}
+                              title={`انقر نقرتين سريعتين (Double Click) أو علّق 2.5 ثانية لرصد خطأ | سورة ${sec.surahInfo.name} - آية ${toArabicNumerals(ayah.ayahNumber)}`}
                             >
                               {ayah.text}
 
