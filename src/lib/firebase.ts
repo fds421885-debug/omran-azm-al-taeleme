@@ -4060,7 +4060,7 @@ export class OmranDataService {
       if (e?.id) mergedMap.set(e.id, e);
     }
     const merged = Array.from(mergedMap.values());
-    merged.sort((a, b) => b.date.localeCompare(a.date));
+    merged.sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
     setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, merged);
     return merged;
   }
@@ -5139,7 +5139,7 @@ export class OmranDataService {
       const snap = await safeGetDocs(q);
       const list: StudentListeningLog[] = [];
       snap.forEach(d => list.push(d.data() as StudentListeningLog));
-      return list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      return list.sort((a, b) => (b?.timestamp || '').localeCompare(a?.timestamp || ''));
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'listening_logs');
       return [];
@@ -5163,7 +5163,7 @@ export class OmranDataService {
       return onSnapshot(collection(this.getActiveDb(), 'listening_logs'), snap => {
         const list: StudentListeningLog[] = [];
         snap.forEach(d => list.push(d.data() as StudentListeningLog));
-        callback(list.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+        callback(list.sort((a, b) => (b?.timestamp || '').localeCompare(a?.timestamp || '')));
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'listening_logs');
       });

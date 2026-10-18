@@ -317,7 +317,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const studentSubmissions = submissions.filter(s => s.studentId === student.id);
 
   // Sort evaluations from newest to oldest
-  const sortedEvaluations = [...studentEvaluations].sort((a, b) => b.date.localeCompare(a.date));
+  const sortedEvaluations = [...studentEvaluations].sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
 
   const presentsCount = studentAttendance.filter(a => a.status === 'حاضر').length;
   const attendanceRate =

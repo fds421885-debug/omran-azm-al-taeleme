@@ -279,6 +279,16 @@ const TAB_META_CONFIG: Record<string, { label: string; desc: string; icon: any; 
   }
 };
 
+// Helper to resolve a guaranteed, safe CSS hex color string (never broken var)
+function resolveHexColor(color?: string | null, fallback = '#ffc800'): string {
+  if (!color || typeof color !== 'string') return fallback;
+  const clean = color.trim();
+  if (clean.startsWith('#') && (clean.length === 4 || clean.length === 7 || clean.length === 9)) {
+    return clean;
+  }
+  return fallback;
+}
+
 export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?: QuranComplex | null }> = ({
   activeTab,
   activeComplex
@@ -291,10 +301,9 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
     shadow: '#e5a500'
   };
   const IconComp = meta.icon;
-  const accentColor = activeComplex?.theme?.accentColor || meta.color;
-  const accentShadow = darkenHex(accentColor, 0.28);
+  const safeAccent = resolveHexColor(activeComplex?.theme?.accentColor, meta.color);
+  const accentShadow = darkenHex(safeAccent, 0.28);
   const cardBg = activeComplex?.theme?.cardColor || '#203843';
-  const secondaryBg = activeComplex?.theme?.secondaryColor || '#1b2e35';
   const borderCol = lightenHex(cardBg, 0.18);
   const borderBottomCol = darkenHex(cardBg, 0.35);
 
@@ -310,12 +319,12 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
     >
       {/* Ambient background aura in complex accent color */}
       <div
-        className="absolute -top-10 -left-10 w-44 h-44 rounded-full blur-2xl opacity-20 pointer-events-none"
-        style={{ backgroundColor: accentColor }}
+        className="absolute -top-10 -left-10 w-44 h-44 rounded-full blur-2xl opacity-25 pointer-events-none"
+        style={{ backgroundColor: safeAccent }}
       />
 
       <div className="flex items-center gap-4 relative z-10">
-        {/* Steadfast Holy Quran / Tab Icon with Rotating Glowing Dual Orbital Ring (like initial loader) */}
+        {/* Steadfast Holy Quran / Tab Icon with Rotating Glowing Dual Orbital Ring */}
         <div className="relative w-16 h-16 sm:w-18 sm:h-18 flex items-center justify-center shrink-0">
           <svg
             className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
@@ -327,7 +336,7 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
               cy="50"
               r="44"
               fill="none"
-              stroke="rgba(255, 255, 255, 0.12)"
+              stroke="rgba(255, 255, 255, 0.15)"
               strokeWidth="3.5"
             />
             <circle
@@ -335,11 +344,11 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
               cy="50"
               r="44"
               fill="none"
-              stroke={accentColor}
+              stroke={safeAccent}
               strokeWidth="4.5"
               strokeDasharray="95 180"
               strokeLinecap="round"
-              className="drop-shadow-[0_0_8px_currentColor]"
+              style={{ filter: `drop-shadow(0 0 8px ${safeAccent}) drop-shadow(0 0 3px ${safeAccent})` }}
             />
             <circle
               cx="50"
@@ -350,7 +359,7 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
               strokeWidth="3"
               strokeDasharray="25 240"
               strokeLinecap="round"
-              className="opacity-70"
+              className="opacity-75"
             />
           </svg>
 
@@ -359,14 +368,15 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
             className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border-2 border-b-4 flex flex-col items-center justify-center shadow-md relative z-10 select-none"
             style={{
               backgroundColor: activeComplex?.theme?.primaryColor || '#131f24',
-              borderColor: `${accentColor}90`,
+              borderColor: `${safeAccent}90`,
               borderBottomColor: accentShadow,
-              color: accentColor
+              color: safeAccent
             }}
           >
             <IconComp className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         </div>
+
 
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1120,17 +1130,12 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
   size = 'md',
   isOverlay = false
 }) => {
-  const accentColor = activeComplex?.theme?.accentColor || 'var(--complex-accent, #ffc800)';
-  const accentShadow = activeComplex?.theme?.accentColor
-    ? darkenHex(activeComplex.theme.accentColor, 0.28)
-    : 'var(--complex-accent-shadow, #e5a500)';
-  const cardBg = activeComplex?.theme?.cardColor || 'var(--complex-card, #203843)';
-  const borderCol = activeComplex?.theme?.cardColor
-    ? lightenHex(activeComplex.theme.cardColor, 0.2)
-    : 'var(--complex-border, #2b4550)';
-  const borderBottomCol = activeComplex?.theme?.cardColor
-    ? darkenHex(activeComplex.theme.cardColor, 0.35)
-    : 'var(--complex-card-shadow, #16262e)';
+  const safeAccent = resolveHexColor(activeComplex?.theme?.accentColor, '#ffc800');
+  const safePrimary = resolveHexColor(activeComplex?.theme?.primaryColor, '#131f24');
+  const safeCard = resolveHexColor(activeComplex?.theme?.cardColor, '#203843');
+  const accentShadow = darkenHex(safeAccent, 0.28);
+  const borderCol = lightenHex(safeCard, 0.2);
+  const borderBottomCol = darkenHex(safeCard, 0.35);
 
   const dimensions = {
     sm: { container: 'w-24 h-24', ring: 60, icon: 'w-6 h-6', box: 'w-14 h-14', text: 'text-[9px]' },
@@ -1142,16 +1147,16 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
     <div
       className={`border-2 border-b-4 rounded-[36px] p-6 sm:p-8 text-center space-y-5 shadow-2xl relative overflow-hidden max-w-sm w-full mx-auto select-none`}
       style={{
-        backgroundColor: cardBg,
+        backgroundColor: safeCard,
         borderColor: borderCol,
         borderBottomColor: borderBottomCol
       }}
       dir="rtl"
     >
-      {/* Ambient Aura */}
+      {/* Ambient Aura with radiant glow */}
       <div
         className="absolute inset-4 rounded-full blur-2xl opacity-35 pointer-events-none"
-        style={{ backgroundColor: accentColor }}
+        style={{ backgroundColor: safeAccent }}
       />
 
       {/* Steadfast Holy Quran in Center + Smooth Dual Orbital Rotating Ring around it */}
@@ -1168,20 +1173,20 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
             cy="50"
             r="44"
             fill="none"
-            stroke="rgba(255, 255, 255, 0.12)"
+            stroke="rgba(255, 255, 255, 0.15)"
             strokeWidth="3.5"
           />
-          {/* Primary glowing theme arc */}
+          {/* Primary radiant glowing theme arc */}
           <circle
             cx="50"
             cy="50"
             r="44"
             fill="none"
-            stroke={accentColor}
+            stroke={safeAccent}
             strokeWidth="4.5"
             strokeDasharray="95 180"
             strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 8px ${accentColor})` }}
+            style={{ filter: `drop-shadow(0 0 8px ${safeAccent}) drop-shadow(0 0 3px ${safeAccent})` }}
           />
           {/* Secondary bright highlight arc */}
           <circle
@@ -1193,7 +1198,7 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
             strokeWidth="3"
             strokeDasharray="30 240"
             strokeLinecap="round"
-            className="opacity-75"
+            className="opacity-80"
           />
         </svg>
 
@@ -1201,10 +1206,10 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
         <div
           className={`${dimensions.box} rounded-[22px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10 transition-transform`}
           style={{
-            backgroundColor: 'var(--complex-primary, #131f24)',
-            borderColor: `${accentColor}95`,
+            backgroundColor: safePrimary,
+            borderColor: `${safeAccent}95`,
             borderBottomColor: accentShadow,
-            color: accentColor
+            color: safeAccent
           }}
         >
           <BookOpen className={`${dimensions.icon} drop-shadow-md stroke-[2.2]`} />
@@ -1220,7 +1225,7 @@ export const ModernQuranLoader: React.FC<ModernQuranLoaderProps> = ({
           {title}
         </h3>
         {subtitle && (
-          <p className="text-xs font-bold leading-relaxed" style={{ color: accentColor }}>
+          <p className="text-xs font-bold leading-relaxed" style={{ color: safeAccent }}>
             {subtitle}
           </p>
         )}
@@ -1243,8 +1248,23 @@ export const LoginSyncModalOverlay: React.FC<{
   isOpen: boolean;
   userName?: string;
   activeComplex?: QuranComplex | null;
-}> = ({ isOpen, userName, activeComplex }) => {
-  if (!isOpen) return null;
+  onDismiss?: () => void;
+}> = ({ isOpen, userName, activeComplex, onDismiss }) => {
+  const [active, setActive] = useState(isOpen);
+
+  useEffect(() => {
+    setActive(isOpen);
+    if (isOpen) {
+      // Auto-dismiss safety watchdog: ensures login loading screen never hangs forever under any circumstance
+      const watchdog = setTimeout(() => {
+        setActive(false);
+        if (onDismiss) onDismiss();
+      }, 750);
+      return () => clearTimeout(watchdog);
+    }
+  }, [isOpen, onDismiss]);
+
+  if (!isOpen || !active) return null;
 
   return (
     <div
@@ -1253,7 +1273,7 @@ export const LoginSyncModalOverlay: React.FC<{
     >
       <ModernQuranLoader
         title={userName ? `مرحباً بك، ${userName}` : 'مرحباً بك في المنظومة القرآنية'}
-        subtitle="جَارٍ تَحْمِيلُ المَنْظُومَةِ وتَأْكِيدُ السِّجِلاَّتِ سَحَابِيّاً..."
+        subtitle="جَارٍ تَأْكِيدُ السِّجِلاَّتِ وسُرْعَةُ الدُّخُولِ لِلْمَنْظُومَةِ..."
         activeComplex={activeComplex}
         size="md"
         isOverlay={false}
@@ -1261,6 +1281,7 @@ export const LoginSyncModalOverlay: React.FC<{
     </div>
   );
 };
+
 
 export const CloudLoadingScreen: React.FC<{
   isLoading?: boolean;

@@ -437,9 +437,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   ]);
 
   // All evaluations for the currently active student (sorted latest first)
-  const studentEvaluationsHistory = evaluations
-    .filter(e => e.studentId === activeStudentId)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const studentEvaluationsHistory = useMemo(() => {
+    return (evaluations || [])
+      .filter(e => e && e.studentId === activeStudentId)
+      .sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
+  }, [evaluations, activeStudentId]);
 
   // Initialize or load student evaluation when active student or selected date changes
   useEffect(() => {
@@ -524,13 +526,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       // Check for the LAST ACTUAL recitation record before selectedDate,
       // intentionally bypassing empty days, unexpected trips, or sudden holidays!
-      const actualPastEvals = evaluations
-        .filter(e => e.studentId === activeStudent.id && e.date < selectedDate && (
+      const actualPastEvals = (evaluations || [])
+        .filter(e => e && e.studentId === activeStudent.id && e.date && e.date < selectedDate && (
           e.recitationDetails?.tomorrowNewItem ||
           e.recitationDetails?.todayNewItem ||
           e.recitationDetails?.newMemorizationAchieved
         ))
-        .sort((a, b) => b.date.localeCompare(a.date));
+        .sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
 
       const latestActualRecord = actualPastEvals[0];
 
@@ -559,7 +561,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         const prevReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
           latestActualRecord.recitationDetails?.todayReviewItems ||
           activeStudent.persistentReviewItems;
-        if (prevReviews && prevReviews.length > 0) {
+        if (Array.isArray(prevReviews) && prevReviews.length > 0) {
           setTodayReviews(prevReviews.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}`, didNotRecite: false, didNotReciteReason: undefined })));
           setTomReviews(prevReviews.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
         }
@@ -589,11 +591,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setAutoFilledNotice(`تم ضبط المقرر تلقائياً بناءً على آخر تسجيل تسميع للطالب بتاريخ (${latestActualRecord.date}): ${loadedPortionText}`);
 
         // Load review items: if tomorrowReviewItems existed in last record, or student's persistentReviewItems
-        const loadedReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
+        const rawLoadedReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
           (latestActualRecord.recitationDetails?.tomorrowReviewItem ? [latestActualRecord.recitationDetails.tomorrowReviewItem] : null) ||
           activeStudent.persistentReviewItems;
+        const loadedReviews = Array.isArray(rawLoadedReviews) ? rawLoadedReviews : [];
 
-        if (loadedReviews && loadedReviews.length > 0) {
+        if (loadedReviews.length > 0) {
           setTodayReviews(loadedReviews.map((r, idx) => ({
             ...r,
             id: `rev_auto_${Date.now()}_${idx}`,
@@ -739,7 +742,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setTodayNewToAyah(endAyah);
 
         // Default review (check persistent items first)
-        if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
+        if (Array.isArray(activeStudent.persistentReviewItems) && activeStudent.persistentReviewItems.length > 0) {
           setTodayReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}` })));
           setTomReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
         } else {
@@ -926,8 +929,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   // Automatically insert active errored ayahs from King Fahd Mushaf into tomorrow's review list
   const handleInsertErroredAyahsIntoTomorrowReviews = () => {
-    if (!activeStudent?.mushafErrors || activeStudent.mushafErrors.length === 0) return;
-    const activeErrors = activeStudent.mushafErrors.filter(e => !e.cleared && e.errorCount > 0);
+    if (!activeStudent?.mushafErrors || !Array.isArray(activeStudent.mushafErrors) || activeStudent.mushafErrors.length === 0) return;
+    const activeErrors = activeStudent.mushafErrors.filter(e => e && !e.cleared && (e.errorCount || 0) > 0);
     if (activeErrors.length === 0) return;
 
     const grouped: Record<number, number[]> = {};
