@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
+import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
@@ -39,23 +39,6 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
-
-// Support Netlify Functions path rewriting and CORS
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-gemini-api-key");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  if (req.url.startsWith("/.netlify/functions/api")) {
-    req.url = req.url.replace("/.netlify/functions/api", "/api");
-  }
-  if (req.originalUrl && req.originalUrl.startsWith("/.netlify/functions/api")) {
-    req.originalUrl = req.originalUrl.replace("/.netlify/functions/api", "/api");
-  }
-  next();
-});
 
 // Health check route
 app.get("/api/health", (req, res) => {
@@ -320,33 +303,14 @@ app.get("/api/maps/geocode", async (req, res) => {
   }
 });
 
-// Dynamic Google GenAI Client (reads fresh GEMINI_API_KEY or VITE_GEMINI_API_KEY on every call)
-function getAIInstance(keyOverride?: string): GoogleGenAI {
-  const key = (
-    keyOverride ||
-    process.env.GEMINI_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY ||
-    ""
-  ).trim();
-  return new GoogleGenAI({
-    apiKey: key,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
+// Initialize Google GenAI
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || "",
+  httpOptions: {
+    headers: {
+      "User-Agent": "aistudio-build",
     },
-  });
-}
-
-const ai: GoogleGenAI = new Proxy({} as GoogleGenAI, {
-  get(_, prop) {
-    const instance = getAIInstance();
-    const val = (instance as any)[prop];
-    if (typeof val === "function") {
-      return val.bind(instance);
-    }
-    return val;
-  }
+  },
 });
 
 // Helper to call Gemini with robust multi-model fallback cascade
@@ -543,122 +507,6 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
         nextDayPlan: getFallbackPlan(req.body?.student || {}).currentDailyAssignment,
       },
     });
-  }
-});
-
-// 3. AI Student Placement & Dynamic Khatmah Plan Generation
-app.post("/api/gemini/student-placement-interview", async (req, res) => {
-  try {
-    const {
-      studentName = "الطالب",
-      age = 10,
-      memorizedJuz = 0,
-      consolidatedJuz = 0,
-      tajweedAnswers = {},
-      hasIjazah = false,
-      targetGoal = "ختم وتثبيت القرآن الكريم كاملاً",
-      dailyNewPace = 1,
-      dailyReviewPace = 5,
-      selectedMosque = ""
-    } = req.body;
-
-    const totalQuranPages = 604;
-    const completedPages = Math.min(totalQuranPages, Math.max(0, Math.round(Number(memorizedJuz || 0) * 20.13)));
-    const consolidatedPages = Math.min(completedPages, Math.max(0, Math.round(Number(consolidatedJuz || 0) * 20.13)));
-    const remainingPages = Math.max(0, totalQuranPages - completedPages);
-
-    const dailyPaceSafe = Math.max(0.5, Number(dailyNewPace) || 1);
-    const estimatedDays = Math.ceil(remainingPages / dailyPaceSafe);
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + estimatedDays);
-    const targetCompletionDateStr = targetDate.toISOString().split("T")[0];
-
-    // Compute Tajweed score
-    const tScore =
-      (tajweedAnswers?.easyCorrect ? 1 : 0) +
-      (tajweedAnswers?.mediumCorrect ? 1 : 0) +
-      (tajweedAnswers?.hardCorrect ? 1 : 0);
-
-    let determinedLevel = "متوسط";
-    if (memorizedJuz >= 25 && tScore >= 2) {
-      determinedLevel = "متقدم";
-    } else if (hasIjazah || (memorizedJuz === 30 && tScore === 3)) {
-      determinedLevel = "حافظ متقن";
-    } else if (memorizedJuz <= 3 && tScore <= 1) {
-      determinedLevel = "مبتدئ";
-    }
-
-    let startingSurahNum = 78;
-    let startingAyah = 1;
-    if (memorizedJuz === 0) {
-      startingSurahNum = 114;
-    } else if (memorizedJuz >= 1 && memorizedJuz <= 3) {
-      startingSurahNum = 78;
-    } else if (memorizedJuz < 30) {
-      startingSurahNum = Math.max(1, 114 - (memorizedJuz * 3));
-    }
-    const surahInfo = getSurahInfo(startingSurahNum);
-
-    let aiAdvice = `مرحباً بك يا ${studentName}! تم رسم خطتك القرآنية بمعدل ${dailyPaceSafe} وجه حفظ جديد و${dailyReviewPace} أوجه مراجعة يومياً مع العناية بالتثبيت المستمر حتى الختم بإذن الله.`;
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const prompt = `أنت موجه قرآني وخبير في الحلقات القرآنية لمنظومة عُمْرَان.
-بيانات مقابلة الطالب الجديد:
-- اسم الطالب: ${studentName} (العمر: ${age} سنة)
-- الأجزاء المحفوظة: ${memorizedJuz} جزء، منها ${consolidatedJuz} جزء مثبت متقن.
-- نتيجة اختبار التجويد: ${tScore} من 3 (سهل/متوسط/صعب).
-- هل يحمل إجازة: ${hasIjazah ? "نعم" : "لا"}.
-- هدف الطالب: ${targetGoal}.
-- طاقة الحفظ اليومي الجديد: ${dailyPaceSafe} وجه.
-- طاقة المراجعة اليومية: ${dailyReviewPace} وجه.
-- المستوى التقديري: ${determinedLevel}.
-- الأيام التقديرية للختم والتثبيت: ${estimatedDays} يوماً (التاريخ المستهدف: ${targetCompletionDateStr}).
-
-المطلوب:
-كتابة توجيه تربوي تحفيزي موجز ومتقن من سطرين إلى 3 أسطر يرحب بالطالب باسمه ويشجعه ويحدد له نصيحة لتثبيت الأجزاء ${consolidatedJuz < memorizedJuz ? `غير المتقنة (${memorizedJuz - consolidatedJuz} أجزاء تحتاج تثبيت)` : "المحفوظة"} مع حفظه الجديد. أخرج نص التوجيه فقط باللغة العربية الفصيحة الكريمة.`;
-
-        const respText = await generateGeminiContentWithFallback(ai, prompt);
-        if (respText) {
-          aiAdvice = respText.replace(/[\*\#\`]/g, "").trim();
-        }
-      } catch (gemErr) {
-        console.warn("Placement interview Gemini advice notice:", gemErr);
-      }
-    }
-
-    const result = {
-      studentLevel: determinedLevel,
-      memorizationPlan: {
-        dailyNewPages: dailyPaceSafe,
-        dailyReviewPages: Math.max(2, Number(dailyReviewPace) || 5),
-        consolidatedJuzCount: Number(consolidatedJuz || 0),
-        memorizedJuzCount: Number(memorizedJuz || 0),
-        targetJuz: 30,
-        targetCompletionDate: targetCompletionDateStr,
-        estimatedDaysRemaining: estimatedDays,
-        progressPercentage: Math.min(100, Math.round((consolidatedPages / totalQuranPages) * 100)),
-        status: "on_track",
-        aiNotes: aiAdvice,
-        lastUpdated: new Date().toISOString()
-      },
-      initialPosition: {
-        surahNumber: surahInfo.number,
-        surahName: surahInfo.name,
-        ayahNumber: startingAyah
-      },
-      suggestedAssignment: {
-        newMemorization: `سورة ${surahInfo.name}: الآيات (1 - ${Math.min(surahInfo.numberOfAyahs, 10)})`,
-        review: Number(consolidatedJuz || 0) > 0 ? `مراجعة وتثبيت الجزء الأول من الأجزاء المحفوظة` : `سورة الفاتحة وقصار السور`,
-        suggestedSheikh: "الشيخ محمود خليل الحصري (المصحف المعلم)",
-        tajweedFocus: tScore < 2 ? "أحكام النون الساكنة والتنوين والمدود" : "مخارج الحروف وصفاتها والوقف والابتداء",
-        dailyNote: "الاستماع للقارئ المتقن وتكرار الورد 3 مرات قبل النوم ترسيخاً للحفظ."
-      }
-    };
-
-    return res.json(result);
-  } catch (err: any) {
-    console.error("Student placement interview error:", err);
-    return res.status(500).json({ error: err.message || "Failed to process placement" });
   }
 });
 
@@ -2274,20 +2122,6 @@ export function stripFaceEmojis(text: string): string {
     .trim();
 }
 
-// Strict sanitizer to strip any opening or inline apologies and hesitations ("عذراً", "أعتذر", "عفواً")
-export function sanitizeAssistantReply(text: string): string {
-  if (!text) return '';
-  let clean = stripFaceEmojis(text).trim();
-  // 1. Strip leading greetings followed by apologies
-  clean = clean.replace(/^(?:(?:السلام عليكم ورحمة الله وبركاته|السلام عليكم|مرحباً|أهلاً|أهلاً وسهلاً|حيّاك الله|حياك الله)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|المعلم)?[!،,.\s]*)?(?:عذراً|عفواً|أعتذر|المعذرة|أعتذر منك|معذرة|سامحني)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|عزيزي)?[!،,:.\-–\s]*(?:لعلك\s+تقصد\s+|ربما\s+تقصد\s+|هل\s+تقصد\s+|عن\s+ماذا\s+تقصد\s+|المقصود\s+بذلك\s+|المقصود\s+بهذا\s+)?/gi, '');
-  // 2. Strip standalone apology at start of string or newlines
-  clean = clean.replace(/^(?:عذراً|عفواً|أعتذر|المعذرة|معذرة|سامحني)\s*[,،.:\-–\s]*/gi, '');
-  clean = clean.replace(/(?:^|\n)\s*(?:عذراً|عفواً|أعتذر|المعذرة)\s*[,،.:\-–]\s*/gi, '');
-  // 3. Strip starting question about meaning when answering conversational queries
-  clean = clean.replace(/^(?:ما\s+المقصود\s+بذلك\s*؟|عن\s+أي\s+شيء\s+تسأل\s*؟|هل\s+يمكنك\s+التوضيح\s*؟)\s*/gi, '');
-  return clean.trim();
-}
-
 // Full Platform Assistant Route with Real Gemini AI, Role Enforcement & Interactive Actions
 app.post("/api/gemini/assistant", async (req, res) => {
   try {
@@ -2347,46 +2181,16 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     // 1. Interactive Student Registration Detection with Accurate Halaqah & Name
     const hasRegisterIntent =
-      /(?:سجل|تسجيل|أضف|اضف|إضافة|اضافة|اصافة|اصف|ضيف|ضم|ألحق|الحق|ادخل|أدخل)\s*(?:لي\s+|لنا\s+|معنا\s+)?(?:الطالب|طالب|طالبا|طالباً|الطلالب|الطلاب|طالبنا|الطلبة)/i.test(message) ||
+      /(?:سجل|تسجيل|أضف|اضف|إضافة|اضافة|ضيف|ضم|ألحق|الحق|ادخل|أدخل)\s*(?:لي\s+|لنا\s+|معنا\s+)?(?:الطالب|طالب|طالبا|طالباً|الطلالب|الطلاب|طالبنا|الطلبة)/i.test(message) ||
       /(?:طالب\s+جديد|طالبا\s+جديدا|طالبنا\s+الجديد)/i.test(message) ||
       message.includes("تسجيل طالب") ||
       message.includes("إضافة طالب") ||
-      message.includes("اضافة طالب") ||
-      message.includes("اصافة طالب") ||
       message.includes("ضيف طالب") ||
       message.includes("سجل طالب") ||
       message.includes("ضيف الطالب") ||
       message.includes("أضف الطالب") ||
       message.includes("اضف الطالب") ||
       message.includes("ضيف الطلالب");
-
-    // Where to take attendance inquiry (تحضير ورصد حضور وغياب الطلاب)
-    const hasWhereToAttendIntent =
-      /(?:من\s+أين|من\s+اين|كيف|وين|مكان)\s+(?:أحضر|احضر|تحضير|تسجيل\s+حضور|رصد\s+حضور)/i.test(message) ||
-      message.includes("من اين احضر") ||
-      message.includes("من أين أحضر") ||
-      message.includes("كيف احضر الطلاب") ||
-      message.includes("وين التحضير") ||
-      message.includes("رصد التحضير");
-
-    // Best student inquiry intent
-    const hasBestStudentIntent =
-      /(?:أفضل|افضل|الأفضل|الافضل|أحسن|احسن|المتصدر|الاول|الأول)\s+(?:طالب|طالب\s+موجود|الطلاب)/i.test(message) ||
-      message.includes("افضل طالب") ||
-      message.includes("أفضل طالب") ||
-      message.includes("احسن طالب") ||
-      message.includes("أحسن طالب") ||
-      message.includes("مين افضل طالب") ||
-      message.includes("من افضل طالب");
-
-    // General problem / assistance intent
-    const hasGeneralProblemIntent =
-      normUserMessage.includes("عندي مشكله") ||
-      normUserMessage.includes("عندي مشكلة") ||
-      normUserMessage.includes("واجهت مشكله") ||
-      normUserMessage.includes("واجهت مشكلة") ||
-      normUserMessage.includes("اريد مساعدة") ||
-      normUserMessage.includes("أريد مساعدة");
 
     // Universal Halaqah Detection across the entire query (for rosters, recitations, reports, charts, registrations, etc.)
     let matchedHalaqah = findMatchingHalaqah(message, halaqahsList, studentsList);
@@ -3202,8 +3006,38 @@ app.post("/api/gemini/assistant", async (req, res) => {
       });
     }
 
-    // Guard 2: Ambiguous student query (e.g. multiple "أحمد" without full name)
-    if (studentResolution.status === "AMBIGUOUS" && studentResolution.clarificationQuestion) {
+    // Guard 2: Ambiguous student query ONLY if user explicitly asked about an individual student name
+    const isExplicitSingleStudentQueryTarget = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|بيانات\s+الطالب|تقرير\s+الطالب|درجات\s+الطالب|نقاط\s+الطالب|حفظ\s+الطالب|سجل\s+الطالب)\s+[^\s,،\.\?!]+/i.test(message);
+    const isGeneralInquiryOrChat = Boolean(
+      normUserMessage.includes("كم عدد") ||
+      normUserMessage.includes("عدد الحلقات") ||
+      normUserMessage.includes("حلقات") ||
+      normUserMessage.includes("مساجد") ||
+      normUserMessage.includes("جامع") ||
+      normUserMessage.includes("منظومة") ||
+      normUserMessage.includes("مجمع") ||
+      normUserMessage.includes("تسميع") ||
+      normUserMessage.includes("اوجه") ||
+      normUserMessage.includes("أوجه") ||
+      normUserMessage.includes("اكثر الطلاب") ||
+      normUserMessage.includes("أكثر الطلاب") ||
+      normUserMessage.includes("ركز") ||
+      normUserMessage.includes("اسمع") ||
+      normUserMessage.includes("شوف") ||
+      normUserMessage.includes("معي") ||
+      normUserMessage.includes("ولد") ||
+      normUserMessage.startsWith("لا ") ||
+      normUserMessage.startsWith("لا،") ||
+      normUserMessage.startsWith("لا,") ||
+      normUserMessage === "لا"
+    );
+
+    if (
+      studentResolution.status === "AMBIGUOUS" &&
+      studentResolution.clarificationQuestion &&
+      isExplicitSingleStudentQueryTarget &&
+      !isGeneralInquiryOrChat
+    ) {
       return res.json({
         reply: stripFaceEmojis(studentResolution.clarificationQuestion),
         action: null,
@@ -3230,16 +3064,9 @@ app.post("/api/gemini/assistant", async (req, res) => {
       hasSpecificStudentsProgressIntent ||
       isExplicitRecitationInquiry;
 
-    const isConversationalQuery = Boolean(
-      /(?:^|\s)(?:ما\s*هذا|ماهذا|ما\s*هو|ماهو|ما\s*هي|ماهي|ماذا\s+تقصد|ماذا\s+تعني|ما\s+معنى|ايش\s+هذا|وش\s+هذا|شو\s+هذا|شنو\s+هذا|من\s+هو|منهو|مين\s+هو|عن\s+ماذا\s+تتكلم|عن\s+ايش\s+تتكلم|عن\s+ماذا\s+تتحدث|اشرح|وضح|علمني|قل\s+لي|أخبرني|اخبرني|سؤال|عندي\s+سؤال|استفسار|اعطني\s+مثال|أعطني\s+مثال|مثال|امثلة|أمثلة|كيف\s+ذلك|ليش|لماذا|كيف|متى|هل)(?:\s|$|[؟?])/i.test(normUserMessage) ||
-      normUserMessage.endsWith("؟") ||
-      normUserMessage.endsWith("?")
-    );
-
     let unresolvedStudentNote = "";
     if (
       !hasSpecialIntent &&
-      !isConversationalQuery &&
       studentResolution.status === "NOT_FOUND" &&
       (studentResolution.isSingleStudentQuery || studentResolution.requestedNames.length > 0)
     ) {
@@ -3257,8 +3084,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       }
 
       // If Gemini is offline, fallback safely to standard polite response
-      const hasAnyApiKey = Boolean(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || req.headers["x-gemini-api-key"] || req.body.apiKey);
-      if (!hasAnyApiKey) {
+      if (!process.env.GEMINI_API_KEY) {
         if (closeMatch) {
           return res.json({
             reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`),
@@ -3734,13 +3560,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
       candidateStudentForAttendance = studentResolution.matchedStudents[0];
       candidateStudentForReport = studentResolution.matchedStudents[0];
-    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery && !isConversationalQuery) {
+    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery) {
       // Use findBestMatchingStudent directly to guarantee we never pick the wrong student
       const matchedStudentFromMsg = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
       if (matchedStudentFromMsg) {
         candidateStudentForAttendance = matchedStudentFromMsg;
         candidateStudentForReport = matchedStudentFromMsg;
-      } else if (hasReferenceToPreviousStudents && contextStudents.length === 1) {
+      } else if (contextStudents.length === 1 || (hasReferenceToPreviousStudents && contextStudents.length === 1)) {
         candidateStudentForAttendance = contextStudents[0];
         candidateStudentForReport = contextStudents[0];
       }
@@ -4018,13 +3844,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     let bestMonthData: any = null;
     let lastRecordedRecitationDate = "";
 
-    if (!hasMultiStudentRecitationIntent && !isConversationalQuery && (hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent)) {
+    if (!hasMultiStudentRecitationIntent && (hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent)) {
       candidateStudentForRecitation =
         studentForEvaluationInquiry ||
         candidateStudentForPoints ||
         candidateStudentForAttendance ||
         candidateStudentForReport ||
-        (hasReferenceToPreviousStudents && contextStudents.length > 0 ? contextStudents[0] : null);
+        (contextStudents.length > 0 ? contextStudents[0] : null);
 
       if (candidateStudentForRecitation) {
         const studentEvals = evaluationsList
@@ -4229,12 +4055,51 @@ ${excusedListStr}
       }).join("\n");
     }
 
-    const halaqahsSummary = (effectiveMatchedComplex && finalComplexHalaqahsCohort.length > 0
+    const activeComplexHalaqahs = (effectiveMatchedComplex && finalComplexHalaqahsCohort.length > 0
       ? finalComplexHalaqahsCohort
-      : (effectiveMatchedComplex ? [] : halaqahsList)
-    ).map((h: any) =>
-      `• ${h.name} (المعلم: ${h.teacherName || h.primaryTeacherName || "غير محدد"})`
+      : halaqahsList
+    );
+
+    const halaqahsSummary = activeComplexHalaqahs.map((h: any, idx: number) => {
+      const studentCount = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+      const cap = h.capacity || 15;
+      return `${idx + 1}. حلقة "${h.name}" (المعلم: ${h.teacherName || h.primaryTeacherName || "غير محدد"} - الطلاب: ${studentCount} / ${cap} طالب - المعرف: ${h.id})`;
+    }).join("\n");
+
+    // Top students reciting pages (الأوجه المسمعة)
+    const studentRecitationTotals = studentsList.map((s: any) => {
+      const sEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+      let totalPages = 0;
+      let newPages = 0;
+      let reviewPages = 0;
+      sEvals.forEach((e: any) => {
+        const rec = extractEvaluationRecitationData(e);
+        if (rec) {
+          totalPages += rec.totalFaces || 0;
+          newPages += rec.newFaces || 0;
+          reviewPages += rec.reviewFaces || 0;
+        }
+      });
+      return {
+        id: s.id,
+        name: s.name,
+        halaqahName: s.halaqahName || "الحلقة",
+        level: s.level || "متوسط",
+        totalPages: Number(totalPages.toFixed(1)),
+        newPages: Number(newPages.toFixed(1)),
+        reviewPages: Number(reviewPages.toFixed(1)),
+        points: s.points || s.totalPoints || 0
+      };
+    }).sort((a, b) => b.totalPages - a.totalPages);
+
+    const topRecitersSummary = studentRecitationTotals.slice(0, 10).map((s, idx) =>
+      `${idx + 1}. ${s.name} (${s.halaqahName} - ${s.level}): إجمالي ${s.totalPages} وجه (جديد: ${s.newPages} وجه، مراجعة: ${s.reviewPages} وجه)`
     ).join("\n");
+
+    const mosquesList = complexesList.flatMap((c: any) => (c.mosques || []).map((m: any) => ({ ...m, complexName: c.name })));
+    const mosquesSummary = mosquesList.length > 0
+      ? mosquesList.map((m: any, idx: number) => `${idx + 1}. جامع/مسجد "${m.name}" (المنظومة: ${m.complexName})`).join("\n")
+      : "لا توجد مساجد مسجلة كمنظومة متعددة المساجد حالياً.";
 
     const effectiveCohortForMetrics = effectiveMatchedComplex
       ? finalComplexStudentsCohort
@@ -4325,7 +4190,7 @@ ${excusedListStr}
       candidateStudentForRecitation ||
       currentActiveStudent ||
       findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
-      (hasReferenceToPreviousStudents && contextStudents.length === 1 ? contextStudents[0] : null);
+      (contextStudents.length === 1 ? contextStudents[0] : null);
 
     const hasCoachingIntent =
       isCoachingQuery ||
@@ -4392,14 +4257,29 @@ ${(isGeneralAttendanceInquiry || (targetRecitationDate && targetRecitationDateLa
 - نسبة الحضور لهذا اليوم: ${dateAttendancePct}%
 * قاعدة إلزامية: إذا سأل المستخدم عن حضور أو غياب يوم الاثنين أو أي يوم محدد، أجب بالأرقام الدقيقة لهذا اليوم حصراً (${targetRecitationDateLabel}) الموضحة أعلاه، ولا تعطه بيانات اليوم الحالي بل بيانات اليوم المطلوب بدقة!` : ''}
 
-قائمة الحلقات:
-${halaqahsSummary || "حلقة عامة"}
+قائمة الحلقات بالمنظومة (إجمالي عدد الحلقات: ${activeComplexHalaqahs.length} حلقات):
+${halaqahsSummary || "لا توجد حلقات مسجلة بعد"}
+
+ترتيب الطلاب الأكثر تسميعاً للأوجه (أعلى إنجاز تسميع):
+${topRecitersSummary || "لا توجد سجلات تسميع بعد"}
+
+المساجد والجوامع (ضمن المنظومة القرآنية):
+${mosquesSummary}
 
 عينة من طلاب المجمع مع أرصدة نقاطهم المعتمدة في لوحة الشرف:
 ${studentsSummary || "لا يوجد طلاب مسجلون بعد"}
 
 قواعدك الإلزامية في الحوار:
 1. أنت ذكاء اصطناعي حقيقي متكامل وضليع في علوم القرآن، التجويد، القراءات، وطرق التدريس النبوية والحديثة، والإدارة التربوية.
+1.1 [فلسفة التفكير وقراءة السؤال بتأنٍ وعمق - قاعدة جوهرية وأساسية]:
+    - فكّر واقرأ رسالة وسؤال المستخدم بعمق وتأنٍ تام، ولا تتسرع بالردود الآلية الجاهزة أو القوالب المكررة!
+    - السرعة ليست هي الأهم، بل الأهم هو قراءة نية وسياق ومقصد المستخدم بدقة وإعطاؤه الجواب الشافي الذكي.
+    - إذا سأل المستخدم "كم عدد الحلقات للان" أو "كم عدد الحلقات" أو "كم حلقة":
+      أجب بالعدد الدقيق فوراً وبلا تردد: هناك (${activeComplexHalaqahs.length}) حلقات مسجلة، واعرض له قائمة الحلقات وأسماء معلميها وعدد طلابها وسعتها بدقة واختصار أنيق.
+    - إذا سأل المستخدم "من اكثر الطلاب تسميعا للاوجه" أو "أكثر الطلاب تسميعاً للأوجه":
+      أجب مباشرة بالترتيب الدقيق لأعلى الطلاب تسميعاً الموضحين في قائمة الترتيب أعلاه، واذكر عدد الأوجه المسمعة لكل طالب (الجديد والمراجعة) بدقة.
+    - إذا خاطبك المستخدم بعبارات عفوية أو ودية أو تنبيهية مثل "هي ولد ركز معي" أو "ركز معي" أو "اسمع مني":
+      تقبّل ذلك بأدب وبشاشة ولباقة نبوية وأخوية قائلاً مثلاً: "أعتذر منك يا أخي ${firstName}، حقك علي وأنا معك بكامل تركيزي واهتمامي! تفضل وسأجيبك بدقة عما تريد"، وركز على مقصده مباشرة دون تكرار أي رسائل ترحيبية آلية.
 2. الذاكرة وسياق المحادثة المستمرة (قاعدة جوهرية وحاسمة):
    - أنت في محادثة مستمرة ومتصلة مع ${rawName}.
    - احفظ وتذكر سياق كل ما قيل وسُئل في المحادثة السابقة بدقة مطلقة!
@@ -4425,13 +4305,7 @@ ${studentsSummary || "لا يوجد طلاب مسجلون بعد"}
 11. [حظر الوجوه التعبيرية والابتسامات - صارم وحاسم 100%]:
     ممنوع منعاً باتاً ومطلقاً استخدام أي وجوه تعبيرية أو إيموجي وجوه وابتسامات (مثل 😀 😃 😅 🤣 😂 🙂 😉 😊 😇 😋 😎 😞 😔 😢 😭 وغيرها من إيموجي الوجوه والابتسامات). المنصة وقورة ورسمية وقرآنية. استبدلها بلغة قرآنية أدبية راقية، وتنسيق رسمي منظم بالنقاط والأسطر بدون أي وجوه تعبيرية.
 12. [المرونة والذكاء التام في التقارير والجداول والرسومات البيانية]:
-    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.
-13. [قاعدة الاستفسارات التتابعية ومتابعة الحوار بدون اعتذار - صارمة وحاسمة 100%]:
-    - إذا قال المستخدم استفساراً مقتضباً أو تتابعياً (مثل: "ما هذا؟" أو "ماهذا؟" أو "ايش هذا؟" أو "وش هذا؟" أو "ماذا يعني؟" أو "وضح لي" أو "اشرح لي" أو "كيف ذلك؟" أو سأل عن تفصيل ما ذكرته له للتو):
-      * ممنوع منعاً باتاً ومطلقاً أن تبدأ إجابتك بكلمة "عذراً" أو "عفواً" أو أي اعتذار أو حيرة أو تردد!
-      * ممنوع أن تسأله هل يقصد بيانات المجمع أم كذا!
-      * اشرح فوراً وبشكل قاطع ومفصل ومؤصل بالقرآن وأحكام التجويد ما سأل عنه أو ما ذُكر في آخر رد لك في المحادثة، بأمثلة واضحة ومباشرة وبكل ثقة.
-    - إذا انتقل المستخدم إلى موضوع جديد أو طرح سؤالاً مستقلاً (مثل أحكام التجويد أو سؤال قرآني أو إداري جديد)، أجب عن الموضوع الجديد فوراً وبشكل مباشر ومستقل، ولا تعد للموضوع السابق أو تكرر كشف الطالب السابق إلا إذا أشار المستخدم إليه صراحة (مثل: 'له'، 'عنه'، 'نفس الطالب').${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
+    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
 
 ⚠️ توجيه استثنائي وإلزامي حول استفسار الحضور والغياب للطالب "${studentTargetForStats.name}":
 - المستخدم يسأل خصيصاً ومباشرة عن نسبة وحضور وغياب هذا الطالب تحديداً لهذا الأسبوع!
@@ -4506,7 +4380,7 @@ ${coachingStudentProfile}
 
     if (Array.isArray(history)) {
       for (const h of history.slice(-20)) {
-        let textContent = (h.parts?.[0]?.text || h.text || "").trim();
+        const textContent = (h.parts?.[0]?.text || h.text || "").trim();
         if (!textContent) continue;
 
         // Skip the generic initial assistant welcome if it is the very first turn so Gemini begins from user intent
@@ -4515,11 +4389,6 @@ ${coachingStudentProfile}
         }
 
         const role: "user" | "model" = h.role === "model" || h.role === "assistant" ? "model" : "user";
-        // Compact long previous model messages only if exceedingly huge (> 3500 chars)
-        if (role === "model" && textContent.length > 3500) {
-          textContent = `${textContent.slice(0, 3000)}... [تم تدوين بقية الكشف وسياق البيانات المعتمدة سابقاً]`;
-        }
-
         const last = chatHistoryParts[chatHistoryParts.length - 1];
         if (last && last.role === role) {
           last.parts[0].text += `\n${textContent}`;
@@ -4635,54 +4504,32 @@ ${coachingStudentProfile}
 
     // 6. Call Real Gemini API with Multi-Model Fallback Cascade
     let geminiReply = "";
-    const effectiveApiKey = (
-      (req.headers["x-gemini-api-key"] as string) ||
-      (req.body.apiKey as string) ||
-      process.env.GEMINI_API_KEY ||
-      process.env.VITE_GEMINI_API_KEY ||
-      ""
-    ).trim();
-
-    if (effectiveApiKey && chatHistoryParts.length > 0) {
-      const aiClient = getAIInstance(effectiveApiKey);
-      // Fast, ultra-responsive model cascade (gemini-3.1-flash-lite < 1s, gemini-3.8-flash)
+    if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
+      // Prioritize high-availability and fast responsive models
       const candidateModels = [
-        "gemini-3.1-flash-lite",
         "gemini-3.8-flash",
+        "gemini-3.1-flash-lite",
       ];
 
-      // Execution budget: Ensure cascade completes reliably without premature timeouts
-      const cascadeStart = Date.now();
-      const MAX_CASCADE_MS = 25000;
-
       for (const modelName of candidateModels) {
-        const elapsed = Date.now() - cascadeStart;
-        const remainingBudget = MAX_CASCADE_MS - elapsed;
-        if (remainingBudget <= 2000) {
-          // If less than 2s remaining, exit cascade to allow fallback rendering
-          break;
-        }
-
-        const modelTimeout = Math.min(12000, remainingBudget);
-
         try {
           const response = await Promise.race([
-            aiClient.models.generateContent({
+            ai.models.generateContent({
               model: modelName,
               contents: chatHistoryParts,
               config: {
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), modelTimeout)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000)),
           ]);
 
           if (response?.text) {
-            geminiReply = sanitizeAssistantReply(response.text);
+            geminiReply = response.text.trim();
             break;
           }
         } catch (modelErr: any) {
-          console.warn(`[Gemini API] Model ${modelName} encountered error:`, modelErr?.status || modelErr?.message?.slice(0, 80));
+          console.warn(`Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
         }
       }
     }
@@ -4834,30 +4681,9 @@ ${coachingStudentProfile}
         } else {
           geminiReply = `أهلاً وسهلاً بك يا أخي ${firstName} في هذه السهرة التربوية الهادئة 🌙🌿\n\nتطوير الطالب ${sName} يبدأ من كسب قلبه وفهم مفاتيحه النفسية. إليك أهم ركائز الارتقاء به:\n\n• 🏆 **التحفيز القائم على المنافسة المحمودة:** إدراج اسمه في مسابقات التحدي القرآني ومنحه ألقاباً تشجيعية (مثل: سفير الإتقان، قارئ الأسبوع).\n• 📈 **التدرج المدروس:** تثبيت محفوظ الأمس قبل طلب جديد اليوم، فالتثبيت رأس المال والحفظ الجديد ربح.\n• 🤝 **الشراكة الودية مع الأسرة:** إرسال بطاقة تشجيعية عبر الواتساب لوالده تتضمن إشادة بتقدمه، مما ينعكس إيجابياً على نفسيته في البيت.\n\n💭 **أخبرني يا أخي ${firstName}:** ما هو الجانب الذي ترى أن ${sName} يحتاج دعماً أكبر فيه (الحفظ الجديد، مخارج الحروف والتجويد، أم المواظبة والانضباط)؟`;
         }
-      } else if (hasWhereToAttendIntent) {
-        geminiReply = `حيّاك الله يا أخي ${firstName} 📋✨\n\nإذا كنت تسأل عن **تحضير الطلاب ورصد حضورهم وغيابهم اليومي**، فيمكنك ذلك بكل يسر وسرعة من خلال **قسم تحضير الطلاب** المخصص للحلقة في الشريط العلوي.\n\n• ستظهر لك قائمة الطلاب الحالية، وبضغطة زر واحدة يمكنك تعيين حالة الطالب (🟢 حاضر، 🔴 غائب، 🟡 معتذر، ⏱️ متأخر).\n• كما يمكنك الانتقال المباشر للتحضير بالضغط على الزر المرفق بالأسفل.`;
-      } else if (hasBestStudentIntent) {
-        const sortedByPoints = [...studentsList].sort((a: any, b: any) => (Number(b.points ?? b.totalPoints) || 0) - (Number(a.points ?? a.totalPoints) || 0));
-        const topS = sortedByPoints[0];
-        if (topS) {
-          geminiReply = `حيّاك الله يا أخي ${firstName} 🌟\n\nأفضل وأعلى الطلاب تميزاً ونقاطاً في الصدارة حالياً هو الطالب المبارك **${topS.name}**:\n• **الحلقة:** ${topS.halaqahName || "الحلقة القرآنية"}\n• **المستوى:** ${topS.level || "متوسط"}\n• **رصيد النقاط:** **${Number(topS.points ?? topS.totalPoints) || 0} نقطة**\n• **السورة الحالية:** سورة ${topS.currentSurahName || "الفاتحة"}\n\nتفضل بمراجعة تفاصيل لوحة الشرف وأوائل الطلاب في الكشف المرفق أدناه:`;
-        } else {
-          geminiReply = `حيّاك الله يا أخي ${firstName} 🌟\n\nيتم تحديد أفضل الطلاب بناءً على التزامهم بحلقات القرآن الكريم، إتقان الحفظ والمراجعة، ورصيد النقاط في لوحة الشرف. يمكنك الاطلاع على أوائل الطلاب من خلال تبويب "لوحة الشرف".`;
-        }
-      } else if (hasGeneralProblemIntent) {
-        geminiReply = `حيّاك الله ويسّر أمرك يا أخي ${firstName} 🌿\n\nأنا معك وتحت أمرك في أي مشكلة أو استشارة تواجهها:\n• إذا كانت **مشكلة تربوية أو سلوكية** مع أحد الطلاب (مثل كثرة الحركة، التشويش، أو صعوبة وتأخر الحفظ)، اذكر لي اسم الطالب أو طبيعة الصعوبة وسأضع لك خطة علاجية نبوية فورية خطوة بخطوة.\n• وإذا كانت **مسألة تقنية أو تنظيمية** في الحلقات أو الحسابات أو رصد التسميع، تفضل بتوضيحها وسأرشدك للحل المباشر في المنظومة. تفضل بما في خاطرك!`;
-      } else if (chatHistoryParts.length > 1) {
-        // Multi-turn context fallback: Inspect previous assistant message to see what topic was being discussed
-        const prevAssistantMsg = [...chatHistoryParts].reverse().find(p => p.role === "model")?.parts?.[0]?.text || "";
-        if (normUserMessage.includes("ماهذا") || normUserMessage.includes("ما هذا") || normUserMessage.includes("اشرح") || normUserMessage.includes("وضح") || normUserMessage.includes("ما هو") || normUserMessage.includes("ايش هذا")) {
-          if (prevAssistantMsg.includes("إظهار") || prevAssistantMsg.includes("إدغام") || prevAssistantMsg.includes("إقلاب") || prevAssistantMsg.includes("إخفاء") || prevAssistantMsg.includes("تجويد")) {
-            geminiReply = `حيّاك الله يا أخي ${firstName} 📖✨\n\nبناءً على ما ذكرناه في حديثنا المبارك:\nأحكام النون الساكنة والتنوين أربعة أحكام رئيسية:\n1. **الإظهار الحلقي**: بيان النون الساكنة والتنوين عند ملاقاة حروف الحلق الستة (الهمزة، الهاء، العين، الحاء، الغين، الخاء).\n2. **الإدغام**: إدخال النون الساكنة أو التنوين في الحرف التالي (مجموع حروفه في 'يرملون')، وهو بنوعين: بغنة (ينمو) وبغير غنة (اللام والراء).\n3. **الإقلاب**: قلب النون الساكنة أو التنوين ميماً مخفاة بغنة عند حرف الباء.\n4. **الإخفاء الحقيقي**: النطق بالنون بين الإظهار والإدغام مع بقاء الغنة عند بقية الحروف الـ 15.\n\nتفضل إذا كنت ترغب في تطبيق عملي أو أمثلة من الآيات المقررة على الطلاب اليوم.`;
-          } else {
-            geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا المبارك بكل تفاصيله.\nتفضل بتحديد أي جزئية ترغب في تفصيلها أو توضيحها من حديثنا السابق وسأفصلها لك بأمثلة واضحة ومباشرة فوراً وبكل سرور!`;
-          }
-        } else {
-          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام بخصوص طلاب وحلقات ${complexName}.\nهل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
-        }
+      } else if (chatHistoryParts.length > 2) {
+        // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام. هل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
@@ -4883,8 +4709,7 @@ ${coachingStudentProfile}
         normUserMessage.includes("تعريف") ||
         normUserMessage.includes("كروت");
 
-      const missingCount = multiRecitationData.filter(m => !geminiReply.includes(m.studentName)).length;
-      if (missingCount > 0 || !geminiReply) {
+      if (!geminiReply) {
         const studentSummaries = multiRecitationData.map((item: any, idx: number) =>
           `${idx + 1}. **${item.studentName}** (${item.halaqahName} - ${item.level}):\n   • 🪪 **الهوية ومسار الحفظ:** سورة ${item.currentSurah || 'الفاتحة'}\n   • 📖 **ما سمّعه (الحفظ الجديد):** ${item.newMemorization} (${item.facesLabel})\n   • 🔄 **المراجعة والتثبيت:** ${item.reviewAchieved}\n   • 📋 **حالة الحضور:** ${item.attendanceStatus}\n   • ✍️ **توجيهات وملاحظات المعلم:** ${item.teacherNotes}\n   • ⭐ **النقاط المستحقة:** +${item.pointsEarned} نقطة`
         ).join("\n\n");
@@ -6091,7 +5916,7 @@ ${coachingStudentProfile}
       "جلسة سهرة: اسألني سؤالاً تربوياً لتطوير مهاراتي كمعلم قرآن"
     ] : undefined;
 
-    return res.json({ reply: sanitizeAssistantReply(geminiReply), action, suggestions: coachingSuggestions });
+    return res.json({ reply: stripFaceEmojis(geminiReply), action, suggestions: coachingSuggestions });
   } catch (error: any) {
     console.error("Gemini assistant error:", error);
     res.json({
@@ -6337,7 +6162,6 @@ app.get("/api/quran/all", (req, res) => {
 // Vite middleware for development & production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -6356,19 +6180,4 @@ async function startServer() {
   });
 }
 
-export { app };
-
-const isMainModule = () => {
-  try {
-    if (!process.argv || !process.argv[1]) return false;
-    const currentFile = fileURLToPath(import.meta.url);
-    const executedFile = path.resolve(process.argv[1]);
-    return currentFile === executedFile || executedFile.endsWith("/server.ts") || executedFile.endsWith("\\server.ts");
-  } catch {
-    return false;
-  }
-};
-
-if (isMainModule() && process.env.NODE_ENV !== "test") {
-  startServer();
-}
+startServer();

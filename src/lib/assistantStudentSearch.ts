@@ -605,7 +605,6 @@ const GENERIC_STUDENT_WORDS = [
   'رسم بياني', 'تشخيص بياني', 'بياني', 'مخطط', 'مخططات', 'شارت', 'شامل للمجمع', 'للمجمع', 'المجمع', 'مجمع', 'شامل',
   'مقرر الغد', 'مقرر اليوم', 'ما هو مقرر الغد', 'ما هو مقرر اليوم', 'وما هو مقرر الغد', 'وما هو مقرر اليوم', 'وما هو مقرر', 'ما هو مقرر', 'مقرر', 'الورد', 'غدا', 'غداً', 'الغد', 'اليوم', 'أمس', 'امس',
   'طيب', 'حسنا', 'تمام', 'اوكي', 'شكرا', 'عفوا', 'السلام عليكم', 'وعليكم السلام', 'مرحبا', 'هلا', 'أهلاً', 'اهلاً',
-  'عندي مشكلة', 'عندي مشكله', 'مشكلة', 'مشكله', 'مشاكل', 'واجهت مشكلة', 'واجهت مشكله', 'اريد استشارة', 'أريد استشارة', 'استشارة', 'استشاره', 'استفسار', 'سؤال', 'مساعدة', 'مساعده', 'صعوبة', 'صعوبات',
   'ماذا سمعوا', 'ماذا سمعو', 'وش سمعوا', 'وش سمعو', 'ايش سمعوا', 'ايش سمعو', 'شو سمعوا', 'شو سمعو',
   'ماذا سمع الطلاب', 'تسميع الطلاب', 'حفظ الطلاب', 'حضور الطلاب', 'غياب الطلاب', 'كشف الطلاب', 'جدول الطلاب',
   'كم وجه', 'اوجه', 'أوجه', 'تسميع', 'تسميعات', 'حفظ', 'مراجعة',
@@ -626,12 +625,15 @@ const GENERIC_STUDENT_WORDS = [
   'حفظهم', 'مراجعتهم', 'تسميعهم', 'سورهم', 'درجاتهم', 'نقاطهم', 'غيابهم', 'حضورهم', 'اوجههم', 'أوجههم',
   'مستواهم', 'مستوياتهم',
   'جديد', 'الجديد', 'مراجعة', 'المراجعة', 'تسميع', 'التسميع', 'حفظ', 'الحفظ', 'سورة', 'سور', 'المقرر',
-  // Conversational interrogatives, pronouns & non-student queries
-  'ما هذا', 'ماهذا', 'ما هذا؟', 'ماهو', 'ما هو', 'ما هي', 'ماهي', 'ماذا', 'لماذا', 'ايش هذا', 'وش هذا', 'كيف', 'متى', 'اين', 'أين', 'من اين', 'من أين', 'هل', 'كم',
-  'انا', 'أنا', 'نحن', 'انت', 'أنت', 'هو', 'هي', 'هم', 'هن', 'هذا', 'هذه', 'ذلك', 'تلك', 'هؤلاء', 'هنا', 'هناك',
-  'أنا', 'انا', 'نحن', 'انت', 'أنت', 'هو', 'هي', 'هم', 'هن', 'هذا', 'هذه', 'ذلك', 'تلك', 'هؤلاء', 'هنا', 'هناك',
-  'اشرح لي', 'شرح', 'وضح لي', 'توضيح', 'ما معناه', 'ما معناه؟', 'ما معنى', 'ما المعنى', 'ماذا يعني', 'ماذا تعني', 'ايش يعني', 'وش يعني',
-  'سؤال', 'استفسار', 'عندي سؤال', 'اريد ان اسالك', 'أريد أن أسألك', 'اعطني مثال', 'أعطني مثالاً', 'مثال', 'امثلة', 'أمثلة'
+  // Common Arabic Stopwords, Negations, and Interrogatives (must NEVER be matched as student names)
+  'لا', 'كلا', 'ما', 'لم', 'لن', 'ليس', 'ليست', 'غير', 'إلا', 'الا',
+  'كم', 'من', 'اين', 'أين', 'متى', 'كيف', 'ايش', 'وش', 'شو', 'مين', 'اي', 'أي', 'هل',
+  'هي', 'هو', 'هم', 'هن', 'انت', 'أنت', 'انتم', 'أنتم', 'نحن', 'انا', 'أنا',
+  'ولد', 'بنت', 'ياولد', 'يا ولد', 'ركز', 'ركز معي', 'معي', 'معنا', 'اسمع', 'شوف', 'اقولك', 'بقولك', 'اقول لك', 'بقول لك',
+  'للان', 'للآن', 'الان', 'الآن', 'هنا', 'هناك', 'كذا', 'يعني', 'بس', 'عشان', 'ليش', 'علشان', 'برضه', 'برضو', 'كمان',
+  'كم عدد الحلقات', 'عدد الحلقات', 'كم حلقة', 'كم حلقه', 'الحلقات', 'حلقات', 'حلقة', 'حلقه', 'الحلقة', 'الحلقه',
+  'المساجد', 'مساجد', 'مسجد', 'جامع', 'جوامع', 'المجمع', 'مجمع', 'المنظومة', 'منظومة', 'المنظومه', 'منظومه',
+  'اكثر الطلاب تسميعا', 'أكثر الطلاب تسميعاً', 'من اكثر الطلاب', 'من أكثر الطلاب', 'تسميعا للاوجه', 'تسميعاً للأوجه', 'تسميع الاوجه', 'تسميع الأوجه'
 ];
 const GENERIC_STUDENT_TERMS = new Set(
   GENERIC_STUDENT_WORDS.flatMap(w => [w, normalizeArabicText(w)])
@@ -687,9 +689,6 @@ const NON_STUDENT_INTENT_PATTERNS = [
   /كشف\s+الغياب/i,
   /سجل\s+الحضور/i,
   /سجل\s+الغياب/i,
-  /(?:عندي\s+مشكل|عندي\s+مشكله|عندي\s+مشكلة|واجهت\s+مشكل|واجهت\s+مشكلة|مشكلة|مشكله)/i,
-  /(?:استشارة|استشاره|جلسة\s+سهرة|استفسار|سؤال|مساعدة|مساعده)/i,
-  /(?:كيف\s+اتعامل|كيف\s+أتعامل|كيف\s+احل|كيف\s+أحل)/i,
 ];
 
 /**
@@ -786,9 +785,6 @@ export function extractCandidateNamesFromMessage(
     cleaned = cleaned
       .replace(/^[و]\s*/, '')
       .replace(/^(?:طيب|حسنا|تمام|اوكي|شكرا|عفوا|مرحبا|أهلا|اهلا|السلام\s+عليكم|وعليكم\s+السلام|هلا|يا\s+اخي|يا\s+أخي)\s+/gi, '')
-      .replace(/^(?:انا|أنا)\s+(?:الشيخ|المعلم|الأستاذ|الاستاذ|المشرف|المربي|القارئ)\s+[^\s,،\.\?!]+\s*/gi, '')
-      .replace(/^(?:انا|أنا)\s+(?:الشيخ|المعلم|الأستاذ|الاستاذ|المشرف|المربي|القارئ)\s*/gi, '')
-      .replace(/^(?:انا|أنا)\s+/gi, '')
       .replace(/^(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|ممكن|لو\s+سمحت|من\s+فضلك|بالله|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?/gi, '')
       .replace(/^(?:عدد\s+محدد|عدد\s+معين|عدد\s+مخصص|عدد)\s+/gi, '')
       .replace(/^(?:بيانات|معلومات|تفاصيل|درجات|نقاط|حفظ|تسميع|حضور|غياب|مستوى|تقييم|بطاقة|بطاقات|شهادة|شهادات)(?:\s*(?:عن|لـ|ل)?\s*|\s+|$)/gi, '')
@@ -826,27 +822,21 @@ export function extractCandidateNamesFromMessage(
     const isComplexToken = /^(?:مجمع|المجمع)/i.test(normC) || normC.includes('مجمع');
     const isHalaqahToken = /^(?:حلقة|حلقه|الحلقة|الحلقه|مجموعة|مجموعه)/i.test(normC);
     const isSuperlativeToken = /^(?:الاعلى|الأعلى|الاقل|الأقل|الاكثر|الأكثر|متفوقين|المتفوقين|المتميزين|متميزين|المتعثرين|متعثرين|الاوائل|الأوائل|متصدرين|المتصدرين|نقاطا|نقاطاً|غيابا|غياباً|حضورا|حضوراً|أفضل|افضل|أحسن|احسن)/i.test(normC);
-    const isProblemOrConsultationToken = /(?:عندي\s+مشكل|عندي\s+مشكله|عندي\s+مشكلة|واجهت\s+مشكل|واجهت\s+مشكلة|مشكلة|مشكله|مشاكل|صعوبة|صعوبات|استشارة|استشاره|مساعدة|مساعده|سؤال|استفسار|كيف\s+اتعامل|كيف\s+أتعامل)/i.test(normC);
-    const isInterrogativeOrPronounToken =
-      /^(?:ما|ماذا|ماهو|ما هو|ماهي|ما هي|ماهذا|ما هذا|ايش|وش|شو|شنو|كيف|متى|اين|أين|من اين|من أين|لماذا|هل|كم|انا|أنا|نحن|انت|أنت|هو|هي|هم|هن|هذا|هذه|ذلك|تلك|هؤلاء|هنا|هناك|اشرح|شرح|وضح|توضيح|سؤال|استفسار)$/i.test(normC) ||
-      /^(?:ماذا\s+|ما\s+|كيف\s+|لماذا\s+|اشرح\s+|وضح\s+|هل\s+|ايش\s+|وش\s+)/i.test(normC);
 
     if (
       c &&
-      c.length >= 2 &&
+      c.length >= 3 &&
       !isContextFilter &&
       !isTeacherToken &&
       !isComplexToken &&
       !isHalaqahToken &&
       !isSuperlativeToken &&
-      !isProblemOrConsultationToken &&
-      !isInterrogativeOrPronounToken &&
       !isQueryRequestingAllStudents(c) &&
       !GENERIC_STUDENT_TERMS.has(c) &&
       !GENERIC_STUDENT_TERMS.has(normC) &&
       !candidateNames.includes(c)
     ) {
-      // If a student pool is provided, ONLY keep candidate token if it actually matches or partly matches at least one student in the system!
+      // If a student pool is provided, ONLY keep candidate token if it actually matches at least one student in the system!
       if (Array.isArray(studentsPool) && studentsPool.length > 0) {
         const matchesAnyStudent = studentsPool.some(s => doesStudentMatchNameToken(s, c));
         if (!matchesAnyStudent) {
@@ -948,25 +938,34 @@ export function doesStudentMatchNameToken(student: any, token: string): boolean 
   const normToken = normalizeArabicText(token);
   if (!normS || !normToken) return false;
 
+  // Reject stopwords and common particles
+  if (GENERIC_STUDENT_TERMS.has(token) || GENERIC_STUDENT_TERMS.has(normToken)) {
+    return false;
+  }
+  if (normToken.length < 3) {
+    return false;
+  }
+
   // 1. Exact match
   if (normS === normToken) return true;
 
-  // 2. Full student name starts with token
-  if (normS.startsWith(normToken + ' ') || normS.includes(normToken)) return true;
+  // 2. Full student name starts with token followed by space
+  if (normS.startsWith(normToken + ' ')) return true;
 
   const sParts = normS.split(/\s+/).filter(Boolean);
   const tokenParts = normToken.split(/\s+/).filter(Boolean);
 
   if (tokenParts.length === 1) {
     const target = tokenParts[0];
-    // Match first name or any distinctive name part
+    if (target.length < 3) return false;
+    // Match first name or any distinctive name part as complete word
     if (sParts[0] === target) return true;
     // Compound first name handling (e.g. "عبد الرحمن", "عبد الله")
     if (['عبد', 'ابو', 'ابن'].includes(sParts[0]) && sParts[1] && `${sParts[0]} ${sParts[1]}` === target) {
       return true;
     }
     // Match unique distinctive word
-    if (target.length >= 3 && sParts.some(w => w === target)) {
+    if (sParts.some(w => w === target)) {
       return true;
     }
   } else if (tokenParts.length >= 2) {

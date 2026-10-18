@@ -31,9 +31,7 @@ import {
   Trophy,
   Flame,
   TrendingUp,
-  Zap,
-  UserCheck,
-  AlertTriangle
+  Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -54,23 +52,13 @@ import {
   getSurahInfo,
   formatQuranPortion
 } from '../../data/quranData';
-import { KingFahdQuranModal, QuranHighlightItem, toArabicNumerals } from '../quran/KingFahdQuranModal';
+import { KingFahdQuranModal, QuranHighlightItem } from '../quran/KingFahdQuranModal';
 import {
   getPageOfAyah,
   calculateStudentCompletedPages,
   calculateRecitationFractionalFaces
 } from '../../data/quranPagesData';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
-
-const triggerCelebrationConfetti = () => {
-  try {
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
-  } catch {}
-};
 
 interface EvaluationTabProps {
   students: Student[];
@@ -97,15 +85,14 @@ interface EvaluationTabProps {
   ) => Promise<void>;
   onNavigateToWhatsApp?: (studentId: string) => void;
   onNavigateToBehavior?: (studentId: string) => void;
-  onUpdateStudent?: (student: Student) => Promise<void> | void;
   settings?: AppSettings;
 }
 
 export const EvaluationTab: React.FC<EvaluationTabProps> = ({
-  students = [],
-  attendance = [],
-  evaluations = [],
-  criteria = [],
+  students,
+  attendance,
+  evaluations,
+  criteria,
   isSupervisor = false,
   activeComplexId,
   activeComplex,
@@ -116,7 +103,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   onUpdateStudentAIPlan,
   onNavigateToWhatsApp,
   onNavigateToBehavior,
-  onUpdateStudent,
   settings
 }) => {
   const currentTheme = activeComplex?.theme || settings?.theme;
@@ -225,23 +211,23 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   // Configured Points for Pages & Listening (from criteria or default)
   const pointsPerNewPage = useMemo(() => {
-    const found = (criteria || []).find(c => c && c.id === 'crit-points-new-page');
+    const found = criteria.find(c => c.id === 'crit-points-new-page');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
   }, [criteria]);
 
   const pointsPerReviewPage = useMemo(() => {
-    const found = (criteria || []).find(c => c && c.id === 'crit-points-review-page');
+    const found = criteria.find(c => c.id === 'crit-points-review-page');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 1;
   }, [criteria]);
 
   const pointsPerListening = useMemo(() => {
-    const found = (criteria || []).find(c => c && c.id === 'crit-points-listening');
+    const found = criteria.find(c => c.id === 'crit-points-listening');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
   }, [criteria]);
 
   // General evaluation criteria (excluding internal page point definitions)
   const displayCriteria = useMemo(() => {
-    return (criteria || []).filter(c => c && c.id && !c.id.startsWith('crit-points-'));
+    return criteria.filter(c => !c.id.startsWith('crit-points-'));
   }, [criteria]);
 
   // Live calculation of criteria points earned today
@@ -288,8 +274,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   }, [todayReviews]);
 
   // Attendance status of active student on the selected date
-  const selectedDateAtt = (attendance || []).find(
-    a => a && a.date === selectedDate && a.studentId === activeStudentId
+  const selectedDateAtt = attendance.find(
+    a => a.date === selectedDate && a.studentId === activeStudentId
   );
   const isAbsent = selectedDateAtt?.status === 'غائب';
   const isExcused = selectedDateAtt?.status === 'معتذر';
@@ -353,6 +339,30 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const [mushafInitialSurah, setMushafInitialSurah] = useState<number>(78);
   const [mushafInitialAyah, setMushafInitialAyah] = useState<number>(1);
   const [mushafActiveItemId, setMushafActiveItemId] = useState<string>('new_today');
+  const [mushafAyahErrors, setMushafAyahErrors] = useState<Record<string, number>>({});
+
+  const handleRecordAyahError = (surah: number, ayah: number, errorCount: number) => {
+    const key = `${surah}:${ayah}`;
+    setMushafAyahErrors(prev => {
+      if (errorCount <= 0) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: errorCount };
+    });
+
+    const sInfo = getSurahInfo(surah);
+    const surahName = sInfo?.name || `سورة ${surah}`;
+    const errorNote = `[رصد خطأ تسميع بالضغط المطول]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
+
+    setTeacherNotes(prev => {
+      if (!prev.includes(errorNote)) {
+        return prev ? `${prev}\n• ${errorNote}` : `• ${errorNote}`;
+      }
+      return prev;
+    });
+  };
 
   const openMushafReader = (surah: number, ayah: number, itemId?: string) => {
     setMushafInitialSurah(surah);
@@ -437,11 +447,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   ]);
 
   // All evaluations for the currently active student (sorted latest first)
-  const studentEvaluationsHistory = useMemo(() => {
-    return (evaluations || [])
-      .filter(e => e && e.studentId === activeStudentId)
-      .sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
-  }, [evaluations, activeStudentId]);
+  const studentEvaluationsHistory = evaluations
+    .filter(e => e.studentId === activeStudentId)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   // Initialize or load student evaluation when active student or selected date changes
   useEffect(() => {
@@ -449,8 +457,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     setAutoFilledNotice('');
 
     // 1. Check if an evaluation already exists for the selectedDate
-    const existing = (evaluations || []).find(
-      e => e && e.date === selectedDate && e.studentId === activeStudent.id
+    const existing = evaluations.find(
+      e => e.date === selectedDate && e.studentId === activeStudent.id
     );
 
     if (existing) {
@@ -526,13 +534,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       // Check for the LAST ACTUAL recitation record before selectedDate,
       // intentionally bypassing empty days, unexpected trips, or sudden holidays!
-      const actualPastEvals = (evaluations || [])
-        .filter(e => e && e.studentId === activeStudent.id && e.date && e.date < selectedDate && (
+      const actualPastEvals = evaluations
+        .filter(e => e.studentId === activeStudent.id && e.date < selectedDate && (
           e.recitationDetails?.tomorrowNewItem ||
           e.recitationDetails?.todayNewItem ||
           e.recitationDetails?.newMemorizationAchieved
         ))
-        .sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
+        .sort((a, b) => b.date.localeCompare(a.date));
 
       const latestActualRecord = actualPastEvals[0];
 
@@ -561,7 +569,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         const prevReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
           latestActualRecord.recitationDetails?.todayReviewItems ||
           activeStudent.persistentReviewItems;
-        if (Array.isArray(prevReviews) && prevReviews.length > 0) {
+        if (prevReviews && prevReviews.length > 0) {
           setTodayReviews(prevReviews.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}`, didNotRecite: false, didNotReciteReason: undefined })));
           setTomReviews(prevReviews.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
         }
@@ -591,12 +599,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setAutoFilledNotice(`تم ضبط المقرر تلقائياً بناءً على آخر تسجيل تسميع للطالب بتاريخ (${latestActualRecord.date}): ${loadedPortionText}`);
 
         // Load review items: if tomorrowReviewItems existed in last record, or student's persistentReviewItems
-        const rawLoadedReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
+        const loadedReviews = latestActualRecord.recitationDetails?.tomorrowReviewItems ||
           (latestActualRecord.recitationDetails?.tomorrowReviewItem ? [latestActualRecord.recitationDetails.tomorrowReviewItem] : null) ||
           activeStudent.persistentReviewItems;
-        const loadedReviews = Array.isArray(rawLoadedReviews) ? rawLoadedReviews : [];
 
-        if (loadedReviews.length > 0) {
+        if (loadedReviews && loadedReviews.length > 0) {
           setTodayReviews(loadedReviews.map((r, idx) => ({
             ...r,
             id: `rev_auto_${Date.now()}_${idx}`,
@@ -742,7 +749,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setTodayNewToAyah(endAyah);
 
         // Default review (check persistent items first)
-        if (Array.isArray(activeStudent.persistentReviewItems) && activeStudent.persistentReviewItems.length > 0) {
+        if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
           setTodayReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}` })));
           setTomReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
         } else {
@@ -925,44 +932,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       isFullSurah: true
     };
     setTomReviews(prev => [...prev, newItem]);
-  };
-
-  // Automatically insert active errored ayahs from King Fahd Mushaf into tomorrow's review list
-  const handleInsertErroredAyahsIntoTomorrowReviews = () => {
-    if (!activeStudent?.mushafErrors || !Array.isArray(activeStudent.mushafErrors) || activeStudent.mushafErrors.length === 0) return;
-    const activeErrors = activeStudent.mushafErrors.filter(e => e && !e.cleared && (e.errorCount || 0) > 0);
-    if (activeErrors.length === 0) return;
-
-    const grouped: Record<number, number[]> = {};
-    activeErrors.forEach(err => {
-      if (!grouped[err.surahNumber]) grouped[err.surahNumber] = [];
-      grouped[err.surahNumber].push(err.ayahNumber);
-    });
-
-    const newTomReviews = [...tomReviews];
-    Object.entries(grouped).forEach(([sNumStr, ayahs]) => {
-      const sNum = Number(sNumStr);
-      const sInfo = getSurahInfo(sNum);
-      const minA = Math.min(...ayahs);
-      const maxA = Math.max(...ayahs);
-      const alreadyExists = newTomReviews.some(r => r.surahNumber === sNum && r.fromAyah <= minA && r.toAyah >= maxA);
-      if (!alreadyExists) {
-        newTomReviews.push({
-          id: `err_rev_${Date.now()}_${sNum}`,
-          type: 'مراجعة وتثبيت الأخطاء',
-          surahNumber: sNum,
-          surahName: sInfo.name,
-          fromAyah: minA,
-          toSurahNumber: sNum,
-          toSurahName: sInfo.name,
-          toAyah: maxA,
-          isFullSurah: minA === 1 && maxA >= sInfo.numberOfAyahs
-        });
-      }
-    });
-
-    setTomReviews(newTomReviews);
-    setAutoFilledNotice(`تم إدراج مواضع أخطاء مصحف الطالب (${activeErrors.length} آية) في مقرر مراجعة الغد للتكرار والتثبيت.`);
   };
 
   // Update Review Item for Tomorrow
@@ -1433,35 +1402,28 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           <button
             type="button"
             onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
-            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-lg active:translate-y-[2px] active:border-b-2 hover:brightness-110 select-none"
+            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
             style={{
-              backgroundColor: themeAccent,
-              borderColor: lightenHex(themeAccent, 0.18),
-              borderBottomColor: themeAccentShadow,
-              color: accentTextColor
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: 'var(--complex-accent, #ffc800)',
+              borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+              color: 'var(--complex-accent, #ffc800)'
             }}
-            title="فتح مصحف مجمع الملك فهد كاملاً للقراءة والمتابعة والتسميع"
+            title="فتح مصحف مجمع الملك فهد كاملاً"
           >
-            <BookOpen className="w-4 h-4 stroke-[2.2]" style={{ color: accentTextColor }} />
-            <span>القراءة والمتابعة من المصحف (طبعة مجمع الملك فهد)</span>
+            <BookOpen className="w-4 h-4" style={{ color: 'var(--complex-accent, #ffc800)' }} />
+            <span>المصحف الشريف (طبعة الملك فهد)</span>
           </button>
 
           <button
             onClick={() => setShowHistoryDrawer(!showHistoryDrawer)}
-            className="px-3.5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
-            style={showHistoryDrawer ? {
-              backgroundColor: themeAccent,
-              color: accentTextColor,
-              borderColor: lightenHex(themeAccent, 0.18),
-              borderBottomColor: themeAccentShadow
-            } : {
-              backgroundColor: themeCardBg,
-              borderColor: themeBorder,
-              borderBottomColor: themeBorderBottom,
-              color: '#ffffff'
-            }}
+            className={`px-3.5 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+              showHistoryDrawer
+                ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] font-black shadow-md'
+                : 'bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
+            }`}
           >
-            <History className="w-4 h-4" style={{ color: showHistoryDrawer ? accentTextColor : themeAccent }} />
+            <History className="w-4 h-4 text-[#fbbf24]" />
             <span>أرشيف الأيام السابقة للطالب ({studentEvaluationsHistory.length})</span>
           </button>
 
@@ -1469,16 +1431,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           {isSupervisor && (
             <button
               onClick={() => setIsManageCriteriaListOpen(true)}
-              className="px-3.5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
-              style={{
-                backgroundColor: themeCardBg,
-                borderColor: themeBorder,
-                borderBottomColor: themeBorderBottom,
-                color: '#ffffff'
-              }}
+              className="px-3.5 py-2 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24]/60 text-[#f0f9f6] text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md"
               title="إدارة معايير التقييم للمجمع (خاص بالمشرفين)"
             >
-              <Sliders className="w-4 h-4" style={{ color: themeAccent }} />
+              <Sliders className="w-4 h-4 text-[#fbbf24]" />
               <span>معايير التقييم ({criteria.length})</span>
             </button>
           )}
@@ -1486,20 +1442,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       </div>
 
       {/* DATE SELECTOR & NAVIGATION BAR */}
-      <div
-        className="rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-2 border-b-4"
-        style={{
-          backgroundColor: themeSecondary,
-          borderColor: themeBorder,
-          borderBottomColor: themeBorderBottom
-        }}
-      >
+      <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
-            <Calendar className="w-4 h-4" style={{ color: themeAccent }} />
+          <span className="text-xs font-bold text-[#86efac] flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-[#fbbf24]" />
             <span>تاريخ التسميع المعروض:</span>
           </span>
-
 
           <div className="flex items-center gap-1.5 bg-[#064e3b]/80 p-1 rounded-xl border border-[#065f46]">
             <button
@@ -1579,7 +1527,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-[#fbbf24] shrink-0" />
             <span>
-              أنت الآن تستعرض سجل تسميع يوم <span className="text-white underline font-black">{selectedDate}</span> {(evaluations || []).some(e => e && e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
+              أنت الآن تستعرض سجل تسميع يوم <span className="text-white underline font-black">{selectedDate}</span> {evaluations.some(e => e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
             </span>
           </div>
           <button
@@ -1705,13 +1653,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             ) : (
               students.map(student => {
                 const isSelected = student.id === activeStudentId;
-                const studentAtt = (attendance || []).find(
-                  a => a && a.date === selectedDate && a.studentId === student.id
+                const studentAtt = attendance.find(
+                  a => a.date === selectedDate && a.studentId === student.id
                 );
                 const isStudentAbsent = studentAtt?.status === 'غائب';
                 const isStudentExcused = studentAtt?.status === 'معتذر';
-                const hasEvaluatedOnSelectedDate = (evaluations || []).some(
-                  e => e && e.date === selectedDate && e.studentId === student.id
+                const hasEvaluatedOnSelectedDate = evaluations.some(
+                  e => e.date === selectedDate && e.studentId === student.id
                 );
 
                 return (
@@ -1751,13 +1699,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           borderColor: themeBorder,
                           color: themeAccent
                         }}
-                        title={student.name}
                       >
-                        <UserCheck className="w-4 h-4 stroke-[2.2]" />
+                        {student.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-black text-xs sm:text-sm line-clamp-2 leading-tight" title={student.name}>{student.name}</div>
-
+                        <div className="font-bold text-xs line-clamp-1">{student.name}</div>
                         <div
                           className="text-[10px] mt-0.5"
                           style={{ color: isSelected ? themePrimary : `${themeAccent}dd` }}
@@ -1851,23 +1797,21 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-lg shadow-lg duo-avatar shrink-0 select-none"
+                    className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-lg shadow-lg duo-avatar shrink-0"
                     style={{
                       backgroundColor: themePrimary,
                       borderColor: themeAccent,
                       borderBottomColor: themeAccentShadow,
                       color: themeAccent
                     }}
-                    title={activeStudent.name}
                   >
-                    <UserCheck className="w-6 h-6 stroke-[2.2]" />
+                    {activeStudent.name.charAt(0)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base sm:text-lg font-black text-white font-heading">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white font-heading">
                         {activeStudent.name}
                       </h3>
-
                       <span
                         className="text-xs px-2.5 py-0.5 rounded-full font-black border"
                         style={{
@@ -1913,184 +1857,30 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 const isHalfway = percent >= 50 && percent < 75;
                 const pagesInfo = calculateStudentCompletedPages(activeStudent, evaluations);
 
-                const totalQuranPages = 604;
-                const completedPagesTotal = pagesInfo.totalPagesCount || Math.min(totalQuranPages, Math.max(1, Math.round((activeStudent.currentSurah || 1) * 5.2)));
-                const remainingKhatmahPages = Math.max(0, totalQuranPages - completedPagesTotal);
-                const khatmahProgressPct = Math.min(100, Math.round((completedPagesTotal / totalQuranPages) * 100));
-                const dailyPace = activeStudent.memorizationPlan?.dailyNewPages || 1;
-                const estimatedDaysToFinish = Math.ceil(remainingKhatmahPages / Math.max(0.5, dailyPace));
-                const estimatedMonthsToFinish = Math.max(1, Math.round(estimatedDaysToFinish / 30));
-                const studentActiveMistakes = (activeStudent.mushafErrors || []).filter(e => !e.cleared && e.errorCount > 0);
-                const totalMistakesCount = studentActiveMistakes.reduce((sum, e) => sum + (e.errorCount || 1), 0);
+                const triggerCelebrationConfetti = () => {
+                  try {
+                    confetti({
+                      particleCount: 80,
+                      spread: 70,
+                      origin: { y: 0.6 }
+                    });
+                  } catch (e) {}
+                };
 
                 return (
-                  <div className="space-y-4">
-                    {/* ============================================================ */}
-                    {/* 1. KHATMAH & SOLIDIFICATION PLAN PROGRESS BAR (شريط الخطة والختمة) */}
-                    {/* ============================================================ */}
-                    <motion.div
-                      key={`khatmah-plan-${activeStudent.id}-${completedPagesTotal}`}
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                      className="p-4 sm:p-5 rounded-3xl border-2 border-b-4 shadow-xl backdrop-blur-md relative overflow-hidden transition-all"
-                      style={{
-                        backgroundColor: `${themeCardBg}f2`,
-                        borderColor: lightenHex(themeCardBg, 0.22),
-                        borderBottomColor: themeBorderBottom
-                      }}
-                    >
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3 relative z-10">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-11 h-11 rounded-2xl flex items-center justify-center text-lg font-black shrink-0 border-2 shadow-md"
-                            style={{
-                              backgroundColor: `${themeAccent}25`,
-                              borderColor: themeAccent,
-                              color: themeAccent
-                            }}
-                          >
-                            <Trophy className="w-6 h-6 animate-pulse" style={{ color: themeAccent }} />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-black text-white font-heading">
-                                شريط خطة الختمة والتثبيت المعتمدة للطالب:
-                              </span>
-                              <span className="text-xs font-black px-2.5 py-0.5 rounded-full" style={{ backgroundColor: `${themeAccent}30`, color: themeAccent }}>
-                                {activeStudent.name}
-                              </span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">
-                                خطة ديناميكية متأقلمة
-                              </span>
-                            </div>
-
-                            <div className="text-xs font-bold text-slate-200 mt-1 flex items-center gap-2 flex-wrap">
-                              <span>
-                                أنجز <strong className="text-white font-mono text-sm">{toArabicNumerals(completedPagesTotal)}</strong> من أصل <strong className="font-mono text-slate-300">{toArabicNumerals(604)}</strong> وجهاً
-                              </span>
-                              <span>•</span>
-                              <span className="text-amber-300">
-                                متبقٍ <strong className="font-mono">{toArabicNumerals(remainingKhatmahPages)}</strong> وجهاً للختمة
-                              </span>
-                              <span>•</span>
-                              <span className="text-emerald-300">
-                                ختمة متوقعة بعد: <strong className="font-mono">{toArabicNumerals(estimatedMonthsToFinish)}</strong> {estimatedMonthsToFinish === 1 ? 'شهر' : estimatedMonthsToFinish === 2 ? 'شهرين' : 'أشهر'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Percentage and Open Mushaf */}
-                        <div className="flex items-center gap-3 self-end md:self-center flex-wrap">
-                          <div className="text-left">
-                            <div className="text-2xl font-black font-mono tracking-tight flex items-center gap-1.5 justify-end" style={{ color: themeAccent }}>
-                              <span>{khatmahProgressPct}%</span>
-                              <TrendingUp className="w-4 h-4 text-emerald-400" />
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-bold text-left">
-                              مسار إتمام القرآن
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
-                            className="px-3.5 py-2 rounded-xl text-xs font-black border-2 border-b-4 flex items-center gap-1.5 cursor-pointer shadow-md active:translate-y-0.5 transition-all"
-                            style={{
-                              backgroundColor: themeAccent,
-                              borderColor: lightenHex(themeAccent, 0.18),
-                              borderBottomColor: themeAccentShadow,
-                              color: accentTextColor
-                            }}
-                          >
-                            <BookOpen className="w-4 h-4" style={{ color: accentTextColor }} />
-                            <span>مصحف الطالب</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Khatmah Progress Track */}
-                      <div className="space-y-1.5 relative z-10">
-                        <div
-                          className="h-4 sm:h-5 w-full rounded-full p-0.5 relative overflow-hidden shadow-inner border-2 border-b-2"
-                          style={{
-                            backgroundColor: themePrimary,
-                            borderColor: themeBorder
-                          }}
-                        >
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${khatmahProgressPct}%` }}
-                            transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
-                            className="h-full rounded-full relative overflow-hidden transition-all shadow-md"
-                            style={{
-                              width: `${khatmahProgressPct}%`,
-                              backgroundColor: khatmahProgressPct >= 100 ? '#58cc02' : themeAccent,
-                              boxShadow: `0 0 14px ${khatmahProgressPct >= 100 ? '#58cc02' : themeAccent}`
-                            }}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 animate-[pulse_2s_infinite]" />
-                          </motion.div>
-                        </div>
-
-                        {/* Quran Milestones */}
-                        <div className="flex items-center justify-between text-[10px] sm:text-[11px] px-1 font-bold text-slate-400">
-                          <span>البداية (وجه ١)</span>
-                          <span className="hidden sm:inline">ربع القرآن (وجه ١٥١)</span>
-                          <span className="hidden sm:inline">نصف القرآن (وجه ٣٠٢)</span>
-                          <span className="hidden sm:inline">ثلاثة أرباع (وجه ٤٥٣)</span>
-                          <span className="font-black text-amber-300">الختم التام (وجه ٦٠٤)</span>
-                        </div>
-                      </div>
-
-                      {/* Active Mistakes Alert & Action Strip */}
-                      <div className="mt-3 pt-3 border-t border-[#065f46]/50 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                        {studentActiveMistakes.length > 0 ? (
-                          <div className="flex items-center gap-2 text-rose-300 font-bold flex-wrap">
-                            <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40">
-                              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                              <span>مرصود ({toArabicNumerals(totalMistakesCount)}) خطأ في مصحف الطالب تحتاج تثبيتاً في خطة الغد</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleInsertErroredAyahsIntoTomorrowReviews}
-                              className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>+ إدراج مواضع الأخطاء في مراجعة الغد للتكرار والتثبيت</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-emerald-300 font-medium">
-                            <Sparkles className="w-4 h-4 text-amber-400" />
-                            <span>الطالب يسير بانتظام تام نحو الختمة؛ وتتكيف الخطة دورياً لضمان رسوخ الحفظ وتثبيته.</span>
-                          </div>
-                        )}
-
-                        <div className="text-[11px] text-slate-400">
-                          معدل الحفظ: <strong className="text-white font-mono">{dailyPace}</strong> وجه جديد يومياً
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    {/* ============================================================ */}
-                    {/* 2. SURAH PROGRESS BAR (شريط إتمام السورة الحالية) */}
-                    {/* ============================================================ */}
-                    <motion.div
-                      key={`surah-prog-${activeStudent.id}-${sNumber}-${currentAyah}`}
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                      className={`p-4 sm:p-5 rounded-3xl border transition-all shadow-lg backdrop-blur-md relative overflow-hidden ${
-                        isCompleted
-                          ? 'bg-gradient-to-r from-emerald-950/70 via-[#064e3b] to-emerald-900/60 border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
-                          : isNearing
-                          ? 'bg-gradient-to-r from-[#022c22] via-[#064e3b]/80 to-[#022c22] border-amber-400/40 shadow-[0_0_15px_rgba(251,191,36,0.1)]'
-                          : 'bg-[#022c22]/90 border-[#065f46]'
-                      }`}
-                    >
+                  <motion.div
+                    key={`surah-prog-${activeStudent.id}-${sNumber}-${currentAyah}`}
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    className={`p-4 sm:p-5 rounded-3xl border transition-all shadow-lg backdrop-blur-md relative overflow-hidden ${
+                      isCompleted
+                        ? 'bg-gradient-to-r from-emerald-950/70 via-[#064e3b] to-emerald-900/60 border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
+                        : isNearing
+                        ? 'bg-gradient-to-r from-[#022c22] via-[#064e3b]/80 to-[#022c22] border-amber-400/40 shadow-[0_0_15px_rgba(251,191,36,0.1)]'
+                        : 'bg-[#022c22]/90 border-[#065f46]'
+                    }`}
+                  >
                     {/* Background subtle glow decoration */}
                     <div className="absolute -top-12 -left-12 w-32 h-32 bg-[#fbbf24]/5 rounded-full blur-2xl pointer-events-none" />
 
@@ -2196,60 +1986,26 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* Calculated Recited Pages Strip (احتساب دقيق للأوجه المسمعة من واقع السجل) */}
-                    <div
-                      className="my-2.5 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs border-2 border-b-4"
-                      style={{
-                        backgroundColor: themeCardBg,
-                        borderColor: themeBorder,
-                        borderBottomColor: themeBorderBottom
-                      }}
-                    >
+                    <div className="my-2.5 p-2.5 rounded-2xl bg-[#011a14]/80 border border-[#065f46] flex flex-wrap items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
-                        <span className="font-bold text-white">إجمالي الأوجه المسمّعة من السجل:</span>
-                        <span
-                          className="font-mono font-black text-sm px-2.5 py-0.5 rounded-xl border-2 shadow-xs"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: `${themeAccent}70`,
-                            color: themeAccent
-                          }}
-                        >
+                        <BookOpen className="w-4 h-4 text-[#fbbf24] shrink-0" />
+                        <span className="text-[#86efac] font-semibold">إجمالي الأوجه المسمّعة من السجل:</span>
+                        <span className="font-mono font-black text-amber-300 text-sm px-2 py-0.5 rounded-lg bg-[#064e3b] border border-[#065f46]">
                           {pagesInfo.totalPagesCount} وجه
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-slate-200 flex-wrap">
-                        <span
-                          className="px-2 py-0.5 rounded-xl border"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: themeBorder
-                          }}
-                        >
+                      <div className="flex items-center gap-2 text-[11px] text-emerald-200">
+                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
                           حفظ جديد: <strong className="text-white font-mono">{pagesInfo.newPagesCount}</strong> وجه
                         </span>
-                        <span
-                          className="px-2 py-0.5 rounded-xl border"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: themeBorder
-                          }}
-                        >
+                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
                           مراجعة: <strong className="text-white font-mono">{pagesInfo.reviewPagesCount}</strong> وجه
                         </span>
-                        <span
-                          className="px-2.5 py-0.5 rounded-xl border font-black"
-                          style={{
-                            backgroundColor: `${themeAccent}20`,
-                            borderColor: `${themeAccent}50`,
-                            color: themeAccent
-                          }}
-                        >
-                          موضع المصحف: <strong className="font-mono">الوجه {pagesInfo.currentMushafPage}</strong> (الجزء {pagesInfo.currentJuz})
+                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
+                          موضع المصحف: <strong className="text-[#fbbf24] font-mono">الوجه {pagesInfo.currentMushafPage}</strong> (الجزء {pagesInfo.currentJuz})
                         </span>
                       </div>
                     </div>
-
 
                     {/* The Visual Progress Bar Track */}
                     <div className="space-y-1.5 relative z-10">
@@ -2318,9 +2074,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       </div>
                     </div>
                   </motion.div>
-                </div>
-              );
-            })()}
+                );
+              })()}
 
               {/* ============================================================ */}
               {/* SECTION 1: TODAY'S RECITATION (ما تم تسميعه بالتفصيل) */}
@@ -2759,15 +2514,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             <button
                               type="button"
                               onClick={() => openMushafReader(rev.surahNumber, rev.fromAyah, rev.id)}
-                              className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-sm"
-                              style={{
-                                backgroundColor: themeCardBg,
-                                borderColor: `${themeAccent}70`,
-                                borderBottomColor: themeAccentShadow,
-                                color: themeAccent
-                              }}
+                              className="w-full py-2 px-3 rounded-xl bg-[#064e3b]/50 hover:bg-[#064e3b] border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
                             >
-                              <BookOpen className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                              <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
                               <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
                             </button>
                           </div>
@@ -2781,21 +2530,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               {/* ============================================================ */}
               {/* SECTION 2: TOMORROW'S ASSIGNMENT & MULTI-REVIEWS             */}
               {/* ============================================================ */}
-              <div
-                className="border-2 border-b-4 rounded-3xl p-5 space-y-5 shadow-xl relative overflow-hidden"
-                style={{
-                  backgroundColor: themeCardBg,
-                  borderColor: themeBorder,
-                  borderBottomColor: themeBorderBottom
-                }}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b" style={{ borderColor: themeBorder }}>
+              <div className="bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-5 shadow-xl relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#065f46]">
                   <div>
-                    <h4 className="text-sm font-black font-heading flex items-center gap-2" style={{ color: themeAccent }}>
-                      <Compass className="w-4 h-4" style={{ color: themeAccent }} />
+                    <h4 className="text-sm font-bold text-[#fbbf24] font-heading flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-[#fbbf24]" />
                       <span>2. المقرر المطلوب تسميعه غداً (حفظ جديد + مراجعات وتراكميات محفوظة):</span>
                     </h4>
-
                     <p className="text-[11px] text-[#86efac]/80 mt-0.5">
                       يبقى الورد والمراجعات والتراكميات محفوظة للغد وثابتة للأبد حتى يقوم المعلم بتعديلها أو حذفها
                     </p>
@@ -3828,7 +3569,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         </div>
       )}
 
-      {/* King Fahd Holy Quran Modal Reader */}
+      {/* King Fahd Holy Quran Modal Reader with 2.5s Long-Press Recitation Error Recording */}
       <KingFahdQuranModal
         isOpen={isMushafOpen}
         onClose={() => setIsMushafOpen(false)}
@@ -3836,20 +3577,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         initialAyah={mushafInitialAyah}
         highlightItems={mushafHighlightItems}
         activeItemId={mushafActiveItemId}
-        activeStudent={activeStudent}
-        onUpdateStudentErrors={(errors) => {
-          if (activeStudent && onUpdateStudent) {
-            onUpdateStudent({
-              ...activeStudent,
-              mushafErrors: errors
-            });
-          }
-        }}
-        onSaveStudent={(updatedStudent) => {
-          if (onUpdateStudent) {
-            onUpdateStudent(updatedStudent);
-          }
-        }}
+        studentName={activeStudent?.name}
+        recordedAyahErrors={mushafAyahErrors}
+        onRecordAyahError={handleRecordAyahError}
       />
     </div>
   );

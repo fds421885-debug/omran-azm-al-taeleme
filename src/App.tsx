@@ -3515,7 +3515,7 @@ export function App() {
           <button
             type="button"
             onClick={() => navigatePublic('landing')}
-            className="hover:text-amber-300 transition-colors font-medium cursor-pointer"
+            className="hover:text-amber-300 transition-colors font-medium underline cursor-pointer"
           >
             الصفحة التعريفية للمنظومة
           </button>
