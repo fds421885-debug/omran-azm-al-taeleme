@@ -33,6 +33,9 @@ import {
   ASSISTANT_TOOLS_DEFINITIONS
 } from "./src/lib/assistantToolsService.ts";
 
+import { db } from "./src/lib/firebase.ts";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+
 dotenv.config();
 
 export const app = express();
@@ -80,9 +83,32 @@ app.post("/api/assistant/execute-tool", async (req, res) => {
   }
 });
 
-// Persistent Mail Configuration Path
+// Persistent Mail Configuration Path & Firestore Cloud Sync
 const MAIL_CONFIG_PATH = path.join(process.cwd(), "data", "mail-config.json");
 let inMemoryMailConfig: any = null;
+
+async function getFirestoreMailConfig(): Promise<any> {
+  try {
+    const snap = await getDoc(doc(db, "settings", "mail_config"));
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (e) {
+    console.warn("Could not read mail config from Firestore:", e);
+  }
+  return null;
+}
+
+async function saveFirestoreMailConfig(config: any): Promise<void> {
+  try {
+    await setDoc(doc(db, "settings", "mail_config"), {
+      ...config,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (e) {
+    console.warn("Could not save mail config to Firestore:", e);
+  }
+}
 
 function getStoredMailConfig(): {
   user?: string;
@@ -115,11 +141,20 @@ function saveStoredMailConfig(config: any) {
   } catch (e) {
     console.error("Error saving mail config:", e);
   }
+  // Also persist asynchronously to Firestore cloud database
+  saveFirestoreMailConfig(config).catch(err => console.warn("Firestore mail config save error:", err));
 }
 
 // Get Mail Configuration Status
-app.get("/api/mail/config", (req, res) => {
-  const stored = getStoredMailConfig();
+app.get("/api/mail/config", async (req, res) => {
+  let stored = getStoredMailConfig();
+  if (!stored.user || !stored.pass) {
+    const cloudConfig = await getFirestoreMailConfig();
+    if (cloudConfig?.user && cloudConfig?.pass) {
+      stored = { ...stored, ...cloudConfig };
+      saveStoredMailConfig(stored);
+    }
+  }
   const envUser = process.env.GMAIL_USER || process.env.SMTP_USER || "";
   const envPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "";
   const user = stored.user || envUser;
@@ -135,7 +170,7 @@ app.get("/api/mail/config", (req, res) => {
 });
 
 // Save Mail Configuration
-app.post("/api/mail/config", (req, res) => {
+app.post("/api/mail/config", async (req, res) => {
   try {
     const { user, pass, fromName, fromEmail, smtpHost, smtpPort } = req.body;
     if (!user || !pass) {
@@ -155,7 +190,8 @@ app.post("/api/mail/config", (req, res) => {
     };
 
     saveStoredMailConfig(updated);
-    return res.json({ success: true, message: "تم حفظ وتفعيل إعدادات البريد الإلكتروني بنجاح." });
+    await saveFirestoreMailConfig(updated);
+    return res.json({ success: true, message: "تم حفظ وتفعيل إعدادات البريد الإلكتروني بنجاح في السيرفر وقاعدة البيانات السحابية." });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -164,7 +200,7 @@ app.post("/api/mail/config", (req, res) => {
 // Comprehensive Real Email Dispatcher via Gmail API or Gmail SMTP (Nodemailer)
 app.post("/api/mail/send-gmail", async (req, res) => {
   try {
-    const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword } = req.body;
+    const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword, smtpHost, smtpPort } = req.body;
     const authHeader = req.headers.authorization;
     const bearerToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
 
@@ -176,7 +212,19 @@ app.post("/api/mail/send-gmail", async (req, res) => {
     }
 
     const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
-    const stored = getStoredMailConfig();
+    let stored = getStoredMailConfig();
+    if (!stored?.pass && !gmailAppPassword) {
+      try {
+        const cloudConfig = await getFirestoreMailConfig();
+        if (cloudConfig?.pass) {
+          stored = { ...stored, ...cloudConfig };
+          inMemoryMailConfig = stored;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     const effectiveUser = String(gmailUser || stored.user || process.env.GMAIL_USER || process.env.SMTP_USER || fromEmail || "qdrat2626@gmail.com").trim();
     // Clean spaces from Google 16-character App Passwords (e.g. "abcd efgh ijkl mnop" -> "abcdefghijklmnop")
     const rawPass = String(gmailAppPassword || stored.pass || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").trim();
@@ -234,17 +282,23 @@ app.post("/api/mail/send-gmail", async (req, res) => {
 
     // 2. Try Nodemailer with Gmail SMTP / App Password
     if (effectiveUser && effectivePass) {
+      const activeHost = smtpHost || stored.smtpHost;
+      const activePort = Number(smtpPort || stored.smtpPort);
+
+      // Primary transport attempt (Port 465 SSL for Gmail by default)
       try {
         const transporter = nodemailer.createTransport(
-          stored.smtpHost
+          activeHost
             ? {
-                host: stored.smtpHost,
-                port: stored.smtpPort || 587,
-                secure: stored.smtpPort === 465,
+                host: activeHost,
+                port: activePort || 587,
+                secure: activePort === 465,
                 auth: { user: effectiveUser, pass: effectivePass }
               }
             : {
-                service: "gmail",
+                host: "smtp.gmail.com",
+                port: 465,
+                secure: true,
                 auth: {
                   user: effectiveUser,
                   pass: effectivePass
@@ -262,36 +316,69 @@ app.post("/api/mail/send-gmail", async (req, res) => {
 
         return res.json({
           success: true,
-          provider: "gmail_smtp",
+          provider: activeHost ? "custom_smtp" : "gmail_smtp_465",
           messageId: info.messageId
         });
       } catch (smtpErr: any) {
-        console.warn("Gmail SMTP error:", smtpErr?.message);
-        // Fallback gracefully so student registration or notification flow is never disrupted
-        return res.json({
-          success: true,
-          delivered: false,
-          provider: "in_app_dispatch",
-          message: "تم تجهيز البريد الإلكتروني وإرساله عبر خدمة المنظومة المعتمدة.",
-          smtpNotice: smtpErr?.message || undefined
+        console.warn("Primary SMTP error, attempting fallback port 587:", smtpErr?.message);
+
+        // Fallback: Port 587 with STARTTLS for Gmail
+        if (!activeHost) {
+          try {
+            const fallbackTransporter = nodemailer.createTransport({
+              host: "smtp.gmail.com",
+              port: 587,
+              secure: false,
+              auth: {
+                user: effectiveUser,
+                pass: effectivePass
+              }
+            });
+
+            const fallbackInfo = await fallbackTransporter.sendMail({
+              from: `"${cleanFromName}" <${cleanFrom}>`,
+              to: cleanTo,
+              subject,
+              html: bodyContent,
+              text: text || undefined
+            });
+
+            return res.json({
+              success: true,
+              provider: "gmail_smtp_587",
+              messageId: fallbackInfo.messageId
+            });
+          } catch (retryErr: any) {
+            console.warn("Gmail SMTP port 587 error:", retryErr?.message);
+          }
+        }
+
+        let userMsg = "تعذر إرسال البريد عبر خادم Google SMTP.";
+        const combinedErr = `${smtpErr?.message || ''} ${smtpErr?.code || ''}`;
+        if (combinedErr.includes('EAUTH') || combinedErr.includes('535') || combinedErr.includes('BadCredentials') || combinedErr.includes('Username and Password not accepted')) {
+          userMsg = "فشل المصادقة مع Google (كلمة المرور غير مقبولة). يرجى التأكد من كتابة بريد Gmail بشكل صحيح، واستخدام 'كلمة مرور تطبيقات' (Google App Password) مكونة من 16 حرفاً من myaccount.google.com/apppasswords وليس كلمة المرور العادية للحساب.";
+        } else if (combinedErr.includes('ETIMEDOUT') || combinedErr.includes('ESOCKET')) {
+          userMsg = "انتهت مهلة الاتصال بخادم البريد. يرجى المحاولة بعد قليل.";
+        }
+
+        return res.status(400).json({
+          success: false,
+          error: userMsg,
+          details: smtpErr?.message
         });
       }
     }
 
-    // 3. Fallback when credentials are being set up: deliver gracefully to in-app stream without blocking
-    return res.json({
-      success: true,
-      delivered: false,
-      provider: "in_app_dispatch",
-      message: "تم تجهيز رمز التحقق وإشعار البريد الإلكتروني بنجاح ويظهر في الإشعار التفاعلي."
+    // 3. Clear, honest error if credentials are not configured yet
+    return res.status(400).json({
+      success: false,
+      error: "خدمة إرسال البريد الحقيقي غير مهيأة بعد. يرجى إدخال حساب Gmail وكلمة مرور التطبيقات (App Password) في إعدادات المنظومة لحفظها وتفعيل الإرسال الحقيقي فوراً إلى صندوق الوارد."
     });
   } catch (err: any) {
     console.error("Gmail endpoint error:", err);
-    return res.json({
-      success: true,
-      delivered: false,
-      provider: "in_app_dispatch",
-      message: "تم استقبال وتجهيز البريد بنجاح."
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "حدث خطأ غير متوقع أثناء إرسال البريد."
     });
   }
 });

@@ -525,6 +525,16 @@ export class GoogleWorkspaceService {
 
     // Fallback: Call server endpoint /api/mail/send-gmail
     try {
+      let storedMailConfig: any = null;
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'mail_config'));
+        if (snap.exists()) {
+          storedMailConfig = snap.data();
+        }
+      } catch {
+        // ignore Firestore read error if offline
+      }
+
       const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-gmail'), {
         method: 'POST',
         headers: {
@@ -535,27 +545,34 @@ export class GoogleWorkspaceService {
           to,
           subject,
           html,
-          fromName,
-          fromEmail,
-          token: token || undefined
+          fromName: fromName || storedMailConfig?.fromName,
+          fromEmail: fromEmail || storedMailConfig?.fromEmail || storedMailConfig?.user,
+          token: token || undefined,
+          gmailUser: storedMailConfig?.user || undefined,
+          gmailAppPassword: storedMailConfig?.pass || undefined,
+          smtpHost: storedMailConfig?.smtpHost || undefined,
+          smtpPort: storedMailConfig?.smtpPort || undefined
         })
       });
 
       let srvData: any = null;
-      if (srvRes.ok && srvRes.headers.get('content-type')?.includes('application/json')) {
+      try {
         srvData = await srvRes.json();
-        if (srvData?.success) {
-          return { success: true, messageId: srvData.messageId };
-        }
+      } catch {
+        // non-json
+      }
+
+      if (srvRes.ok && srvData?.success) {
+        return { success: true, messageId: srvData.messageId };
       }
       return {
         success: false,
-        error: srvData?.error || 'تعذر إرسال البريد عبر خادم Gmail.'
+        error: srvData?.error || 'تعذر إرسال البريد عبر خادم Google SMTP.'
       };
     } catch (srvErr: any) {
       return {
         success: false,
-        error: srvErr?.message || 'فشل الاتصال بخدمة Gmail لإرسال البريد.'
+        error: srvErr?.message || 'فشل الاتصال بخدمة البريد لإرسال الرسالة.'
       };
     }
   }

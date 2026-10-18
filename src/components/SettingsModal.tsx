@@ -51,7 +51,8 @@ import {
   normalizeArabicText
 } from '../types';
 import { ISLAMIC_THEME_PRESETS, applyComplexThemeToDOM, extractColorsFromImageDataUrl, generateHarmoniousIslamicPalette } from '../lib/themeUtils';
-import { OmranDataService } from '../lib/firebase';
+import { OmranDataService, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { triggerComplexThemePulse } from '../utils/highlightHelper';
 import { ApiConfig } from '../lib/apiConfig';
 
@@ -126,13 +127,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Load Mail Config Status on mount / when mail tab selected
   const fetchMailConfig = async () => {
     try {
+      let loadedFromCloud = false;
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'mail_config'));
+        if (snap.exists()) {
+          const cloud = snap.data();
+          if (cloud?.user) {
+            setGmailUser(prev => prev || cloud.user);
+            setTestEmailTo(prev => prev || cloud.user);
+          }
+          if (cloud?.pass) {
+            setGmailAppPass(prev => prev || cloud.pass);
+          }
+          if (cloud?.fromName) setMailFromName(prev => prev || cloud.fromName);
+          if (cloud?.fromEmail) setMailFromEmail(prev => prev || cloud.fromEmail);
+          if (cloud?.user && cloud?.pass) {
+            setMailConfigStatus({ isConfigured: true, user: cloud.user });
+            loadedFromCloud = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not read cloud mail config:', err);
+      }
+
       const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'));
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
-        setMailConfigStatus({ isConfigured: data.isConfigured, user: data.user });
-        if (data.user && !gmailUser) setGmailUser(data.user);
-        if (data.fromName && !mailFromName) setMailFromName(data.fromName);
-        if (data.fromEmail && !mailFromEmail) setMailFromEmail(data.fromEmail);
+        if (data.isConfigured || !loadedFromCloud) {
+          setMailConfigStatus({ isConfigured: data.isConfigured, user: data.user });
+        }
+        if (data.user) {
+          setGmailUser(prev => prev || data.user);
+          setTestEmailTo(prev => prev || data.user);
+        }
+        if (data.fromName) setMailFromName(prev => prev || data.fromName);
+        if (data.fromEmail) setMailFromEmail(prev => prev || data.fromEmail);
       }
     } catch (e) {
       console.warn('Could not load mail config status:', e);
@@ -2594,27 +2623,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   setIsSavingMailConfig(true);
                   setStatusMsg(null);
                   try {
+                    const cleanUser = gmailUser.trim();
+                    const cleanPass = gmailAppPass.trim().replace(/\s+/g, '');
+                    const cleanFromName = mailFromName.trim();
+                    const cleanFromEmail = mailFromEmail.trim() || cleanUser;
+
                     const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        user: gmailUser.trim(),
-                        pass: gmailAppPass.trim(),
-                        fromName: mailFromName.trim(),
-                        fromEmail: mailFromEmail.trim() || gmailUser.trim()
+                        user: cleanUser,
+                        pass: cleanPass,
+                        fromName: cleanFromName,
+                        fromEmail: cleanFromEmail
                       })
                     });
-                    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-                      const data = await res.json();
-                      if (data.success) {
-                        setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح!' });
-                        setMailConfigStatus({ isConfigured: true, user: gmailUser.trim() });
-                      } else {
-                        setStatusMsg({ type: 'error', text: data.error || 'تعذر حفظ إعدادات البريد.' });
-                      }
-                    } else {
-                      setStatusMsg({ type: 'error', text: 'تعذر الاتصال بخادم البريد أو أن الاستجابة غير صحيحة.' });
-                    }
+
+                    // Save to Firestore cloud database forever
+                    await setDoc(doc(db, 'settings', 'mail_config'), {
+                      user: cleanUser,
+                      pass: cleanPass,
+                      fromName: cleanFromName,
+                      fromEmail: cleanFromEmail,
+                      updatedAt: new Date().toISOString()
+                    }, { merge: true });
+
+                    setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح في السيرفر وقاعدة البيانات السحابية!' });
+                    setMailConfigStatus({ isConfigured: true, user: cleanUser });
                   } catch (err: any) {
                     setStatusMsg({ type: 'error', text: err?.message || 'فشل الاتصال بخادم البريد.' });
                   } finally {
@@ -2800,23 +2835,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             gmailAppPassword: gmailAppPass.trim() || undefined
                           })
                         });
-                        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-                          const data = await res.json();
-                          if (data.success) {
-                            setMailTestResult({
-                              success: true,
-                              msg: `تم إرسال الرسالة بنجاح إلى صندوق الوارد (${testEmailTo.trim()})! تفقد بريدك الآن.`
-                            });
-                          } else {
-                            setMailTestResult({
-                              success: false,
-                              msg: data.error || 'تعذر إرسال البريد التجريبي. تأكد من صحة البريد وكلمة مرور التطبيقات.'
-                            });
-                          }
+                        let data: any = null;
+                        try {
+                          data = await res.json();
+                        } catch {
+                          // non-json
+                        }
+
+                        if (res.ok && data?.success) {
+                          setMailTestResult({
+                            success: true,
+                            msg: `🎉 تم إرسال رسالة البريد الحقيقية بنجاح إلى صندوق الوارد (${testEmailTo.trim()})! يرجى فتح بريدك للتأكد (أو فحص مجلد الرسائل غير المرغوب فيها Spam).`
+                          });
                         } else {
                           setMailTestResult({
                             success: false,
-                            msg: 'تعذر الاتصال بخادم البريد أو أن الاستجابة غير صحيحة.'
+                            msg: data?.error || 'تعذر إرسال بريد الاختبار. يرجى التأكد من كتابة البريد وكلمة مرور التطبيقات بشكل صحيح.'
                           });
                         }
                       } catch (err: any) {

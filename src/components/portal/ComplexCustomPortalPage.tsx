@@ -50,15 +50,13 @@ import { OmranDataService, auth } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ModernQuranLoader } from '../loading/ModernLoadingSuite';
 import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
-import { PortalEmailNotificationToast } from './PortalEmailNotificationToast';
 import {
   validateEmailAuthenticity,
   generateEmailOtp,
   verifyEmailOtp,
   buildOtpVerificationEmail,
   buildApplicationReceivedEmail,
-  sendRealPortalEmail,
-  dispatchPortalEmailNotification
+  sendRealPortalEmail
 } from '../../lib/portalEmailService';
 
 
@@ -197,6 +195,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [emailVerificationMethod, setEmailVerificationMethod] = useState<'google' | 'otp' | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccessNotice, setEmailSuccessNotice] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [enteredOtp, setEnteredOtp] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(0);
@@ -322,47 +321,26 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   };
 
   // 1. Google Fast Sign-in & Email Verification in Registration Form
-  // Uses the EXACT SAME Firebase & Google Cloud OAuth settings
+  // Uses the EXACT SAME Firebase & Google Cloud settings from the main app
   const handleGoogleSignInVerification = async () => {
     setEmailError(null);
+    setEmailSuccessNotice(null);
     setIsGoogleSigningIn(true);
     try {
-      let verifiedEmail = '';
-      let verifiedName = '';
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      if (user && user.email) {
+        const verifiedEmail = user.email.trim();
+        const verifiedName = user.displayName ? user.displayName.trim() : '';
 
-      // A. Try Google Identity Services (GIS) first using the app's existing Google Cloud OAuth Client ID
-      if (typeof window !== 'undefined' && firebaseConfig.oAuthClientId) {
-        try {
-          await loadGoogleGISScript();
-          if (window.google?.accounts?.oauth2) {
-            const gisRes = await requestAccessTokenViaGIS(firebaseConfig.oAuthClientId, ['email', 'profile']);
-            if (gisRes?.email) {
-              verifiedEmail = gisRes.email.trim();
-              verifiedName = gisRes.displayName || '';
-            }
-          }
-        } catch (gisErr: any) {
-          console.warn('GIS verification attempt notice:', gisErr);
-        }
-      }
-
-      // B. Fallback to Firebase Auth with the exact same Firebase project & auth provider
-      if (!verifiedEmail) {
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        const result = await signInWithPopup(auth, provider);
-        const user = result.user;
-        if (user && user.email) {
-          verifiedEmail = user.email.trim();
-          verifiedName = user.displayName || '';
-        }
-      }
-
-      if (verifiedEmail) {
         setStudentEmail(verifiedEmail);
         setIsEmailVerified(true);
         setEmailVerificationMethod('google');
         setOtpSent(false);
+        setEnteredOtp('');
+        setEmailSuccessNotice(`تم التحقق والتوثيق التلقائي لبريدك (${verifiedEmail}) بنجاح عبر حساب Google.`);
 
         // Auto-fill student name if empty
         if (!studentName && verifiedName) {
@@ -370,10 +348,13 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         }
       }
     } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user') {
+        return;
+      }
       console.warn('Google Sign In note:', err);
       if (err?.code === 'auth/popup-blocked') {
-        setEmailError('تم حجب النافذة المنبثقة من قِبل المتصفح. يمكنك إدخال بريدك يدوياً بالأسفل والتحقق برمز التفعيل.');
-      } else if (err?.code !== 'auth/popup-closed-by-user') {
+        setEmailError('تم حجب النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة، أو إدخال بريدك يدوياً بالأسفل والتحقق برمز التفعيل.');
+      } else {
         setEmailError('تعذر التحقق عبر حساب Google حالياً. يمكنك كتابة بريدك الإلكتروني يدوياً بالأسفل والتحقق بالرمز.');
       }
     } finally {
@@ -381,9 +362,10 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     }
   };
 
-  // 2. Send Real OTP to Personal Email + In-App Interactive Toast Dispatch
+  // 2. Send Real OTP to Personal Email
   const handleSendEmailOtp = async () => {
     setEmailError(null);
+    setEmailSuccessNotice(null);
     const check = validateEmailAuthenticity(studentEmail);
     if (!check.isValid) {
       setEmailError(check.error || 'يرجى إدخال بريد إلكتروني صحيح.');
@@ -399,22 +381,19 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       // Build Branded Email from the complex
       const emailPayload = buildOtpVerificationEmail(complex, cleanEmail, code);
 
-      // ALWAYS dispatch the interactive in-app toast event so user gets instant access to code
-      dispatchPortalEmailNotification(emailPayload);
-
-      // Trigger real email delivery via Google Workspace / SMTP in background
-      sendRealPortalEmail(emailPayload)
-        .then(res => {
-          if (!res.success) {
-            console.warn('Real email inbox delivery note:', res.error);
-          }
-        })
-        .catch(err => {
-          console.warn('Real email dispatch background note:', err);
-        });
+      // Trigger REAL email delivery via Gmail SMTP / Google Workspace
+      const sendRes = await sendRealPortalEmail(emailPayload);
+      if (!sendRes.success) {
+        setEmailError(
+          sendRes.error ||
+          'تعذر إرسال رمز التحقق إلى بريدك الإلكتروني الحقيقي حالياً. يرجى التأكد من كتابة البريد بشكل صحيح أو استخدام زر "التسجيل والتوثيق السريع بحساب Google" بالأعلى لتأكيد هويتك فوراً وبدون انتظار.'
+        );
+        return;
+      }
 
       setOtpSent(true);
       setOtpCountdown(60); // 60 seconds cooldown for resending
+      setEmailSuccessNotice(`تم إرسال رمز التحقق المكون من 6 أرقام إلى صندوق بريدك الحقيقي (${cleanEmail}) بنجاح! تفقد صندوق الوارد أو مجلد الرسائل غير المرغوب فيها (Spam).`);
     } catch (e: any) {
       setEmailError(e?.message || 'حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة مرة أخرى.');
     } finally {
@@ -425,6 +404,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   // 3. Verify OTP Code
   const handleVerifyOtpCode = () => {
     setEmailError(null);
+    setEmailSuccessNotice(null);
     if (!enteredOtp || enteredOtp.trim().length < 6) {
       setEmailError('يرجى كتابة رمز التحقق المكون من 6 أرقام كاملاً.');
       return;
@@ -437,6 +417,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         setIsEmailVerified(true);
         setEmailVerificationMethod('otp');
         setEmailError(null);
+        setEmailSuccessNotice('تم تأكيد رمز التحقق وتوثيق بريدك الإلكتروني بنجاح!');
       } else {
         setEmailError(res.error || 'رمز التحقق غير صحيح.');
       }
@@ -534,9 +515,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
       await OmranDataService.saveRegistrationApplication(newApp);
 
-      // Send Real Queue Status & Tracking Email to student/parent's personal inbox + In-App Toast
+      // Send Real Queue Status & Tracking Email to student/parent's personal inbox
       const receivedEmailPayload = buildApplicationReceivedEmail(complex, newApp, portalUrl);
-      dispatchPortalEmailNotification(receivedEmailPayload);
       sendRealPortalEmail(receivedEmailPayload).catch(err => console.warn('Could not send application email:', err));
 
       setSubmitSuccessApp(newApp);
@@ -600,45 +580,22 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   };
 
   // Handle Google Unified Sign-in within this Complex
-  // Uses the exact same Firebase & Google Cloud OAuth settings
+  // Uses the exact same Firebase & Google Cloud settings from the main app
   const handleGoogleSignInLogin = async () => {
     setLoginError(null);
     setIsLoggingIn(true);
     try {
-      let cleanEmail = '';
-      let cleanName = '';
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const user = result?.user;
 
-      // A. Try Google Identity Services (GIS) using the app's existing Google Cloud OAuth Client ID
-      if (typeof window !== 'undefined' && firebaseConfig.oAuthClientId) {
-        try {
-          await loadGoogleGISScript();
-          if (window.google?.accounts?.oauth2) {
-            const gisRes = await requestAccessTokenViaGIS(firebaseConfig.oAuthClientId, ['email', 'profile']);
-            if (gisRes?.email) {
-              cleanEmail = gisRes.email.trim().toLowerCase();
-              cleanName = gisRes.displayName ? gisRes.displayName.trim() : '';
-            }
-          }
-        } catch (gisErr: any) {
-          console.warn('GIS login attempt notice:', gisErr);
-        }
-      }
-
-      // B. Fallback to Firebase Auth popup using existing Firebase auth
-      if (!cleanEmail) {
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        const result = await signInWithPopup(auth, provider);
-        if (result?.user?.email) {
-          cleanEmail = result.user.email.trim().toLowerCase();
-          cleanName = result.user.displayName ? result.user.displayName.trim() : '';
-        }
-      }
-
-      if (!cleanEmail) {
+      if (!user?.email) {
         throw new Error('تعذر استلام بيانات حساب Google.');
       }
 
+      const cleanEmail = user.email.trim().toLowerCase();
+      const cleanName = user.displayName ? user.displayName.trim() : '';
       const normGoogleName = cleanName ? normalizeArabicText(cleanName) : '';
 
       // 1. Check if Teacher in this complex
@@ -672,7 +629,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       const students = await OmranDataService.loadStudents();
       const matchedStudent = students.find(s => {
         const inThisComplex = s.complexId === complex.id;
-        const matchGoogle = s.googleEmail && s.googleEmail.trim().toLowerCase() === cleanEmail;
+        const matchGoogle = (s.googleEmail && s.googleEmail.trim().toLowerCase() === cleanEmail) ||
+                            (s.email && s.email.trim().toLowerCase() === cleanEmail);
         const matchName = normGoogleName && normalizeArabicText(s.name) === normGoogleName;
         return inThisComplex && (matchGoogle || matchName);
       });
@@ -692,13 +650,17 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       }
 
       setLoginError(
-        `حساب Google (${cleanEmail}) غير مقيد حالياً في ${complex.name}. إذا كنت طالباً جديداً، يمكنك تقديم طلب انضمامك الآن من تبويب (طلب انضمام جديد).`
+        `حساب Google (${cleanEmail}) غير مقيد حالياً كمعلم أو طالب في ${complex.name}. إذا كنت طالباً جديداً، يمكنك تقديم طلب انضمامك الآن من تبويب (طلب انضمام جديد).`
       );
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user' || err?.message?.includes('popup-closed')) {
         return;
       }
-      setLoginError(err?.message || 'تعذر تسجيل الدخول بحساب Google.');
+      if (err?.code === 'auth/popup-blocked' || err?.message?.includes('popup-blocked')) {
+        setLoginError('المتصفح حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لموقع المنصة.');
+        return;
+      }
+      setLoginError(err?.message || 'تعذر تسجيل الدخول بحساب Google حالياً.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -1531,8 +1493,9 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                               <span className="text-xs font-black text-amber-300">
                                 أدخل رمز التحقق المكون من 6 أرقام:
                               </span>
-                              <span className="text-[10px] text-slate-300 font-bold">
-                                تم الإرسال من support@omran.com
+                              <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>تم الإرسال إلى صندوق بريدك الحقيقي</span>
                               </span>
                             </div>
 
@@ -1565,9 +1528,16 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 <span>{isVerifyingOtp ? 'جارٍ التحقق...' : 'تأكيد الرمز'}</span>
                               </button>
                             </div>
-                            <span className="text-[10px] text-slate-400 block font-bold">
-                              💡 يظهر رمز التحقق أيضاً في الإشعار التفاعلي أعلى الشاشة ويمكن نسخه بضغطة زر.
+                            <span className="text-[10px] text-slate-300 block font-bold">
+                              📬 افتح صندوق وارد بريدك الإلكتروني الآن (أو مجلد الرسائل غير المرغوب فيها Spam) لإدخال الرمز المكون من 6 أرقام.
                             </span>
+                          </div>
+                        )}
+
+                        {emailSuccessNotice && (
+                          <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-300" />
+                            <span>{emailSuccessNotice}</span>
                           </div>
                         )}
 
@@ -2334,9 +2304,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           onCancel={() => setIsAIInterviewOpen(false)}
         />
       )}
-
-      {/* Floating Interactive Email Toast Notification for OTP & Tracking Status */}
-      <PortalEmailNotificationToast />
     </div>
   );
 };

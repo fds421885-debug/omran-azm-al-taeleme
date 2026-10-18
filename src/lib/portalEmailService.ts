@@ -502,18 +502,9 @@ export async function sendRealPortalEmail(
 }
 
 /**
- * Dispatches an active in-app email simulation event so the UI displays
- * an immediate toast/banner notification with copy code & view email button!
+ * In-app simulated email popups are completely disabled per user preference.
+ * Real emails are delivered directly to the user's actual inbox.
  */
-export function dispatchPortalEmailNotification(emailPayload: BrandedEmailPayload) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.dispatchEvent(
-      new CustomEvent('omran:portal-email-sent', {
-        detail: emailPayload
-      })
-    );
-  } catch (e) {
-    console.error('Error dispatching portal email notification:', e);
-  }
+export function dispatchPortalEmailNotification(_emailPayload: BrandedEmailPayload) {
+  // Disabled: No fake in-app email simulation.
 }
