@@ -136,6 +136,22 @@ export interface StudentMemorizationPlan {
     reason: string;
     repetitionTarget?: number;
   }>;
+  weeklyDaysCount?: number; // عدد أيام الحلقة أسبوعياً (مثلاً 5 أيام)
+  dailyHoursCount?: number; // ساعات الحلقة يومياً
+  tathbeetStopsCount?: number; // وقفات التثبيت المنهجية المجدولة
+  milestones?: Array<{
+    juz: number;
+    targetDate: string;
+    isCompleted?: boolean;
+    label: string;
+  }>;
+  nextDayAssignment?: {
+    newMemorization: string;
+    review: string;
+    suggestedSheikh?: string;
+    action: 'repeat_surah' | 'advance_page' | 'reinforce_errors';
+    reason: string;
+  };
   aiNotes?: string;
   lastUpdated: string;
 }
@@ -261,8 +277,14 @@ export interface Halaqah {
   createdAt: string;
   isDefault?: boolean;
   capacity?: number; // السعة الاستيعابية القصوى لعدد الطلاب (مثلاً 15 أو 20)
+  maxStudents?: number; // الحد الأقصى للطلاب المسموح به
   mosqueId?: string; // معرف المسجد التابع له في المنظومة القرآنية
   mosqueName?: string; // اسم المسجد التابع له
+  scheduleDays?: string[]; // أيام الحلقة (e.g. ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'])
+  scheduleDaysSummary?: string; // نص ملخص الأيام (مثلاً: من الأحد إلى الخميس)
+  dailyHours?: number; // ساعات الحلقة في اليوم (مثلاً 1.5 أو 2)
+  startTime?: string; // وقت البداية (مثلاً "16:00")
+  endTime?: string; // وقت النهاية (مثلاً "18:00")
 }
 
 export interface TeacherAccount {
@@ -790,6 +812,7 @@ export interface Student {
   complexName?: string; // Cached display name of the complex
   halaqahId?: string; // ID of the halaqah this student belongs to
   halaqahName?: string; // Cached display name of halaqah
+  email?: string; // بريد الطالب الإلكتروني للتوثيق والإشعارات
   googleEmail?: string | null; // بريد حساب Google المرتبط بالطالب
   googleUid?: string | null; // معرف Google UID المرتبط
   googleName?: string | null; // اسم الحساب في Google

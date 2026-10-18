@@ -616,6 +616,129 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
   }
 });
 
+// 3. Dynamic AI Placement Interview Turn
+app.post("/api/gemini/dynamic-placement-turn", async (req, res) => {
+  try {
+    const { studentInitialData, complexName, turnIndex, chatHistory, lastUserAnswer, accumulatedData, isKhatim, isBeginner, isChild } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Gemini API key not configured on server" });
+    }
+
+    const memCount = studentInitialData?.memorizedJuzList?.length || accumulatedData?.memorizedCount || 1;
+    const prompt = `أنت «المساعد القرآني والتربوي الذكي لتسكين وتوجيه الطلاب» في مجمع ${complexName || "القرآني"}.
+مهمتك: إجراء مقابلة حوارية تحديد مستوى تفاعلية وديناميكية مع الطالب.
+بيانات الطالب:
+- الاسم: ${studentInitialData?.studentName || "الطالب"}
+- العمر: ${studentInitialData?.age || 10} سنة (طفل: ${isChild ? "نعم" : "لا"})
+- عدد الأجزاء المحفوظة: ${memCount} جزء (خاتم للقرآن: ${isKhatim ? "نعم" : "لا"}، مبتدئ: ${isBeginner ? "نعم" : "لا"})
+- الأجزاء المثبتة المتقنة حتى الآن: ${accumulatedData?.consolidatedCount || 0}
+- الجولة الحالية: ${turnIndex} من 5
+- آخر إجابة من الطالب: ${lastUserAnswer || "لا يوجد"}
+
+تاريخ المحادثة السابقة:
+${(chatHistory || []).map((m: any) => `${m.sender === 'ai' ? 'المرشد الذكي' : 'الطالب'}: ${m.text}`).join('\n')}
+
+قواعد تربوية صارمة للمقابلة الديناميكية:
+1. الأسئلة ليست قوالب ثابتة أبداً! يجب أن تناسب الطالب بدقة:
+   - إذا كان خاتماً (30 جزءاً): ركز على المتشابهات اللفظية الدقيقة (مثلاً بين البقرة وآل عمران)، طاقة السرد اليومي، ضبط الوقف والابتداء، وأحكام القراءات/السند.
+   - إذا كان طفلاً أو مبتدئاً (جزء عم أو تبارك): أسلوب رقيق ومشجع ومحبب، أسئلة تجويد مبسطة، واختبار استذكار آية قصيرة.
+   - إذا كان متوسطاً (5-15 جزءاً): فحص التثبيت والربط التراكمي والمراجعة.
+2. يمكنك في نص المحادثة وضع اختبار سريع (live recitation test) يطلب من الطالب قراءة آية أو اختيار الإجابة الصحيحة لفهم نفسيته واستحضاره.
+3. المبدأ الحاكم للمنظومة: "ليس الهدف السرعة في الختم، بل الختم بتثبيت وإتقان تام".
+4. في الجولة الأخيرة (turnIndex >= 4 أو 5): أتم المقابلة بنجاح واحسب موعد الختم الواقعي مع تضمين وقفات التثبيت الدورية.
+
+أخرج النتيجة بصيغة JSON فقط بهذا الهيكل:
+{
+  "replyText": "رد المساعد الذكي بالعربية الفصحى التربوية والتشجيعية مع التعليق على إجابته السابقة وسؤاله السؤال التالي",
+  "isCompleted": false,
+  "nextQuestion": {
+    "questionId": "معرف السؤال",
+    "questionText": "نص السؤال القصير",
+    "category": "memorization_depth",
+    "options": [
+      { "label": "خيار 1", "value": "قيمة 1", "subtext": "شرح لطيف" },
+      { "label": "خيار 2", "value": "قيمة 2", "subtext": "شرح لطيف" }
+    ]
+  },
+  "aiInsights": {
+    "studentLevel": "مبتدئ",
+    "psychologicalProfile": "تحليل شخصية الطالب وهمته ونفسيته",
+    "commitmentAssessment": "تقييم جاهزيته للالتزام",
+    "recommendedHalaqahLevel": "اسم ونوع الحلقة المقترحة",
+    "suggestedDailyNewPages": 1,
+    "suggestedDailyReviewPages": 5
+  }
+}`;
+
+    const resp = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const parsed = JSON.parse(resp.text || "{}");
+    return res.json(parsed);
+  } catch (err: any) {
+    console.error("Dynamic placement turn error:", err);
+    return res.status(500).json({ error: err?.message || "Internal AI error" });
+  }
+});
+
+// 4. Batch recalculate halaqah student plans when halaqah schedule/hours change
+app.post("/api/gemini/batch-recalculate-halaqah-plans", async (req, res) => {
+  try {
+    const { halaqah, students } = req.body;
+    if (!halaqah || !Array.isArray(students)) {
+      return res.status(400).json({ error: "بيانات الحلقة وقائمة الطلاب مطلوبة" });
+    }
+
+    const weeklyDays = (halaqah.scheduleDays && halaqah.scheduleDays.length) || 5;
+    const dailyHours = Number(halaqah.dailyHours) || 2;
+
+    const updatedPlans: Record<string, any> = {};
+
+    for (const student of students) {
+      const memJuz = student.memorizationPlan?.memorizedJuzCount || (student.currentSurah ? Math.max(1, Math.round((114 - student.currentSurah) / 3)) : 1);
+      const newPages = student.memorizationPlan?.dailyNewPages || 1;
+      const reviewPages = student.memorizationPlan?.dailyReviewPages || 5;
+
+      const totalPages = 604;
+      const memPages = memJuz * 20;
+      const remainingPages = Math.max(20, totalPages - memPages);
+      
+      const newSessionsNeeded = Math.ceil(remainingPages / newPages);
+      const remainingJuz = Math.ceil(remainingPages / 20);
+      const haltSessions = Math.floor(remainingJuz / 5) * 8 + 15;
+      const totalSessions = newSessionsNeeded + haltSessions;
+      const calendarDays = Math.ceil((totalSessions / weeklyDays) * 7);
+
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + calendarDays);
+      const targetDateStr = targetDate.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+
+      updatedPlans[student.id] = {
+        dailyNewPages: newPages,
+        dailyReviewPages: reviewPages,
+        weeklyDaysCount: weeklyDays,
+        dailyHoursCount: dailyHours,
+        targetCompletionDate: targetDateStr,
+        estimatedDaysRemaining: calendarDays,
+        progressPercentage: Math.min(99, Math.round((memPages / totalPages) * 100)),
+        status: "on_track",
+        tathbeetStopsCount: Math.floor(remainingJuz / 5) + 1,
+        aiNotes: `تم تحديث الخطة زمنياً لتتوافق مع جدول الحلقة الجديد (${weeklyDays} أيام أسبوعياً بواقع ${dailyHours} ساعة يومياً) مع الحفاظ التام على وقفات التثبيت لضمان الرسوخ قبل الختم.`,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+
+    return res.json({ success: true, updatedPlans });
+  } catch (err: any) {
+    console.error("Batch recalculate plans error:", err);
+    return res.status(500).json({ error: err?.message || "Error recalculating plans" });
+  }
+});
+
 // Helper: Format seconds into MM:SS or HH:MM:SS
 function formatSeconds(sec: number): string {
   const s = Math.max(0, Math.floor(sec));

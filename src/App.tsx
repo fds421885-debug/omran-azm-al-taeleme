@@ -90,7 +90,8 @@ import {
   LiveSyncButton,
   TabSkeleton,
   GenericTabSkeleton,
-  LoginSyncModalOverlay
+  LoginSyncModalOverlay,
+  ModernQuranLoader
 } from './components/loading/ModernLoadingSuite';
 import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
 import { ParentPortalView } from './components/ParentPortalView';
@@ -434,6 +435,28 @@ export function App() {
       window.removeEventListener('hashchange', parseUrlParams);
     };
   }, []);
+
+  // Dedicated effect to resolve portal complex securely from cloud if not present in memory
+  useEffect(() => {
+    if (!portalComplexId) return;
+
+    const found = complexes.find(c => c.id === portalComplexId);
+    if (!found) {
+      OmranDataService.loadComplexes()
+        .then(list => {
+          if (list && list.length > 0) {
+            setComplexes(list);
+            const target = list.find(c => c.id === portalComplexId);
+            if (target) {
+              OmranDataService.setActiveComplex(target);
+            }
+          }
+        })
+        .catch(err => console.warn('Could not load complexes for portal link:', err));
+    } else {
+      OmranDataService.setActiveComplex(found);
+    }
+  }, [portalComplexId]);
 
   // Dedicated effect to resolve portal student securely
   useEffect(() => {
@@ -2769,8 +2792,20 @@ export function App() {
   }
 
   // Priority 1.5: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
-  if (portalComplexId && !currentUser) {
-    const targetComplex = complexes.find(c => c.id === portalComplexId) || complexes[0];
+  if (portalComplexId) {
+    const targetComplex = complexes.find(c => c.id === portalComplexId) || (complexes.length > 0 ? complexes[0] : null);
+    if (!targetComplex) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] flex items-center justify-center p-6" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="relative z-10 text-center space-y-4">
+            <ModernQuranLoader title="جارٍ فتح بوابة المجمع..." subtitle="يتم مزامنة واسترجاع بيانات المجمع المخصص سحابياً..." />
+          </div>
+        </div>
+      );
+    }
+
     const complexHalaqahs = halaqahs.filter(h => isHalaqahInComplex(h, targetComplex, complexes, students, teachers));
 
     return (

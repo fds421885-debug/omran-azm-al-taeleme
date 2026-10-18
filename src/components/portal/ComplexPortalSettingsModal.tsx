@@ -225,10 +225,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   // Share link state
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Compute portal direct URL
+  // Compute direct registration link for this complex
   const portalUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}?complexPortal=${complex.id}`
-    : `?complexPortal=${complex.id}`;
+    ? `${window.location.origin}${window.location.pathname.replace(/\/+$/, '') || ''}/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`
+    : `?complexPortal=${encodeURIComponent(complex.id)}&tab=register`;
 
   // Load and sync all applications for this complex (merging previous and incoming)
   const refreshAllApps = async (isManualClick: boolean = false) => {

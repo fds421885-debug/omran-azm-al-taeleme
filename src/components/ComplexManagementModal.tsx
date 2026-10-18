@@ -22,7 +22,9 @@ import {
   RefreshCw,
   Compass,
   MapPin,
-  Clock
+  Clock,
+  Copy,
+  Link
 } from 'lucide-react';
 import {
   QuranComplex,
@@ -150,6 +152,19 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
 
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedComplexId, setCopiedComplexId] = useState<string | null>(null);
+
+  const handleCopyComplexRegistrationLink = (complexId: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const path = typeof window !== 'undefined' ? (window.location.pathname.replace(/\/+$/, '') || '') : '';
+    const url = `${origin}${path}/?complexPortal=${encodeURIComponent(complexId)}&tab=register`;
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url);
+    }
+    setCopiedComplexId(complexId);
+    setTimeout(() => setCopiedComplexId(null), 2500);
+  };
 
   if (!isOpen) return null;
 
@@ -1391,6 +1406,36 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                                   <span className="hidden sm:inline">نقل لقاعدة منفصلة</span>
                                 </button>
                               )}
+
+                              {/* Direct Registration Link & Preview for this Complex */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyComplexRegistrationLink(complex.id)}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                                title="نسخ رابط استمارة التسجيل المباشر الخاص بهذا المجمع لمشاركته مع الطلاب وأولياء الأمور"
+                              >
+                                {copiedComplexId === complex.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+                                    <span>تم نسخ الرابط!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>رابط التسجيل</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <a
+                                href={`/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+                                title="فتح استمارة وبوابة تسجيل هذا المجمع في نافذة جديدة"
+                              >
+                                <ExternalLink className="w-4 h-4 text-slate-300 hover:text-amber-300" />
+                              </a>
 
                               <button
                                 onClick={() => handleOpenAddHalaqahToComplex(complex.id)}

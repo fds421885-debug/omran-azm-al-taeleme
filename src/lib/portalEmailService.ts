@@ -10,6 +10,7 @@
 import { QuranComplex, StudentRegistrationApplication } from '../types';
 import { darkenHex, lightenHex } from './themeUtils';
 import { GoogleWorkspaceService } from './googleWorkspace';
+import { ApiConfig } from './apiConfig';
 
 // Comprehensive list of known disposable / throwaway / temporary email domains
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
@@ -284,13 +285,40 @@ export interface BrandedEmailPayload {
 }
 
 /**
+ * Ensures a portal URL is fully qualified with current protocol and domain
+ */
+export function ensureAbsolutePortalUrl(rawUrl: string, fallbackComplexId?: string): string {
+  if (rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
+    return rawUrl;
+  }
+  
+  let origin = '';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    origin = window.location.origin;
+  } else {
+    origin = ApiConfig.getBaseUrl() || '';
+  }
+
+  let path = rawUrl || (fallbackComplexId ? `/?complexPortal=${encodeURIComponent(fallbackComplexId)}&tab=register` : '/');
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+  return origin ? `${origin}${path}` : path;
+}
+
+/**
  * Builds the OTP Verification Email with the Complex's Theme
  */
 export function buildOtpVerificationEmail(
   complex: QuranComplex,
   toEmail: string,
-  otpCode: string
+  otpCode: string,
+  portalUrl?: string
 ): BrandedEmailPayload {
+  const directRegistrationUrl = portalUrl
+    ? ensureAbsolutePortalUrl(portalUrl)
+    : ensureAbsolutePortalUrl(`/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`, complex.id);
+
   return {
     toEmail,
     fromEmail: 'qdrat2626@gmail.com',
@@ -298,7 +326,7 @@ export function buildOtpVerificationEmail(
     title: `توثيق البريد الإلكتروني • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته،`,
     bodyParagraphs: [
-      `أهلاً بك في بوابة التسجيل والخدمات الإلكترونية لمجمع ${complex.name}.`,
+      `أهلاً بك في بوابة واستمارة التسجيل الإلكترونية لمجمع ${complex.name}.`,
       `لإتمام توثيق بريدك الإلكتروني والبدء في تقديم طلب الانضمام إلى حلقات القرآن الكريم، يرجى استخدام رمز التحقق التالي:`
     ],
     highlightBox: {
@@ -307,6 +335,10 @@ export function buildOtpVerificationEmail(
       sublabel: 'يرجى كتابة هذا الرمز في خانة التحقق بالاستمارة'
     },
     badgeText: 'توثيق حساب إلكتروني معتمد',
+    actionButton: {
+      text: `إكمال التسجيل في مجمع ${complex.name} الآن`,
+      url: directRegistrationUrl
+    },
     footerNote: `هذه رسالة آلية صادرة من منظومة عُمْرَان لإدارة المجمعات والحلقات القرآنية لصالح مجمع ${complex.name}. إذا لم تكن أنت من طلب التسجيل، يمكنك تجاهل هذه الرسالة.`,
     sentAt: new Date().toISOString(),
     complexName: complex.name,
@@ -314,9 +346,6 @@ export function buildOtpVerificationEmail(
   };
 }
 
-/**
- * Builds the Application Received Email with Queue Position & Tracking Info
- */
 export function buildApplicationReceivedEmail(
   complex: QuranComplex,
   application: StudentRegistrationApplication,
@@ -324,6 +353,8 @@ export function buildApplicationReceivedEmail(
 ): BrandedEmailPayload {
   const queueNo = application.queueNumber || 1;
   const ahead = application.pendingAheadCount !== undefined ? application.pendingAheadCount : Math.max(0, queueNo - 1);
+  const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
+  const sep = fullPortalUrl.includes('?') ? '&' : '?';
 
   return {
     toEmail: application.email || '',
@@ -343,7 +374,7 @@ export function buildApplicationReceivedEmail(
     badgeText: `رقم متابعة الطلب: ${application.trackingCode}`,
     actionButton: {
       text: 'متابعة وتفقد حالة الطلب مباشرة عبر الرابط',
-      url: `${portalUrl}&track=${application.trackingCode}`
+      url: `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`
     },
     footerNote: `مجمع ${complex.name} • منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية.`,
     sentAt: new Date().toISOString(),
@@ -361,6 +392,9 @@ export function buildApplicationAcceptedEmail(
   halaqahName: string,
   portalUrl: string
 ): BrandedEmailPayload {
+  const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
+  const sep = fullPortalUrl.includes('?') ? '&' : '?';
+
   return {
     toEmail: application.email || '',
     fromEmail: 'qdrat2626@gmail.com',
@@ -381,7 +415,7 @@ export function buildApplicationAcceptedEmail(
     badgeText: 'تم القبول والاعتماد 🎉',
     actionButton: {
       text: 'تأكيد القبول والدخول لحساب الطالب الآن',
-      url: `${portalUrl}&track=${application.trackingCode}`
+      url: `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`
     },
     footerNote: `مع تحيات إدارة ومحفظي مجمع ${complex.name} • منظومة عُمْرَان.`,
     sentAt: new Date().toISOString(),
