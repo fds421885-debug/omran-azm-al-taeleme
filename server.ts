@@ -35,7 +35,7 @@ import {
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
@@ -6180,4 +6180,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the HTTP server if not in a serverless environment (e.g. Netlify functions)
+if (process.env.NETLIFY !== "true" && !process.env.AWS_LAMBDA_FUNCTION_NAME && !process.env.LAMBDA_TASK_ROOT) {
+  startServer();
+}
+
+export default app;
