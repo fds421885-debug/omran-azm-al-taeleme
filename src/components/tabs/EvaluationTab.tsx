@@ -102,10 +102,10 @@ interface EvaluationTabProps {
 }
 
 export const EvaluationTab: React.FC<EvaluationTabProps> = ({
-  students,
-  attendance,
-  evaluations,
-  criteria,
+  students = [],
+  attendance = [],
+  evaluations = [],
+  criteria = [],
   isSupervisor = false,
   activeComplexId,
   activeComplex,
@@ -225,23 +225,23 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   // Configured Points for Pages & Listening (from criteria or default)
   const pointsPerNewPage = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-new-page');
+    const found = (criteria || []).find(c => c && c.id === 'crit-points-new-page');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
   }, [criteria]);
 
   const pointsPerReviewPage = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-review-page');
+    const found = (criteria || []).find(c => c && c.id === 'crit-points-review-page');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 1;
   }, [criteria]);
 
   const pointsPerListening = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-listening');
+    const found = (criteria || []).find(c => c && c.id === 'crit-points-listening');
     return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
   }, [criteria]);
 
   // General evaluation criteria (excluding internal page point definitions)
   const displayCriteria = useMemo(() => {
-    return criteria.filter(c => !c.id.startsWith('crit-points-'));
+    return (criteria || []).filter(c => c && c.id && !c.id.startsWith('crit-points-'));
   }, [criteria]);
 
   // Live calculation of criteria points earned today
@@ -288,8 +288,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   }, [todayReviews]);
 
   // Attendance status of active student on the selected date
-  const selectedDateAtt = attendance.find(
-    a => a.date === selectedDate && a.studentId === activeStudentId
+  const selectedDateAtt = (attendance || []).find(
+    a => a && a.date === selectedDate && a.studentId === activeStudentId
   );
   const isAbsent = selectedDateAtt?.status === 'غائب';
   const isExcused = selectedDateAtt?.status === 'معتذر';
@@ -449,8 +449,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     setAutoFilledNotice('');
 
     // 1. Check if an evaluation already exists for the selectedDate
-    const existing = evaluations.find(
-      e => e.date === selectedDate && e.studentId === activeStudent.id
+    const existing = (evaluations || []).find(
+      e => e && e.date === selectedDate && e.studentId === activeStudent.id
     );
 
     if (existing) {
@@ -1579,7 +1579,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-[#fbbf24] shrink-0" />
             <span>
-              أنت الآن تستعرض سجل تسميع يوم <span className="text-white underline font-black">{selectedDate}</span> {evaluations.some(e => e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
+              أنت الآن تستعرض سجل تسميع يوم <span className="text-white underline font-black">{selectedDate}</span> {(evaluations || []).some(e => e && e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
             </span>
           </div>
           <button
@@ -1705,13 +1705,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             ) : (
               students.map(student => {
                 const isSelected = student.id === activeStudentId;
-                const studentAtt = attendance.find(
-                  a => a.date === selectedDate && a.studentId === student.id
+                const studentAtt = (attendance || []).find(
+                  a => a && a.date === selectedDate && a.studentId === student.id
                 );
                 const isStudentAbsent = studentAtt?.status === 'غائب';
                 const isStudentExcused = studentAtt?.status === 'معتذر';
-                const hasEvaluatedOnSelectedDate = evaluations.some(
-                  e => e.date === selectedDate && e.studentId === student.id
+                const hasEvaluatedOnSelectedDate = (evaluations || []).some(
+                  e => e && e.date === selectedDate && e.studentId === student.id
                 );
 
                 return (

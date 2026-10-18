@@ -54,23 +54,24 @@ export const TopProgressBar: React.FC<TopProgressBarProps> = ({
     if (isLoading) {
       setVisible(true);
       setProgress(25);
-      t1 = setTimeout(() => setProgress(60), 80);
-      t2 = setTimeout(() => setProgress(88), 200);
-      t3 = setTimeout(() => setProgress(96), 400);
+      t1 = setTimeout(() => setProgress(65), 70);
+      t2 = setTimeout(() => setProgress(90), 160);
+      t3 = setTimeout(() => setProgress(97), 350);
 
+      // Auto-complete watchdog: guarantees progress bar completes and never hangs indefinitely
       watchdog = setTimeout(() => {
         setProgress(100);
         hideTimer = setTimeout(() => {
           setVisible(false);
           setProgress(0);
-        }, 250);
-      }, 1400);
+        }, 220);
+      }, 900);
     } else {
       setProgress(100);
       hideTimer = setTimeout(() => {
         setVisible(false);
         setProgress(0);
-      }, 250);
+      }, 200);
     }
 
     return () => {
@@ -100,7 +101,9 @@ export const TopProgressBar: React.FC<TopProgressBarProps> = ({
           width: `${progress}%`
         }}
       >
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-200 blur-[2px] -mr-1" />
+        {/* Radiant glowing bead positioned on the advancing tip of the bar in RTL */}
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-amber-200 blur-[2px] shadow-[0_0_12px_#ffc800]" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white" />
       </div>
     </div>
   );
@@ -386,10 +389,10 @@ export const TabHeaderLoaderBanner: React.FC<{ activeTab: string; activeComplex?
             <span
               className="text-[10px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs"
               style={{
-                backgroundColor: `${accentColor}25`,
-                borderColor: `${accentColor}60`,
+                backgroundColor: `${safeAccent}25`,
+                borderColor: `${safeAccent}60`,
                 borderBottomColor: accentShadow,
-                color: accentColor
+                color: safeAccent
               }}
             >
               تحديث وتأكيد البيانات سحابياً
