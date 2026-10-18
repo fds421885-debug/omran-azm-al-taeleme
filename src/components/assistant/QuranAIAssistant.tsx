@@ -84,55 +84,7 @@ export function stripFaceEmojis(text: string): string {
     .trim();
 }
 
-interface QuranAIAssistantProps {
-  currentUser: {
-    username: string;
-    role: string;
-    teacherId?: string;
-    studentId?: string;
-  } | null;
-  currentTeacherName?: string;
-  isDeveloper: boolean;
-  isSupervisor: boolean;
-  activeComplex: QuranComplex | null;
-  activeHalaqahId: string;
-  students: Student[];
-  halaqahs: Halaqah[];
-  allHalaqahs?: Halaqah[];
-  complexes?: QuranComplex[];
-  violations?: any[];
-  teachers?: any[];
-  attendance: AttendanceRecord[];
-  evaluations: StudentEvaluation[];
-  submissions?: any[];
-  libraryDocs?: any[];
-  leaderboardSettings?: any;
-  onAddStudent: (studentData: Partial<Student>) => Promise<boolean>;
-  onDeleteStudent?: (studentId: string) => Promise<boolean>;
-  onTransferStudent?: (studentId: string, targetHalaqahId: string, targetHalaqahName: string) => Promise<void>;
-  onSaveAttendance?: (records: AttendanceRecord[]) => Promise<void>;
-  onSaveHalaqah?: (halaqah: Halaqah) => Promise<void>;
-  onDeleteHalaqah?: (halaqahId: string) => Promise<void>;
-  onDeleteTeacher?: (teacherId: string) => Promise<void>;
-  onSaveViolation?: (violation: any) => Promise<void>;
-  onNavigateTab?: (tab: string, meta?: any) => void;
-  onSaveLibraryDoc?: (doc: LibraryDocument) => Promise<void>;
-  onOpenThemeCustomizer?: (complexId?: string) => void;
-  certificates?: IssuedCertificate[];
-  onSaveCertificate?: (cert: IssuedCertificate) => Promise<void>;
-  onSaveCertificates?: (certs: IssuedCertificate[]) => Promise<void>;
-  recordings?: SurahRecording[];
-  listeningLogs?: StudentListeningLog[];
-  onSaveEvaluation?: (
-    evaluation: StudentEvaluation,
-    newAssignment?: any,
-    updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
-    listeningAssignment?: any
-  ) => Promise<void>;
-  onSaveComplex?: (complex: QuranComplex) => Promise<void>;
-}
-
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
@@ -184,11 +136,61 @@ interface ChatMessage {
   };
 }
 
-interface ChatSession {
+export interface ChatSession {
   id: string;
   title: string;
   updatedAt: string;
   messages: ChatMessage[];
+}
+
+interface QuranAIAssistantProps {
+  currentUser: {
+    username: string;
+    role: string;
+    teacherId?: string;
+    studentId?: string;
+  } | null;
+  currentTeacherName?: string;
+  isDeveloper: boolean;
+  isSupervisor: boolean;
+  activeComplex: QuranComplex | null;
+  activeHalaqahId: string;
+  students: Student[];
+  halaqahs: Halaqah[];
+  allHalaqahs?: Halaqah[];
+  complexes?: QuranComplex[];
+  violations?: any[];
+  teachers?: any[];
+  attendance: AttendanceRecord[];
+  evaluations: StudentEvaluation[];
+  submissions?: any[];
+  libraryDocs?: any[];
+  leaderboardSettings?: any;
+  onAddStudent: (studentData: Partial<Student>) => Promise<boolean>;
+  onDeleteStudent?: (studentId: string) => Promise<boolean>;
+  onTransferStudent?: (studentId: string, targetHalaqahId: string, targetHalaqahName: string) => Promise<void>;
+  onSaveAttendance?: (records: AttendanceRecord[]) => Promise<void>;
+  onSaveHalaqah?: (halaqah: Halaqah) => Promise<void>;
+  onDeleteHalaqah?: (halaqahId: string) => Promise<void>;
+  onDeleteTeacher?: (teacherId: string) => Promise<void>;
+  onSaveViolation?: (violation: any) => Promise<void>;
+  onNavigateTab?: (tab: string, meta?: any) => void;
+  onSaveLibraryDoc?: (doc: LibraryDocument) => Promise<void>;
+  onOpenThemeCustomizer?: (complexId?: string) => void;
+  certificates?: IssuedCertificate[];
+  onSaveCertificate?: (cert: IssuedCertificate) => Promise<void>;
+  onSaveCertificates?: (certs: IssuedCertificate[]) => Promise<void>;
+  recordings?: SurahRecording[];
+  listeningLogs?: StudentListeningLog[];
+  onSaveEvaluation?: (
+    evaluation: StudentEvaluation,
+    newAssignment?: any,
+    updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
+    listeningAssignment?: any
+  ) => Promise<void>;
+  onSaveComplex?: (complex: QuranComplex) => Promise<void>;
+  chatMessages?: ChatMessage[];
+  onUpdateChatMessages?: (messages: ChatMessage[]) => void;
 }
 
 // Arabic normalization helper
@@ -209,15 +211,15 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   isDeveloper,
   isSupervisor,
   activeComplex,
-  activeHalaqahId,
-  students,
-  halaqahs,
+  activeHalaqahId = 'all',
+  students = [],
+  halaqahs = [],
   allHalaqahs = [],
   complexes = [],
   violations = [],
   teachers = [],
-  attendance,
-  evaluations,
+  attendance = [],
+  evaluations = [],
   submissions = [],
   libraryDocs = [],
   leaderboardSettings,
@@ -239,6 +241,8 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   listeningLogs = [],
   onSaveEvaluation,
   onSaveComplex,
+  chatMessages,
+  onUpdateChatMessages,
 }) => {
   // 1. Accessibility Guard: Available for Developer, Supervisor, and Teacher
   const canAccess = isDeveloper || isSupervisor || currentUser?.role === 'admin' || Boolean(currentTeacherName);
@@ -512,20 +516,21 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   };
 
   // ----------------------------------------------------
-  // Chat Sessions & History Management
+  // Chat Sessions & History Management (with sessionStorage & localStorage persistent continuity)
   // ----------------------------------------------------
+  const AI_ACTIVE_SESSION_ID_KEY = 'omran_ai_active_session_id';
+  const AI_ACTIVE_MESSAGES_KEY = 'omran_ai_active_messages';
+  const AI_SESSIONS_KEY = 'omran_ai_chat_sessions_v4';
+
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
-      const stored = localStorage.getItem('omran_ai_chat_sessions_v4');
+      const stored = localStorage.getItem(AI_SESSIONS_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {}
     return [];
-  });
-
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    return `session_${Date.now()}`;
   });
 
   const getInitialWelcomeMessage = (): ChatMessage => ({
@@ -535,9 +540,85 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
   });
 
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const fromSession = sessionStorage.getItem(AI_ACTIVE_SESSION_ID_KEY);
+        if (fromSession && fromSession.trim()) return fromSession.trim();
+        const fromLocal = localStorage.getItem(AI_ACTIVE_SESSION_ID_KEY);
+        if (fromLocal && fromLocal.trim()) return fromLocal.trim();
+      }
+    } catch {}
+    const newId = `session_${Date.now()}`;
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+      }
+    } catch {}
+    return newId;
+  });
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      if (Array.isArray(chatMessages) && chatMessages.length > 0) {
+        return chatMessages;
+      }
+      if (typeof window !== 'undefined') {
+        // 1. Try sessionStorage active messages first (preserves state during tab navigation and reloads)
+        const sessionActive = sessionStorage.getItem(AI_ACTIVE_MESSAGES_KEY);
+        if (sessionActive) {
+          const parsed = JSON.parse(sessionActive);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+        // 2. Try localStorage active session if available
+        const activeId = sessionStorage.getItem(AI_ACTIVE_SESSION_ID_KEY) || localStorage.getItem(AI_ACTIVE_SESSION_ID_KEY);
+        const storedSessions = localStorage.getItem(AI_SESSIONS_KEY);
+        if (storedSessions) {
+          const parsedSessions = JSON.parse(storedSessions);
+          if (Array.isArray(parsedSessions)) {
+            const matched = activeId ? parsedSessions.find((s: any) => s.id === activeId) : parsedSessions[0];
+            if (matched && Array.isArray(matched.messages) && matched.messages.length > 0) {
+              return matched.messages;
+            }
+          }
+        }
+      }
+    } catch (e) {}
     return [getInitialWelcomeMessage()];
   });
+
+  // Sync with parent chatMessages prop if provided
+  useEffect(() => {
+    if (Array.isArray(chatMessages) && chatMessages.length > 0) {
+      setMessages(prev => {
+        if (prev.length !== chatMessages.length || (prev[prev.length - 1]?.id !== chatMessages[chatMessages.length - 1]?.id)) {
+          return chatMessages;
+        }
+        return prev;
+      });
+    }
+  }, [chatMessages]);
+
+  // Sync active messages & activeSessionId to sessionStorage and localStorage continuously
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        if (activeSessionId) {
+          sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, activeSessionId);
+          localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, activeSessionId);
+        }
+        if (messages && messages.length > 0) {
+          sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify(messages));
+        }
+      }
+      if (onUpdateChatMessages) {
+        onUpdateChatMessages(messages);
+      }
+    } catch (err) {}
+  }, [messages, activeSessionId, onUpdateChatMessages]);
 
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -560,8 +641,16 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     }
   }, [messages, isOpen, isLoading]);
 
-  // Persist messages of the active session
+  // Persist messages of the active session into sessions array & sessionStorage
   const saveSessionMessages = (newMessages: ChatMessage[], sessionId: string) => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, sessionId);
+        sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify(newMessages));
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, sessionId);
+      }
+    } catch {}
+
     const hasUserMessage = newMessages.some(m => m.sender === 'user');
     if (!hasUserMessage) return;
 
@@ -588,7 +677,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       }
 
       try {
-        localStorage.setItem('omran_ai_chat_sessions_v4', JSON.stringify(nextSessions.slice(0, 30)));
+        localStorage.setItem(AI_SESSIONS_KEY, JSON.stringify(nextSessions.slice(0, 30)));
       } catch (err) {}
       return nextSessions;
     });
@@ -596,15 +685,31 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
   const handleStartNewChat = () => {
     const newId = `session_${Date.now()}`;
+    const initialWelcome = getInitialWelcomeMessage();
     setActiveSessionId(newId);
-    setMessages([getInitialWelcomeMessage()]);
+    setMessages([initialWelcome]);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+        sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify([initialWelcome]));
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+      }
+    } catch {}
     setIsHistoryOpen(false);
     setShowCurrentChatClearConfirm(false);
   };
 
   const handleSelectSession = (session: ChatSession) => {
     setActiveSessionId(session.id);
-    setMessages(session.messages.length > 0 ? session.messages : [getInitialWelcomeMessage()]);
+    const msgs = session.messages && session.messages.length > 0 ? session.messages : [getInitialWelcomeMessage()];
+    setMessages(msgs);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, session.id);
+        sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify(msgs));
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, session.id);
+      }
+    } catch {}
     setIsHistoryOpen(false);
     setShowCurrentChatClearConfirm(false);
   };
@@ -618,15 +723,23 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     setSessions(prev => {
       const filtered = prev.filter(s => s.id !== sessionId);
       try {
-        localStorage.setItem('omran_ai_chat_sessions_v4', JSON.stringify(filtered));
+        localStorage.setItem(AI_SESSIONS_KEY, JSON.stringify(filtered));
       } catch (err) {}
       return filtered;
     });
 
     if (activeSessionId === sessionId) {
       const newId = `session_${Date.now()}`;
+      const initialWelcome = getInitialWelcomeMessage();
       setActiveSessionId(newId);
-      setMessages([getInitialWelcomeMessage()]);
+      setMessages([initialWelcome]);
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+          sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify([initialWelcome]));
+          localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+        }
+      } catch {}
     }
 
     showToast('تم حذف المحادثة بنجاح ✓');
@@ -636,14 +749,22 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     setSessions(prev => {
       const filtered = prev.filter(s => s.id !== activeSessionId);
       try {
-        localStorage.setItem('omran_ai_chat_sessions_v4', JSON.stringify(filtered));
+        localStorage.setItem(AI_SESSIONS_KEY, JSON.stringify(filtered));
       } catch (err) {}
       return filtered;
     });
 
     const newId = `session_${Date.now()}`;
+    const initialWelcome = getInitialWelcomeMessage();
     setActiveSessionId(newId);
-    setMessages([getInitialWelcomeMessage()]);
+    setMessages([initialWelcome]);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+        sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify([initialWelcome]));
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+      }
+    } catch {}
     setShowCurrentChatClearConfirm(false);
     showToast('تم مسح المحادثة وبدء محادثة جديدة ✓');
   };
@@ -651,11 +772,22 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   const handleConfirmClearAllSessions = () => {
     setSessions([]);
     try {
-      localStorage.removeItem('omran_ai_chat_sessions_v4');
+      localStorage.removeItem(AI_SESSIONS_KEY);
+      sessionStorage.removeItem(AI_ACTIVE_SESSION_ID_KEY);
+      sessionStorage.removeItem(AI_ACTIVE_MESSAGES_KEY);
+      localStorage.removeItem(AI_ACTIVE_SESSION_ID_KEY);
     } catch (err) {}
     const newId = `session_${Date.now()}`;
+    const initialWelcome = getInitialWelcomeMessage();
     setActiveSessionId(newId);
-    setMessages([getInitialWelcomeMessage()]);
+    setMessages([initialWelcome]);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+        sessionStorage.setItem(AI_ACTIVE_MESSAGES_KEY, JSON.stringify([initialWelcome]));
+        localStorage.setItem(AI_ACTIVE_SESSION_ID_KEY, newId);
+      }
+    } catch {}
     setShowClearAllConfirm(false);
     setIsHistoryOpen(false);
     showToast('تم مسح جميع المحادثات السابقة بنجاح ✓');

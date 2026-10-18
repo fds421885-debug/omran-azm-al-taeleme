@@ -3216,9 +3216,16 @@ app.post("/api/gemini/assistant", async (req, res) => {
       hasSpecificStudentsProgressIntent ||
       isExplicitRecitationInquiry;
 
+    const isConversationalQuery = Boolean(
+      /^(?:ما\s+هذا|ماهذا|ما\s+هو|ماهو|ما\s+هي|ماهي|ماذا|كيف|لماذا|هل|متى|أين|اين|اشرح|وضح|علمني|قل\s+لي|أخبرني|اخبرني|سؤال|عندي\s+سؤال|استفسار|اريد\s+ان\s+اسالك|أريد\s+أن\s+أسألك|اعطني\s+مثال|أعطني\s+مثال|مثال|امثلة|أمثلة|ما\s+معنى|ما\s+المعنى|ماذا\s+يعني|ماذا\s+تعني|ايش\s+يعني|وش\s+يعني|ايش\s+هذا|وش\s+هذا|شو\s+هذا|شنو\s+هذا)/i.test(normUserMessage) ||
+      normUserMessage.endsWith("؟") ||
+      normUserMessage.endsWith("?")
+    );
+
     let unresolvedStudentNote = "";
     if (
       !hasSpecialIntent &&
+      !isConversationalQuery &&
       studentResolution.status === "NOT_FOUND" &&
       (studentResolution.isSingleStudentQuery || studentResolution.requestedNames.length > 0)
     ) {
@@ -3712,13 +3719,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
       candidateStudentForAttendance = studentResolution.matchedStudents[0];
       candidateStudentForReport = studentResolution.matchedStudents[0];
-    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery) {
+    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery && !isConversationalQuery) {
       // Use findBestMatchingStudent directly to guarantee we never pick the wrong student
       const matchedStudentFromMsg = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
       if (matchedStudentFromMsg) {
         candidateStudentForAttendance = matchedStudentFromMsg;
         candidateStudentForReport = matchedStudentFromMsg;
-      } else if (contextStudents.length === 1 || (hasReferenceToPreviousStudents && contextStudents.length === 1)) {
+      } else if (hasReferenceToPreviousStudents && contextStudents.length === 1) {
         candidateStudentForAttendance = contextStudents[0];
         candidateStudentForReport = contextStudents[0];
       }
@@ -3996,13 +4003,13 @@ app.post("/api/gemini/assistant", async (req, res) => {
     let bestMonthData: any = null;
     let lastRecordedRecitationDate = "";
 
-    if (!hasMultiStudentRecitationIntent && (hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent)) {
+    if (!hasMultiStudentRecitationIntent && !isConversationalQuery && (hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent)) {
       candidateStudentForRecitation =
         studentForEvaluationInquiry ||
         candidateStudentForPoints ||
         candidateStudentForAttendance ||
         candidateStudentForReport ||
-        (contextStudents.length > 0 ? contextStudents[0] : null);
+        (hasReferenceToPreviousStudents && contextStudents.length > 0 ? contextStudents[0] : null);
 
       if (candidateStudentForRecitation) {
         const studentEvals = evaluationsList
@@ -4303,7 +4310,7 @@ ${excusedListStr}
       candidateStudentForRecitation ||
       currentActiveStudent ||
       findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
-      (contextStudents.length === 1 ? contextStudents[0] : null);
+      (hasReferenceToPreviousStudents && contextStudents.length === 1 ? contextStudents[0] : null);
 
     const hasCoachingIntent =
       isCoachingQuery ||
@@ -4403,7 +4410,13 @@ ${studentsSummary || "لا يوجد طلاب مسجلون بعد"}
 11. [حظر الوجوه التعبيرية والابتسامات - صارم وحاسم 100%]:
     ممنوع منعاً باتاً ومطلقاً استخدام أي وجوه تعبيرية أو إيموجي وجوه وابتسامات (مثل 😀 😃 😅 🤣 😂 🙂 😉 😊 😇 😋 😎 😞 😔 😢 😭 وغيرها من إيموجي الوجوه والابتسامات). المنصة وقورة ورسمية وقرآنية. استبدلها بلغة قرآنية أدبية راقية، وتنسيق رسمي منظم بالنقاط والأسطر بدون أي وجوه تعبيرية.
 12. [المرونة والذكاء التام في التقارير والجداول والرسومات البيانية]:
-    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
+    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.
+13. [قاعدة الاستفسارات التتابعية ومتابعة الحوار بدون اعتذار - صارمة وحاسمة 100%]:
+    - إذا قال المستخدم استفساراً مقتضباً أو تتابعياً (مثل: "ما هذا؟" أو "ماهذا؟" أو "ايش هذا؟" أو "وش هذا؟" أو "ماذا يعني؟" أو "وضح لي" أو "اشرح لي" أو "كيف ذلك؟" أو سأل عن تفصيل ما ذكرته له للتو):
+      * ممنوع منعاً باتاً ومطلقاً أن تبدأ إجابتك بكلمة "عذراً" أو "عفواً" أو أي اعتذار أو حيرة أو تردد!
+      * ممنوع أن تسأله هل يقصد بيانات المجمع أم كذا!
+      * اشرح فوراً وبشكل قاطع ومفصل ومؤصل بالقرآن وأحكام التجويد ما سأل عنه أو ما ذُكر في آخر رد لك في المحادثة، بأمثلة واضحة ومباشرة وبكل ثقة.
+    - إذا انتقل المستخدم إلى موضوع جديد أو طرح سؤالاً مستقلاً (مثل أحكام التجويد أو سؤال قرآني أو إداري جديد)، أجب عن الموضوع الجديد فوراً وبشكل مباشر ومستقل، ولا تعد للموضوع السابق أو تكرر كشف الطالب السابق إلا إذا أشار المستخدم إليه صراحة (مثل: 'له'، 'عنه'، 'نفس الطالب').${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
 
 ⚠️ توجيه استثنائي وإلزامي حول استفسار الحضور والغياب للطالب "${studentTargetForStats.name}":
 - المستخدم يسأل خصيصاً ومباشرة عن نسبة وحضور وغياب هذا الطالب تحديداً لهذا الأسبوع!
@@ -4623,19 +4636,19 @@ ${coachingStudentProfile}
         "gemini-3.8-flash",
       ];
 
-      // Serverless execution budget: Ensure entire cascade completes safely under 6.5s to prevent Netlify 10s cutoff
+      // Execution budget: Ensure cascade completes reliably without premature timeouts
       const cascadeStart = Date.now();
-      const MAX_CASCADE_MS = 6500;
+      const MAX_CASCADE_MS = 25000;
 
       for (const modelName of candidateModels) {
         const elapsed = Date.now() - cascadeStart;
         const remainingBudget = MAX_CASCADE_MS - elapsed;
-        if (remainingBudget <= 1200) {
-          // If less than 1.2s remaining, exit cascade to allow instantaneous fallback rendering
+        if (remainingBudget <= 2000) {
+          // If less than 2s remaining, exit cascade to allow fallback rendering
           break;
         }
 
-        const modelTimeout = Math.min(4500, remainingBudget);
+        const modelTimeout = Math.min(12000, remainingBudget);
 
         try {
           const response = await Promise.race([
@@ -4651,6 +4664,9 @@ ${coachingStudentProfile}
 
           if (response?.text) {
             geminiReply = response.text.trim();
+            geminiReply = geminiReply
+              .replace(/^(?:عذراً|عفواً|أعتذر|المعذرة)\s*(?:يا\s+)?(?:أخي|شيخنا|الكريم|الفاضل|عزيزي)?\s*[,،:\-–.]*\s*(?:لعلك\s+تقصد\s+(?:الاستفسار\s+عن\s+)?(?:تفصيل\s+أكثر\s+حول|بيانات)?|ربما\s+تقصد)?\s*/i, '')
+              .trim();
             break;
           }
         } catch (modelErr: any) {
