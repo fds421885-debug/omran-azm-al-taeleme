@@ -12,6 +12,9 @@
   node_bundler = "esbuild"
   external_node_modules = ["vite"]
 
+[functions.api]
+  timeout = 26
+
 # Proxy all /api requests to Netlify Serverless Functions (Gemini AI, Tools, Mail, Maps)
 [[redirects]]
   from = "/api/*"

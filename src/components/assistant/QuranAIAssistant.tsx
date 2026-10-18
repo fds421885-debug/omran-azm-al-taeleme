@@ -866,10 +866,16 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
       const payload = {
         message: textToSend,
-        history: messages.slice(-16).map(m => ({
-          role: m.sender === 'user' ? 'user' : 'model',
-          parts: [{ text: m.text }],
-        })),
+        history: messages.slice(-8).map(m => {
+          let text = m.text || '';
+          if (m.sender !== 'user' && text.length > 350) {
+            text = `${text.slice(0, 300)}... [تم تدوين الكشف وسياق البيانات المعتمدة سابقاً]`;
+          }
+          return {
+            role: m.sender === 'user' ? 'user' : 'model',
+            parts: [{ text }],
+          };
+        }),
         recentReferencedStudents,
         user: {
           name: effectiveName,
@@ -999,8 +1005,10 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             surahNumber: r.surahNumber,
             fromAyah: r.fromAyah,
             toAyah: r.toAyah,
-            audioDataUrl: r.audioDataUrl || r.url,
-            url: r.url || r.audioDataUrl,
+            // Exclude huge base64 audio blobs from network request to prevent Netlify 6MB payload error
+            audioDataUrl: (r.url && !r.url.startsWith('data:')) ? r.url : undefined,
+            url: (r.url && !r.url.startsWith('data:')) ? r.url : undefined,
+            hasAudio: Boolean(r.audioDataUrl || r.url),
             createdAt: r.createdAt,
             notes: r.notes,
             teacherEvaluation: r.teacherEvaluation,
@@ -1014,7 +1022,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             fromAyah: l.fromAyah,
             toAyah: l.toAyah,
             date: l.date,
-            audioUrl: l.audioUrl,
+            audioUrl: (l.audioUrl && !l.audioUrl.startsWith('data:')) ? l.audioUrl : undefined,
             notes: l.notes,
           })),
           certificates: (certificates || []).map(c => ({
@@ -1055,10 +1063,27 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         },
       };
 
+      const clientApiKey = (
+        (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+        (import.meta as any).env?.GEMINI_API_KEY ||
+        (typeof window !== 'undefined' ? (localStorage.getItem('omran_gemini_api_key') || localStorage.getItem('gemini_api_key') || '') : '') ||
+        ''
+      ).trim();
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (clientApiKey) {
+        headers['x-gemini-api-key'] = clientApiKey;
+      }
+
       const res = await fetch(ApiConfig.getEndpoint('/api/gemini/assistant'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers,
+        body: JSON.stringify({
+          ...payload,
+          apiKey: clientApiKey || undefined,
+        }),
       });
 
       if (!res.ok) {

@@ -44,12 +44,15 @@ app.use(express.json({ limit: "10mb" }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-gemini-api-key");
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
   if (req.url.startsWith("/.netlify/functions/api")) {
     req.url = req.url.replace("/.netlify/functions/api", "/api");
+  }
+  if (req.originalUrl && req.originalUrl.startsWith("/.netlify/functions/api")) {
+    req.originalUrl = req.originalUrl.replace("/.netlify/functions/api", "/api");
   }
   next();
 });
@@ -317,9 +320,14 @@ app.get("/api/maps/geocode", async (req, res) => {
   }
 });
 
-// Dynamic Google GenAI Client (reads fresh GEMINI_API_KEY on every call)
+// Dynamic Google GenAI Client (reads fresh GEMINI_API_KEY or VITE_GEMINI_API_KEY on every call)
 function getAIInstance(keyOverride?: string): GoogleGenAI {
-  const key = keyOverride || process.env.GEMINI_API_KEY || "";
+  const key = (
+    keyOverride ||
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    ""
+  ).trim();
   return new GoogleGenAI({
     apiKey: key,
     httpOptions: {
@@ -2325,16 +2333,46 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     // 1. Interactive Student Registration Detection with Accurate Halaqah & Name
     const hasRegisterIntent =
-      /(?:سجل|تسجيل|أضف|اضف|إضافة|اضافة|ضيف|ضم|ألحق|الحق|ادخل|أدخل)\s*(?:لي\s+|لنا\s+|معنا\s+)?(?:الطالب|طالب|طالبا|طالباً|الطلالب|الطلاب|طالبنا|الطلبة)/i.test(message) ||
+      /(?:سجل|تسجيل|أضف|اضف|إضافة|اضافة|اصافة|اصف|ضيف|ضم|ألحق|الحق|ادخل|أدخل)\s*(?:لي\s+|لنا\s+|معنا\s+)?(?:الطالب|طالب|طالبا|طالباً|الطلالب|الطلاب|طالبنا|الطلبة)/i.test(message) ||
       /(?:طالب\s+جديد|طالبا\s+جديدا|طالبنا\s+الجديد)/i.test(message) ||
       message.includes("تسجيل طالب") ||
       message.includes("إضافة طالب") ||
+      message.includes("اضافة طالب") ||
+      message.includes("اصافة طالب") ||
       message.includes("ضيف طالب") ||
       message.includes("سجل طالب") ||
       message.includes("ضيف الطالب") ||
       message.includes("أضف الطالب") ||
       message.includes("اضف الطالب") ||
       message.includes("ضيف الطلالب");
+
+    // Where to take attendance inquiry (تحضير ورصد حضور وغياب الطلاب)
+    const hasWhereToAttendIntent =
+      /(?:من\s+أين|من\s+اين|كيف|وين|مكان)\s+(?:أحضر|احضر|تحضير|تسجيل\s+حضور|رصد\s+حضور)/i.test(message) ||
+      message.includes("من اين احضر") ||
+      message.includes("من أين أحضر") ||
+      message.includes("كيف احضر الطلاب") ||
+      message.includes("وين التحضير") ||
+      message.includes("رصد التحضير");
+
+    // Best student inquiry intent
+    const hasBestStudentIntent =
+      /(?:أفضل|افضل|الأفضل|الافضل|أحسن|احسن|المتصدر|الاول|الأول)\s+(?:طالب|طالب\s+موجود|الطلاب)/i.test(message) ||
+      message.includes("افضل طالب") ||
+      message.includes("أفضل طالب") ||
+      message.includes("احسن طالب") ||
+      message.includes("أحسن طالب") ||
+      message.includes("مين افضل طالب") ||
+      message.includes("من افضل طالب");
+
+    // General problem / assistance intent
+    const hasGeneralProblemIntent =
+      normUserMessage.includes("عندي مشكله") ||
+      normUserMessage.includes("عندي مشكلة") ||
+      normUserMessage.includes("واجهت مشكله") ||
+      normUserMessage.includes("واجهت مشكلة") ||
+      normUserMessage.includes("اريد مساعدة") ||
+      normUserMessage.includes("أريد مساعدة");
 
     // Universal Halaqah Detection across the entire query (for rosters, recitations, reports, charts, registrations, etc.)
     let matchedHalaqah = findMatchingHalaqah(message, halaqahsList, studentsList);
@@ -4439,8 +4477,8 @@ ${coachingStudentProfile}
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
 
     if (Array.isArray(history)) {
-      for (const h of history.slice(-20)) {
-        const textContent = (h.parts?.[0]?.text || h.text || "").trim();
+      for (const h of history.slice(-10)) {
+        let textContent = (h.parts?.[0]?.text || h.text || "").trim();
         if (!textContent) continue;
 
         // Skip the generic initial assistant welcome if it is the very first turn so Gemini begins from user intent
@@ -4449,6 +4487,11 @@ ${coachingStudentProfile}
         }
 
         const role: "user" | "model" = h.role === "model" || h.role === "assistant" ? "model" : "user";
+        // Compact long previous model messages (like massive student tables) to preserve tokens and prevent serverless timeouts
+        if (role === "model" && textContent.length > 400) {
+          textContent = `${textContent.slice(0, 350)}... [تم تدوين الكشف وسياق البيانات المعتمدة سابقاً]`;
+        }
+
         const last = chatHistoryParts[chatHistoryParts.length - 1];
         if (last && last.role === role) {
           last.parts[0].text += `\n${textContent}`;
@@ -4564,24 +4607,46 @@ ${coachingStudentProfile}
 
     // 6. Call Real Gemini API with Multi-Model Fallback Cascade
     let geminiReply = "";
-    if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
-      // Prioritize high-availability and fast responsive models
+    const effectiveApiKey = (
+      (req.headers["x-gemini-api-key"] as string) ||
+      (req.body.apiKey as string) ||
+      process.env.GEMINI_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      ""
+    ).trim();
+
+    if (effectiveApiKey && chatHistoryParts.length > 0) {
+      const aiClient = getAIInstance(effectiveApiKey);
+      // Fast, ultra-responsive model cascade (gemini-3.1-flash-lite < 1s, gemini-3.8-flash)
       const candidateModels = [
-        "gemini-3.8-flash",
         "gemini-3.1-flash-lite",
+        "gemini-3.8-flash",
       ];
 
+      // Serverless execution budget: Ensure entire cascade completes safely under 6.5s to prevent Netlify 10s cutoff
+      const cascadeStart = Date.now();
+      const MAX_CASCADE_MS = 6500;
+
       for (const modelName of candidateModels) {
+        const elapsed = Date.now() - cascadeStart;
+        const remainingBudget = MAX_CASCADE_MS - elapsed;
+        if (remainingBudget <= 1200) {
+          // If less than 1.2s remaining, exit cascade to allow instantaneous fallback rendering
+          break;
+        }
+
+        const modelTimeout = Math.min(4500, remainingBudget);
+
         try {
           const response = await Promise.race([
-            ai.models.generateContent({
+            aiClient.models.generateContent({
               model: modelName,
               contents: chatHistoryParts,
               config: {
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), modelTimeout)),
           ]);
 
           if (response?.text) {
@@ -4589,7 +4654,7 @@ ${coachingStudentProfile}
             break;
           }
         } catch (modelErr: any) {
-          console.warn(`Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
+          console.warn(`[Gemini API] Model ${modelName} encountered error:`, modelErr?.status || modelErr?.message?.slice(0, 80));
         }
       }
     }
@@ -4741,9 +4806,21 @@ ${coachingStudentProfile}
         } else {
           geminiReply = `أهلاً وسهلاً بك يا أخي ${firstName} في هذه السهرة التربوية الهادئة 🌙🌿\n\nتطوير الطالب ${sName} يبدأ من كسب قلبه وفهم مفاتيحه النفسية. إليك أهم ركائز الارتقاء به:\n\n• 🏆 **التحفيز القائم على المنافسة المحمودة:** إدراج اسمه في مسابقات التحدي القرآني ومنحه ألقاباً تشجيعية (مثل: سفير الإتقان، قارئ الأسبوع).\n• 📈 **التدرج المدروس:** تثبيت محفوظ الأمس قبل طلب جديد اليوم، فالتثبيت رأس المال والحفظ الجديد ربح.\n• 🤝 **الشراكة الودية مع الأسرة:** إرسال بطاقة تشجيعية عبر الواتساب لوالده تتضمن إشادة بتقدمه، مما ينعكس إيجابياً على نفسيته في البيت.\n\n💭 **أخبرني يا أخي ${firstName}:** ما هو الجانب الذي ترى أن ${sName} يحتاج دعماً أكبر فيه (الحفظ الجديد، مخارج الحروف والتجويد، أم المواظبة والانضباط)؟`;
         }
+      } else if (hasWhereToAttendIntent) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 📋✨\n\nإذا كنت تسأل عن **تحضير الطلاب ورصد حضورهم وغيابهم اليومي**، فيمكنك ذلك بكل يسر وسرعة من خلال **قسم تحضير الطلاب** المخصص للحلقة في الشريط العلوي.\n\n• ستظهر لك قائمة الطلاب الحالية، وبضغطة زر واحدة يمكنك تعيين حالة الطالب (🟢 حاضر، 🔴 غائب، 🟡 معتذر، ⏱️ متأخر).\n• كما يمكنك الانتقال المباشر للتحضير بالضغط على الزر المرفق بالأسفل.`;
+      } else if (hasBestStudentIntent) {
+        const sortedByPoints = [...studentsList].sort((a: any, b: any) => (Number(b.points ?? b.totalPoints) || 0) - (Number(a.points ?? a.totalPoints) || 0));
+        const topS = sortedByPoints[0];
+        if (topS) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌟\n\nأفضل وأعلى الطلاب تميزاً ونقاطاً في الصدارة حالياً هو الطالب المبارك **${topS.name}**:\n• **الحلقة:** ${topS.halaqahName || "الحلقة القرآنية"}\n• **المستوى:** ${topS.level || "متوسط"}\n• **رصيد النقاط:** **${Number(topS.points ?? topS.totalPoints) || 0} نقطة**\n• **السورة الحالية:** سورة ${topS.currentSurahName || "الفاتحة"}\n\nتفضل بمراجعة تفاصيل لوحة الشرف وأوائل الطلاب في الكشف المرفق أدناه:`;
+        } else {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌟\n\nيتم تحديد أفضل الطلاب بناءً على التزامهم بحلقات القرآن الكريم، إتقان الحفظ والمراجعة، ورصيد النقاط في لوحة الشرف. يمكنك الاطلاع على أوائل الطلاب من خلال تبويب "لوحة الشرف".`;
+        }
+      } else if (hasGeneralProblemIntent) {
+        geminiReply = `حيّاك الله ويسّر أمرك يا أخي ${firstName} 🌿\n\nأنا معك وتحت أمرك في أي مشكلة أو استشارة تواجهها:\n• إذا كانت **مشكلة تربوية أو سلوكية** مع أحد الطلاب (مثل كثرة الحركة، التشويش، أو صعوبة وتأخر الحفظ)، اذكر لي اسم الطالب أو طبيعة الصعوبة وسأضع لك خطة علاجية نبوية فورية خطوة بخطوة.\n• وإذا كانت **مسألة تقنية أو تنظيمية** في الحلقات أو الحسابات أو رصد التسميع، تفضل بتوضيحها وسأرشدك للحل المباشر في المنظومة. تفضل بما في خاطرك!`;
       } else if (chatHistoryParts.length > 2) {
         // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
-        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام. هل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام بخصوص طلاب وحلقات ${complexName}.\nهل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
