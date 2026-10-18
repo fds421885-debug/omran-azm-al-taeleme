@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
+import { fileURLToPath } from "url";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
@@ -39,6 +39,20 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
+
+// Support Netlify Functions path rewriting and CORS
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  if (req.url.startsWith("/.netlify/functions/api")) {
+    req.url = req.url.replace("/.netlify/functions/api", "/api");
+  }
+  next();
+});
 
 // Health check route
 app.get("/api/health", (req, res) => {
@@ -303,14 +317,28 @@ app.get("/api/maps/geocode", async (req, res) => {
   }
 });
 
-// Initialize Google GenAI
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
+// Dynamic Google GenAI Client (reads fresh GEMINI_API_KEY on every call)
+function getAIInstance(keyOverride?: string): GoogleGenAI {
+  const key = keyOverride || process.env.GEMINI_API_KEY || "";
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
     },
-  },
+  });
+}
+
+const ai: GoogleGenAI = new Proxy({} as GoogleGenAI, {
+  get(_, prop) {
+    const instance = getAIInstance();
+    const val = (instance as any)[prop];
+    if (typeof val === "function") {
+      return val.bind(instance);
+    }
+    return val;
+  }
 });
 
 // Helper to call Gemini with robust multi-model fallback cascade
@@ -6195,6 +6223,7 @@ app.get("/api/quran/all", (req, res) => {
 // Vite middleware for development & production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -6215,12 +6244,17 @@ async function startServer() {
 
 export { app };
 
-const isServerless = Boolean(
-  process.env.NETLIFY ||
-  process.env.LAMBDA_TASK_ROOT ||
-  process.env.AWS_LAMBDA_FUNCTION_NAME
-);
+const isMainModule = () => {
+  try {
+    if (!process.argv || !process.argv[1]) return false;
+    const currentFile = fileURLToPath(import.meta.url);
+    const executedFile = path.resolve(process.argv[1]);
+    return currentFile === executedFile || executedFile.endsWith("/server.ts") || executedFile.endsWith("\\server.ts");
+  } catch {
+    return false;
+  }
+};
 
-if (!isServerless && process.env.NODE_ENV !== "test") {
+if (isMainModule() && process.env.NODE_ENV !== "test") {
   startServer();
 }
