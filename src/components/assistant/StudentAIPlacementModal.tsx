@@ -28,6 +28,7 @@ import {
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
+import { ApiConfig } from '../../lib/apiConfig';
 
 interface StudentAIPlacementModalProps {
   isOpen: boolean;
@@ -140,29 +141,37 @@ export const StudentAIPlacementModal: React.FC<StudentAIPlacementModalProps> = (
       const q2Correct = tajweedQ2 === 'مد واجب متصل';
       const q3Correct = tajweedQ3 === 'قطب جد';
 
-      const res = await fetch('/api/gemini/student-placement-interview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentName: studentInitialData.name,
-          age: studentInitialData.age,
-          memorizedJuz,
-          consolidatedJuz,
-          tajweedAnswers: {
-            knowsTajweed,
-            easyCorrect: q1Correct,
-            mediumCorrect: q2Correct,
-            hardCorrect: q3Correct
-          },
-          hasIjazah: hasIjazah === 'yes',
-          targetGoal,
-          dailyNewPace,
-          dailyReviewPace,
-          selectedMosque: selectedMosqueId
-        })
-      });
+      let data: any = null;
+      try {
+        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/student-placement-interview'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentName: studentInitialData.name,
+            age: studentInitialData.age,
+            memorizedJuz,
+            consolidatedJuz,
+            tajweedAnswers: {
+              knowsTajweed,
+              easyCorrect: q1Correct,
+              mediumCorrect: q2Correct,
+              hardCorrect: q3Correct
+            },
+            hasIjazah: hasIjazah === 'yes',
+            targetGoal,
+            dailyNewPace,
+            dailyReviewPace,
+            selectedMosque: selectedMosqueId
+          })
+        });
 
-      const data = await res.json();
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          data = await res.json();
+        }
+      } catch (fetchErr) {
+        console.warn('Placement API call note:', fetchErr);
+      }
+
       setAiAnalysisResult(data);
 
       // 2. Scan Candidate Halaqahs in Target Complex & Selected Mosque

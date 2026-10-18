@@ -21,6 +21,7 @@ import {
   ZoomOut
 } from 'lucide-react';
 import { MosqueItem } from '../types';
+import { ApiConfig } from '../lib/apiConfig';
 
 interface MosqueLocationMapModalProps {
   isOpen: boolean;
@@ -221,7 +222,12 @@ export const MosqueLocationMapModal: React.FC<MosqueLocationMapModalProps> = ({
     setSearchError(null);
 
     try {
-      const res = await fetch(`/api/maps/geocode?q=${encodeURIComponent(query)}`);
+      const res = await fetch(ApiConfig.getEndpoint(`/api/maps/geocode?q=${encodeURIComponent(query)}`));
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+        setSearchError('خدمة البحث الجغرافي غير متوفرة حالياً.');
+        setIsSearching(false);
+        return;
+      }
       const data = await res.json();
 
       if (data.results && data.results.length > 0) {

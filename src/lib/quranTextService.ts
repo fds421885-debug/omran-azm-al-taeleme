@@ -34,7 +34,7 @@ export async function loadAllQuranVerses(): Promise<Record<number, string[]>> {
     try {
       // 2. Try server endpoint
       const resp2 = await fetch('/api/quran/all');
-      if (resp2.ok) {
+      if (resp2.ok && resp2.headers.get('content-type')?.includes('application/json')) {
         const data2 = await resp2.json();
         if (data2 && typeof data2 === 'object' && Object.keys(data2).length >= 114) {
           cachedQuranMap = data2;

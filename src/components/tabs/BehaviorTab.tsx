@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Student, BehaviorViolation, ViolationSeverity, AppSettings, QuranComplex } from '../../types';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
+import { ApiConfig } from '../../lib/apiConfig';
 
 interface BehaviorTabProps {
   students: Student[];
@@ -261,7 +262,7 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
       formActionTaken === 'إجراء آخر مخصص' ? formCustomAction || 'تنبيه وتوجيه' : formActionTaken;
 
     try {
-      const res = await fetch('/api/gemini/generate-violation-message', {
+      const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-violation-message'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -275,7 +276,7 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
         })
       });
 
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         if (data?.message) {
           setFormMessageText(data.message);

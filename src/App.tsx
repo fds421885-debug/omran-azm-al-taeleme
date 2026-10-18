@@ -120,6 +120,7 @@ import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSet
 import { applyComplexThemeToDOM } from './lib/themeUtils';
 import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
 import { triggerComplexThemePulse, dispatchHighlightItem } from './utils/highlightHelper';
+import { ApiConfig } from './lib/apiConfig';
 
 // Gentle Web Audio API chime for live incoming application notification
 function playGentleApplicationChime() {
@@ -1823,12 +1824,17 @@ export function App() {
     await OmranDataService.saveStudent(newStudent);
 
     // Asynchronously trigger Gemini AI plan in background without blocking addition
-    fetch('/api/gemini/generate-plan', {
+    fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ student: newStudent })
     })
-      .then(res => res.json())
+      .then(res => {
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          return res.json();
+        }
+        return null;
+      })
       .then(data => {
         if (data?.plan) {
           const withPlan = {
@@ -1900,23 +1906,25 @@ export function App() {
   // 5. Trigger AI Plan for specific student
   const handleTriggerAIPlan = async (student: Student) => {
     try {
-      const res = await fetch('/api/gemini/generate-plan', {
+      const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student })
       });
-      const data = await res.json();
-      if (data?.plan) {
-        const updatedStudent: Student = {
-          ...student,
-          aiPlan: {
-            ...data.plan,
-            lastUpdated: new Date().toISOString()
-          }
-        };
-        await OmranDataService.saveStudent(updatedStudent);
-        const list = await OmranDataService.loadStudents();
-        setStudents(list);
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const data = await res.json();
+        if (data?.plan) {
+          const updatedStudent: Student = {
+            ...student,
+            aiPlan: {
+              ...data.plan,
+              lastUpdated: new Date().toISOString()
+            }
+          };
+          await OmranDataService.saveStudent(updatedStudent);
+          const list = await OmranDataService.loadStudents();
+          setStudents(list);
+        }
       }
     } catch (e) {
       console.error('Trigger AI plan error:', e);

@@ -1065,6 +1065,11 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         throw new Error('تعذر معالجة الطلب');
       }
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('الخادم لم يرجع استجابة بتنسيق JSON صحيح');
+      }
+
       const data = await res.json();
 
       const assistantMsg: ChatMessage = {

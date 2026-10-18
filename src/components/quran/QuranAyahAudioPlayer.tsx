@@ -170,7 +170,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       setIsLoadingAyahText(true);
       try {
         const res = await fetch(`/api/quran/surah/${surahNumber}`);
-        if (res.ok) {
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
           const data = await res.json();
           if (!isCancelled && data?.ayahs && Array.isArray(data.ayahs)) {
             const rawText = data.ayahs[currentAyahIndex - 1] || '';

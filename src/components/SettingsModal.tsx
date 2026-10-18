@@ -126,8 +126,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Load Mail Config Status on mount / when mail tab selected
   const fetchMailConfig = async () => {
     try {
-      const res = await fetch('/api/mail/config');
-      if (res.ok) {
+      const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'));
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         setMailConfigStatus({ isConfigured: data.isConfigured, user: data.user });
         if (data.user && !gmailUser) setGmailUser(data.user);
@@ -2594,7 +2594,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   setIsSavingMailConfig(true);
                   setStatusMsg(null);
                   try {
-                    const res = await fetch('/api/mail/config', {
+                    const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
@@ -2604,12 +2604,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         fromEmail: mailFromEmail.trim() || gmailUser.trim()
                       })
                     });
-                    const data = await res.json();
-                    if (res.ok && data.success) {
-                      setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح!' });
-                      setMailConfigStatus({ isConfigured: true, user: gmailUser.trim() });
+                    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+                      const data = await res.json();
+                      if (data.success) {
+                        setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح!' });
+                        setMailConfigStatus({ isConfigured: true, user: gmailUser.trim() });
+                      } else {
+                        setStatusMsg({ type: 'error', text: data.error || 'تعذر حفظ إعدادات البريد.' });
+                      }
                     } else {
-                      setStatusMsg({ type: 'error', text: data.error || 'تعذر حفظ إعدادات البريد.' });
+                      setStatusMsg({ type: 'error', text: 'تعذر الاتصال بخادم البريد أو أن الاستجابة غير صحيحة.' });
                     }
                   } catch (err: any) {
                     setStatusMsg({ type: 'error', text: err?.message || 'فشل الاتصال بخادم البريد.' });
@@ -2774,7 +2778,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       setIsTestingMail(true);
                       setMailTestResult(null);
                       try {
-                        const res = await fetch('/api/mail/send-gmail', {
+                        const res = await fetch(ApiConfig.getEndpoint('/api/mail/send-gmail'), {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -2796,16 +2800,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             gmailAppPassword: gmailAppPass.trim() || undefined
                           })
                         });
-                        const data = await res.json();
-                        if (res.ok && data.success) {
-                          setMailTestResult({
-                            success: true,
-                            msg: `تم إرسال الرسالة بنجاح إلى صندوق الوارد (${testEmailTo.trim()})! تفقد بريدك الآن.`
-                          });
+                        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+                          const data = await res.json();
+                          if (data.success) {
+                            setMailTestResult({
+                              success: true,
+                              msg: `تم إرسال الرسالة بنجاح إلى صندوق الوارد (${testEmailTo.trim()})! تفقد بريدك الآن.`
+                            });
+                          } else {
+                            setMailTestResult({
+                              success: false,
+                              msg: data.error || 'تعذر إرسال البريد التجريبي. تأكد من صحة البريد وكلمة مرور التطبيقات.'
+                            });
+                          }
                         } else {
                           setMailTestResult({
                             success: false,
-                            msg: data.error || 'تعذر إرسال البريد التجريبي. تأكد من صحة البريد وكلمة مرور التطبيقات.'
+                            msg: 'تعذر الاتصال بخادم البريد أو أن الاستجابة غير صحيحة.'
                           });
                         }
                       } catch (err: any) {

@@ -4,8 +4,18 @@
   command = "npm run build"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
   NPM_FLAGS = "--legacy-peer-deps"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Proxy all /api requests to Netlify Serverless Functions (Gemini AI, Tools, Mail, Maps)
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
 
 # Single Page Application (SPA) Fallback
 # Guarantees that /privacy, /login, /portal, and all routes load flawlessly without 404

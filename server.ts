@@ -6213,4 +6213,14 @@ async function startServer() {
   });
 }
 
-startServer();
+export { app };
+
+const isServerless = Boolean(
+  process.env.NETLIFY ||
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME
+);
+
+if (!isServerless && process.env.NODE_ENV !== "test") {
+  startServer();
+}

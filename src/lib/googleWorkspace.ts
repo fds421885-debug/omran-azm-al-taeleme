@@ -3,6 +3,7 @@ import { auth, db, OmranDataService, DEFAULT_HALAQAHS } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Exam, ExamQuestion, ExamSubmission, ExamSubmissionAnswer, GoogleOAuthConfig, FullBackupData, Student, TeacherAccount, AttendanceRecord, StudentEvaluation, Halaqah } from '../types';
+import { ApiConfig } from './apiConfig';
 
 export const GOOGLE_SCOPES = [
   'https://mail.google.com/',
@@ -522,9 +523,9 @@ export class GoogleWorkspaceService {
       }
     }
 
-    // Fallback: Call local server endpoint /api/mail/send-gmail
+    // Fallback: Call server endpoint /api/mail/send-gmail
     try {
-      const srvRes = await fetch('/api/mail/send-gmail', {
+      const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-gmail'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -540,13 +541,16 @@ export class GoogleWorkspaceService {
         })
       });
 
-      const srvData = await srvRes.json();
-      if (srvRes.ok && srvData.success) {
-        return { success: true, messageId: srvData.messageId };
+      let srvData: any = null;
+      if (srvRes.ok && srvRes.headers.get('content-type')?.includes('application/json')) {
+        srvData = await srvRes.json();
+        if (srvData?.success) {
+          return { success: true, messageId: srvData.messageId };
+        }
       }
       return {
         success: false,
-        error: srvData.error || 'تعذر إرسال البريد عبر خادم Gmail.'
+        error: srvData?.error || 'تعذر إرسال البريد عبر خادم Gmail.'
       };
     } catch (srvErr: any) {
       return {
