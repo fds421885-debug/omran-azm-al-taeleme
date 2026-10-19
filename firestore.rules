@@ -43,9 +43,7 @@ service cloud.firestore {
     match /complexes/{complexId} {
       allow read: if true; // Public list for discovery and branding
       allow create, update: if isValidId(complexId)
-        && incoming().name is string
-        && incoming().name.size() > 0
-        && incoming().name.size() <= 200;
+        && (incoming().name is string || (resource != null && resource.data.name is string));
       allow delete: if isValidId(complexId);
     }
 

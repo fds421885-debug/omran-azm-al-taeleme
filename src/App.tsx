@@ -930,6 +930,17 @@ export function App() {
     const unsubComplexes = OmranDataService.subscribeComplexes(newComplexes => {
       if (isMounted) setComplexes(newComplexes);
     });
+    const unsubPlanConfig = OmranDataService.subscribePlanScheduleConfig(cfg => {
+      if (!isMounted || !cfg) return;
+      setComplexes(prev =>
+        prev.map(c => {
+          if (!activeComplex?.id || c.id === activeComplex.id) {
+            return { ...c, planScheduleConfig: cfg };
+          }
+          return c;
+        })
+      );
+    }, activeComplex?.id);
     const unsubExams = OmranDataService.subscribeExams(newExams => {
       if (isMounted) setExams(newExams);
     });
@@ -1063,6 +1074,15 @@ export function App() {
         setExams(prev => [payload, ...prev.filter(e => e.id !== payload.id)]);
       } else if (type === 'exam-deleted' && payload) {
         setExams(prev => prev.filter(e => e.id !== payload));
+      } else if (type === 'plan_schedule' && payload) {
+        setComplexes(prev =>
+          prev.map(c => {
+            if (!activeComplex?.id || c.id === activeComplex.id) {
+              return { ...c, planScheduleConfig: payload };
+            }
+            return c;
+          })
+        );
       } else if (type === 'evaluation' && payload) {
         setEvaluations(prev => [payload, ...prev.filter(ev => ev.id !== payload.id)]);
       }
@@ -1082,6 +1102,7 @@ export function App() {
       unsubViolations();
       unsubHalaqahs();
       unsubComplexes();
+      unsubPlanConfig();
       unsubExams();
       unsubSubmissions();
       unsubLeaderboard();
@@ -3701,6 +3722,8 @@ export function App() {
                 activeHalaqahId={activeHalaqahId}
                 isSupervisor={isSupervisor}
                 isDeveloper={isDeveloper}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                initialSearchQuery={navMeta?.searchQuery}
                 onUpdateComplex={handleSaveComplex}
                 onUpdateStudents={async (updatedStudents) => {
                   await OmranDataService.saveStudentsBatch(updatedStudents);

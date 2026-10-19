@@ -4332,16 +4332,20 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     // 2.12.5.1 Exact Today Date Inquiry Intent (تاريخ اليوم، كم التاريخ، اليوم كم، اليوم ايش)
     const hasDateInquiryIntent =
-      /(?:تاريخ\s+اليوم|كم\s+تاريخ|ايش\s+تاريخ|ما\s+هو\s+تاريخ|ما\s+تاريخ|اليوم\s+كم|اليوم\s+ايش|ايش\s+اليوم|ما\s+هو\s+اليوم|كم\s+اليوم\s+في\s+الشهر|كم\s+اليوم|تاريخنا\s+اليوم|تاريخ\s+اليوم\s+بالضبط)/i.test(message) ||
+      /(?:تاريخ\s+اليوم|كم\s+تاريخ|ايش\s+تاريخ|ما\s+هو\s+تاريخ|ما\s+تاريخ|اليوم\s+كم|اليوم\s+ايش|ايش\s+اليوم|ما\s+هو\s+اليوم|كم\s+اليوم\s+في\s+الشهر|كم\s+اليوم|تاريخنا\s+اليوم|تاريخ\s+اليوم\s+بالضبط|تاريخ\s+اليوم\s+بالظبط|النهارده\s+كام|النهاردة\s+كام|تاريخ\s+النهاردة|تاريخ\s+النهارده)/i.test(message) ||
       normUserMessage.includes("تاريخ اليوم") ||
       normUserMessage.includes("كم التاريخ") ||
       normUserMessage.includes("ايش التاريخ") ||
-      normUserMessage.includes("اليوم كم");
+      normUserMessage.includes("اليوم كم") ||
+      normUserMessage.includes("تاريخ اليوم بالظبط") ||
+      normUserMessage.includes("تاريخ اليوم بالضبط");
 
-    // 2.12.5.2 Plan Configuration Settings Intent (ضبط الخطة، جدول الحلقة، استراتيجية التثبيت، ساعات التسميع)
+    // 2.12.5.2 Plan Configuration Settings Intent (ضبط الخطة، جدول الحلقة، استراتيجية التثبيت، ساعات التسميع، مواعيد الختم)
     const hasPlanSettingsInquiryIntent =
-      /(?:ضبط\s+الخطة|اعدادات\s+الخطة|إعدادات\s+الخطة|خطة\s+المجمع|جدول\s+الحلقة|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+التسميع|استراتيجية\s+التثبيت|كيف\s+تم\s+ضبط\s+الخطة|ما\s+هي\s+خطة\s+المجمع|نظام\s+الخطة)/i.test(message) ||
-      (normUserMessage.includes("خطة") && (normUserMessage.includes("ضبط") || normUserMessage.includes("مجمع") || normUserMessage.includes("أيام") || normUserMessage.includes("ايام") || normUserMessage.includes("ساعات")));
+      /(?:ضبط\s+الخطة|ضبط\s+الخطه|اعدادات\s+الخطة|إعدادات\s+الخطة|خطة\s+المجمع|جدول\s+الحلقة|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+التسميع|استراتيجية\s+التثبيت|كيف\s+تم\s+ضبط\s+الخطة|ما\s+هي\s+خطة\s+المجمع|نظام\s+الخطة|مواعيد\s+الختم|جدولة\s+الختم|عرض\s+الخطة|وريني\s+الخطة|تفاصيل\s+الخطة|أوقات\s+الحلقة|اوقات\s+الحلقة|ساعات\s+الحلقة|أيام\s+التسميع|ايام\s+التسميع|جدول\s+الختم)/i.test(message) ||
+      (normUserMessage.includes("خطة") && (normUserMessage.includes("ضبط") || normUserMessage.includes("مجمع") || normUserMessage.includes("أيام") || normUserMessage.includes("ايام") || normUserMessage.includes("ساعات") || normUserMessage.includes("ختم"))) ||
+      normUserMessage.includes("مواعيد الختم") ||
+      normUserMessage.includes("جدول الختم");
 
     // 2.12.5.3 Student Khatm Date or Memorization Plan Inquiry Intent (متى يختم الطالب، موعد ختم، خطة الطالب، كم باقي لفلان حتى يختم)
     const hasStudentKhatmOrPlanInquiryIntent =
@@ -5864,6 +5868,54 @@ ${coachingStudentProfile}
           suggestedHalaqahId: detectedHalaqahId || (halaqahsList[0]?.id || ""),
           suggestedHalaqahName: detectedHalaqahName || (halaqahsList[0]?.name || ""),
         },
+      };
+    } else if (hasPlanSettingsInquiryIntent) {
+      action = {
+        type: "SHOW_PLAN_SETTINGS",
+        title: `إعدادات ضبط الخطة ومواعيد الختم المعتمدة بالسحابة - ${effectiveComplexName}`,
+        data: {
+          complexName: effectiveComplexName,
+          daysLabels: planDaysLabels,
+          dailyHours: planDailyHours,
+          strategyLabel: planStrategyLabel,
+          targetScope: planScheduleConfig.targetScope || 'all',
+          lastUpdated: planScheduleConfig.lastUpdated || new Date().toISOString()
+        }
+      };
+    } else if (hasStudentKhatmOrPlanInquiryIntent && candidateStudentForPlan) {
+      const sPlan = candidateStudentForPlan.memorizationPlan;
+      const sMemJuz = sPlan?.memorizedJuzCount || (candidateStudentForPlan.currentSurah ? (candidateStudentForPlan.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - candidateStudentForPlan.currentSurah) / 3.8))) : 1);
+      const sConsJuz = sPlan?.consolidatedJuzCount || Math.max(0, sMemJuz - 2);
+      const sTimeline = calculateServerKhatmTimeline({
+        memorizedJuz: sMemJuz,
+        consolidatedJuz: sConsJuz,
+        dailyNewPages: sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1,
+        dailyReviewPages: sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5,
+        weeklyDaysCount: planSelectedDays.length,
+        dailyHoursCount: planDailyHours,
+        startDate: new Date()
+      });
+      const tDate = sPlan?.targetCompletionDate || sTimeline.targetCompletionDate;
+      const remDays = sPlan?.estimatedDaysRemaining || sTimeline.estimatedDaysRemaining;
+      const dNew = sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1;
+      const dRev = sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5;
+
+      action = {
+        type: "SHOW_STUDENT_PLAN",
+        title: `خطة وموعد ختم الطالب: ${candidateStudentForPlan.name}`,
+        data: {
+          studentId: candidateStudentForPlan.id,
+          studentName: candidateStudentForPlan.name,
+          targetCompletionDate: tDate,
+          estimatedDaysRemaining: remDays,
+          dailyNewPages: dNew,
+          dailyReviewPages: dRev,
+          memorizedJuz: sMemJuz,
+          consolidatedJuz: sConsJuz,
+          currentSurah: candidateStudentForPlan.currentSurahName || 'سورة جارية',
+          currentAyah: candidateStudentForPlan.currentAyah || 1,
+          aiNotes: sPlan?.aiNotes || ''
+        }
       };
     } else if (hasStudentAttendanceInquiryIntent && studentTargetForStats) {
       action = {

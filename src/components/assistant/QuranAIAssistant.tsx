@@ -118,7 +118,8 @@ export interface ChatMessage {
       | 'SHOW_STUDENT_REPORT'
       | 'SHOW_MULTI_STUDENT_REPORT'
       | 'SHOW_STUDENT_COACHING_CARD'
-      | 'SHOW_STUDENT_PLAN';
+      | 'SHOW_STUDENT_PLAN'
+      | 'SHOW_PLAN_SETTINGS';
     title?: string;
     data?: any;
     chartType?: string;

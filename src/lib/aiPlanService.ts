@@ -51,6 +51,7 @@ export function getExactTodayArabicInfo(d: Date = new Date()): {
   dateIso: string;
   dayName: string;
   formattedArabic: string;
+  timeArabic: string;
   hijriEstimate: string;
 } {
   const dayName = d.toLocaleDateString('ar-SA', { weekday: 'long' });
@@ -60,6 +61,7 @@ export function getExactTodayArabicInfo(d: Date = new Date()): {
     month: 'long',
     day: 'numeric'
   });
+  const timeArabic = d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
   const dateIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   let hijriEstimate = '';
@@ -77,6 +79,7 @@ export function getExactTodayArabicInfo(d: Date = new Date()): {
     dateIso,
     dayName,
     formattedArabic,
+    timeArabic,
     hijriEstimate
   };
 }

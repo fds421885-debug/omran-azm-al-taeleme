@@ -3863,7 +3863,7 @@ export class OmranDataService {
 
     await Promise.allSettled(
       targetDbs.map(targetDb =>
-        setDoc(doc(targetDb, 'students', clean.id), clean).catch(e => {
+        setDoc(doc(targetDb, 'students', clean.id), clean, { merge: true }).catch(e => {
           console.warn('[OmranDataService] Student saved locally, cloud sync notice:', e);
         })
       )
@@ -3899,7 +3899,7 @@ export class OmranDataService {
     try {
       await Promise.allSettled(
         targetDbs.flatMap(targetDb =>
-          cleanList.map(item => setDoc(doc(targetDb, 'students', item.id), item))
+          cleanList.map(item => setDoc(doc(targetDb, 'students', item.id), item, { merge: true }))
         )
       );
       return true;
@@ -5759,9 +5759,22 @@ export class OmranDataService {
       ]);
 
       if (complexId && complexId !== 'default') {
+        const complexes = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
+        const targetComplex = complexes.find(c => c.id === complexId);
+        const compName = targetComplex?.name || 'المجمع القرآني';
         dbs.forEach(targetDb => {
           writes.push(
-            setDoc(doc(targetDb, 'complexes', complexId), { planScheduleConfig: clean }, { merge: true })
+            setDoc(
+              doc(targetDb, 'complexes', complexId),
+              cleanFirestoreData({
+                ...(targetComplex || {}),
+                id: complexId,
+                name: compName,
+                planScheduleConfig: clean,
+                lastUpdated: new Date().toISOString()
+              }),
+              { merge: true }
+            )
           );
         });
       }
@@ -5779,7 +5792,7 @@ export class OmranDataService {
     const safeId = (complexId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
     const docKey = `plan_schedule_${safeId}`;
     try {
-      return onSnapshot(
+      const unsubSpecific = onSnapshot(
         doc(this.getActiveDb(), 'settings', docKey),
         snap => {
           if (snap && snap.exists()) {
@@ -5793,6 +5806,28 @@ export class OmranDataService {
           console.warn('[OmranDataService] Plan schedule subscription notice:', err);
         }
       );
+
+      let unsubDefault: (() => void) | null = null;
+      if (docKey !== 'plan_schedule_default') {
+        unsubDefault = onSnapshot(
+          doc(this.getActiveDb(), 'settings', 'plan_schedule_default'),
+          snap => {
+            if (snap && snap.exists()) {
+              const data = snap.data() as ComplexPlanScheduleConfig;
+              const specificLocal = getLocalCache<ComplexPlanScheduleConfig | null>(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, null);
+              if (!specificLocal) {
+                callback(data);
+              }
+            }
+          },
+          () => {}
+        );
+      }
+
+      return () => {
+        unsubSpecific();
+        if (unsubDefault) unsubDefault();
+      };
     } catch {
       return () => {};
     }

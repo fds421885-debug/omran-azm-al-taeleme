@@ -43,6 +43,8 @@ interface HalaqahPlansTabProps {
   activeHalaqahId?: string;
   isSupervisor?: boolean;
   isDeveloper?: boolean;
+  initialHighlightId?: string;
+  initialSearchQuery?: string;
   onUpdateStudents?: (updatedStudents: Student[]) => Promise<void> | void;
   onUpdateComplex?: (complex: QuranComplex) => Promise<void> | void;
 }
@@ -64,6 +66,8 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   activeHalaqahId,
   isSupervisor = false,
   isDeveloper = false,
+  initialHighlightId,
+  initialSearchQuery,
   onUpdateStudents,
   onUpdateComplex
 }) => {
@@ -86,6 +90,19 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   const [targetScope, setTargetScope] = useState<'all' | string>(activeHalaqahId && activeHalaqahId !== 'all' ? activeHalaqahId : 'all');
   const [strategyPreset, setStrategyPreset] = useState<'tathbeet_first' | 'standard' | 'intensive'>('tathbeet_first');
   const [searchStudent, setSearchStudent] = useState('');
+
+  // Handle initial highlight or search from assistant shortcut or external nav
+  useEffect(() => {
+    if (initialHighlightId && students.length > 0) {
+      const target = students.find(s => s.id === initialHighlightId);
+      if (target) {
+        setSelectedViewingStudent(target);
+      }
+    }
+    if (initialSearchQuery) {
+      setSearchStudent(initialSearchQuery);
+    }
+  }, [initialHighlightId, initialSearchQuery, students]);
 
   // AI Recalculation States
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -189,7 +206,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   const targetStudents = useMemo(() => {
     let list = students;
     if (activeComplex) {
-      list = list.filter(s => !s.complexId || s.complexId === activeComplex.id);
+      list = list.filter(s => !s.complexId || s.complexId === activeComplex.id || s.complexName === activeComplex.name);
     }
     if (targetScope !== 'all') {
       list = list.filter(s => s.halaqahId === targetScope);
@@ -700,7 +717,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
               onClick={handleExplicitSaveConfig}
               className="w-full py-2.5 px-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:translate-y-0.5 disabled:opacity-50"
             >
-              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>{isSavingConfigOnly ? 'جاري حفظ الإعدادات في السحابة...' : 'حفظ ومزامنة ضبط الجدول والإعدادات فقط في السحابة'}</span>
             </button>
 
