@@ -250,11 +250,12 @@ export function calculateRealisticQuranAssignment(
 
   // Exact King Fahd Mushaf portion calculation
   const portion = calculatePortionFromPace(surah.number, validStartAyah, pagePace);
-  let endAyah = portion.toSurah === surah.number ? portion.toAyah : totalAyahs;
+  const isSameSurah = portion.toSurah === surah.number;
+  let endAyah = isSameSurah ? portion.toAyah : totalAyahs;
   endAyah = Math.min(Math.max(validStartAyah, endAyah), totalAyahs);
 
-  // A surah is only marked "كاملة" if starting at ayah 1 AND ending at totalAyahs AND surah is naturally short (<= 10 ayahs)
-  const isCompleteSurah = validStartAyah === 1 && endAyah >= totalAyahs && totalAyahs <= 10;
+  // A surah is only marked "كاملة" if starting at ayah 1 AND ending at totalAyahs AND surah is very short (<= 8 ayahs) AND pace is at least 1 whole page!
+  const isCompleteSurah = validStartAyah === 1 && isSameSurah && endAyah >= totalAyahs && totalAyahs <= 8 && pagePace >= 1.0;
 
   let nextSurahRecommendation = '';
   if (endAyah >= totalAyahs && surah.number > 1) {
@@ -265,7 +266,9 @@ export function calculateRealisticQuranAssignment(
   }
 
   let newMemorizationText = '';
-  if (isCompleteSurah) {
+  if (!isSameSurah) {
+    newMemorizationText = portion.description;
+  } else if (isCompleteSurah) {
     newMemorizationText = `سورة ${surah.name} كاملة (الآيات 1 - ${totalAyahs})`;
   } else if (validStartAyah === endAyah) {
     newMemorizationText = `سورة ${surah.name}: الآية (${validStartAyah}) مع إتقانها وتثبيتها`;
@@ -310,7 +313,9 @@ export function calculateRealisticQuranAssignment(
     surah,
     fromAyah: validStartAyah,
     startAyah: validStartAyah,
-    toAyah: endAyah,
+    toAyah: portion.toAyah,
+    toSurah: portion.toSurah,
+    toSurahNumber: portion.toSurah,
     totalAyahs,
     newMemorization: newMemorizationText,
     review: reviewText,

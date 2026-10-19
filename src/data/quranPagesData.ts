@@ -553,9 +553,22 @@ export function calculatePortionFromPace(
   pageCount: number;
   description: string;
 } {
-  const safeStartSurah = Math.max(1, Math.min(startSurah || 78, 114));
-  const sInfo = getSurahInfo(safeStartSurah);
-  const safeStartAyah = Math.max(1, Math.min(startAyah || 1, sInfo.numberOfAyahs));
+  let safeStartSurah = Math.max(1, Math.min(startSurah || 78, 114));
+  let safeStartAyah = Math.max(1, startAyah || 1);
+  let sInfo = getSurahInfo(safeStartSurah);
+
+  if (safeStartAyah > sInfo.numberOfAyahs) {
+    if (safeStartSurah < 114) {
+      safeStartSurah += 1;
+      safeStartAyah = 1;
+      sInfo = getSurahInfo(safeStartSurah);
+    } else {
+      safeStartSurah = 1;
+      safeStartAyah = 1;
+      sInfo = getSurahInfo(1);
+    }
+  }
+
   const safePace = Math.max(0.25, Math.min(pagePace || 0.5, 5));
 
   const startPageNum = getPageOfAyah(safeStartSurah, safeStartAyah);

@@ -1059,38 +1059,76 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     return d.toISOString().split('T')[0];
   };
 
+  // Synchronize Tomorrow's New Portion from Today's recitation range
+  const recalculateTomorrowFromToday = (
+    fromS: number,
+    fromA: number,
+    toS: number,
+    toA: number,
+    didNotRecite: boolean
+  ) => {
+    if (didNotRecite) {
+      setTomNewSurah(fromS);
+      setTomNewFromAyah(fromA);
+      setTomNewToSurah(toS);
+      setTomNewToAyah(toA);
+      return;
+    }
+    const curEndInfo = getSurahInfo(toS);
+    let nextStartS = toS;
+    let nextStartA = toA + 1;
+    if (nextStartA > curEndInfo.numberOfAyahs) {
+      nextStartS = toS < 114 ? toS + 1 : 1;
+      nextStartA = 1;
+    }
+    const pace = activeStudent?.memorizationPlan?.dailyNewPages ||
+      (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
+       activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
+       activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+    const tomPortion = calculatePortionFromPace(nextStartS, nextStartA, pace);
+    setTomNewSurah(tomPortion.fromSurah);
+    setTomNewFromAyah(tomPortion.fromAyah);
+    setTomNewToSurah(tomPortion.toSurah);
+    setTomNewToAyah(tomPortion.toAyah);
+  };
+
   // Handlers for Today's New
   const handleTodayStartSurahChange = (surahNum: number) => {
     setTodayNewSurah(surahNum);
-    const info = getSurahInfo(surahNum);
     setTodayNewFromAyah(1);
-    if (todayNewToSurah === todayNewSurah) {
-      setTodayNewToSurah(surahNum);
-      setTodayNewToAyah(Math.min(10, info.numberOfAyahs));
-    }
+    const studentPace = activeStudent?.memorizationPlan?.dailyNewPages ||
+      (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
+       activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
+       activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+    const portion = calculatePortionFromPace(surahNum, 1, studentPace);
+    setTodayNewToSurah(portion.toSurah);
+    setTodayNewToAyah(portion.toAyah);
+    recalculateTomorrowFromToday(surahNum, 1, portion.toSurah, portion.toAyah, todayNewDidNotRecite);
   };
 
   const handleTodayEndSurahChange = (surahNum: number) => {
     setTodayNewToSurah(surahNum);
     const info = getSurahInfo(surahNum);
-    setTodayNewToAyah(Math.min(10, info.numberOfAyahs));
+    const targetToAyah = Math.min(todayNewToAyah, info.numberOfAyahs);
+    setTodayNewToAyah(targetToAyah);
+    recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, surahNum, targetToAyah, todayNewDidNotRecite);
   };
 
   // Handlers for Tomorrow's New
   const handleTomNewStartSurahChange = (surahNum: number) => {
     setTomNewSurah(surahNum);
-    const info = getSurahInfo(surahNum);
     setTomNewFromAyah(1);
-    if (tomNewToSurah === tomNewSurah) {
-      setTomNewToSurah(surahNum);
-      setTomNewToAyah(Math.min(10, info.numberOfAyahs));
-    }
+    const studentPace = activeStudent?.memorizationPlan?.dailyNewPages || 0.5;
+    const portion = calculatePortionFromPace(surahNum, 1, studentPace);
+    setTomNewToSurah(portion.toSurah);
+    setTomNewToAyah(portion.toAyah);
   };
 
   const handleTomNewEndSurahChange = (surahNum: number) => {
     setTomNewToSurah(surahNum);
     const info = getSurahInfo(surahNum);
-    setTomNewToAyah(Math.min(10, info.numberOfAyahs));
+    setTomNewToAyah(Math.min(tomNewToAyah, info.numberOfAyahs));
   };
 
   // Add Review Item for Today
@@ -2703,6 +2741,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setTodayNewToSurah(todayNewSurah);
                           setTodayNewFromAyah(1);
                           setTodayNewToAyah(startTodaySurahInfo.numberOfAyahs);
+                          recalculateTomorrowFromToday(todayNewSurah, 1, todayNewSurah, startTodaySurahInfo.numberOfAyahs, todayNewDidNotRecite);
                         }}
                         className="px-2.5 py-1 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#fbbf24] border border-[#065f46] text-[11px] font-bold transition-colors cursor-pointer"
                       >
@@ -2714,6 +2753,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           onClick={() => {
                             setTodayNewToSurah(todayNewSurah);
                             setTodayNewToAyah(startTodaySurahInfo.numberOfAyahs);
+                            recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewSurah, startTodaySurahInfo.numberOfAyahs, todayNewDidNotRecite);
                           }}
                           className="px-2.5 py-1 rounded-xl bg-[#022c22] text-[#86efac] border border-[#065f46] text-[11px] font-bold cursor-pointer"
                         >
