@@ -1586,5 +1586,142 @@ export interface LibraryDocument {
   tags?: string[];
 }
 
+// =========================================================================
+// منصة الذكاء الاصطناعي السحابية لمنظومة عمران (Google Gemini AI Engine)
+// =========================================================================
 
+export interface GoogleAIModelOption {
+  id: string;
+  name: string;
+  description: string;
+  isRecommended?: boolean;
+  tier: 'fast' | 'pro' | 'experimental';
+  speed: string;
+  contextWindow: string;
+  notes?: string;
+}
 
+export const GOOGLE_GEMINI_MODELS: GoogleAIModelOption[] = [
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    description: 'النموذج الأحدث والأسرع من جوجل - فائق الذكاء ومثالي للتفاعل اللحظي والخطط التحفيظية اليومية',
+    isRecommended: true,
+    tier: 'fast',
+    speed: 'فائق السرعة (أقل من ثانية)',
+    contextWindow: '1,000,000 رمز',
+    notes: 'الخيار القياسي الموصى به لمنصة عمران'
+  },
+  {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    description: 'النموذج الأقوى استيعاباً للأوامر المركبة والتحليل البيداغوجي المتقدم وإعداد الخطط السنوية',
+    tier: 'pro',
+    speed: 'متوسط إلى سريع',
+    contextWindow: '2,000,000 رمز',
+    notes: 'الأعلى دقة في التدقيق القرآني المعقد'
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    description: 'الجيل الثاني السريع والمتوازن لجميع المهام الإدارية والتحليلية',
+    tier: 'fast',
+    speed: 'سريع جداً',
+    contextWindow: '1,000,000 رمز'
+  },
+  {
+    id: 'gemini-2.0-flash-lite',
+    name: 'Gemini 2.0 Flash Lite',
+    description: 'نموذج فائق الخفة والسرعة وموفر للحصص (مناسب للبوابات العامة ومقابلات القبول)',
+    tier: 'fast',
+    speed: 'خارق السرعة',
+    contextWindow: '1,000,000 رمز'
+  },
+  {
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    description: 'النموذج الكلاسيكي المعتمد عالي الاعتمادية والمستقر في جميع البيئات',
+    tier: 'fast',
+    speed: 'سريع',
+    contextWindow: '1,000,000 رمز'
+  },
+  {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
+    description: 'نموذج السياق المليوني الكلاسيكي لتحليل السجلات الضخمة والتقارير الشاملة',
+    tier: 'pro',
+    speed: 'متوازن',
+    contextWindow: '2,000,000 رمز'
+  },
+  {
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash (AI Studio)',
+    description: 'النموذج القياسي المباشر في منصة Google AI Studio',
+    tier: 'fast',
+    speed: 'سريع جداً',
+    contextWindow: '1,000,000 رمز'
+  },
+  {
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash Lite',
+    description: 'نموذج خفيف ومرن للمهام السريعة والمحادثات القصيرة',
+    tier: 'fast',
+    speed: 'فائق السرعة',
+    contextWindow: '500,000 رمز'
+  },
+  {
+    id: 'gemini-4-argon',
+    name: 'Gemini 4 Argon (Advanced Reasoning)',
+    description: 'نموذج التفكير المنطقي التراكمي المتقدم لحل المشكلات المعقدة والتحليل العميق',
+    tier: 'pro',
+    speed: 'متأمل (تفكير عميق)',
+    contextWindow: '2,000,000 رمز'
+  }
+];
+
+export interface AIGroupKeyAllocation {
+  id: string;
+  name: string; // e.g. "مفتاح مشرفي المجمع", "مفتاح المعلمين"
+  targetRole: 'supervisors' | 'teachers' | 'public_placement' | 'assistant' | 'custom_group';
+  assignedTeacherIds?: string[]; // IDs of specific teachers or supervisors
+  complexId?: string; // Optional isolation to specific complex
+  apiKey: string;
+  model: string;
+  isEnabled: boolean;
+  createdAt: string;
+  lastTestedAt?: string;
+  lastTestStatus?: 'success' | 'error';
+  lastTestLatencyMs?: number;
+  lastTestMessage?: string;
+}
+
+export interface PlatformAIConfig {
+  masterApiKey: string;
+  masterModel: string;
+  isMasterEnabled: boolean;
+  lastVerifiedAt?: string;
+  lastVerifiedLatencyMs?: number;
+  lastVerifiedMessage?: string;
+  lastVerifiedModel?: string;
+  groupAllocations: AIGroupKeyAllocation[];
+  rolePolicies: {
+    supervisors: 'master' | 'group' | 'disabled';
+    teachers: 'master' | 'group' | 'disabled';
+    publicPlacement: 'master' | 'group' | 'disabled';
+    assistant: 'master' | 'group' | 'disabled';
+  };
+  allowedDomains?: string[]; // e.g. ['localhost', 'omran-quran.netlify.app', 'github.io']
+}
+
+export const DEFAULT_AI_CONFIG: PlatformAIConfig = {
+  masterApiKey: '',
+  masterModel: 'gemini-2.5-flash',
+  isMasterEnabled: true,
+  groupAllocations: [],
+  rolePolicies: {
+    supervisors: 'master',
+    teachers: 'master',
+    publicPlacement: 'master',
+    assistant: 'master'
+  }
+};

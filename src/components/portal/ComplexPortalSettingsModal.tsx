@@ -843,6 +843,31 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
     }
   };
 
+  // Bulk delete selected applications permanently
+  const handleBulkDeleteSelected = async () => {
+    if (selectedAppIds.length === 0) return;
+    if (!confirm(`هل أنت متأكد من الحذف النهائي لـ (${selectedAppIds.length}) طلبات محددة؟ سيتم حذفها ومنع عودتها نهائياً من قاعدة البيانات والسيرفر.`)) return;
+
+    setIsBulkProcessing(true);
+    const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
+    const total = targetApps.length;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const app = targetApps[i];
+        setBulkProgressText(`جارٍ الحذف النهائي للطلب (${i + 1} من ${total})...`);
+        await OmranDataService.deleteRegistrationApplication(app.id);
+      }
+      setApplications(prev => prev.filter(a => !selectedAppIds.includes(a.id)));
+      setSelectedAppIds([]);
+    } catch (e) {
+      console.error('Bulk delete error:', e);
+    } finally {
+      setIsBulkProcessing(false);
+      setBulkProgressText('');
+    }
+  };
+
   // Filtered applications across all historical and current requests
   const filteredApps = useMemo(() => {
     return applications.filter(a => {
@@ -2051,11 +2076,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={handleBulkRejectSelected}
-                          className="px-3.5 py-1.5 rounded-xl bg-red-600/30 text-red-300 border border-red-500/40 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-red-600/40 cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-amber-600/30 text-amber-300 border border-amber-500/40 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-amber-600/40 cursor-pointer"
                           title="الاعتذار لجميع الطلبات المحددة"
                         >
                           <XCircle className="w-4 h-4" />
-                          <span>اعتذار للمحدد ({selectedAppIds.length})</span>
+                          <span>اعتذار ({selectedAppIds.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleBulkDeleteSelected}
+                          className="px-3 py-1.5 rounded-xl bg-red-700/80 text-white border border-red-500 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer"
+                          title="حذف جميع الطلبات المحددة نهائياً ومنع عودتها"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>حذف نهائي ({selectedAppIds.length})</span>
                         </button>
 
                         <button
