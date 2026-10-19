@@ -1165,6 +1165,10 @@ export function App() {
 
         const updatedStudent: Student = {
           ...student,
+          isFirstSession: false,
+          recentlyCompletedSurahs: detail.updatedRecentlyCompletedSurahs || student.recentlyCompletedSurahs,
+          mushafErrors: detail.updatedMushafErrors || student.mushafErrors,
+          persistentReviewItems: detail.newDailyAssignment?.reviewItems || student.persistentReviewItems,
           memorizationPlan: {
             dailyNewPages: currentPlan?.dailyNewPages || 1,
             dailyReviewPages: currentPlan?.dailyReviewPages || 5,
@@ -2209,7 +2213,8 @@ export function App() {
     evaluation: StudentEvaluation,
     newAssignment?: any,
     updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
-    listeningAssignment?: any
+    listeningAssignment?: any,
+    studentUpdates?: Partial<Student>
   ) => {
     // Check if there was an earlier evaluation for this student on this date to compute exact delta
     const previousEval = evaluations.find(
@@ -2256,6 +2261,8 @@ export function App() {
 
       const updatedStudent: Student = {
         ...targetStudent,
+        ...studentUpdates,
+        isFirstSession: false,
         currentSurah: finalSurahNum,
         currentSurahName: finalSurahName,
         currentAyah: finalAyah,

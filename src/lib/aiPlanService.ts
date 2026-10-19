@@ -6,7 +6,7 @@
  * "الهدف ليس السرعة في الختم، بل الختم بتثبيت وإتقان تام"
  */
 
-import { Student, StudentMemorizationPlan, Halaqah, QuranComplex } from '../types';
+import { Student, StudentMemorizationPlan, Halaqah, QuranComplex, StudentEvaluation, QuranRecitationItem } from '../types';
 import { ApiConfig } from './apiConfig';
 import { calculatePortionFromPace } from '../data/quranPagesData';
 import { getSurahInfo } from '../data/quranData';
@@ -691,6 +691,198 @@ export function analyzeAndDistributeAyahErrors(params: {
     improvedCount,
     targetedReviewItem,
     rationale
+  };
+}
+
+/**
+ * Unified Adaptive Daily Review Planner Engine:
+ * Generates the complete review schedule for Today or Tomorrow according to the pedagogical rules:
+ * 1. Day 1 protocol: No reviews on the first day (new recitation only); tomorrow begins with what was recited today.
+ * 2. Day 2+: Yesterday's recitation review item + Continuous Review Quota (from An-Nas or Al-Baqarah).
+ * 3. Two-week daily consolidation for recently completed surahs (short surahs clustered, 2+ surahs alternated by errors).
+ * 4. Progressive weak-point / error targeting (2-3 ayahs per day from the weakest surah).
+ */
+export function generateAdaptiveDailyReviews(params: {
+  student: Student;
+  evaluationsHistory: StudentEvaluation[];
+  isTomorrow?: boolean;
+  todayRecitedPortion?: {
+    fromSurah: number;
+    fromAyah: number;
+    toSurah: number;
+    toAyah: number;
+  };
+  mushafErrors?: Record<string, number>;
+}): {
+  reviewItems: QuranRecitationItem[];
+  rationaleNotes: string[];
+  targetedErrorItem?: QuranRecitationItem | null;
+  recentlyCompletedReviewItem?: QuranRecitationItem | null;
+} {
+  const { student, evaluationsHistory = [], isTomorrow = false, todayRecitedPortion, mushafErrors = {} } = params;
+  const isFirstDay = student.isFirstSession || evaluationsHistory.length === 0;
+  const rationaleNotes: string[] = [];
+  const reviewItems: QuranRecitationItem[] = [];
+
+  // RULE 1: First Day Protocol
+  // "واريد انه اول يوم للقارئ وهيبدأ لو خاتم مش هيكون فيه مراجعة اول يوم ﻷنه لسه هيبدأ وهيسمع لكن بكرة لا خلاص اللي سمعه يحب يبدأ عليه المراجعة من الحفظ اللي سمعه امبارح مع جديد اليوم وهكذا كل يوم"
+  if (!isTomorrow && isFirstDay) {
+    rationaleNotes.push('اليوم الأول للقارئ: لا توجد مراجعة في اليوم الأول (تسميع الورد الجديد فقط)، وستنطلق المراجعة التراكمية والتثبيت غداً مما يُسمّع اليوم.');
+    return {
+      reviewItems: [],
+      rationaleNotes,
+      targetedErrorItem: null,
+      recentlyCompletedReviewItem: null
+    };
+  }
+
+  // If tomorrow and first day: review of today's recited portion
+  if (isTomorrow && isFirstDay) {
+    if (todayRecitedPortion) {
+      const sInfo = getSurahInfo(todayRecitedPortion.fromSurah);
+      const toInfo = getSurahInfo(todayRecitedPortion.toSurah);
+      const isFull = todayRecitedPortion.fromSurah === todayRecitedPortion.toSurah &&
+        todayRecitedPortion.fromAyah === 1 &&
+        todayRecitedPortion.toAyah >= toInfo.numberOfAyahs;
+
+      reviewItems.push({
+        id: `tom_rev_day1_${Date.now()}`,
+        type: 'مراجعة تثبيت',
+        surahNumber: todayRecitedPortion.fromSurah,
+        surahName: sInfo.name,
+        fromAyah: todayRecitedPortion.fromAyah,
+        toSurahNumber: todayRecitedPortion.toSurah,
+        toSurahName: toInfo.name,
+        toAyah: todayRecitedPortion.toAyah,
+        isFullSurah: isFull,
+        notes: 'مراجعة وسرد ما تم حفظه اليوم في أول جلسة لتثبيته في الصدر وربطه بالجديد'
+      });
+      rationaleNotes.push(`انطلاق مراجعة الغد مما تم حفظه اليوم: سورة ${sInfo.name} (${todayRecitedPortion.fromAyah}-${todayRecitedPortion.toAyah})`);
+    }
+
+    return {
+      reviewItems,
+      rationaleNotes,
+      targetedErrorItem: null,
+      recentlyCompletedReviewItem: null
+    };
+  }
+
+  // RULE 2: Previous Day Recitation Review Item (سرد ومراجعة ما تم حفظه في الجلسة السابقة)
+  if (!isTomorrow) {
+    const lastEval = evaluationsHistory[0];
+    const prevNew = lastEval?.recitationDetails?.todayNewItem;
+    if (prevNew && prevNew.surahNumber) {
+      const sInfo = getSurahInfo(prevNew.surahNumber);
+      const toInfo = getSurahInfo(prevNew.toSurahNumber || prevNew.surahNumber);
+      reviewItems.push({
+        id: `rev_prev_new_${Date.now()}`,
+        type: 'مراجعة تراكمية',
+        surahNumber: prevNew.surahNumber,
+        surahName: sInfo.name,
+        fromAyah: prevNew.fromAyah || 1,
+        toSurahNumber: prevNew.toSurahNumber || prevNew.surahNumber,
+        toSurahName: toInfo.name,
+        toAyah: prevNew.toAyah || toInfo.numberOfAyahs,
+        isFullSurah: prevNew.isFullSurah || false,
+        notes: 'سرد ومراجعة ما تم تسميعه في الجلسة السابقة لربط المحفوظ الجديد وتثبيته في الصدر'
+      });
+      rationaleNotes.push(`مراجعة ما تم حفظه أمس: سورة ${sInfo.name}`);
+    }
+  } else if (todayRecitedPortion) {
+    const sInfo = getSurahInfo(todayRecitedPortion.fromSurah);
+    const toInfo = getSurahInfo(todayRecitedPortion.toSurah);
+    const isFull = todayRecitedPortion.fromSurah === todayRecitedPortion.toSurah &&
+      todayRecitedPortion.fromAyah === 1 &&
+      todayRecitedPortion.toAyah >= toInfo.numberOfAyahs;
+
+    reviewItems.push({
+      id: `tom_rev_today_new_${Date.now()}`,
+      type: 'مراجعة تراكمية',
+      surahNumber: todayRecitedPortion.fromSurah,
+      surahName: sInfo.name,
+      fromAyah: todayRecitedPortion.fromAyah,
+      toSurahNumber: todayRecitedPortion.toSurah,
+      toSurahName: toInfo.name,
+      toAyah: todayRecitedPortion.toAyah,
+      isFullSurah: isFull,
+      notes: 'سرد ومراجعة ما تم حفظه اليوم لتثبيته في الصدر مع ورد الغد'
+    });
+    rationaleNotes.push(`مراجعة ما تم حفظه اليوم غداً: سورة ${sInfo.name}`);
+  }
+
+  // RULE 3: Regular Cumulative Review Quota (ورد المراجعة اليومي المقرر)
+  // "ولازم يكمل الورد الويمي للمراجعة يعني مثلا عليه ١٠ اوجه مراجعة ده غير الاخطاء"
+  // "المراجعة دايما ستبدأ من الناس الا لو كان هو بادئ من فوق"
+  const revPace = student.memorizationPlan?.dailyReviewPages || 5;
+  const isFromBaqarah = student.reviewStartDirection === 'from_baqarah';
+  let quotaStartS = isFromBaqarah ? 2 : 114;
+  let quotaStartA = 1;
+
+  // If student has persistent review items or previous reviews, advance sequentially
+  const lastRev = evaluationsHistory[0]?.recitationDetails?.todayReviewItems?.[0];
+  if (lastRev && lastRev.toSurahNumber) {
+    if (isFromBaqarah) {
+      quotaStartS = lastRev.toSurahNumber < 114 ? lastRev.toSurahNumber : 2;
+    } else {
+      quotaStartS = lastRev.toSurahNumber > 1 ? lastRev.toSurahNumber - 1 : 114;
+    }
+  }
+
+  const quotaPortion = calculatePortionFromPace(quotaStartS, quotaStartA, Math.max(1, Math.min(20, revPace)));
+  const quotaSInfo = getSurahInfo(quotaPortion.fromSurah);
+  const quotaToInfo = getSurahInfo(quotaPortion.toSurah);
+
+  reviewItems.push({
+    id: `rev_quota_${Date.now()}`,
+    type: 'مراجعة صغرى',
+    surahNumber: quotaPortion.fromSurah,
+    surahName: quotaSInfo.name,
+    fromAyah: quotaPortion.fromAyah,
+    toSurahNumber: quotaPortion.toSurah,
+    toSurahName: quotaToInfo.name,
+    toAyah: quotaPortion.toAyah,
+    isFullSurah: quotaPortion.fromSurah === quotaPortion.toSurah && quotaPortion.fromAyah === 1 && quotaPortion.toAyah >= quotaToInfo.numberOfAyahs,
+    notes: `الورد اليومي المستمر للمراجعة (${revPace} أوجه) ابتداءً ${isFromBaqarah ? 'من البقرة نزولاً' : 'من الناس صعوداً'}`
+  });
+  rationaleNotes.push(`الورد اليومي للمراجعة: ${quotaPortion.description}`);
+
+  // RULE 4: Two-Week Daily Consolidation for Recently Completed Surahs
+  // "والسورة اللي يخلصها خليها قاعدة عنده مثلا الطالب عليه مراجعة اليوم ١٠ اوجه يحط معاها اليوم مثلا هو لسه مخلص سورة جديد يخليه يراجعها بشكل يومي لمدة اسبوعين... طيب لو قصار السور لا هنا يجمعهم مش هيسمعها لوحدها"
+  let recentlyCompletedReviewItem: QuranRecitationItem | null = null;
+  if (student.recentlyCompletedSurahs && student.recentlyCompletedSurahs.length > 0) {
+    const twoWeekResult = calculateRecentlyCompletedSurahsReview({
+      recentlyCompletedSurahs: student.recentlyCompletedSurahs,
+      activeErrorsMap: mushafErrors
+    });
+    if (twoWeekResult.reviewItems && twoWeekResult.reviewItems.length > 0) {
+      recentlyCompletedReviewItem = twoWeekResult.reviewItems[0];
+      reviewItems.push(recentlyCompletedReviewItem);
+      rationaleNotes.push(twoWeekResult.summaryNote);
+    }
+  }
+
+  // RULE 5: Progressive Weak-Point / Ayah Error Targeting
+  // "وعايزه يتبع يعني الاخطاء اللي يحطها المعلم ولو لاحظ تحسن والله في التاريخ الفلااني كان عنده خطأ في الاية ده بس انلهارده لا بس السورة الثانية لا والله اكثر الاخطاء زي ماهي فيزود على السورة الثانية... مش هيخليها كلها في يوم واحد لا يخلي مثلا كم خطأ كل يوم بحيث يخلص السور الضعيفة اللي عنده في اقرب مدة"
+  let targetedErrorItem: QuranRecitationItem | null = null;
+  const errorDistribution = analyzeAndDistributeAyahErrors({
+    existingErrors: student.mushafErrors || [],
+    todayEvaluatedRange: todayRecitedPortion,
+    todayReportedErrors: mushafErrors,
+    dailyMaxErrorVerses: 3
+  });
+
+  if (errorDistribution.targetedReviewItem) {
+    targetedErrorItem = errorDistribution.targetedReviewItem;
+    reviewItems.push(targetedErrorItem);
+    rationaleNotes.push(errorDistribution.rationale);
+  }
+
+  return {
+    reviewItems,
+    rationaleNotes,
+    targetedErrorItem,
+    recentlyCompletedReviewItem
   };
 }
 

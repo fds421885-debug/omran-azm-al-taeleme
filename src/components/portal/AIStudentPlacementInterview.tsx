@@ -20,7 +20,8 @@ import {
   Check,
   Mic,
   BrainCircuit,
-  MessageSquare
+  MessageSquare,
+  Search
 } from 'lucide-react';
 import {
   Student,
@@ -42,6 +43,8 @@ import {
   buildApplicationAcceptedEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
+import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
+import { calculatePortionFromPace } from '../../data/quranPagesData';
 
 interface AIStudentPlacementInterviewProps {
   studentInitialData: {
@@ -74,7 +77,7 @@ interface ChatMessage {
   isLiveTest?: boolean;
   surahNumber?: number;
   ayahNumber?: number;
-  customWidget?: 'juz_selector' | 'pace_selector' | 'mosque_selector' | 'result_success' | 'result_waiting';
+  customWidget?: 'juz_selector' | 'pace_selector' | 'mosque_selector' | 'result_success' | 'result_waiting' | 'surah_picker';
   widgetData?: any;
 }
 
@@ -105,6 +108,10 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     dailyReviewPages: number;
     selectedMosqueId?: string;
     selectedMosqueName?: string;
+    reachedSurah?: number;
+    reachedAyah?: number;
+    reachedSurahName?: string;
+    reviewDirection?: 'from_baqarah' | 'from_nas';
     userAnswersList: string[];
   }>({
     memorizedCount: studentInitialData.memorizedJuzList?.length || 1,
@@ -114,6 +121,10 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     goal: 'ختم القرآن الكريم وتثبيته كاملاً بإتقان',
     dailyNewPages: 1,
     dailyReviewPages: 5,
+    reachedSurah: undefined,
+    reachedAyah: undefined,
+    reachedSurahName: undefined,
+    reviewDirection: (studentInitialData.memorizedJuzList?.length || 1) >= 30 ? 'from_baqarah' : 'from_nas',
     userAnswersList: []
   });
 
@@ -171,6 +182,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
 
         setTimeout(() => {
           setIsTyping(false);
+          const isSurahPicker = turn1.nextQuestion?.questionId === 'quran_position_reached' || (turn1 as any).customWidget === 'surah_picker';
           const qMsg: ChatMessage = {
             id: `msg_q_1`,
             sender: 'ai',
@@ -181,7 +193,8 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             options: turn1.nextQuestion?.options,
             isLiveTest: turn1.nextQuestion?.isLiveRecitationTest,
             surahNumber: turn1.nextQuestion?.surahNumber,
-            ayahNumber: turn1.nextQuestion?.ayahNumber
+            ayahNumber: turn1.nextQuestion?.ayahNumber,
+            customWidget: isSurahPicker ? 'surah_picker' : undefined
           };
           setMessages(prev => [...prev, qMsg]);
         }, 900);
@@ -262,9 +275,14 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       const weeklyDays = 5;
       const dailyHours = 2;
       const memCount = Math.max(1, interviewData.memorizedCount);
+      const isKhatim = memCount >= 30;
       const consCount = Math.max(0, Math.min(memCount, interviewData.consolidatedCount));
       const dailyNew = Math.max(0.25, interviewData.dailyNewPages);
       const dailyRev = Math.max(2, interviewData.dailyReviewPages);
+
+      const startS = interviewData.reachedSurah || (isKhatim ? 2 : 78);
+      const startA = interviewData.reachedAyah || 1;
+      const startInfo = getSurahInfo(startS);
 
       const timeline = calculateRealisticKhatmTimeline({
         memorizedJuz: memCount,
@@ -275,6 +293,10 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
         dailyHoursCount: dailyHours
       });
 
+      const startPortion = calculatePortionFromPace(startS, startA, dailyNew);
+
+      // Day 1 Protocol:
+      // "اول يوم للقارئ وهيبدأ لو خاتم مش هيكون فيه مراجعة اول يوم ﻷنه لسه هيبدأ وهيسمع لكن بكرة لا خلاص اللي سمعه يحب يبدأ عليه المراجعة من الحفظ اللي سمعه امبارح"
       const plan: StudentMemorizationPlan = {
         dailyNewPages: dailyNew,
         dailyReviewPages: dailyRev,
@@ -290,10 +312,16 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
         tathbeetStopsCount: timeline.tathbeetStopsCount,
         milestones: timeline.milestones,
         nextDayAssignment: {
-          newMemorization: `سورة ${memCount >= 30 ? 'البقرة' : 'النبأ'}: الآيات 1 إلى 10`,
-          review: `مراجعة وتثبيت الجزء ${Math.max(1, memCount)}`,
+          newMemorization: startPortion.description,
+          review: isKhatim
+            ? 'لا توجد مراجعة في اليوم الأول (انطلاقة التسميع الأولى - وتبدأ المراجعة غداً مما يتم تسميعه اليوم)'
+            : 'اليوم الأول مخصص للتسميع الجديد (وتبدأ المراجعة التراكمية غداً مما يُسمّع اليوم)',
           action: 'advance_page',
-          reason: 'انطلاقة تثبيت منهجية محسوبة بالذكاء الاصطناعي'
+          reason: 'انطلاقة تأسيسية ذكية تبدأ من موضع الوصول المحدد بدقة مع بروتوكول اليوم الأول',
+          surahNumber: startPortion.fromSurah,
+          fromAyah: startPortion.fromAyah,
+          toSurahNumber: startPortion.toSurah,
+          toAyah: startPortion.toAyah
         },
         aiNotes: timeline.pedagogicalNote,
         lastUpdated: new Date().toISOString()
@@ -315,9 +343,13 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           parentPhones: [studentInitialData.parentPhone],
           parentPhone: studentInitialData.parentPhone,
           googleEmail: studentInitialData.email || null,
-          currentSurah: memCount >= 30 ? 2 : 78,
-          currentSurahName: memCount >= 30 ? 'البقرة' : 'النبأ',
-          currentAyah: 1,
+          currentSurah: startS,
+          currentSurahName: startInfo.name,
+          currentAyah: startA,
+          startSurahReached: startS,
+          startAyahReached: startA,
+          reviewStartDirection: interviewData.reviewDirection || (isKhatim ? 'from_baqarah' : 'from_nas'),
+          isFirstSession: true,
           dailyNewTarget: `${dailyNew} وجه يومياً`,
           dailyReviewTarget: `${dailyRev} أوجه يومياً`,
           level: interviewData.tajweedScore >= 1 || memCount >= 5 ? 'متميز' : 'متوسط',
@@ -332,7 +364,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             roadmapSummary: `خطة تثبيت ذكية ومحسوبة بدقة. موعد الختم الواقعي: ${timeline.targetCompletionDate}.`,
             currentDailyAssignment: {
               newMemorization: plan.nextDayAssignment?.newMemorization || 'وجه جديد',
-              review: plan.nextDayAssignment?.review || '5 أوجه مراجعة',
+              review: plan.nextDayAssignment?.review || 'مراجعة الماضي',
               suggestedSheikh: 'الشيخ محمود خليل الحصري (المصحف المعلم)',
               dailyNote: 'التكرار 3 مرات قبل النوم لضمان التثبيت',
               targetRepetitions: 3
@@ -476,6 +508,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           }
         } else {
           // Next adaptive question bubble
+          const isSurahPicker = response.nextQuestion?.questionId === 'quran_position_reached' || (response as any).customWidget === 'surah_picker';
           const nextQMsg: ChatMessage = {
             id: `msg_q_${nextTurn}`,
             sender: 'ai',
@@ -486,7 +519,8 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             options: response.nextQuestion?.options,
             isLiveTest: response.nextQuestion?.isLiveRecitationTest,
             surahNumber: response.nextQuestion?.surahNumber,
-            ayahNumber: response.nextQuestion?.ayahNumber
+            ayahNumber: response.nextQuestion?.ayahNumber,
+            customWidget: isSurahPicker ? 'surah_picker' : undefined
           };
           setMessages(prev => [...prev, nextQMsg]);
         }
@@ -504,6 +538,8 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
 
     if (opt.value === 'correct') {
       extra.tajweedScore = interviewData.tajweedScore + 1;
+    } else if (opt.value === 'from_baqarah' || opt.value === 'from_nas') {
+      extra.reviewDirection = opt.value;
     } else if (typeof opt.value === 'number') {
       if (qKey.includes('consolidated') || qKey.includes('cons')) {
         extra.consolidatedCount = opt.value;
@@ -516,6 +552,16 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     }
 
     advanceTurnWithAnswer(opt.label, extra);
+  };
+
+  // Handle Quran Surah and Ayah reached confirmation
+  const handleSurahPositionSelected = (surahNum: number, ayahNum: number, surahName: string) => {
+    const text = `وصلت في سور القرآن الكريم عند: سورة ${surahName} (الآية ${ayahNum})`;
+    advanceTurnWithAnswer(text, {
+      reachedSurah: surahNum,
+      reachedAyah: ayahNum,
+      reachedSurahName: surahName
+    });
   };
 
   // Handle free text typed input
@@ -642,6 +688,17 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
                         {opt.subtext && <span className="text-[11px] text-white/70 font-normal">{opt.subtext}</span>}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* Custom Widget: Quran Surah & Ayah Reached Picker */}
+                {msg.customWidget === 'surah_picker' && (
+                  <div className="pt-2">
+                    <QuranPositionReachedPicker
+                      initialSurah={interviewData.reachedSurah || (studentInitialData.memorizedJuzList?.length >= 30 ? 2 : 78)}
+                      initialAyah={interviewData.reachedAyah || 1}
+                      onConfirm={handleSurahPositionSelected}
+                    />
                   </div>
                 )}
 
@@ -896,3 +953,178 @@ const WaitingListCard: React.FC<WaitingListCardProps> = ({ waitingEntry, onConfi
     </div>
   );
 };
+
+// -------------------------------------------------------------------------
+// Subcomponent: Quran Position Reached Searchable Dropdown & Ayah Picker
+// -------------------------------------------------------------------------
+interface QuranPositionReachedPickerProps {
+  initialSurah?: number;
+  initialAyah?: number;
+  onConfirm: (surahNumber: number, ayahNumber: number, surahName: string) => void;
+}
+
+const QuranPositionReachedPicker: React.FC<QuranPositionReachedPickerProps> = ({
+  initialSurah = 78,
+  initialAyah = 1,
+  onConfirm
+}) => {
+  const [search, setSearch] = useState('');
+  const [selectedSurah, setSelectedSurah] = useState<number>(initialSurah);
+  const [selectedAyah, setSelectedAyah] = useState<number>(initialAyah);
+
+  const curSurahInfo = useMemo(() => getSurahInfo(selectedSurah), [selectedSurah]);
+
+  const filteredSurahs = useMemo(() => {
+    if (!search.trim()) return QURAN_SURAHS;
+    const clean = search.trim();
+    return QURAN_SURAHS.filter(s =>
+      s.name.includes(clean) ||
+      s.number.toString() === clean ||
+      s.englishName.toLowerCase().includes(clean.toLowerCase())
+    );
+  }, [search]);
+
+  const maxAyahs = curSurahInfo.numberOfAyahs;
+
+  const handleSurahChange = (sNum: number) => {
+    setSelectedSurah(sNum);
+    setSelectedAyah(1);
+  };
+
+  const handleAyahChange = (val: number) => {
+    const clamped = Math.max(1, Math.min(maxAyahs, val));
+    setSelectedAyah(clamped);
+  };
+
+  return (
+    <div className="p-4 sm:p-5 rounded-3xl bg-[#022c22] border-2 border-amber-400/60 shadow-2xl space-y-3.5 text-white animate-fadeIn" dir="rtl">
+      <div className="flex items-center gap-2.5 border-b border-[#065f46] pb-2.5">
+        <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center font-bold">
+          <BookOpen className="w-4 h-4" />
+        </div>
+        <div>
+          <h4 className="text-xs sm:text-sm font-black text-amber-300">
+            حدد أين وصلت في سور القرآن الكريم بدقة:
+          </h4>
+          <p className="text-[11px] text-[#86efac]/80">
+            اختر السورة والآية التي تقف عندها من قائمة سور القرآن الكريم الـ ١١٤
+          </p>
+        </div>
+      </div>
+
+      {/* Surah Search & Select */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] text-[#86efac] font-bold block">
+          البحث في سور القرآن الكريم الـ ١١٤:
+        </label>
+        <div className="relative">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ابحث باسم السورة (مثلاً: البقرة، الكهف، يس، النبأ، الملك...)"
+            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2 px-3.5 pr-9 text-xs text-white placeholder-slate-400 outline-none font-bold shadow-inner"
+          />
+          <Search className="w-4 h-4 text-amber-300 absolute right-3 top-2.5" />
+        </div>
+
+        {/* Dropdown Select with All 114 Surahs */}
+        <select
+          value={selectedSurah}
+          onChange={e => handleSurahChange(Number(e.target.value))}
+          className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-amber-300 font-bold rounded-2xl py-2.5 px-3 text-xs outline-none cursor-pointer shadow-md"
+        >
+          {filteredSurahs.map(s => (
+            <option key={s.number} value={s.number} className="bg-[#022c22] text-white">
+              {s.number}. سورة {s.name} ({s.numberOfAyahs} آية - جزء {s.juz} - {s.revelationType})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Selected Surah Badge Info */}
+      <div className="p-3 rounded-2xl bg-black/30 border border-[#065f46] flex items-center justify-between text-xs">
+        <div>
+          <span className="font-black text-white text-sm">سورة {curSurahInfo.name}</span>
+          <span className="text-[11px] text-[#86efac] block">
+            الجزء {curSurahInfo.juz} • {curSurahInfo.revelationType} • عدد آياتها {curSurahInfo.numberOfAyahs}
+          </span>
+        </div>
+        <span className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 font-bold text-xs border border-amber-400/40">
+          السورة رقم {curSurahInfo.number}
+        </span>
+      </div>
+
+      {/* Ayah Input & Presets */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] text-[#86efac] font-bold">
+          <span>الآية التي وصلت إليها:</span>
+          <span className="text-amber-300 font-mono font-black">(من 1 إلى {maxAyahs})</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleAyahChange(selectedAyah - 1)}
+            disabled={selectedAyah <= 1}
+            className="w-9 h-9 rounded-xl bg-[#064e3b] hover:bg-[#065f46] disabled:opacity-30 text-white font-black text-base flex items-center justify-center border border-[#065f46] cursor-pointer"
+          >
+            -
+          </button>
+          <input
+            type="number"
+            min={1}
+            max={maxAyahs}
+            value={selectedAyah}
+            onChange={e => handleAyahChange(Number(e.target.value))}
+            className="flex-1 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-center font-black text-amber-300 text-sm py-2 rounded-xl outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => handleAyahChange(selectedAyah + 1)}
+            disabled={selectedAyah >= maxAyahs}
+            className="w-9 h-9 rounded-xl bg-[#064e3b] hover:bg-[#065f46] disabled:opacity-30 text-white font-black text-base flex items-center justify-center border border-[#065f46] cursor-pointer"
+          >
+            +
+          </button>
+        </div>
+
+        {/* Quick Ayah Presets */}
+        <div className="flex items-center gap-1.5 pt-1">
+          <button
+            type="button"
+            onClick={() => handleAyahChange(1)}
+            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
+          >
+            بداية السورة (آية 1)
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAyahChange(Math.round(maxAyahs / 2))}
+            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
+          >
+            المنتصف (آية {Math.round(maxAyahs / 2)})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAyahChange(maxAyahs)}
+            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
+          >
+            خاتمة السورة (آية {maxAyahs})
+          </button>
+        </div>
+      </div>
+
+      {/* Confirmation Action */}
+      <button
+        type="button"
+        onClick={() => onConfirm(curSurahInfo.number, selectedAyah, curSurahInfo.name)}
+        className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-[#fbbf24] hover:brightness-110 text-[#064e3b] font-black text-xs sm:text-sm cursor-pointer shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+      >
+        <Check className="w-4 h-4 stroke-[3]" />
+        <span>تأكيد الوصول عند: سورة {curSurahInfo.name} (الآية {selectedAyah}) ➔</span>
+      </button>
+    </div>
+  );
+};
+

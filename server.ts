@@ -840,216 +840,165 @@ app.post("/api/gemini/dynamic-placement-turn", async (req, res) => {
     const isChild = reqIsChild ?? (age < 13);
     const isBeginner = reqIsBeginner ?? (memCount <= 3);
 
+    // Helper to shuffle options array so option A / 0 is never predictably the answer
+    const shuffleArray = <T>(array: T[]): T[] => {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
     // Dynamic Fallback Generator for when Gemini API key is absent or offline
     const getDynamicFallbackTurn = (turn: number) => {
-      if (isKhatim) {
-        // High-level Khatim Assessment
-        if (turn === 1) {
+      // Turn 1 for ALL students: Quran Surah & Ayah Reached Picker!
+      // "اين وصل في سور القرءان والطالب يختار من قائمة منسدلة من كل سور القرءان ويمكنه البحث ويحدد اي اي وصل"
+      if (turn === 1) {
+        return {
+          replyText: `أهلاً وسهلاً بك يا ${studentInitialData?.studentName || 'الحبيب'} في مجمع «${complexName || 'القرآني'}»! 🌟\n\nأنا «المساعد القرآني والتربوي الذكي»، ومهمتي هي التعرف على موضع حفظك الحالي بدقة وضبط جدولك القرآني المتقن.\n\n📖 **أين وصلت في سور القرآن الكريم؟**\nاختر السورة والآية التي تقف عندها من القائمة المنسدلة بالأسفل (يمكنك البحث في جميع سور القرآن الـ ١١٤):`,
+          isCompleted: false,
+          customWidget: "surah_picker",
+          nextQuestion: {
+            questionId: "quran_position_reached",
+            questionText: "موضع الوصول الحالي في سور القرآن الكريم:",
+            category: "memorization_depth",
+            options: [] // Rendered via searchable Quran Surahs dropdown
+          },
+          aiInsights: {
+            studentLevel: isKhatim ? "خاتم ومتقن" : isBeginner ? "مبتدئ" : "متوسط",
+            psychologicalProfile: "طالب حريص على الضبط المتقن ومستعد للالتزام بجدول التثبيت",
+            commitmentAssessment: "ممتاز",
+            recommendedHalaqahLevel: isKhatim ? "حلقة السرد والإجازة بالسند" : "حلقة التثبيت والمراجعة التراكمية",
+            suggestedDailyNewPages: isKhatim ? 0.5 : 1,
+            suggestedDailyReviewPages: isKhatim ? 20 : 5
+          }
+        };
+      }
+
+      // Turn 2: Review Direction (Khatim: Al-Baqarah vs An-Nas / Non-Khatim: starting direction)
+      // "يسأل الطالب هل يحب يبدأ مراجعة من البقرة ام من الناس طبعا للخاتم"
+      if (turn === 2) {
+        if (isKhatim) {
+          const khatimOptions = shuffleArray([
+            { label: "البدء من سورة البقرة (تدرج من أول المصحف نزولاً)", value: "from_baqarah", subtext: "مسار السرد الكلاسيكي المنهجي" },
+            { label: "البدء من سورة الناس (سرد صعوداً من جزء عم وقصار السور)", value: "from_nas", subtext: "تثبيت قصار السور ثم الأطول" }
+          ]);
           return {
-            replyText: `ما شاء الله تبارك الله يا ${studentInitialData?.studentName || 'الحبيب'}! هنيئاً لك حفظ كتاب الله كاملاً، جعله الله حجة لك ونوراً في صدرك 🌟.\nبما أنك خاتم للقرآن الكريم، فإن تسكينك سيكون في حلقات السرد المتقن والإجازة بالسند المتصل.\nلنبدأ باختبار دقيق للمتشابهات اللفظية: في أي سورة ورد قوله تعالى: ﴿ذَٰلِكَ بِأَنَّهُمْ قَالُوا لَن تَمَسَّنَا النَّارُ إِلَّا أَيَّامًا مَّعْدُودَاتٍ﴾؟`,
+            replyText: `ما شاء الله تبارك الرحمن! هنيئاً لك ختم كتاب الله كاملاً، جعله الله لك شفيعاً ونوراً في الدارين.\n\nبما أنك خاتم وتريد مراجعة القرآن كاملاً وتثبيته لنيل السند والإجازة بإذن الله:\n**هل تفضل أن تبدأ مراجعتك الشاملة من سورة البقرة أم من سورة الناس؟**`,
             isCompleted: false,
             nextQuestion: {
-              questionId: "khatim_q1_mutashabih",
-              questionText: "في أي سورة وردت هذه الآية الكريمة بالضبط؟",
-              category: "mutashabihat",
-              options: [
-                { label: "سورة آل عمران (آية ٢٤)", value: "correct", subtext: "آل عمران: أياماً معدودات" },
-                { label: "سورة البقرة (آية ٨٠)", value: "wrong", subtext: "في البقرة: أياماً معدودة بدون ألف وتاء" },
-                { label: "سورة النساء", value: "wrong", subtext: "لم ترد في سورة النساء بهذا اللفظ" }
-              ]
-            },
-            aiInsights: {
-              studentLevel: "خاتم ومتقن",
-              psychologicalProfile: "همة عالية وطموح لنيل الإجازة والسند",
-              commitmentAssessment: "ممتاز",
-              recommendedHalaqahLevel: "حلقة السرد والإجازة بالسند",
-              suggestedDailyNewPages: 0.5,
-              suggestedDailyReviewPages: 20
-            }
-          };
-        } else if (turn === 2) {
-          return {
-            replyText: `أحسنت التمييز والتدقيق! هذا من دقائق المتشابهات بين البقرة (معدودة) وآل عمران (معدودات).\nالسؤال الثاني في أصول الوقف والابتداء:\nعند قراءة قوله تعالى في سورة الكهف: ﴿قَيِّمًا لِّيُنذِرَ بَأْسًا شَدِيدًا﴾ بعد كلمة ﴿عِوَجًا﴾، ما هو الحكم الأدائي الصحيح برواية حفص عن عاصم من طريق الشاطبية؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "khatim_q2_waqf",
-              questionText: "ما الحكم في (عِوَجَا ۜ قَيِّمًا) عند حفص؟",
-              category: "tajweed",
-              options: [
-                { label: "سكتة لطيفة بدون تنفس بمقدار حركتين", value: "correct", subtext: "إحدى السكتات الأربع الواجبة لحفص" },
-                { label: "وصل تام مع إخفاء التنوين", value: "wrong", subtext: "لا وصل بإخفاء هنا في الشاطبية" },
-                { label: "وقف تام مع أخذ نفس", value: "wrong", subtext: "لا يُتنفس في السكت" }
-              ]
-            }
-          };
-        } else if (turn === 3) {
-          return {
-            replyText: `فتح الله عليك ونفع بك! إتقانك لأحكام الرواية والسكت يدل على عناية فائقة.\nالآن نود معرفة طاقتك واستعدادك للسرد اليومي غيباً في مجلس الشيخ:`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "khatim_q3_stamina",
-              questionText: "كم جزءاً تستطيع سرده غيباً عن ظهر قلب في الجلسة الواحدة بإتقان؟",
+              questionId: "khatim_review_direction",
+              questionText: "مسار انطلاق مراجعة المصحف كاملاً:",
               category: "memorization_depth",
-              options: [
-                { label: "جزءان كاملان غيباً (٤٠ وجهاً)", value: 2, subtext: "مسار سرد سريع لختمة الإجازة" },
-                { label: "جزء واحد كامل غيباً (٢٠ وجهاً)", value: 1, subtext: "مسار متزن ومتقن جداً" },
-                { label: "نصف جزء (١٠ أوجه)", value: 0.5, subtext: "مسار تثبيت متأنٍ ودقيق" }
-              ]
+              options: khatimOptions
             }
           };
         } else {
+          const nonKhatimOptions = shuffleArray([
+            { label: "بدأت من سورة الناس صعوداً (المسار المعتاد من جزء عم)", value: "from_nas", subtext: "البدء من قصار السور صعوداً" },
+            { label: "بدأت من سورة البقرة ونزولاً في طوال السور", value: "from_baqarah", subtext: "البدء من طوال السور للأمام" }
+          ]);
           return {
-            replyText: `بارك الله فيك وفي همتك المباركة يا ${studentInitialData?.studentName || 'القارئ الكريم'}!\nتمت المقابلة بنجاح تام، وتم تشخيص مستواك بمرتبة «خاتم ومتقن مؤهل للإجازة بالسند».\nخارطة طريقك تركز على سرد ختمة كاملة برواية حفص غيباً مع وقفات التثبيت لنيل السند المتصل بإذن الله.`,
-            isCompleted: true,
-            aiInsights: {
-              studentLevel: "خاتم ومتقن",
-              psychologicalProfile: "قارئ متقن، ناضج قرآنياً، جاهز للسرد وعرض الختمة على الشيخ المقرئ",
-              commitmentAssessment: "استثنائي",
-              recommendedHalaqahLevel: "حلقة الإتقان والسند المتصل",
-              suggestedDailyNewPages: 0.5,
-              suggestedDailyReviewPages: 20
-            }
-          };
-        }
-      } else if (isChild || isBeginner) {
-        // Child / Beginner Flow
-        if (turn === 1) {
-          return {
-            replyText: `أهلاً بالبطل الصغير ${studentInitialData?.studentName || 'الحبيب'}! نورتنا في مجمع ${complexName || 'القرآني'} 🌸.\nأنا مسرور جداً برغبتك في حفظ كتاب الله، وسنكون أصدقاء لنرسم لك خطة حلوة وممتعة!\nقل لي يا بطل: من هي السورة التي تحب قراءتها وتستحضرها من جزء عم؟`,
+            replyText: `أحسنت الاختيار وموضع بداية مبارك بإذن الله!\n\nلتحديد اتجاه المراجعة التراكمية اليومية:\n**هل بدأت حفظك سابقاً من سورة الناس (صعوداً من جزء عم) أم بدأت من سورة البقرة ونزولاً؟**`,
             isCompleted: false,
             nextQuestion: {
-              questionId: "child_q1_surah",
-              questionText: "ما السورة الأحب إليك في التسميع؟",
+              questionId: "non_khatim_review_direction",
+              questionText: "اتجاه مسار الحفظ والمراجعة السابق:",
               category: "memorization_depth",
-              options: [
-                { label: "سورة النبأ أو النازعات", value: "naba", subtext: "أوائل جزء عم" },
-                { label: "سورة الفلق والإخلاص والناس", value: "qisar", subtext: "قصار السور المباركة" },
-                { label: "سورة الأعلى والغاشية والبلد", value: "aala", subtext: "وسط جزء عم" }
-              ]
-            },
-            aiInsights: {
-              studentLevel: "مبتدئ",
-              psychologicalProfile: "طفل محب للقرآن يحتاج للتشجيع والتحفيز المستمر وبيئة حلقة دافئة",
-              commitmentAssessment: "واعد",
-              recommendedHalaqahLevel: "حلقة البراعم والناشئة القرآنية",
-              suggestedDailyNewPages: 0.5,
-              suggestedDailyReviewPages: 2
-            }
-          };
-        } else if (turn === 2) {
-          return {
-            replyText: `رائع يا بطل! ما شاء الله عليك. والآن لنجرب هذا الاختبار اللطيف في التجويد الصوتي:\nعندما نقرأ في سورة الناس: ﴿مِنَ الْجِنَّةِ وَالنَّاسِ﴾، ما هو الصوت الجميل الذي نفعله في حرف النون المشددة (نّ)؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "child_q2_ghunnah",
-              questionText: "ما هو حكم النون المشددة في (الناس)؟",
-              category: "tajweed",
-              options: [
-                { label: "غنة رنانة لطيفة بمقدار حركتين", value: "correct", subtext: "تخرج من الخيشوم برفق" },
-                { label: "نقذفها بسرعة بدون غنة", value: "wrong", subtext: "النون المشددة يلزمها غنة" },
-                { label: "قلقلة شديدة", value: "wrong", subtext: "النون ليست من حروف القلقلة" }
-              ]
-            }
-          };
-        } else if (turn === 3) {
-          return {
-            replyText: `بطل ذكي وممتاز! نعم، الغنة صوت جميل يزين التلاوة.\nوالآن يا بطل: كم وجهاً تحب أن تحفظ في اليوم مع الشيخ في الحلقة دون أن تتعب؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "child_q3_pace",
-              questionText: "ما هو المقدار المناسب لك يومياً؟",
-              category: "psychology_commitment",
-              options: [
-                { label: "نصف وجه يومياً مع التكرار واللعب الهادف", value: 0.5, subtext: "معدل مريح جداً للأطفال" },
-                { label: "وجه كامل يومياً بهمة قوية", value: 1, subtext: "للأبطال المتميزين" },
-                { label: "آيات قصيرة (٣ إلى ٥ آيات) للتأسيس", value: 0.25, subtext: "تثبيت وضبط الحروف" }
-              ]
-            }
-          };
-        } else {
-          return {
-            replyText: `ألف مبارك يا بطلنا ${studentInitialData?.studentName || ''}! أتممت المقابلة وحصلت على وسام الشجاعة القرآنية 🌟.\nتم تسكينك في حلقة البراعم المتميزة لتتعلم التلاوة والتجويد بحب وفرح مع شيخك وزملائك!`,
-            isCompleted: true,
-            aiInsights: {
-              studentLevel: "مبتدئ",
-              psychologicalProfile: "طفل ذكي ومبادر، مناسب له التدرج والتحفيز بالنقاط والأوسمة",
-              commitmentAssessment: "ممتاز للناشئة",
-              recommendedHalaqahLevel: "حلقة براعم القرآن الكريم",
-              suggestedDailyNewPages: 0.5,
-              suggestedDailyReviewPages: 2
-            }
-          };
-        }
-      } else {
-        // Intermediate Student Flow (4 to 20 Juz)
-        if (turn === 1) {
-          return {
-            replyText: `أهلاً بك يا ${studentInitialData?.studentName || 'الكريم'} في مجمع ${complexName || 'القرآني'} 🌟.\nما شاء الله، قطعت شوطاً طيباً بحفظ قرابة (${memCount}) أجزاء من القرآن الكريم.\nلضبط خطتك بدقة: من بين الأجزاء المحفوظة، كم جزءاً تشعر أنه راسخ في صدرك كالفاتحة لا تتعثر فيه؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "inter_q1_cons",
-              questionText: "كم عدد الأجزاء المثبتة بإتقان تام لديك؟",
-              category: "memorization_depth",
-              options: [
-                { label: `قرابة ${Math.max(1, memCount - 2)} أجزاء مثبتة جيدة`, value: Math.max(1, memCount - 2), subtext: "إتقان متقدم وثابت" },
-                { label: `نصف المحفوظ فقط (قرابة ${Math.max(1, Math.round(memCount / 2))} أجزاء)`, value: Math.max(1, Math.round(memCount / 2)), subtext: "يحتاج وقفة تثبيت تراكمية" },
-                { label: "أغلبها يحتاج إلى مراجعة مكثفة وتكرار", value: 1, subtext: "تثبيت القديم قبل الجديد" }
-              ]
-            },
-            aiInsights: {
-              studentLevel: "متوسط",
-              psychologicalProfile: "طالب مجتهد يحتاج لموازنة الحفظ الجديد مع حزام مراجعة تراكمي صارم",
-              commitmentAssessment: "جيد جداً",
-              recommendedHalaqahLevel: "حلقة التثبيت والإتقان المنهجي",
-              suggestedDailyNewPages: 1,
-              suggestedDailyReviewPages: 5
-            }
-          };
-        } else if (turn === 2) {
-          return {
-            replyText: `قاعدة المنظومة الذهبية: «التثبيت رأس المال والحفظ الجديد ربح»، لذا سنجعل مراجعة القديم ركيزة أساسية.\nسؤال فحص التجويد (المستوى المتوسط):\nفي قوله تعالى: ﴿قُلْ أُوحِيَ إِلَيَّ﴾، ما نوع المد في (أُوحِيَ إِلَيَّ) وما مقداره عند حفص عن عاصم من طريق الشاطبية؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "inter_q2_madd",
-              questionText: "ما نوع المد ومقداره في (أوحيَ إليّ)؟",
-              category: "tajweed",
-              options: [
-                { label: "مد جائز منفصل (٤ أو ٥ حركات جوازاً)", value: "correct", subtext: "حرف المد في كلمة والهمز في كلمة أخرى" },
-                { label: "مد واجب متصل (٤ أو ٥ حركات وجوباً)", value: "wrong", subtext: "المتصل يكون في كلمة واحدة" },
-                { label: "مد لازم كلمي (٦ حركات لزوماً)", value: "wrong", subtext: "ليس بعده سكون أصلي" }
-              ]
-            }
-          };
-        } else if (turn === 3) {
-          return {
-            replyText: `إجابة متقنة وموفقة! ضبط المدود من ركائز الترتيل الحسن.\nالآن لنتحدث عن موعد الختم المستهدف: هل تفضل التقدم السريع مع مراجعة خفيفة، أم مسار «الختم بتثبيت» الذي يضمن لك رسوخ القرآن في صدرك؟`,
-            isCompleted: false,
-            nextQuestion: {
-              questionId: "inter_q3_goal",
-              questionText: "ما هي وتيرتك المفضلة في التحفيظ؟",
-              category: "psychology_commitment",
-              options: [
-                { label: "مسار التثبيت أولاً: وجه جديد + ٥ أوجه مراجعة يومياً", value: "tathbeet_first", subtext: "الموصى به لضمان عدم التفلت" },
-                { label: "مسار الهمة العالية: وجهان جديدان + ١٠ أوجه مراجعة", value: "intensive", subtext: "للمتفرغين وأصحاب الهمم" },
-                { label: "مسار التدرج الهادئ: نصف وجه جديد + ٣ أوجه مراجعة", value: "gradual", subtext: "يناسب أوقات الدراسة والاختبارات" }
-              ]
-            }
-          };
-        } else {
-          return {
-            replyText: `ما شاء الله تبارك الله يا ${studentInitialData?.studentName || ''}! أتممت المقابلة بجدارة.\nتم فحص مستواك وتحديد خطتك التثبيتية بدقة، ويسرنا تسكينك في الحلقة الأنسب لمستواك في مجمع ${complexName || ''}!`,
-            isCompleted: true,
-            aiInsights: {
-              studentLevel: "متوسط",
-              psychologicalProfile: "همة متزنة ومستعد للالتزام بجدول التثبيت اليومي",
-              commitmentAssessment: "ممتاز",
-              recommendedHalaqahLevel: "حلقة التثبيت والمراجعة التراكمية",
-              suggestedDailyNewPages: 1,
-              suggestedDailyReviewPages: 5
+              options: nonKhatimOptions
             }
           };
         }
       }
+
+      // Turn 3: Diagnostic Tajweed / Mutashabihat Test with SHUFFLED options!
+      // Options are randomly shuffled so the answer is NEVER predictably option A or index 0!
+      if (turn === 3) {
+        if (isKhatim) {
+          const mutashabihOptions = shuffleArray([
+            { label: "في البقرة حصر وتأكيد لمواجهة ادعاء اليهود، وفي آل عمران تأكيد أن الهدى بيد الله", value: "correct", subtext: "فهم بلاغي وتفسيري دقيق" },
+            { label: "لا يوجد فرق معنوي بينهما، هو مجرد تنويع لفظي فقط", value: "wrong", subtext: "توجد دلالة بلاغية دقيقة في كل موضع" },
+            { label: "الموضعان وردا بالتقديم في آل عمران والتأخير في البقرة بالعكس", value: "wrong", subtext: "عكس للموضعين" }
+          ]);
+          return {
+            replyText: `ممتاز جداً! بما أن هدفك الإتقان التام والسند المتصل، دعنا نجري فحصاً سريعاً في المتشابهات اللفظية:\n\nفي قوله تعالى: ﴿قُلْ إِنَّ هُدَى اللَّهِ هُوَ الْهُدَىٰ﴾ بسورة البقرة، بينما في آل عمران: ﴿قُلْ إِنَّ الْهُدَىٰ هُدَى اللَّهِ﴾.\nما السر الدقيق في تقديم وتأخير لفظ (هو) و(الهدى) بين السورتين؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "khatim_mutashabihat_test",
+              questionText: "ضبط المتشابهات اللفظية وتوجيهها:",
+              category: "mutashabihat",
+              options: mutashabihOptions
+            }
+          };
+        } else if (isChild) {
+          const childGhunnahOptions = shuffleArray([
+            { label: "غنة رنانة لطيفة بمقدار حركتين", value: "correct", subtext: "تخرج من الخيشوم برفق وجمال" },
+            { label: "نقذفها بسرعة خاطفة بدون غنة", value: "wrong", subtext: "النون المشددة يلزمها غنة تزيّنها" },
+            { label: "قلقلة شديدة واهتزاز", value: "wrong", subtext: "النون ليست من حروف القلقلة" }
+          ]);
+          return {
+            replyText: `أحسنت يا بطل! ما شاء الله عليك 🌸.\nلنجرب هذا الاختبار اللطيف في التجويد الصوتي:\nعندما نقرأ في سورة الناس: ﴿مِنَ الْجِنَّةِ وَالنَّاسِ﴾، ما هو الصوت الجميل الذي نفعله في حرف النون المشددة (نّ)؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "child_q2_ghunnah",
+              questionText: "حكم النون المشددة في (الناس):",
+              category: "tajweed",
+              options: childGhunnahOptions
+            }
+          };
+        } else {
+          const tajweedOptions = shuffleArray([
+            { label: "إدغام بغنة ناقص (ينمو)", value: "correct", subtext: "الياء من حروف الإدغام بغنة" },
+            { label: "إظهار حلقي واضح", value: "wrong", subtext: "ليس من حروف الحلق الستة" },
+            { label: "إخفاء حقيقي عند الحرف", value: "wrong", subtext: "الياء ليست من حروف الإخفاء" },
+            { label: "إقلاب بميم مخفاة", value: "wrong", subtext: "الإقلاب خاص بحرف الباء فقط" }
+          ]);
+          return {
+            replyText: `أحسنت! ننتقل الآن لفحص سريع لأحكام التلاوة والتجويد العملي:\n\nفي قوله تعالى: ﴿مَن يَقُولُ﴾، ما هو الحكم التجويدي الصحيح للنون الساكنة هنا؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "tajweed_quick_test",
+              questionText: "الحكم التجويدي للنون الساكنة في (مَن يقول):",
+              category: "tajweed",
+              options: tajweedOptions
+            }
+          };
+        }
+      }
+
+      // Turn 4: Pace and Daily Commitment with SHUFFLED options!
+      if (turn === 4) {
+        const commitmentOptions = shuffleArray([
+          { label: "وجه واحد جديد + ١٠ أوجه مراجعة يومياً", value: { newPages: 1.0, reviewPages: 10 }, subtext: "المعدل الذهبي المتوازن والموصى به" },
+          { label: "نصف وجه جديد + ٥ أوجه مراجعة يومياً", value: { newPages: 0.5, reviewPages: 5 }, subtext: "مسار التثبيت المتأنّي المتين" },
+          { label: "وجهان جديدان + ٢٠ وجهاً مراجعة يومياً", value: { newPages: 2.0, reviewPages: 20 }, subtext: "لأصحاب التفرغ والهمم العالية" }
+        ]);
+        return {
+          replyText: `عزيمتك مباركة ووعيك طيب يا ${studentInitialData?.studentName || 'القارئ الكريم'}! 🌿\n\nأخبرنا عن طاقتك اليومية المريحة في مجلس الشيخ والمنزل:\nكم مقدار الحفظ الجديد والمراجعة اليومية الذي تستطيع الالتزام به بإتقان دون انقطاع؟`,
+          isCompleted: false,
+          nextQuestion: {
+            questionId: "pace_and_commitment",
+            questionText: "المعدل اليومي المفضل لديك:",
+            category: "psychology_commitment",
+            options: commitmentOptions
+          }
+        };
+      }
+
+      // Final Turn (Turn 5+): Completion
+      return {
+        replyText: `🎉 ما شاء الله تبارك الله يا ${studentInitialData?.studentName || ''}! أتممت المقابلة التفاعلية بجدارة.\n\nتم فحص مستواك وتحديد موضع انطلاقك بدقة، مع اعتماد قاعدة: «الختم بتثبيت خير من التعجل بالتفلت» وبروتوكول اليوم الأول.\nنبحث لك الآن عن الحلقة المناسبة والشاغر المتاح في مجمع ${complexName || ''}...`,
+        isCompleted: true,
+        aiInsights: {
+          studentLevel: isKhatim ? "خاتم ومتقن" : isBeginner ? "مبتدئ" : "متوسط",
+          psychologicalProfile: "طالب حريص وجاهز للالتزام بجدول التثبيت وبروتوكول المراجعة التراكمية",
+          commitmentAssessment: "ممتاز",
+          recommendedHalaqahLevel: isKhatim ? "حلقة السرد والإجازة بالسند" : "حلقة التثبيت والمراجعة التراكمية",
+          suggestedDailyNewPages: isKhatim ? 0.5 : 1,
+          suggestedDailyReviewPages: isKhatim ? 20 : 5
+        }
+      };
     };
 
     // If Gemini API is available and key set, attempt dynamic generative interview turn
@@ -1072,9 +1021,14 @@ ${(chatHistory || []).slice(-6).map((m: any) => `${m.sender === 'ai' ? 'المر
    - إذا كان خاتماً (30 جزءاً): لا تسأله عن أحكام المبتدئين! اسأله عن المتشابهات اللفظية الدقيقة (مثلاً بين البقرة وآل عمران أو المائدة والأنعام)، الوقف والابتداء الدقيق، طاقة السرد وسرد الأجزاء غيباً، ورغبته في الإجازة بالسند.
    - إذا كان طفلاً أو مبتدئاً (عمر < 12 أو حفظ <= 3 أجزاء): أسلوب مشجع ومحبب جداً، أسئلة تجويد عملية مبسطة، وتثبيت وتكرار محبب.
    - إذا كان متوسطاً (4-20 جزءاً): موازنة التثبيت والمراجعة التراكمية.
-2. ناقش إجابته السابقة بحكمة وشجعه أو صحح له بلطف.
-3. المبدأ الحاكم للمنظومة: "ليس الهدف السرعة في الختم، بل الختم بتثبيت وإتقان تام".
-4. إذا كانت الجولة الأخيرة (${turnIndex} >= 4): اختم المقابلة ببيان التسكين وخطة الختم المتقنة.
+2. في الجولة الأولى (${turnIndex} == 1): السؤال الإلزامي لجميع الطلاب هو: أين وصلت في سور القرآن الكريم؟ واجعل questionId: 'quran_position_reached'، وضع customWidget: 'surah_picker'.
+3. في الجولة الثانية (${turnIndex} == 2):
+   - إذا كان الطالب خاتماً: اسأله هل يحب أن يبدأ مراجعة القرآن كاملاً من سورة البقرة أم من سورة الناس (questionId: 'khatim_review_direction').
+   - إذا كان غير خاتم: اسأله هل بدأ حفظه سابقاً من سورة الناس صعوداً أم من سورة البقرة نزولاً (questionId: 'non_khatim_review_direction').
+4. تنويع وخلط ترتيب الخيارات عشوائياً (Randomize Options): إياك قط أن تجعل الإجابة الصحيحة دائماً الخيار الأول (أ)! بدّل ترتيب الخيارات عشوائياً دائماً لتكون تارة في الخيار الثاني وتارة في الثالث أو الرابع.
+5. ناقش إجابته السابقة بحكمة وشجعه أو صحح له بلطف.
+6. المبدأ الحاكم للمنظومة: "ليس الهدف السرعة في الختم، بل الختم بتثبيت وإتقان تام".
+7. إذا كانت الجولة الأخيرة (${turnIndex} >= 4): اختم المقابلة ببيان التسكين وخطة الختم المتقنة.
 
 أخرج النتيجة بصيغة JSON فقط:
 {

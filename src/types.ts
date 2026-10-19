@@ -175,6 +175,16 @@ export interface StudentMemorizationPlan {
     reviewToSurahNumber?: number;
     reviewToAyah?: number;
   };
+  reviewStartDirection?: 'from_baqarah' | 'from_nas'; // اتجاه المراجعة: من البقرة أو من الناس
+  isFirstSession?: boolean; // هل هذا أول يوم (لا توجد مراجعة في اليوم الأول للخاتم)
+  twoWeekRecentSurahs?: Array<{
+    surahNumber: number;
+    surahName: string;
+    completedDate: string;
+    errorCount: number;
+    daysReviewed: number;
+    isShortSurahCluster?: boolean;
+  }>;
   aiNotes?: string;
   lastUpdated: string;
 }

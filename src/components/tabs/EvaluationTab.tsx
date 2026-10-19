@@ -61,7 +61,12 @@ import {
   calculateRecitationFractionalFaces,
   calculatePortionFromPace
 } from '../../data/quranPagesData';
-import { analyzeMonthlyProgression } from '../../lib/aiPlanService';
+import {
+  analyzeMonthlyProgression,
+  calculateRecentlyCompletedSurahsReview,
+  analyzeAndDistributeAyahErrors,
+  generateAdaptiveDailyReviews
+} from '../../lib/aiPlanService';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
@@ -79,7 +84,8 @@ interface EvaluationTabProps {
     evaluation: StudentEvaluation,
     newAssignment?: any,
     updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
-    listeningAssignment?: any
+    listeningAssignment?: any,
+    studentUpdates?: Partial<Student>
   ) => Promise<void>;
   onSaveCriteria: (criteriaList: EvaluationCriteria[]) => Promise<void>;
   onDeleteCriteria: (id: string) => Promise<void>;
@@ -993,44 +999,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setTomNewToSurah(tomPortion.toSurah);
         setTomNewToAyah(tomPortion.toAyah);
 
-        // Reviews for Today and Tomorrow
-        if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
-          setTodayReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}` })));
-          setTomReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
-        } else if (aiAssignment?.reviewItems && aiAssignment.reviewItems.length > 0) {
-          setTodayReviews(aiAssignment.reviewItems.map((r, idx) => ({ ...r, id: `rev_plan_${Date.now()}_${idx}` })));
-          setTomReviews(aiAssignment.reviewItems.map((r, idx) => ({ ...r, id: `tom_plan_${Date.now()}_${idx}` })));
-        } else {
-          const revS = todayStartS < 114 ? todayStartS + 1 : 113;
-          const revInfo = getSurahInfo(revS);
-          setTodayReviews([
-            {
-              id: `rev_${Date.now()}`,
-              type: REVIEW_TYPES[0],
-              surahNumber: revS,
-              surahName: revInfo.name,
-              fromAyah: 1,
-              toSurahNumber: revS,
-              toSurahName: revInfo.name,
-              toAyah: revInfo.numberOfAyahs,
-              isFullSurah: true
-            }
-          ]);
-          setTomReviews([
-            {
-              id: `tom_rev_${Date.now()}`,
-              type: REVIEW_TYPES[0],
-              surahNumber: todayStartS,
-              surahName: getSurahInfo(todayStartS).name,
-              fromAyah: todayStartA,
-              toSurahNumber: todayEndS,
-              toSurahName: curEndInfo.name,
-              toAyah: todayEndA,
-              isFullSurah: todayStartS === todayEndS && todayStartA === 1 && todayEndA >= curEndInfo.numberOfAyahs,
-              notes: 'سرد ومراجعة ما تم حفظه اليوم لتثبيته في الصدر'
-            }
-          ]);
+        // Intelligent Adaptive Reviews for Today and Tomorrow
+        const adaptiveTodayReviews = generateAdaptiveDailyReviews({
+          student: activeStudent,
+          evaluationsHistory: studentEvaluationsHistory,
+          isTomorrow: false,
+          mushafErrors: mushafAyahErrors
+        });
+
+        const adaptiveTomReviews = generateAdaptiveDailyReviews({
+          student: activeStudent,
+          evaluationsHistory: studentEvaluationsHistory,
+          isTomorrow: true,
+          todayRecitedPortion: {
+            fromSurah: todayStartS,
+            fromAyah: todayStartA,
+            toSurah: todayEndS,
+            toAyah: todayEndA
+          },
+          mushafErrors: mushafAyahErrors
+        });
+
+        if (adaptiveTodayReviews.rationaleNotes.length > 0) {
+          planNotice += (planNotice ? ' • ' : '') + adaptiveTodayReviews.rationaleNotes.join(' • ');
+          setAutoFilledNotice(planNotice);
         }
+
+        setTodayReviews(adaptiveTodayReviews.reviewItems);
+        setTomReviews(adaptiveTomReviews.reviewItems);
       }
 
       // Initialize criteria defaults
@@ -1636,8 +1632,43 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         isCompleted: isNoneSheikh
       };
 
+      // Check if student completed a surah today to add to 2-week consolidation
+      const isSurahFinishedToday = !todayNewDidNotRecite && (todayNewToAyah >= todayEndSurahInfo.numberOfAyahs);
+      let updatedRecentlyCompleted = [...(activeStudent.recentlyCompletedSurahs || [])];
+      if (isSurahFinishedToday) {
+        const alreadyIn = updatedRecentlyCompleted.some(s => s.surahNumber === todayNewToSurah);
+        if (!alreadyIn) {
+          updatedRecentlyCompleted.unshift({
+            surahNumber: todayNewToSurah,
+            surahName: todayEndSurahInfo.name,
+            completedDate: selectedDate,
+            errorCount: Object.keys(mushafAyahErrors).filter(k => k.startsWith(`${todayNewToSurah}:`)).length,
+            totalAyahs: todayEndSurahInfo.numberOfAyahs
+          });
+        }
+      }
+
+      // Analyze ayah errors: track improvements and update error records
+      const errorAnalysis = analyzeAndDistributeAyahErrors({
+        existingErrors: activeStudent.mushafErrors || [],
+        todayEvaluatedRange: {
+          fromSurah: todayNewSurah,
+          fromAyah: todayNewFromAyah,
+          toSurah: todayNewToSurah,
+          toAyah: todayNewToAyah
+        },
+        todayReportedErrors: mushafAyahErrors,
+        dailyMaxErrorVerses: 3
+      });
+
+      const studentUpdates: Partial<Student> = {
+        isFirstSession: false,
+        recentlyCompletedSurahs: updatedRecentlyCompleted,
+        mushafErrors: errorAnalysis.updatedErrorsList
+      };
+
       // 1. Save evaluation and atomically update student's points, position, and assignments
-      await onSaveEvaluation(fullEvaluation, newDailyAssignment, updatedPosition, listeningAssignmentForStudent);
+      await onSaveEvaluation(fullEvaluation, newDailyAssignment, updatedPosition, listeningAssignmentForStudent, studentUpdates);
 
       // 2. Also ensure onUpdateStudentAIPlan is notified for backwards compatibility
       if (onUpdateStudentAIPlan) {
@@ -1658,7 +1689,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               ayahErrors: errorsList,
               didNotRecite: todayNewDidNotRecite,
               newDailyAssignment,
-              updatedPosition
+              updatedPosition,
+              updatedRecentlyCompletedSurahs: updatedRecentlyCompleted,
+              updatedMushafErrors: errorAnalysis.updatedErrorsList,
+              errorRationale: errorAnalysis.rationale
             }
           })
         );
