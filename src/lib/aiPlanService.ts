@@ -233,7 +233,7 @@ export function analyzeMonthlyProgression(
   daysSpan: number;
 } {
   const currentPace = Math.max(0.25, Number(currentDailyNewPages) || 0.5);
-  if (!Array.isArray(evaluations) || evaluations.length < 5) {
+  if (!Array.isArray(evaluations) || evaluations.length < 3) {
     return {
       shouldIncreasePace: false,
       recommendedPace: currentPace,
@@ -265,16 +265,17 @@ export function analyzeMonthlyProgression(
     }
   });
 
-  const avgScore = scoreCount > 0 ? (totalScoreSum / scoreCount) : 8.0;
-  const isStruggling = avgScore < 7.5 || ayahErrorsCount >= 3;
-  const isExcelling = avgScore >= 8.5 && ayahErrorsCount <= 1 && evaluations.length >= 8 && (daysSpan >= 20 || evaluations.length >= 12);
+  const avgScore = scoreCount > 0 ? (totalScoreSum / scoreCount) : 8.5;
+  const isStruggling = avgScore < 7.2 || ayahErrorsCount >= 3;
+  // Excelling if consistent high scores, low errors, and at least 5 sessions
+  const isExcelling = avgScore >= 8.5 && ayahErrorsCount <= 1 && (evaluations.length >= 5 || daysSpan >= 14);
 
   if (isExcelling) {
     const recommendedPace = Math.min(3.0, currentPace + 0.5);
     return {
       shouldIncreasePace: true,
       recommendedPace,
-      reasoning: `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تفوقاً والتزاماً عالياً على مدار (${evaluations.length} جلسة خلال قرابة ${Math.max(1, Math.round(daysSpan / 30))} شهر) بمتوسط تقييم ممتاز (${avgScore.toFixed(1)}/10)؛ تقرر رفع ورد الحفظ اليومي بمقدار (نصف وجه إضافي) ليصبح (${recommendedPace} وجه) لمواكبة تطوره وإتقانه.`,
+      reasoning: `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تفوقاً والتزاماً عالياً على مدار (${evaluations.length} جلسة خلال قرابة ${Math.max(1, Math.round(daysSpan / 30))} شهر) بمتوسط تقييم ممتاز (${avgScore.toFixed(1)}/10)؛ يوصي الذكاء الاصطناعي برفع ورد الحفظ اليومي بمقدار (نصف وجه إضافي) ليصبح (${recommendedPace} وجه) لمواكبة تطوره وإتقانه.`,
       isStruggling: false,
       evaluationsCount: evaluations.length,
       daysSpan
@@ -299,6 +300,57 @@ export function analyzeMonthlyProgression(
     isStruggling: false,
     evaluationsCount: evaluations.length,
     daysSpan
+  };
+}
+
+/**
+ * Async AI progression caller that queries Gemini API with pedagogical fallback
+ */
+export async function evaluateMonthlyProgressionWithGemini(
+  student: Student,
+  evaluations: any[] = [],
+  ayahErrors: any[] = []
+): Promise<{
+  shouldIncreasePace: boolean;
+  recommendedPace: number;
+  reasoning: string;
+  isStruggling: boolean;
+  pedagogicalAdvice: string;
+}> {
+  const currentPace = student.memorizationPlan?.dailyNewPages || 
+    (student.dailyNewTarget?.includes('وجهين') ? 2.0 :
+     student.dailyNewTarget?.includes('ربع') ? 0.25 :
+     student.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+  const localRes = analyzeMonthlyProgression(evaluations, currentPace, ayahErrors.length);
+
+  try {
+    const res = await fetch(ApiConfig.getEndpoint('/api/gemini/analyze-monthly-progression'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student,
+        evaluations,
+        ayahErrors,
+        currentPace
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.shouldIncreasePace === 'boolean') {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Backend monthly progression note, using pedagogical engine:', err);
+  }
+
+  return {
+    shouldIncreasePace: localRes.shouldIncreasePace,
+    recommendedPace: localRes.recommendedPace,
+    reasoning: localRes.reasoning,
+    isStruggling: localRes.isStruggling,
+    pedagogicalAdvice: localRes.reasoning
   };
 }
 

@@ -122,6 +122,7 @@ import { EditAccountModal } from './components/EditAccountModal';
 import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
 import { HalaqahPlansTab } from './components/tabs/HalaqahPlansTab';
 import { calculateRealisticKhatmTimeline } from './lib/aiPlanService';
+import { calculatePortionFromPace } from './data/quranPagesData';
 import { applyComplexThemeToDOM } from './lib/themeUtils';
 import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
 import { triggerComplexThemePulse, dispatchHighlightItem } from './utils/highlightHelper';
@@ -1978,6 +1979,18 @@ export function App() {
       }
     }
 
+    const studentStartSurah = studentData.currentSurah || 78;
+    const studentStartAyah = studentData.currentAyah || 1;
+    const pace = (studentData.dailyNewTarget || '').includes('وجهين')
+      ? 2.0
+      : (studentData.dailyNewTarget || '').includes('ربع')
+      ? 0.25
+      : (studentData.dailyNewTarget || '').includes('وجه واحد')
+      ? 1.0
+      : 0.5;
+
+    const initialPortion = calculatePortionFromPace(studentStartSurah, studentStartAyah, pace);
+
     const newStudent: Student = {
       id: `std_${Date.now()}`,
       name: (studentData.name || 'طالب جديد').trim(),
@@ -1986,9 +1999,9 @@ export function App() {
       age: studentData.age || 10,
       parentName: studentData.parentName || `ولي أمر ${studentData.name}`,
       parentPhones: studentData.parentPhones || [studentData.phone || ''],
-      currentSurah: studentData.currentSurah || 78,
+      currentSurah: studentStartSurah,
       currentSurahName: studentData.currentSurahName || 'النبأ',
-      currentAyah: studentData.currentAyah || 1,
+      currentAyah: studentStartAyah,
       dailyNewTarget: studentData.dailyNewTarget || 'نصف وجه',
       dailyReviewTarget: studentData.dailyReviewTarget || 'وجه واحد',
       level: studentData.level || 'متوسط',
@@ -1996,6 +2009,7 @@ export function App() {
       halaqahId: chosenHalaqahId,
       halaqahName: chosenHalaqahName,
       notes: studentData.notes || '',
+      isGeneratingPlan: true,
       memorizationPlan: studentData.memorizationPlan || (() => {
         const memJuz = studentData.memorizedJuzList?.length || 1;
         const consJuz = Math.max(0, memJuz - 2);
@@ -2007,14 +2021,14 @@ export function App() {
         const timeline = calculateRealisticKhatmTimeline({
           memorizedJuz: memJuz,
           consolidatedJuz: consJuz,
-          dailyNewPages: studentData.dailyNewTarget?.includes('وجهين') ? 2 : 1,
+          dailyNewPages: pace,
           dailyReviewPages: 5,
           weeklyDaysCount,
           dailyHoursCount,
           startDate
         });
         return {
-          dailyNewPages: 1,
+          dailyNewPages: pace,
           dailyReviewPages: 5,
           consolidatedJuzCount: consJuz,
           memorizedJuzCount: memJuz,
@@ -2028,14 +2042,14 @@ export function App() {
           tathbeetStopsCount: timeline.tathbeetStopsCount,
           milestones: timeline.milestones,
           nextDayAssignment: {
-            newMemorization: `${studentData.currentSurahName || 'النبأ'} (الآيات ${studentData.currentAyah || 1}-${Math.min((studentData.currentAyah || 1) + 9, 40)})`,
-            review: 'الفاتحة وقصار السور',
+            newMemorization: initialPortion.description,
+            review: 'الفاتحة وقصار السور وتثبيت الحفظ',
             action: 'advance_page' as const,
-            reason: 'خطة منهجية تأسيسية متقنة ومدروسة',
-            surahNumber: studentData.currentSurah || 78,
-            fromAyah: studentData.currentAyah || 1,
-            toSurahNumber: studentData.currentSurah || 78,
-            toAyah: Math.min((studentData.currentAyah || 1) + 9, 40)
+            reason: 'خطة منهجية تأسيسية متقنة ومدروسة بمعدل مصحف المدينة',
+            surahNumber: initialPortion.fromSurah,
+            fromAyah: initialPortion.fromAyah,
+            toSurahNumber: initialPortion.toSurah,
+            toAyah: initialPortion.toAyah
           },
           lastUpdated: new Date().toISOString()
         };
@@ -2060,20 +2074,42 @@ export function App() {
         return null;
       })
       .then(data => {
-        if (data?.plan) {
-          const withPlan = {
-            ...newStudent,
-            aiPlan: {
-              ...data.plan,
-              lastUpdated: new Date().toISOString()
-            }
-          };
-          setStudents(prev => prev.map(s => (s.id === newStudent.id ? withPlan : s)));
-          OmranDataService.saveStudent(withPlan).catch(() => {});
-        }
+        const aiPlanObj = data?.plan;
+        const aiPortion = data?.portion || initialPortion;
+        const withPlan: Student = {
+          ...newStudent,
+          isGeneratingPlan: false,
+          aiPlan: aiPlanObj ? {
+            ...aiPlanObj,
+            lastUpdated: new Date().toISOString()
+          } : undefined,
+          memorizationPlan: {
+            ...newStudent.memorizationPlan!,
+            dailyNewPages: pace,
+            nextDayAssignment: {
+              ...newStudent.memorizationPlan!.nextDayAssignment!,
+              newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
+              review: aiPlanObj?.currentDailyAssignment?.review || newStudent.memorizationPlan!.nextDayAssignment!.review,
+              suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+              surahNumber: aiPortion.fromSurah,
+              fromAyah: aiPortion.fromAyah,
+              toSurahNumber: aiPortion.toSurah,
+              toAyah: aiPortion.toAyah
+            },
+            aiNotes: aiPlanObj?.roadmapSummary || newStudent.memorizationPlan!.aiNotes,
+            lastUpdated: new Date().toISOString()
+          }
+        };
+        setStudents(prev => prev.map(s => (s.id === newStudent.id ? withPlan : s)));
+        OmranDataService.saveStudent(withPlan).catch(() => {});
+        window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: withPlan }));
       })
       .catch(e => {
         console.warn('AI Plan background generation notice:', e);
+        const resolved: Student = { ...newStudent, isGeneratingPlan: false };
+        setStudents(prev => prev.map(s => (s.id === newStudent.id ? resolved : s)));
+        OmranDataService.saveStudent(resolved).catch(() => {});
+        window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: resolved }));
       });
 
     return true;

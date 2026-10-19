@@ -150,26 +150,33 @@ export const QURAN_PAGE_BOUNDARIES = KING_FAHD_604_PAGE_BOUNDARIES;
  */
 export const ALL_PAGES: QuranPageInfo[] = [];
 
-// Build comprehensive 604 page definitions from exact King Fahd boundaries
-(function buildAll604Pages() {
-  for (const entry of KING_FAHD_604_PAGE_BOUNDARIES) {
-    const sNames: string[] = [];
-    for (let s = entry.startSurah; s <= entry.endSurah; s++) {
-      sNames.push(getSurahInfo(s).name);
+export function ensureAllPagesBuilt(): QuranPageInfo[] {
+  if (ALL_PAGES.length === 0) {
+    for (const entry of KING_FAHD_604_PAGE_BOUNDARIES) {
+      const sNames: string[] = [];
+      for (let s = entry.startSurah; s <= entry.endSurah; s++) {
+        try {
+          sNames.push(getSurahInfo(s).name);
+        } catch {
+          sNames.push(`سورة ${s}`);
+        }
+      }
+      ALL_PAGES.push({
+        pageNumber: entry.page,
+        juz: entry.juz,
+        startSurah: entry.startSurah,
+        startAyah: entry.startAyah,
+        endSurah: entry.endSurah,
+        endAyah: entry.endAyah,
+        surahNames: sNames.length > 0 ? sNames : [`سورة ${entry.startSurah}`]
+      });
     }
-    ALL_PAGES.push({
-      pageNumber: entry.page,
-      juz: entry.juz,
-      startSurah: entry.startSurah,
-      startAyah: entry.startAyah,
-      endSurah: entry.endSurah,
-      endAyah: entry.endAyah,
-      surahNames: sNames.length > 0 ? sNames : [getSurahInfo(entry.startSurah).name]
-    });
   }
-})();
+  return ALL_PAGES;
+}
 
 export function getKingFahdPageInfo(pageNumber: number): QuranPageInfo {
+  ensureAllPagesBuilt();
   const found = ALL_PAGES.find(p => p.pageNumber === pageNumber);
   if (found) return found;
   return ALL_PAGES[0] || {
@@ -184,42 +191,34 @@ export function getKingFahdPageInfo(pageNumber: number): QuranPageInfo {
 }
 
 /**
- * Returns which page in the King Fahd Mushaf contains a given surah & ayah
+ * Returns which page in the King Fahd Mushaf contains a given surah & ayah (1 - 604)
+ * Grounded 100% in exact King Fahd Complex 604-page boundaries.
  */
 export function getPageOfAyah(surahNumber: number, ayahNumber: number): number {
-  // 1. Direct check in verified ALL_PAGES
-  for (const page of ALL_PAGES) {
-    if (page.startSurah === surahNumber && page.endSurah === surahNumber) {
-      if (ayahNumber >= page.startAyah && ayahNumber <= page.endAyah) {
-        return page.pageNumber;
+  const safeSurah = Math.max(1, Math.min(surahNumber || 1, 114));
+  const safeAyah = Math.max(1, ayahNumber || 1);
+
+  for (let i = 0; i < KING_FAHD_604_PAGE_BOUNDARIES.length; i++) {
+    const p = KING_FAHD_604_PAGE_BOUNDARIES[i];
+    if (p.startSurah === p.endSurah) {
+      if (p.startSurah === safeSurah && safeAyah >= p.startAyah && safeAyah <= p.endAyah) {
+        return p.page;
       }
-    } else if (page.startSurah === surahNumber && page.endSurah > surahNumber) {
-      if (ayahNumber >= page.startAyah) return page.pageNumber;
-    } else if (page.endSurah === surahNumber && page.startSurah < surahNumber) {
-      if (ayahNumber <= page.endAyah) return page.pageNumber;
-    } else if (surahNumber > page.startSurah && surahNumber < page.endSurah) {
-      return page.pageNumber;
+    } else {
+      if (safeSurah === p.startSurah && safeAyah >= p.startAyah) {
+        return p.page;
+      }
+      if (safeSurah === p.endSurah && safeAyah <= p.endAyah) {
+        return p.page;
+      }
+      if (safeSurah > p.startSurah && safeSurah < p.endSurah) {
+        return p.page;
+      }
     }
   }
 
-  // 2. Exact start page from SURAH_START_PAGE_MAP
-  const basePage = SURAH_START_PAGE_MAP[surahNumber];
-  if (basePage !== undefined) {
-    const sInfo = getSurahInfo(surahNumber);
-    const nextS = surahNumber < 114 ? surahNumber + 1 : 114;
-    const nextPage = SURAH_START_PAGE_MAP[nextS] || (basePage + 1);
-    const surahPageSpan = Math.max(1, nextPage - basePage);
-
-    if (surahPageSpan === 1 || sInfo.numberOfAyahs <= 1) {
-      return basePage;
-    }
-
-    const progress = Math.max(0, Math.min(1, (ayahNumber - 1) / Math.max(1, sInfo.numberOfAyahs)));
-    const offset = Math.floor(progress * surahPageSpan);
-    return Math.min(604, basePage + offset);
-  }
-
-  return 1;
+  // Direct start page fallback if any out of bounds
+  return SURAH_START_PAGE_MAP[safeSurah] || 1;
 }
 
 /**
@@ -512,6 +511,36 @@ export function calculateStudentCompletedPages(
  * Grounded 100% in the King Fahd 604-page Mushaf boundaries so the student gets realistic
  * verse ranges rather than arbitrary numbers.
  */
+/**
+ * Returns all ayahs located on a specific page of the King Fahd 604-page Mushaf
+ */
+export function getAyahsOnPage(pageNumber: number): Array<{ surah: number; ayah: number }> {
+  const p = KING_FAHD_604_PAGE_BOUNDARIES[pageNumber - 1];
+  if (!p) return [];
+  const list: Array<{ surah: number; ayah: number }> = [];
+  if (p.startSurah === p.endSurah) {
+    for (let a = p.startAyah; a <= p.endAyah; a++) {
+      list.push({ surah: p.startSurah, ayah: a });
+    }
+  } else {
+    for (let s = p.startSurah; s <= p.endSurah; s++) {
+      const sInfo = getSurahInfo(s);
+      const startA = (s === p.startSurah) ? p.startAyah : 1;
+      const endA = (s === p.endSurah) ? p.endAyah : sInfo.numberOfAyahs;
+      for (let a = startA; a <= endA; a++) {
+        list.push({ surah: s, ayah: a });
+      }
+    }
+  }
+  return list;
+}
+
+/**
+ * Calculates exact Quran portion (starting and ending surah & ayah) from a given start point
+ * and a daily page pace (e.g. 0.5 = نصف وجه, 1.0 = وجه كامل, 2.0 = وجهان).
+ * Grounded 100% in the King Fahd 604-page Mushaf boundaries so the student gets realistic
+ * verse ranges rather than arbitrary numbers.
+ */
 export function calculatePortionFromPace(
   startSurah: number = 78,
   startAyah: number = 1,
@@ -530,65 +559,63 @@ export function calculatePortionFromPace(
   const safePace = Math.max(0.25, Math.min(pagePace || 0.5, 5));
 
   const startPageNum = getPageOfAyah(safeStartSurah, safeStartAyah);
-  const startPage = getKingFahdPageInfo(startPageNum);
+  const pageAyahs = getAyahsOnPage(startPageNum);
+  let startIndex = pageAyahs.findIndex(it => it.surah === safeStartSurah && it.ayah === safeStartAyah);
+  if (startIndex === -1) startIndex = 0;
 
-  // If pace is half a page (0.5 وجه أو أقل):
-  if (safePace <= 0.6) {
-    if (startPage.startSurah === startPage.endSurah && startPage.startSurah === safeStartSurah) {
-      const pageAyahs = startPage.endAyah - startPage.startAyah + 1;
-      const midAyah = startPage.startAyah + Math.ceil(pageAyahs / 2) - 1;
+  const totalOnStart = Math.max(1, pageAyahs.length);
+  const remainingOnStart = totalOnStart - startIndex;
+  const fractionOnStart = remainingOnStart / totalOnStart;
 
-      if (safeStartAyah <= midAyah) {
-        return {
-          fromSurah: safeStartSurah,
-          fromAyah: safeStartAyah,
-          toSurah: safeStartSurah,
-          toAyah: midAyah,
-          pageCount: 0.5,
-          description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${midAyah}) [نصف وجه]`
-        };
+  let targetItem: { surah: number; ayah: number };
+
+  if (safePace <= fractionOnStart) {
+    const advanceCount = Math.max(1, Math.round(totalOnStart * safePace));
+    const targetIdx = Math.min(totalOnStart - 1, startIndex + advanceCount - 1);
+    targetItem = pageAyahs[targetIdx];
+  } else {
+    let paceRemaining = safePace - fractionOnStart;
+    let curPage = startPageNum + 1;
+    let lastFound = pageAyahs[pageAyahs.length - 1];
+
+    while (curPage <= 604 && paceRemaining > 0) {
+      const nextAyahs = getAyahsOnPage(curPage);
+      if (nextAyahs.length === 0) break;
+      if (paceRemaining <= 1.0) {
+        const takeCount = Math.max(1, Math.round(nextAyahs.length * paceRemaining));
+        const finalIdx = Math.min(nextAyahs.length - 1, takeCount - 1);
+        lastFound = nextAyahs[finalIdx];
+        paceRemaining = 0;
+        break;
       } else {
-        return {
-          fromSurah: safeStartSurah,
-          fromAyah: safeStartAyah,
-          toSurah: safeStartSurah,
-          toAyah: startPage.endAyah,
-          pageCount: 0.5,
-          description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${startPage.endAyah}) [نصف وجه]`
-        };
+        lastFound = nextAyahs[nextAyahs.length - 1];
+        paceRemaining -= 1.0;
+        curPage++;
       }
-    } else {
-      const maxInSurahOnPage = (startPage.endSurah === safeStartSurah) ? startPage.endAyah : sInfo.numberOfAyahs;
-      const remainingInSurah = Math.max(1, maxInSurahOnPage - safeStartAyah + 1);
-      const halfStep = Math.max(2, Math.ceil(remainingInSurah / 2));
-      const targetAyah = Math.min(safeStartAyah + halfStep - 1, maxInSurahOnPage);
-      return {
-        fromSurah: safeStartSurah,
-        fromAyah: safeStartAyah,
-        toSurah: safeStartSurah,
-        toAyah: targetAyah,
-        pageCount: 0.5,
-        description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${targetAyah}) [نصف وجه]`
-      };
     }
+    targetItem = lastFound;
   }
 
-  // If pace is 1.0 page or more (وجه كامل أو أكثر):
-  const pageAdvance = Math.max(1, Math.round(safePace));
-  const targetPageNum = Math.min(604, startPageNum + pageAdvance - (safeStartAyah === startPage.startAyah ? 1 : 0));
-  const targetPage = getKingFahdPageInfo(targetPageNum);
-  const endSurah = targetPage.endSurah;
-  const endAyah = targetPage.endAyah;
-  const endSurahInfo = getSurahInfo(endSurah);
+  const endSurahInfo = getSurahInfo(targetItem.surah);
+
+  let paceLabel = `${safePace} وجه`;
+  if (Math.abs(safePace - 0.25) < 0.05) paceLabel = 'ربع وجه';
+  else if (Math.abs(safePace - 0.5) < 0.05) paceLabel = 'نصف وجه';
+  else if (Math.abs(safePace - 0.75) < 0.05) paceLabel = 'ثلاثة أرباع وجه';
+  else if (Math.abs(safePace - 1.0) < 0.05) paceLabel = 'وجه كامل';
+  else if (Math.abs(safePace - 1.5) < 0.05) paceLabel = 'وجه ونصف';
+  else if (Math.abs(safePace - 2.0) < 0.05) paceLabel = 'وجهان';
+
+  const description = safeStartSurah === targetItem.surah
+    ? `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${targetItem.ayah}) [${paceLabel}]`
+    : `من سورة ${sInfo.name} (${safeStartAyah}) إلى سورة ${endSurahInfo.name} (${targetItem.ayah}) [${paceLabel}]`;
 
   return {
     fromSurah: safeStartSurah,
     fromAyah: safeStartAyah,
-    toSurah: endSurah,
-    toAyah: endAyah,
+    toSurah: targetItem.surah,
+    toAyah: targetItem.ayah,
     pageCount: safePace,
-    description: safeStartSurah === endSurah
-      ? `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${endAyah}) [${safePace} وجه]`
-      : `من سورة ${sInfo.name} (${safeStartAyah}) إلى سورة ${endSurahInfo.name} (${endAyah}) [${safePace} وجه]`
+    description
   };
 }

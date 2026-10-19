@@ -58,8 +58,11 @@ import { KingFahdQuranModal, QuranHighlightItem } from '../quran/KingFahdQuranMo
 import {
   getPageOfAyah,
   calculateStudentCompletedPages,
-  calculateRecitationFractionalFaces
+  calculateRecitationFractionalFaces,
+  calculatePortionFromPace
 } from '../../data/quranPagesData';
+import { analyzeMonthlyProgression } from '../../lib/aiPlanService';
+import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
 
@@ -454,6 +457,176 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     .filter(e => e.studentId === activeStudentId)
     .sort((a, b) => b.date.localeCompare(a.date));
 
+  // Adaptive Monthly Progression Analyzer
+  const monthlyProgression = useMemo(() => {
+    if (!activeStudent) return null;
+    return analyzeMonthlyProgression(
+      studentEvaluationsHistory,
+      activeStudent.memorizationPlan?.dailyNewPages || 0.5,
+      Object.keys(mushafAyahErrors).length
+    );
+  }, [activeStudent, studentEvaluationsHistory, mushafAyahErrors]);
+
+  const [isUpgradingPace, setIsUpgradingPace] = useState(false);
+  const handleUpgradeMonthlyPace = async () => {
+    if (!activeStudent || !monthlyProgression?.shouldIncreasePace) return;
+    setIsUpgradingPace(true);
+    try {
+      const newPace = monthlyProgression.recommendedPace;
+      const newTargetLabel = newPace === 1.0 ? 'وجه واحد' : newPace === 1.5 ? 'وجه ونصف' : newPace === 2.0 ? 'وجهان' : `${newPace} أوجه`;
+      const updatedPortion = calculatePortionFromPace(tomNewSurah, tomNewFromAyah, newPace);
+      setTomNewToSurah(updatedPortion.toSurah);
+      setTomNewToAyah(updatedPortion.toAyah);
+
+      const updatedStudent: Student = {
+        ...activeStudent,
+        dailyNewTarget: newTargetLabel,
+        memorizationPlan: {
+          ...activeStudent.memorizationPlan!,
+          dailyNewPages: newPace,
+          nextDayAssignment: {
+            ...activeStudent.memorizationPlan?.nextDayAssignment!,
+            newMemorization: updatedPortion.description
+          },
+          aiNotes: `🌟 تم ترقية ورد الحفظ بنصف وجه إضافي بفضل التميز والتطور في التسميع الشهري (${newPace} وجه).`,
+          lastUpdated: new Date().toISOString()
+        }
+      };
+
+      await OmranDataService.saveStudent(updatedStudent);
+      window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStudent }));
+    } catch (e) {
+      console.warn('Upgrade pace notice:', e);
+    } finally {
+      setIsUpgradingPace(false);
+    }
+  };
+
+  const [isManualGeneratingPlan, setIsManualGeneratingPlan] = useState(false);
+  const handleForceGeneratePlan = async () => {
+    if (!activeStudent) return;
+    setIsManualGeneratingPlan(true);
+    try {
+      const pace = activeStudent.memorizationPlan?.dailyNewPages ||
+        (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
+         activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
+         activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+      const sNum = activeStudent.currentSurah || 78;
+      const sAyah = activeStudent.currentAyah || 1;
+      const initialPortion = calculatePortionFromPace(sNum, sAyah, pace);
+
+      let aiPlanObj: any = null;
+      let aiPortion = initialPortion;
+
+      try {
+        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student: activeStudent })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          aiPlanObj = data?.plan;
+          aiPortion = data?.portion || initialPortion;
+        }
+      } catch (e) {
+        console.warn('Manual plan generation notice:', e);
+      }
+
+      const updatedStd: Student = {
+        ...activeStudent,
+        isGeneratingPlan: false,
+        aiPlan: aiPlanObj ? {
+          ...aiPlanObj,
+          lastUpdated: new Date().toISOString()
+        } : activeStudent.aiPlan,
+        memorizationPlan: {
+          ...activeStudent.memorizationPlan!,
+          dailyNewPages: pace,
+          nextDayAssignment: {
+            ...activeStudent.memorizationPlan?.nextDayAssignment!,
+            newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
+            review: aiPlanObj?.currentDailyAssignment?.review || activeStudent.memorizationPlan?.nextDayAssignment?.review || 'مراجعة وتثبيت المحفوظ',
+            suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+            surahNumber: aiPortion.fromSurah,
+            fromAyah: aiPortion.fromAyah,
+            toSurahNumber: aiPortion.toSurah,
+            toAyah: aiPortion.toAyah
+          },
+          aiNotes: aiPlanObj?.roadmapSummary || activeStudent.memorizationPlan?.aiNotes,
+          lastUpdated: new Date().toISOString()
+        }
+      };
+
+      await OmranDataService.saveStudent(updatedStd);
+      window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: updatedStd }));
+      window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
+
+      setTodayNewSurah(aiPortion.fromSurah);
+      setTodayNewFromAyah(aiPortion.fromAyah);
+      setTodayNewToSurah(aiPortion.toSurah);
+      setTodayNewToAyah(aiPortion.toAyah);
+
+      const toInfo = getSurahInfo(aiPortion.toSurah);
+      let nextS = aiPortion.toSurah;
+      let nextA = aiPortion.toAyah + 1;
+      if (nextA > toInfo.numberOfAyahs) {
+        nextS = aiPortion.toSurah < 114 ? aiPortion.toSurah + 1 : 1;
+        nextA = 1;
+      }
+      const tomPortion = calculatePortionFromPace(nextS, nextA, pace);
+      setTomNewSurah(tomPortion.fromSurah);
+      setTomNewFromAyah(tomPortion.fromAyah);
+      setTomNewToSurah(tomPortion.toSurah);
+      setTomNewToAyah(tomPortion.toAyah);
+
+      setAutoFilledNotice(`✨ تم إعداد واعتماد خطة الطالب القرآنية بنجاح: ${aiPortion.description}`);
+    } catch (e) {
+      console.error('Error generating plan manually:', e);
+    } finally {
+      setIsManualGeneratingPlan(false);
+    }
+  };
+
+  // Listen for plan-ready event when background AI finishes student initial plan
+  useEffect(() => {
+    const handlePlanReady = (e: any) => {
+      const updatedStd = e.detail as Student;
+      if (updatedStd && activeStudent && updatedStd.id === activeStudent.id) {
+        const planAssignment = updatedStd.memorizationPlan?.nextDayAssignment;
+        if (planAssignment?.surahNumber) {
+          const fromS = planAssignment.surahNumber;
+          const fromA = planAssignment.fromAyah || 1;
+          const toS = planAssignment.toSurahNumber || planAssignment.surahNumber;
+          const toA = planAssignment.toAyah || 10;
+          setTodayNewSurah(fromS);
+          setTodayNewFromAyah(fromA);
+          setTodayNewToSurah(toS);
+          setTodayNewToAyah(toA);
+
+          const toInfo = getSurahInfo(toS);
+          let nextS = toS;
+          let nextA = toA + 1;
+          if (nextA > toInfo.numberOfAyahs) {
+            nextS = toS < 114 ? toS + 1 : 1;
+            nextA = 1;
+          }
+          const pace = updatedStd.memorizationPlan?.dailyNewPages || 0.5;
+          const tomPortion = calculatePortionFromPace(nextS, nextA, pace);
+          setTomNewSurah(tomPortion.fromSurah);
+          setTomNewFromAyah(tomPortion.fromAyah);
+          setTomNewToSurah(tomPortion.toSurah);
+          setTomNewToAyah(tomPortion.toAyah);
+
+          setAutoFilledNotice(`✨ اكتملت خطة الذكاء الاصطناعي بنجاح: ${planAssignment.newMemorization}`);
+        }
+      }
+    };
+    window.addEventListener('omran:student-plan-ready', handlePlanReady);
+    return () => window.removeEventListener('omran:student-plan-ready', handlePlanReady);
+  }, [activeStudent?.id]);
+
   // Initialize or load student evaluation when active student or selected date changes
   useEffect(() => {
     if (!activeStudent) return;
@@ -652,43 +825,48 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           }));
         }
 
-        // Auto-calculate tomorrow's continuation step
+        // Auto-calculate tomorrow's continuation step using exact Medina portion
         const toSurahInfo = getSurahInfo(toSNum);
-        const step = activeStudent.level === 'ضعيف' ? 4 : activeStudent.level === 'قوي' ? 12 : 7;
-        if (tAyah < toSurahInfo.numberOfAyahs) {
-          setTomNewSurah(toSNum);
-          setTomNewFromAyah(tAyah + 1);
-          setTomNewToSurah(toSNum);
-          setTomNewToAyah(Math.min(tAyah + step, toSurahInfo.numberOfAyahs));
-        } else {
-          const nextSurahNum = toSNum < 114 ? toSNum + 1 : 1;
-          const nextInfo = getSurahInfo(nextSurahNum);
-          setTomNewSurah(nextSurahNum);
-          setTomNewFromAyah(1);
-          setTomNewToSurah(nextSurahNum);
-          setTomNewToAyah(Math.min(step, nextInfo.numberOfAyahs));
+        const studentPace = activeStudent.memorizationPlan?.dailyNewPages || 
+          (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
+           activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
+           activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+        let nextStartS = toSNum;
+        let nextStartA = tAyah + 1;
+        if (nextStartA > toSurahInfo.numberOfAyahs) {
+          nextStartS = toSNum < 114 ? toSNum + 1 : 1;
+          nextStartA = 1;
         }
+
+        const tomPortion = calculatePortionFromPace(nextStartS, nextStartA, studentPace);
+        setTomNewSurah(tomPortion.fromSurah);
+        setTomNewFromAyah(tomPortion.fromAyah);
+        setTomNewToSurah(tomPortion.toSurah);
+        setTomNewToAyah(tomPortion.toAyah);
       } else if (latestActualRecord && latestActualRecord.recitationDetails?.todayNewItem) {
         // Fallback to continuing directly from what student recited on their last active recitation session
         const lastRecited = latestActualRecord.recitationDetails.todayNewItem;
         const curSurah = lastRecited.toSurahNumber || lastRecited.surahNumber || 78;
         const lastAyah = lastRecited.toAyah || 1;
         const curSurahInfo = getSurahInfo(curSurah);
-        const step = activeStudent.level === 'ضعيف' ? 4 : activeStudent.level === 'قوي' ? 12 : 7;
+        const studentPace = activeStudent.memorizationPlan?.dailyNewPages || 
+          (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
+           activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
+           activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
 
         let startS = curSurah;
         let startA = lastAyah + 1;
-        let endS = curSurah;
-        let endA = lastAyah + step;
-
         if (startA > curSurahInfo.numberOfAyahs) {
           startS = curSurah < 114 ? curSurah + 1 : 1;
           startA = 1;
-          endS = startS;
-          endA = Math.min(step, getSurahInfo(startS).numberOfAyahs);
-        } else {
-          endA = Math.min(endA, curSurahInfo.numberOfAyahs);
         }
+
+        const portion = calculatePortionFromPace(startS, startA, studentPace);
+        startS = portion.fromSurah;
+        startA = portion.fromAyah;
+        const endS = portion.toSurah;
+        const endA = portion.toAyah;
 
         setTodayNewSurah(startS);
         setTodayNewFromAyah(startA);
@@ -707,21 +885,21 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
         setAutoFilledNotice(`تم ضبط المقرر تلقائياً استناداً إلى آخر جلسة تسميع مسجلة بتاريخ (${latestActualRecord.date}): ${loadedPortionText}`);
 
-        // Set tomorrow from today
-        const tomStep = step;
+        // Set tomorrow from today using exact Medina portion
         const endInfo = getSurahInfo(endS);
-        if (endA < endInfo.numberOfAyahs) {
-          setTomNewSurah(endS);
-          setTomNewFromAyah(endA + 1);
-          setTomNewToSurah(endS);
-          setTomNewToAyah(Math.min(endA + tomStep, endInfo.numberOfAyahs));
-        } else {
-          const nextS = endS < 114 ? endS + 1 : 1;
-          setTomNewSurah(nextS);
-          setTomNewFromAyah(1);
-          setTomNewToSurah(nextS);
-          setTomNewToAyah(Math.min(tomStep, getSurahInfo(nextS).numberOfAyahs));
+
+        let nextS = endS;
+        let nextA = endA + 1;
+        if (nextA > endInfo.numberOfAyahs) {
+          nextS = endS < 114 ? endS + 1 : 1;
+          nextA = 1;
         }
+
+        const tomPortion = calculatePortionFromPace(nextS, nextA, studentPace);
+        setTomNewSurah(tomPortion.fromSurah);
+        setTomNewFromAyah(tomPortion.fromAyah);
+        setTomNewToSurah(tomPortion.toSurah);
+        setTomNewToAyah(tomPortion.toAyah);
 
         setTomReviews([
           {
@@ -765,27 +943,21 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           const toInfo = getSurahInfo(todayEndS);
           const loadedText = formatQuranPortion(sInfo.name, todayStartA, todayEndA, sInfo.numberOfAyahs, 'حفظ جديد', toInfo.name, toInfo.numberOfAyahs);
           planNotice = `تم تحميل وتجهيز ورد اليوم ومقرر الغد مباشرة من الخطة القرآنية الذكية للطالب: ${loadedText}`;
-        } else if (activeStudent.memorizationPlan?.dailyNewPages) {
-          todayStartS = activeStudent.currentSurah || 78;
-          todayStartA = activeStudent.currentAyah || 1;
-          todayEndS = todayStartS;
-          const sInfo = getSurahInfo(todayStartS);
-          const pages = activeStudent.memorizationPlan.dailyNewPages;
-          const step = Math.max(4, Math.round(pages * 8));
-          todayEndA = Math.min(todayStartA + step - 1, sInfo.numberOfAyahs);
-          const loadedText = formatQuranPortion(sInfo.name, todayStartA, todayEndA, sInfo.numberOfAyahs, 'حفظ جديد');
-          planNotice = `تم ضبط وتجهيز ورد اليوم ومقرر الغد وفق معدل الحفظ اليومي في خطة الطالب (${pages} وجه): ${loadedText}`;
         } else {
-          // Fallback default initialization from student profile
+          // Precise King Fahd Medina Mushaf portion calculation
           todayStartS = activeStudent.currentSurah || 78;
           todayStartA = activeStudent.currentAyah || 1;
-          todayEndS = todayStartS;
-          const sInfo = getSurahInfo(todayStartS);
-          const totalAyahs = sInfo.numberOfAyahs;
-          const step = activeStudent.level === 'ضعيف' ? 4 : activeStudent.level === 'قوي' ? 12 : 7;
-          todayEndA = Math.min(todayStartA + step - 1, totalAyahs);
-          const portionText = formatQuranPortion(sInfo.name, todayStartA, todayEndA, totalAyahs, 'حفظ جديد');
-          planNotice = `تم تجهيز وتحميل ورد اليوم ومقرر الغد المعتمد للطالب: ${portionText}`;
+          const studentPace = activeStudent.memorizationPlan?.dailyNewPages || 
+            (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
+             activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
+             activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+          const portion = calculatePortionFromPace(todayStartS, todayStartA, studentPace);
+          todayStartS = portion.fromSurah;
+          todayStartA = portion.fromAyah;
+          todayEndS = portion.toSurah;
+          todayEndA = portion.toAyah;
+          planNotice = `تم ضبط وتجهيز ورد اليوم ومقرر الغد بدقة مصحف المدينة وفق خطة الطالب (${portion.description})`;
         }
 
         // Apply Today's New
@@ -795,27 +967,25 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setTodayNewToAyah(todayEndA);
         setAutoFilledNotice(planNotice);
 
-        // Apply Tomorrow's New (Continuous sequential progression)
+        // Apply Tomorrow's New (Continuous sequential progression using exact Medina portion)
         const curEndInfo = getSurahInfo(todayEndS);
-        const paceStep = Math.max(4, Math.round((activeStudent.memorizationPlan?.dailyNewPages || 1) * 8));
+        const studentPace = activeStudent.memorizationPlan?.dailyNewPages || 
+          (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
+           activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
+           activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
         let tomStartS = todayEndS;
         let tomStartA = todayEndA + 1;
-        let tomEndS = todayEndS;
-        let tomEndA = Math.min(todayEndA + paceStep, curEndInfo.numberOfAyahs);
-
-        if (todayEndA >= curEndInfo.numberOfAyahs) {
-          const nextSurah = todayEndS < 114 ? todayEndS + 1 : 1;
-          const nextInfo = getSurahInfo(nextSurah);
-          tomStartS = nextSurah;
+        if (tomStartA > curEndInfo.numberOfAyahs) {
+          tomStartS = todayEndS < 114 ? todayEndS + 1 : 1;
           tomStartA = 1;
-          tomEndS = nextSurah;
-          tomEndA = Math.min(paceStep, nextInfo.numberOfAyahs);
         }
 
-        setTomNewSurah(tomStartS);
-        setTomNewFromAyah(tomStartA);
-        setTomNewToSurah(tomEndS);
-        setTomNewToAyah(tomEndA);
+        const tomPortion = calculatePortionFromPace(tomStartS, tomStartA, studentPace);
+        setTomNewSurah(tomPortion.fromSurah);
+        setTomNewFromAyah(tomPortion.fromAyah);
+        setTomNewToSurah(tomPortion.toSurah);
+        setTomNewToAyah(tomPortion.toAyah);
 
         // Reviews for Today and Tomorrow
         if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
@@ -1150,21 +1320,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       targetTomToAyah = curEndAyah;
       rationale = `لوحظ وجود (${errorsList.length}) أخطاء اليوم؛ قاعدة المنظومة: «الختم بتثبيت أولى من الاستعجال»، فخُصص غد لتكرار وتثبيت هذا الموضع ليرسخ بالصدر.`;
     } else {
-      const step = activeStudent?.level === 'قوي' ? 10 : activeStudent?.level === 'ضعيف' ? 4 : 7;
-      if (curEndAyah < endSurahInfo.numberOfAyahs) {
-        targetTomSurah = curEndSurah;
-        targetTomFromAyah = curEndAyah + 1;
-        targetTomToSurah = curEndSurah;
-        targetTomToAyah = Math.min(curEndAyah + step, endSurahInfo.numberOfAyahs);
-      } else {
-        const nextSurah = curEndSurah < 114 ? curEndSurah + 1 : 1;
-        const nextInfo = getSurahInfo(nextSurah);
-        targetTomSurah = nextSurah;
-        targetTomFromAyah = 1;
-        targetTomToSurah = nextSurah;
-        targetTomToAyah = Math.min(step, nextInfo.numberOfAyahs);
+      const studentPace = activeStudent?.memorizationPlan?.dailyNewPages || 
+        (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
+         activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
+         activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+      let advanceStartSurah = curEndSurah;
+      let advanceStartAyah = curEndAyah + 1;
+      if (advanceStartAyah > endSurahInfo.numberOfAyahs) {
+        advanceStartSurah = curEndSurah < 114 ? curEndSurah + 1 : 1;
+        advanceStartAyah = 1;
       }
-      rationale = `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن وتوقيت الحلقة (${halaqahHours} ساعة).`;
+
+      const tomPortion = calculatePortionFromPace(advanceStartSurah, advanceStartAyah, studentPace);
+      targetTomSurah = tomPortion.fromSurah;
+      targetTomFromAyah = tomPortion.fromAyah;
+      targetTomToSurah = tomPortion.toSurah;
+      targetTomToAyah = tomPortion.toAyah;
+      rationale = `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن (${tomPortion.description}) مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن وتوقيت الحلقة (${halaqahHours} ساعة).`;
     }
 
     setTomNewSurah(targetTomSurah);
@@ -2306,6 +2479,96 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 );
               })()}
 
+              {/* AI Plan Generating Card (Blocks recitation until plan is finalized) */}
+              {activeStudent.isGeneratingPlan && (
+                <div className="bg-gradient-to-r from-amber-500/20 via-emerald-600/25 to-teal-500/20 border-2 border-amber-400/80 rounded-3xl p-6 text-center space-y-4 shadow-[0_0_35px_rgba(251,191,36,0.25)] animate-pulse">
+                  <div className="w-16 h-16 rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center mx-auto text-amber-300">
+                    <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '3s' }} />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-black text-amber-300 font-heading">
+                      جاري صياغة وبناء الخطة القرآنية الذكية للطالب بواسطة الذكاء الاصطناعي (Gemini)...
+                    </h3>
+                    <p className="text-sm text-emerald-100 max-w-xl mx-auto leading-relaxed">
+                      يقوم الذكاء الاصطناعي الآن بضبط موضع البداية وحساب وتيرة الحفظ وضبط ورد الغد بدقة مصحف المدينة (604 أوجه). يرجى الانتظار ثوانٍ معدودة حتى تكتمل الخطة ويُفتح تسجيل التسميع تلقائياً.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs font-bold">
+                      <Clock className="w-4 h-4 text-amber-300 animate-pulse" />
+                      <span>التسجيل موقوف مؤقتاً لحين اكتمال الخطة لضمان دقة مواضع التسميع</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isManualGeneratingPlan}
+                      onClick={handleForceGeneratePlan}
+                      className="px-4 py-2 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                    >
+                      {isManualGeneratingPlan ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>جاري توليد الخطة بالذكاء الاصطناعي...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>توليد واعتماد الخطة الآن فوراً</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Monthly AI Progression Elevation Card */}
+              {monthlyProgression?.shouldIncreasePace && (
+                <div className="bg-gradient-to-r from-amber-500/25 via-[#064e3b] to-emerald-600/25 border-2 border-amber-400 rounded-3xl p-4.5 space-y-3 shadow-lg">
+                  <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-400/25 border border-amber-400/50 flex items-center justify-center text-amber-300 shrink-0">
+                        <Trophy className="w-5 h-5 text-amber-300 animate-bounce" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-amber-400 text-[#064e3b] text-[11px] font-black">
+                            ترقية استثنائية بالذكاء الاصطناعي
+                          </span>
+                          <span className="text-xs font-bold text-amber-200">
+                            تطور وتميز الطالب على مدار شهر ({monthlyProgression.evaluationsCount} جلسة)
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-100 leading-relaxed">
+                          {monthlyProgression.reasoning}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isUpgradingPace}
+                      onClick={handleUpgradeMonthlyPace}
+                      className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-[#064e3b] text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all shrink-0 w-full sm:w-auto"
+                    >
+                      <Zap className="w-4 h-4 text-[#064e3b]" />
+                      <span>{isUpgradingPace ? 'جاري الترقية...' : `اعتماد ترقية الورد إلى (${monthlyProgression.recommendedPace} وجه)`}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {monthlyProgression?.isStruggling && (
+                <div className="bg-emerald-950/40 border border-emerald-600/40 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs">
+                  <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold text-emerald-200">توجيه الذكاء الاصطناعي لمسار الطالب:</span>
+                    <p className="text-emerald-100/90 leading-relaxed">
+                      {monthlyProgression.reasoning}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* ============================================================ */}
               {/* SECTION 1: TODAY'S RECITATION (ما تم تسميعه بالتفصيل) */}
               {/* ============================================================ */}
@@ -2362,12 +2625,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         } else if (plan?.dailyNewPages) {
                           const sNum = activeStudent.currentSurah || 78;
                           const fAyah = activeStudent.currentAyah || 1;
-                          const sInfo = getSurahInfo(sNum);
-                          const step = Math.max(4, Math.round(plan.dailyNewPages * 8));
-                          setTodayNewSurah(sNum);
-                          setTodayNewFromAyah(fAyah);
-                          setTodayNewToSurah(sNum);
-                          setTodayNewToAyah(Math.min(fAyah + step - 1, sInfo.numberOfAyahs));
+                          const portion = calculatePortionFromPace(sNum, fAyah, plan.dailyNewPages);
+                          setTodayNewSurah(portion.fromSurah);
+                          setTodayNewFromAyah(portion.fromAyah);
+                          setTodayNewToSurah(portion.toSurah);
+                          setTodayNewToAyah(portion.toAyah);
                         }
                         setAutoFilledNotice(`✨ تم تطبيق وضبط الورد اليومي بنجاح استناداً إلى الخطة المنهجية المعتمدة للطالب (${activeStudent.name})`);
                       }}
@@ -2530,7 +2792,29 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           </label>
                           <select
                             value={todayNewToAyah}
-                            onChange={e => setTodayNewToAyah(Number(e.target.value))}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              setTodayNewToAyah(val);
+                              if (!todayNewDidNotRecite) {
+                                const curSurahInfo = getSurahInfo(todayNewToSurah);
+                                let nextStartS = todayNewToSurah;
+                                let nextStartA = val + 1;
+                                if (nextStartA > curSurahInfo.numberOfAyahs) {
+                                  nextStartS = todayNewToSurah < 114 ? todayNewToSurah + 1 : 1;
+                                  nextStartA = 1;
+                                }
+                                const pace = activeStudent?.memorizationPlan?.dailyNewPages ||
+                                  (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
+                                   activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
+                                   activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+                                const tomPortion = calculatePortionFromPace(nextStartS, nextStartA, pace);
+                                setTomNewSurah(tomPortion.fromSurah);
+                                setTomNewFromAyah(tomPortion.fromAyah);
+                                setTomNewToSurah(tomPortion.toSurah);
+                                setTomNewToAyah(tomPortion.toAyah);
+                              }
+                            }}
                             className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
                           >
                             {Array.from({ length: endTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1)
@@ -2578,7 +2862,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <input
                         type="checkbox"
                         checked={todayNewDidNotRecite}
-                        onChange={e => setTodayNewDidNotRecite(e.target.checked)}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setTodayNewDidNotRecite(checked);
+                          if (checked) {
+                            setTomNewSurah(todayNewSurah);
+                            setTomNewFromAyah(todayNewFromAyah);
+                            setTomNewToSurah(todayNewToSurah);
+                            setTomNewToAyah(todayNewToAyah);
+                          } else {
+                            const curSurahInfo = getSurahInfo(todayNewToSurah);
+                            let nextStartS = todayNewToSurah;
+                            let nextStartA = todayNewToAyah + 1;
+                            if (nextStartA > curSurahInfo.numberOfAyahs) {
+                              nextStartS = todayNewToSurah < 114 ? todayNewToSurah + 1 : 1;
+                              nextStartA = 1;
+                            }
+                            const pace = activeStudent?.memorizationPlan?.dailyNewPages ||
+                              (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
+                               activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
+                               activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
+
+                            const tomPortion = calculatePortionFromPace(nextStartS, nextStartA, pace);
+                            setTomNewSurah(tomPortion.fromSurah);
+                            setTomNewFromAyah(tomPortion.fromAyah);
+                            setTomNewToSurah(tomPortion.toSurah);
+                            setTomNewToAyah(tomPortion.toAyah);
+                          }
+                        }}
                         className="w-4 h-4 rounded text-red-500 bg-[#064e3b] border-[#065f46] focus:ring-red-400 focus:ring-offset-0 cursor-pointer"
                       />
                       <span className={todayNewDidNotRecite ? "text-red-400 font-black" : "text-emerald-200"}>
@@ -3485,12 +3796,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                 <button
                   type="button"
-                  disabled={isSaving}
+                  disabled={isSaving || !!activeStudent.isGeneratingPlan}
                   onClick={handleSaveEvaluationRecord}
                   className="px-8 py-3.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-sm font-black shadow-[0_0_25px_rgba(251,191,36,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   {isSaving ? (
                     <span>جاري حفظ السجل وتحديث البيانات...</span>
+                  ) : activeStudent.isGeneratingPlan ? (
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#064e3b] animate-spin" />
+                      <span>يرجى الانتظار حتى اكتمال خطة الذكاء الاصطناعي...</span>
+                    </span>
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5 text-[#064e3b]" />

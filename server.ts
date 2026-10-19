@@ -585,17 +585,18 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
   "estimatedDaysToFinishJuz": 30
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
     });
 
-    const text = response.text || "{}";
-    const plan = JSON.parse(text);
-    res.json({ plan });
+    if (aiText) {
+      try {
+        const plan = JSON.parse(aiText);
+        return res.json({ plan, portion: computedPortion });
+      } catch (e) {}
+    }
+
+    res.json({ plan: getFallbackPlan(student), portion: computedPortion });
   } catch (error) {
     console.error("Gemini generate-plan error:", error);
     res.json({ plan: getFallbackPlan(req.body?.student || {}) });
@@ -611,6 +612,18 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
     }
 
     const surah = getSurahInfo(student.currentSurah || student.currentSurahName || 78);
+    const lastNew = evaluation.recitationDetails?.todayNewItem;
+    const curEndSurah = Number(lastNew?.toSurahNumber || lastNew?.surahNumber || surah.number);
+    const curEndAyah = Number(lastNew?.toAyah || student.currentAyah || 1);
+    const advanceStartAyah = curEndAyah + 1;
+    const pace = (student.dailyNewTarget || "").includes("وجهين")
+      ? 2.0
+      : (student.dailyNewTarget || "").includes("نصف")
+      ? 0.5
+      : (student.dailyNewTarget || "").includes("ربع")
+      ? 0.25
+      : 1.0;
+    const computedTomorrow = calculatePortionFromPace(curEndSurah, advanceStartAyah, pace);
 
     if (!process.env.GEMINI_API_KEY) {
       return res.json({
@@ -618,7 +631,13 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
           studentProgressStatus: "منتظم",
           analysis: `تم إنجاز التسميع بنجاح في سورة ${surah.name} ومستوى الطالب طيب ومبشر.`,
           reasoning: "مواصلة الخطة المقررة مع التثبيت المستمر.",
-          nextDayPlan: currentPlan?.currentDailyAssignment || getFallbackPlan(student).currentDailyAssignment,
+          nextDayPlan: {
+            newMemorization: computedTomorrow.description,
+            review: currentPlan?.currentDailyAssignment?.review || "مراجعة الماضي وتثبيته",
+            suggestedSheikh: "الشيخ محمود خليل الحصري",
+            tajweedFocus: "مراعاة أحكام التجويد والمدود",
+            dailyNote: "تكرار الورد المقرر 3 مرات قبل النوم"
+          },
         },
       });
     }
@@ -636,11 +655,16 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
   * ملاحظات الشيخ/المعلم أو العذر: ${evaluation.recitationDetails?.teacherNotes || "لا يوجد"}
   * درجات التقييم اليوم: ${JSON.stringify(evaluation.criteriaValues || {})}
 
-قواعد الذكاء الاصطناعي في الضبط والتخطيط:
-1. التزام تام وصارم بآيات السورة (${surah.name} آياتها ${surah.numberOfAyahs} فقط، لا تتجاوز هذا الرقم أبداً).
-2. إذا تعثر الطالب أو حفظ جزءاً فقط: لا تضغط عليه، قسّم ما تبقى عليه غداً مع خطوة تثبيت وتكرار.
-3. إذا أتقن بتفوق وسهولة: زد له باعتدال أو عمّق المراجعة دون إخلال بالإتقان.
-4. إذا كان معتذراً أو مريضاً: ضع خطة استدراكية خفيفة ولطيفة.
+بيانات الحساب القرآني الدقيق لمصحف المدينة (604 أوجه):
+- يبدأ مقرر الغد من الآية رقم (${advanceStartAyah})
+- المقدار الدقيق للغد بمعدل ورد الطالب (${student.dailyNewTarget || 'نصف وجه'}):
+  من سورة ${getSurahInfo(computedTomorrow.fromSurah).name} آية (${computedTomorrow.fromAyah}) إلى آية (${computedTomorrow.toAyah}) [${computedTomorrow.description}]
+
+قواعد الذكاء الاصطناعي الصارمة في الضبط والتخطيط:
+1. [قاعدة حاسمة ومطلقة]: إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات)، فإن مقرر الغد يبدأ من الآية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${computedTomorrow.description}). ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة فجأة!
+2. التزام تام وصارم بآيات السورة (سورة ${surah.name} آياتها ${surah.numberOfAyahs} فقط، لا تتجاوز هذا الرقم أبداً).
+3. إذا تعثر الطالب أو حفظ جزءاً فقط: لا تضغط عليه، قسّم ما تبقى عليه غداً مع خطوة تثبيت وتكرار لنفس الآيات.
+4. إذا أتقن بتفوق وسهولة: يتقدم بمقدار الورد المعتمد (${computedTomorrow.description}) مع تثبيت ما سبق.
 
 أرجع النتيجة بصيغة JSON فقط:
 {
@@ -648,7 +672,7 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
   "analysis": "تحليل أداء الطالب اليوم ونقاط القوة والمواضع التي تحتاج عناية وتجويد",
   "reasoning": "سبب تعديل أو تثبيت خطة الغد",
   "nextDayPlan": {
-    "newMemorization": "تحديد الآيات بالضبط للحفظ الجديد لغد (بحيث لا تتجاوز آيات سورة ${surah.name} البالغة ${surah.numberOfAyahs} آية)",
+    "newMemorization": "${computedTomorrow.description}",
     "review": "تحديد ورد المراجعة لغد بدقة",
     "suggestedSheikh": "القارئ الأنسب لمستواه",
     "tajweedFocus": "الحكم التجويدي المطلوب مراعاته",
@@ -656,17 +680,33 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
   }
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
     });
 
-    const text = response.text || "{}";
-    const feedback = JSON.parse(text);
-    res.json({ feedback });
+    if (aiText) {
+      try {
+        const feedback = JSON.parse(aiText);
+        if (feedback && feedback.nextDayPlan) {
+          return res.json({ feedback });
+        }
+      } catch (e) {}
+    }
+
+    res.json({
+      feedback: {
+        studentProgressStatus: "منتظم",
+        analysis: "تم تسجيل التسميع والمستوى جيد.",
+        reasoning: "الاستمرار في الخطة التراكمية والتثبيت.",
+        nextDayPlan: {
+          newMemorization: computedTomorrow.description,
+          review: "مراجعة الماضي وتثبيته",
+          suggestedSheikh: "الشيخ محمود خليل الحصري",
+          tajweedFocus: "مراعاة أحكام التجويد والمدود",
+          dailyNote: "تكرار الورد المقرر 3 مرات قبل النوم"
+        },
+      },
+    });
   } catch (error) {
     console.error("Gemini evaluate-progress error:", error);
     res.json({
@@ -677,6 +717,82 @@ app.post("/api/gemini/evaluate-progress", async (req, res) => {
         nextDayPlan: getFallbackPlan(req.body?.student || {}).currentDailyAssignment,
       },
     });
+  }
+});
+
+// 2.5 Adaptive Monthly AI Progression Analyzer
+app.post("/api/gemini/analyze-monthly-progression", async (req, res) => {
+  try {
+    const { student, evaluations = [], ayahErrors = [], currentPace = 0.5 } = req.body;
+    const safePace = Math.max(0.25, Number(currentPace) || 0.5);
+
+    let totalScoreSum = 0;
+    let scoreCount = 0;
+    evaluations.forEach((ev: any) => {
+      if (ev.criteriaValues && typeof ev.criteriaValues === "object") {
+        Object.values(ev.criteriaValues).forEach((val: any) => {
+          if (typeof val === "number") {
+            totalScoreSum += val;
+            scoreCount++;
+          }
+        });
+      }
+    });
+
+    const avgScore = scoreCount > 0 ? totalScoreSum / scoreCount : 8.5;
+    const errorsCount = Array.isArray(ayahErrors) ? ayahErrors.length : 0;
+    const isStruggling = avgScore < 7.2 || errorsCount >= 3;
+    const isExcelling = avgScore >= 8.5 && errorsCount <= 1 && evaluations.length >= 5;
+    const recommendedPace = isExcelling ? Math.min(3.0, safePace + 0.5) : safePace;
+
+    if (process.env.GEMINI_API_KEY && evaluations.length >= 3) {
+      const prompt = `أنت المستشار القرآني والتربوي الأول في «منظومة عمران القرآنية».
+مهمتك: تقييم مسار الطالب بعد شهر / عدة جلسات تسميع منتظمة وتحديد هل يستحق ترقية ورده اليومي بمقدار (نصف وجه إضافي):
+- اسم الطالب: ${student?.name} (المستوى: ${student?.level || 'متوسط'})
+- عدد جلسات التسميع المسجلة: ${evaluations.length} جلسة
+- متوسط درجات التقييم: ${avgScore.toFixed(1)}/10
+- عدد أخطاء المصحف المسجلة: ${errorsCount} أخطاء
+- المقدار اليومي الحالي: ${safePace} وجه
+- التقييم الأولي: ${isExcelling ? 'متميز ومؤهل لزيادة الورد (+0.5 وجه)' : isStruggling ? 'يحتاج مزيداً من التثبيت دون زيادة الورد (مش ولا بد)' : 'مستقر بالورد الحالي'}
+
+القواعد التربوية:
+1. إذا تحسن الطالب وأتقن وثبت حفظه بعد شهر: نزيد له نصف وجه (${recommendedPace} وجه) تشجيعاً لهمته.
+2. إذا كان مستواه ما زال يتذبذب أو ضعيفاً: لا نزيد له بل نثبت ورده ونكثف المراجعة عملاً بقاعدة: «الختم بتثبيت خير من التعجل بالتفلت».
+
+أرجع النتيجة بصيغة JSON فقط:
+{
+  "shouldIncreasePace": ${isExcelling},
+  "recommendedPace": ${recommendedPace},
+  "reasoning": "شرح تربوي بليغ ومحفز لقرار الترقية أو التثبيت",
+  "isStruggling": ${isStruggling},
+  "pedagogicalAdvice": "نصيحة وتوجيه تربوي للشيخ وولي الأمر"
+}`;
+
+      const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+      if (aiText) {
+        try {
+          const parsed = JSON.parse(aiText);
+          if (parsed && typeof parsed.shouldIncreasePace === "boolean") {
+            return res.json(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      shouldIncreasePace: isExcelling,
+      recommendedPace,
+      reasoning: isExcelling
+        ? `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تفوقاً والتزاماً عالياً على مدار (${evaluations.length} جلسة) بمتوسط تقييم ممتاز (${avgScore.toFixed(1)}/10)؛ تقرر رفع ورد الحفظ اليومي بمقدار (نصف وجه إضافي) ليصبح (${recommendedPace} وجه) لمواكبة تطوره وإتقانه.`
+        : isStruggling
+        ? `مستوى الطالب يحتاج مزيداً من التثبيت والتكرار (متوسط التقييم ${avgScore.toFixed(1)}/10 مع وجود ملاحظات)؛ تقرر الإبقاء على المقدار الحالي (${safePace} وجه) مع تكثيف المراجعة التراكمية، عملاً بقاعدة: «الختم بتثبيت خير من التعجل بالتفلت».`
+        : `أداء الطالب منتظم ومستقر؛ الاستمرار في الورد الحالي (${safePace} وجه) مع المراجعة الموازية حتى تمام ترسيخ المحفوظ.`,
+      isStruggling,
+      pedagogicalAdvice: isExcelling ? "مواكبة تميز الطالب مع الاستمرار في تعزيز التجويد والمخارج" : "التركيز على السرد المكرر قبل النوم"
+    });
+  } catch (err: any) {
+    console.error("analyze-monthly-progression error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
 
@@ -1065,8 +1181,14 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
     const pace = (studentDailyTarget.includes("وجهين") ? 2.0 : studentDailyTarget.includes("نصف") ? 0.5 : studentDailyTarget.includes("ربع") ? 0.25 : 1.0);
     const curEndSurah = Number(todayEvaluation?.todayNewToSurah) || 78;
     const curEndAyah = Number(todayEvaluation?.todayNewToAyah) || 1;
-    const advanceStartAyah = curEndAyah + 1;
-    const computedTomorrowPortion = calculatePortionFromPace(curEndSurah, advanceStartAyah, pace);
+    const curSurahInfo = getSurahInfo(curEndSurah);
+    let advanceStartSurah = curEndSurah;
+    let advanceStartAyah = curEndAyah + 1;
+    if (advanceStartAyah > curSurahInfo.numberOfAyahs) {
+      advanceStartSurah = curEndSurah < 114 ? curEndSurah + 1 : 1;
+      advanceStartAyah = 1;
+    }
+    const computedTomorrowPortion = calculatePortionFromPace(advanceStartSurah, advanceStartAyah, pace);
 
     // Adaptive Monthly Progression detection
     const evaluations = Array.isArray(evaluationsHistory) ? evaluationsHistory : [];
@@ -1074,7 +1196,7 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
     const daysSpan = validDates.length >= 2 ? Math.round((validDates[validDates.length - 1] - validDates[0]) / (1000 * 60 * 60 * 24)) : evaluations.length * 2;
     const isMonthlyExcellence = evaluations.length >= 8 && (daysSpan >= 20 || evaluations.length >= 12) && errorsCount <= 1;
     const recommendedPace = isMonthlyExcellence ? Math.min(3.0, pace + 0.5) : pace;
-    const targetTomorrowPortion = isMonthlyExcellence ? calculatePortionFromPace(curEndSurah, advanceStartAyah, recommendedPace) : computedTomorrowPortion;
+    const targetTomorrowPortion = isMonthlyExcellence ? calculatePortionFromPace(advanceStartSurah, advanceStartAyah, recommendedPace) : computedTomorrowPortion;
 
     // Check Gemini API
     if (process.env.GEMINI_API_KEY) {

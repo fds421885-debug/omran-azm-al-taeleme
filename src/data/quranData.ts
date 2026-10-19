@@ -190,22 +190,61 @@ export function getSurahInfo(identifier?: string | number | null): SurahInfo {
 /**
  * Pedagogical Quranic Assignment Calculator
  * Calculates REALISTIC, accurate ayah ranges that NEVER exceed surah ayah counts
+ * Supports either (surah, startAyah, level, dailyTarget) or (studentObject, evaluationsList)
  */
 export function calculateRealisticQuranAssignment(
-  surahIdentifier: string | number,
-  startAyah: number = 1,
+  surahOrStudent: string | number | any,
+  startAyahOrEvaluations: number | any[] = 1,
   level: string = 'متوسط',
   dailyTarget: string = 'نصف وجه'
 ) {
+  let surahIdentifier: string | number = 78;
+  let validStartAyah = 1;
+  let studentLevel = level;
+  let studentDailyTarget = dailyTarget;
+
+  if (typeof surahOrStudent === 'object' && surahOrStudent !== null) {
+    const std = surahOrStudent;
+    studentLevel = std.level || level || 'متوسط';
+    studentDailyTarget = std.dailyNewTarget || (std.memorizationPlan?.dailyNewPages ? `${std.memorizationPlan.dailyNewPages} وجه` : dailyTarget || 'نصف وجه');
+
+    // Check if recent evaluations exist
+    const evals = Array.isArray(startAyahOrEvaluations) ? startAyahOrEvaluations : [];
+    const latestEval = evals.find(e => e?.studentId === std.id && e?.recitationDetails?.todayNewItem);
+
+    if (latestEval?.recitationDetails?.todayNewItem) {
+      const rec = latestEval.recitationDetails.todayNewItem;
+      const curSurah = rec.toSurahNumber || rec.surahNumber || std.currentSurah || 78;
+      const curAyah = rec.toAyah || 1;
+      const curInfo = getSurahInfo(curSurah);
+
+      if (curAyah < curInfo.numberOfAyahs) {
+        surahIdentifier = curSurah;
+        validStartAyah = curAyah + 1;
+      } else {
+        surahIdentifier = curSurah < 114 ? curSurah + 1 : 1;
+        validStartAyah = 1;
+      }
+    } else {
+      surahIdentifier = std.currentSurah || std.currentSurahName || 78;
+      validStartAyah = Math.max(1, Number(std.currentAyah) || 1);
+    }
+  } else {
+    surahIdentifier = surahOrStudent || 78;
+    validStartAyah = Math.max(1, typeof startAyahOrEvaluations === 'number' ? startAyahOrEvaluations : 1);
+    studentLevel = level;
+    studentDailyTarget = dailyTarget;
+  }
+
   const surah = getSurahInfo(surahIdentifier);
   const totalAyahs = surah.numberOfAyahs;
-  const validStartAyah = Math.max(1, Math.min(startAyah, totalAyahs));
+  validStartAyah = Math.max(1, Math.min(validStartAyah, totalAyahs));
 
-  const pagePace = dailyTarget.includes('وجهين')
+  const pagePace = studentDailyTarget.includes('وجهين')
     ? 2.0
-    : dailyTarget.includes('نصف')
+    : studentDailyTarget.includes('نصف')
     ? 0.5
-    : dailyTarget.includes('ربع')
+    : studentDailyTarget.includes('ربع')
     ? 0.25
     : 1.0;
 
@@ -214,8 +253,8 @@ export function calculateRealisticQuranAssignment(
   let endAyah = portion.toSurah === surah.number ? portion.toAyah : totalAyahs;
   endAyah = Math.min(Math.max(validStartAyah, endAyah), totalAyahs);
 
-  // A surah is only marked "كاملة" if starting at ayah 1 AND ending at totalAyahs AND surah is short (<= 10 ayahs)
-  const isCompleteSurah = validStartAyah === 1 && endAyah >= totalAyahs && totalAyahs <= 12;
+  // A surah is only marked "كاملة" if starting at ayah 1 AND ending at totalAyahs AND surah is naturally short (<= 10 ayahs)
+  const isCompleteSurah = validStartAyah === 1 && endAyah >= totalAyahs && totalAyahs <= 10;
 
   let nextSurahRecommendation = '';
   if (endAyah >= totalAyahs && surah.number > 1) {
