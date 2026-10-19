@@ -17,7 +17,10 @@ import {
   TrendingUp,
   Volume2,
   RotateCcw,
-  Check
+  Check,
+  Mic,
+  BrainCircuit,
+  MessageSquare
 } from 'lucide-react';
 import {
   Student,
@@ -25,9 +28,20 @@ import {
   QuranComplex,
   Mosque,
   WaitingListStudent,
-  StudentMemorizationPlan
+  StudentMemorizationPlan,
+  StudentRegistrationApplication
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
+import {
+  executeDynamicInterviewTurn,
+  calculateRealisticKhatmTimeline,
+  DynamicInterviewResponse,
+  DynamicInterviewQuestion
+} from '../../lib/aiPlanService';
+import {
+  buildApplicationAcceptedEmail,
+  sendRealPortalEmail
+} from '../../lib/portalEmailService';
 
 interface AIStudentPlacementInterviewProps {
   studentInitialData: {
@@ -57,7 +71,10 @@ interface ChatMessage {
   options?: Array<{ label: string; value: any; subtext?: string }>;
   isQuestion?: boolean;
   questionKey?: string;
-  customWidget?: 'tajweed_quiz' | 'juz_selector' | 'pace_selector' | 'mosque_selector' | 'result_success' | 'result_waiting';
+  isLiveTest?: boolean;
+  surahNumber?: number;
+  ayahNumber?: number;
+  customWidget?: 'juz_selector' | 'pace_selector' | 'mosque_selector' | 'result_success' | 'result_waiting';
   widgetData?: any;
 }
 
@@ -71,32 +88,33 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
   onCancel
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [turnIndex, setTurnIndex] = useState<number>(1);
   const [isTyping, setIsTyping] = useState<boolean>(true);
+  const [typingMessage, setTypingMessage] = useState<string>('المساعد القرآني يتأمل بياناتك ويبدأ المقابلة التفاعلية...');
   const [userInput, setUserInput] = useState<string>('');
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Collected student answers during AI interview
+  // Accumulated assessment data gathered adaptively across dialogue turns
   const [interviewData, setInterviewData] = useState<{
     memorizedCount: number;
     consolidatedCount: number;
     tajweedScore: number;
-    tajweedAnswers: Record<string, string>;
     hasIjazah: boolean;
     goal: string;
     dailyNewPages: number;
     dailyReviewPages: number;
     selectedMosqueId?: string;
     selectedMosqueName?: string;
+    userAnswersList: string[];
   }>({
-    memorizedCount: studentInitialData.memorizedJuzList.length || 1,
-    consolidatedCount: Math.max(0, (studentInitialData.memorizedJuzList.length || 1) - 2),
+    memorizedCount: studentInitialData.memorizedJuzList?.length || 1,
+    consolidatedCount: Math.max(0, (studentInitialData.memorizedJuzList?.length || 1) - 2),
     tajweedScore: 0,
-    tajweedAnswers: {},
     hasIjazah: false,
-    goal: 'ختم القرآن الكريم وتثبيته كاملاً',
+    goal: 'ختم القرآن الكريم وتثبيته كاملاً بإتقان',
     dailyNewPages: 1,
-    dailyReviewPages: 5
+    dailyReviewPages: 5,
+    userAnswersList: []
   });
 
   const [placementResult, setPlacementResult] = useState<{
@@ -108,7 +126,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     newStudent?: Student;
   }>({ status: null });
 
-  // Auto scroll to bottom of chat
+  // Auto scroll to bottom
   useEffect(() => {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTo({
@@ -118,180 +136,85 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     }
   }, [messages, isTyping]);
 
-  // Initial welcome and greeting from AI
+  // Welcome greeting & Turn 1 Launch
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const memCount = studentInitialData.memorizedJuzList?.length || 1;
+    const isKhatim = memCount >= 30;
+    const isChild = studentInitialData.age <= 12;
+
+    const timer = setTimeout(async () => {
+      const greetingText = isKhatim
+        ? `أهلاً وسهلاً بك يا ${studentInitialData.studentName} في مجمع ${complex.name}! 🌟\n\nأنا «المساعد القرآني الذكي لتسكين وتوجيه الطلاب». هنيئاً لك حفظ كتاب الله كاملاً، ومهمتي معك اليوم هي تقييم جودة السرد وضبط المتشابهات ورسم مسار الإجازة والسند المتصل، والبحث عن الحلقة الأنسب لمستواك العالي.`
+        : isChild
+        ? `أهلاً بالبطل الصغير ${studentInitialData.studentName} (عمرك ${studentInitialData.age} سنة) في مجمع ${complex.name}! 🌸\n\nأنا صديقك «المساعد الذكي». سنلعب معاً ونتحدث عن القرآن الكريم، لنتعرف على حفظك الجميل ونختار لك أحسن شيخ وأجمل حلقة!`
+        : `أهلاً وسهلاً بك يا ${studentInitialData.studentName} في مجمع ${complex.name}! 🌟\n\nأنا «المساعد القرآني الذكي لتسكين وتوجيه الطلاب». سنجري معاً مقابلة تفاعلية حية لفحص جودة حفظك وتجويدك ونفسيتك، لنرسم لك خطة تثبيت مخصصة حتى الختم والتثبيت، وتسكينك في الحلقة الأنسب.`;
+
       const welcomeMsg: ChatMessage = {
         id: 'msg_welcome',
         sender: 'ai',
-        text: `أهلاً وسهلاً بك يا ${studentInitialData.studentName} (عمرك ${studentInitialData.age} سنة) في مجمع ${complex.name}! 🌟\n\nأنا «المساعد الذكي لتسكين وتوجيه الطلاب». مهمتي هي إجراء مقابلة تحديد مستوى تفاعلية معك لفحص جودة حفظك وتجويدك، والبحث الذكي عن الحلقة والمسجد والشيخ الأنسب لمستواك، ثم رسم خطة يومية ذكية مخصصة لك حتى الختم والتثبيت.`,
+        text: greetingText,
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages([welcomeMsg]);
-      setIsTyping(false);
+      setIsTyping(true);
+      setTypingMessage('المساعد الذكي يحلل مستواك ويعد السؤال الأول...');
 
-      // Follow up with question 1
-      setTimeout(() => {
-        askConsolidatedJuzQuestion();
-      }, 900);
-    }, 800);
+      // Run Turn 1 dynamically
+      try {
+        const turn1 = await executeDynamicInterviewTurn({
+          studentInitialData,
+          complex,
+          turnIndex: 1,
+          chatHistory: [{ sender: 'ai', text: greetingText }],
+          accumulatedData: interviewData
+        });
+
+        setTimeout(() => {
+          setIsTyping(false);
+          const qMsg: ChatMessage = {
+            id: `msg_q_1`,
+            sender: 'ai',
+            text: turn1.replyText,
+            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+            isQuestion: true,
+            questionKey: turn1.nextQuestion?.questionId || 'turn_1',
+            options: turn1.nextQuestion?.options,
+            isLiveTest: turn1.nextQuestion?.isLiveRecitationTest,
+            surahNumber: turn1.nextQuestion?.surahNumber,
+            ayahNumber: turn1.nextQuestion?.ayahNumber
+          };
+          setMessages(prev => [...prev, qMsg]);
+        }, 900);
+      } catch (err) {
+        setIsTyping(false);
+      }
+    }, 700);
 
     return () => clearTimeout(timer);
   }, []);
 
-  // 1. Question: Consolidated Juz Count
-  const askConsolidatedJuzQuestion = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const memCount = studentInitialData.memorizedJuzList.length || 1;
-      const qMsg: ChatMessage = {
-        id: 'msg_q_juz',
-        sender: 'ai',
-        text: `ما شاء الله، سَجلتَ أنك تحفظ ${memCount} جزءاً من القرآن الكريم.\n\nمن بين هذه الأجزاء، ما هو عدد «الأجزاء المُثبَّتة» والمتقنة تماماً لديك بنسبة إتقان عالية؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'consolidated_juz',
-        customWidget: 'juz_selector',
-        widgetData: {
-          totalMemorized: memCount
-        }
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(1);
-    }, 700);
-  };
-
-  // 2. Question: Tajweed Assessment (3 graded questions)
-  const askTajweedQuestion1 = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_tajweed_1',
-        sender: 'ai',
-        text: `ممتاز! ننتقل الآن لفحص إتقانك لأحكام التجويد (سؤال 1 من 3 - المستوى التأسيسي):\n\nفي قوله تعالى: ﴿وَمَن يَقُولُ﴾، ما هو حكم النون الساكنة هنا؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'tajweed_1',
-        options: [
-          { label: 'إدغام بغنة (ناقص)', value: 'correct', subtext: 'الياء من حروف ينمو' },
-          { label: 'إظهار حلقي', value: 'wrong', subtext: 'ليس من حروف الحلق' },
-          { label: 'إقلاب', value: 'wrong', subtext: 'ليس حرف باء' }
-        ]
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(2);
-    }, 700);
-  };
-
-  const askTajweedQuestion2 = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_tajweed_2',
-        sender: 'ai',
-        text: `أحسنت! السؤال الثاني (المستوى المتوسط):\n\nفي قوله تعالى: ﴿فَإِذَا جَاءَتِ الصَّاخَّةُ﴾، ما نوع المد في كلمة (الصَّاخَّةُ) وكم مقدار مده لزوماً؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'tajweed_2',
-        options: [
-          { label: 'مد لازم كَلِمي مُثقَّل (٦ حركات)', value: 'correct', subtext: 'جاء بعد حرف المد حرف مشدد' },
-          { label: 'مد واجب متصل (٤ أو ٥ حركات)', value: 'wrong', subtext: 'ليس بعده همز في كلمة' },
-          { label: 'مد عارض للسكون (٢ أو ٤ أو ٦)', value: 'wrong', subtext: 'حكمه غير عارض' }
-        ]
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(3);
-    }, 700);
-  };
-
-  const askTajweedQuestion3 = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_tajweed_3',
-        sender: 'ai',
-        text: `بارَكَ الله فيك! السؤال الثالث (المستوى المتقدم الدقيق):\n\nفي قوله تعالى بسورة الأعراف: ﴿يَلْهَث ذَّٰلِكَ﴾، ما هو الحكم التجويدي المعمول به بين حرفي (الثاء) و(الذال)؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'tajweed_3',
-        options: [
-          { label: 'إدغام متجانسين صغير', value: 'correct', subtext: 'اتفقا في المخرج واختلفا في بعض الصفات' },
-          { label: 'إظهار مطلق', value: 'wrong', subtext: 'لا يجوز الإظهار هنا في الرواية' },
-          { label: 'إدغام متقاربين كبير', value: 'wrong', subtext: 'الحرف الأول ساكن فليس بكبير' }
-        ]
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(4);
-    }, 700);
-  };
-
-  // 3. Question: Ijazah in Quran
-  const askIjazahQuestion = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_ijazah',
-        sender: 'ai',
-        text: `سؤال هام يتعلق بمسيرتك القرآنية:\n\nهل حصلت على إجازة قرآنية مسندة أو سند متصل إلى رسول الله ﷺ برواية حفص عن عاصم أو إحدى القراءات؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'ijazah',
-        options: [
-          { label: 'نعم، أحمل إجازة قرآنية مسندة', value: true, subtext: 'إجازة معتمدة بسند متصل' },
-          { label: 'لا، لم أحصل على إجازة بعد', value: false, subtext: 'طالب علم راغب في الإتقان' },
-          { label: 'أنا في طور الإعداد وعرض الختمة', value: 'in_progress', subtext: 'قارئ في مرحلة السند' }
-        ]
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(5);
-    }, 700);
-  };
-
-  // 4. Question: Target & Daily Pace (New and Review pages)
-  const askPaceAndGoalQuestion = () => {
-    setIsTyping(true);
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_pace',
-        sender: 'ai',
-        text: `رائع جداً! الآن لنحدد معاً خطتك التثبيتية اليومية:\n\nما هو هدفك المنشود في الحلقة، وكم وجهاً جديداً وكم وجه مراجعة تستطيع تسميعه يومياً؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'pace',
-        customWidget: 'pace_selector'
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-      setCurrentStep(6);
-    }, 700);
-  };
-
-  // 5. Question: Mosque Selection (Only if multi-mosque system)
+  // Multi-Mosque system check
   const isMultiMosqueSystem = useMemo(() => {
     return complex.complexType === 'multi_mosque_system' || (complex.mosques && complex.mosques.length > 1);
   }, [complex]);
 
+  // Mosque selection question
   const askMosqueSelectionQuestion = () => {
     if (!isMultiMosqueSystem || !complex.mosques || complex.mosques.length === 0) {
-      // Single complex: skip straight to AI placement matching!
       performAIPlacementAndPlanCalculation();
       return;
     }
 
     setIsTyping(true);
+    setTypingMessage('المساعد الذكي يفحص المساجد التابعة للمنظومة...');
     setTimeout(() => {
       const qMsg: ChatMessage = {
         id: 'msg_q_mosque',
         sender: 'ai',
-        text: `بما أن مجمع «${complex.name}» يُمثّل «منظومة قرآنية متكاملة» تضم عدة مساجد وجوامع تابعة:\n\nأيّ الجوامع الآتية هو الأقرب إلى منزلك وسكنك؟ سنبحث لك عن حلقة بها شاغر في هذا المسجد:`,
+        text: `بما أن مجمع «${complex.name}» يضم منظومة مساجد وجوامع متعددة:\n\nأيّ المساجد التالية هو الأقرب والأيسر لسكنك لنبحث لك عن حلقة بشاغر متاح فيه؟`,
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         isQuestion: true,
-        questionKey: 'mosque',
+        questionKey: 'mosque_picker',
         customWidget: 'mosque_selector',
         widgetData: {
           mosques: complex.mosques
@@ -299,14 +222,15 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       };
       setMessages(prev => [...prev, qMsg]);
       setIsTyping(false);
-      setCurrentStep(7);
     }, 700);
   };
 
-  // Perform AI Matching, Capacity Checking, and Roadmap Generation
-  const performAIPlacementAndPlanCalculation = (selectedMosqueId?: string) => {
+  // Perform AI Matching, Capacity Checking, and Realistic Plan Generation
+  const performAIPlacementAndPlanCalculation = async (selectedMosqueId?: string) => {
     setIsTyping(true);
-    setTimeout(() => {
+    setTypingMessage('الذكاء الاصطناعي يحسب جدول الختم الواقعي ويبحث عن الحلقة الشاغرة...');
+
+    setTimeout(async () => {
       // 1. Search candidate halaqahs in this complex (or selected mosque)
       let candidateHalaqahs = halaqahs.filter(h => {
         if (h.complexId && h.complexId !== complex.id) return false;
@@ -328,38 +252,50 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       }
 
       // Filter halaqahs that have free capacity: current < capacity
-      // For legacy halaqahs without capacity: capacity default is 15
       const availableHalaqahs = candidateHalaqahs.filter(h => {
         const cap = h.capacity && h.capacity > 0 ? h.capacity : 15;
         const currentCount = halaqahStudentCounts.get(h.id) || 0;
         return currentCount < cap;
       });
 
-      // 3. Calculate Dynamic Memorization & Revision Plan
-      const totalPagesInQuran = 604;
-      const memPages = (interviewData.memorizedCount || 1) * 20;
-      const remainingPages = Math.max(20, totalPagesInQuran - memPages);
-      const pace = Math.max(1, interviewData.dailyNewPages);
-      const daysToFinish = Math.ceil(remainingPages / pace);
+      // 3. Calculate Realistic, Mathematically Sound Khatmah Timeline
+      const weeklyDays = 5;
+      const dailyHours = 2;
+      const memCount = Math.max(1, interviewData.memorizedCount);
+      const consCount = Math.max(0, Math.min(memCount, interviewData.consolidatedCount));
+      const dailyNew = Math.max(0.25, interviewData.dailyNewPages);
+      const dailyRev = Math.max(2, interviewData.dailyReviewPages);
 
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + daysToFinish);
-      const targetDateStr = targetDate.toLocaleDateString('ar-SA', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
+      const timeline = calculateRealisticKhatmTimeline({
+        memorizedJuz: memCount,
+        consolidatedJuz: consCount,
+        dailyNewPages: dailyNew,
+        dailyReviewPages: dailyRev,
+        weeklyDaysCount: weeklyDays,
+        dailyHoursCount: dailyHours
       });
 
       const plan: StudentMemorizationPlan = {
-        dailyNewPages: interviewData.dailyNewPages,
-        dailyReviewPages: interviewData.dailyReviewPages,
-        consolidatedJuzCount: interviewData.consolidatedCount,
-        memorizedJuzCount: interviewData.memorizedCount,
+        dailyNewPages: dailyNew,
+        dailyReviewPages: dailyRev,
+        consolidatedJuzCount: consCount,
+        memorizedJuzCount: memCount,
         targetJuz: 30,
-        targetCompletionDate: targetDateStr,
-        estimatedDaysRemaining: daysToFinish,
-        progressPercentage: Math.min(100, Math.round((memPages / totalPagesInQuran) * 100)),
+        targetCompletionDate: timeline.targetCompletionDate,
+        estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+        progressPercentage: timeline.progressPercentage,
         status: 'on_track',
+        weeklyDaysCount: weeklyDays,
+        dailyHoursCount: dailyHours,
+        tathbeetStopsCount: timeline.tathbeetStopsCount,
+        milestones: timeline.milestones,
+        nextDayAssignment: {
+          newMemorization: `سورة ${memCount >= 30 ? 'البقرة' : 'النبأ'}: الآيات 1 إلى 10`,
+          review: `مراجعة وتثبيت الجزء ${Math.max(1, memCount)}`,
+          action: 'advance_page',
+          reason: 'انطلاقة تثبيت منهجية محسوبة بالذكاء الاصطناعي'
+        },
+        aiNotes: timeline.pedagogicalNote,
         lastUpdated: new Date().toISOString()
       };
 
@@ -368,7 +304,6 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
         const matched = availableHalaqahs[0];
         const matchedMosque = complex.mosques?.find(m => m.id === matched.mosqueId || m.id === selectedMosqueId);
 
-        // Build complete Student record
         const newStudentId = `std_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
         const studentObj: Student = {
           id: newStudentId,
@@ -380,12 +315,12 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           parentPhones: [studentInitialData.parentPhone],
           parentPhone: studentInitialData.parentPhone,
           googleEmail: studentInitialData.email || null,
-          currentSurah: 1,
-          currentSurahName: 'الفاتحة',
+          currentSurah: memCount >= 30 ? 2 : 78,
+          currentSurahName: memCount >= 30 ? 'البقرة' : 'النبأ',
           currentAyah: 1,
-          dailyNewTarget: `${interviewData.dailyNewPages} وجه يومياً`,
-          dailyReviewTarget: `${interviewData.dailyReviewPages} وجه يومياً`,
-          level: interviewData.tajweedScore >= 2 ? 'متميز' : 'متوسط',
+          dailyNewTarget: `${dailyNew} وجه يومياً`,
+          dailyReviewTarget: `${dailyRev} أوجه يومياً`,
+          level: interviewData.tajweedScore >= 1 || memCount >= 5 ? 'متميز' : 'متوسط',
           complexId: complex.id,
           complexName: complex.name,
           halaqahId: matched.id,
@@ -393,8 +328,21 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           assignedMosqueId: matchedMosque?.id,
           assignedMosqueName: matchedMosque?.name,
           memorizationPlan: plan,
+          aiPlan: {
+            roadmapSummary: `خطة تثبيت ذكية ومحسوبة بدقة. موعد الختم الواقعي: ${timeline.targetCompletionDate}.`,
+            currentDailyAssignment: {
+              newMemorization: plan.nextDayAssignment?.newMemorization || 'وجه جديد',
+              review: plan.nextDayAssignment?.review || '5 أوجه مراجعة',
+              suggestedSheikh: 'الشيخ محمود خليل الحصري (المصحف المعلم)',
+              dailyNote: 'التكرار 3 مرات قبل النوم لضمان التثبيت',
+              targetRepetitions: 3
+            },
+            difficultyAdjustment: 'متزن',
+            estimatedDaysToFinishJuz: Math.ceil(20 / dailyNew),
+            lastUpdated: new Date().toISOString()
+          },
           mushafErrors: [],
-          notes: studentInitialData.notes || 'تم التسكين والاختبار عبر المساعد الذكي',
+          notes: studentInitialData.notes || 'تم التسكين والتوجيه بالمساعد الذكي التفاعلي',
           createdAt: new Date().toISOString()
         };
 
@@ -406,13 +354,12 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           newStudent: studentObj
         });
 
-        // Add result message to chat
         const resultMsg: ChatMessage = {
           id: 'msg_result_success',
           sender: 'ai',
-          text: `🎉 مبارك يا ${studentInitialData.studentName}! أتممت مقابلة تحديد المستوى بنجاح باهر!\n\nبناءً على نتائجك، وجدنا لك شاغراً مناسباً لمستواك في: «${matched.name}» ${
+          text: `🎉 مبارك يا ${studentInitialData.studentName}! أتممت المقابلة التفاعلية بنجاح.\n\nبناءً على فحص مستواك ونفسيتك، وجدنا لك شاغراً مناسباً في: «${matched.name}» ${
             matchedMosque ? `بجامع «${matchedMosque.name}»` : ''
-          }.\n\nتم رسم خطتك التثبيتية الذكية بمعدل ${plan.dailyNewPages} وجه جديد و${plan.dailyReviewPages} أوجه مراجعة يومياً، والختم المتوقع بإذن الله في: ${plan.targetCompletionDate}.`,
+          }.\n\n📅 **موعد الختم المحسوب بتثبيت:** ${plan.targetCompletionDate}\n💡 **قاعدة الخطة:** ${timeline.pedagogicalNote}`,
           timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
           customWidget: 'result_success',
           widgetData: {
@@ -435,18 +382,19 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           phone: studentInitialData.phone,
           parentName: studentInitialData.parentName,
           parentPhone: studentInitialData.parentPhone,
-          memorizedJuz: interviewData.memorizedCount,
-          consolidatedJuz: interviewData.consolidatedCount,
-          tajweedLevel: interviewData.tajweedScore >= 2 ? 'متقدم' : 'متوسط',
+          memorizedJuz: memCount,
+          consolidatedJuz: consCount,
+          tajweedLevel: interviewData.tajweedScore >= 1 ? 'متقدم' : 'متوسط',
           hasIjazah: Boolean(interviewData.hasIjazah),
-          dailyNewPace: interviewData.dailyNewPages,
-          dailyReviewPace: interviewData.dailyReviewPages,
+          dailyNewPace: dailyNew,
+          dailyReviewPace: dailyRev,
           queueNumber: queueNum,
           complexId: complex.id,
           complexName: complex.name,
           mosqueId: selectedMosqueId,
           mosqueName: complex.mosques?.find(m => m.id === selectedMosqueId)?.name,
           status: 'waiting',
+          notes: `موعد الختم المحسوب بالذكاء الاصطناعي: ${timeline.targetCompletionDate}. في انتظار شاغر أو موافقة المشرف كطالب إضافي.`,
           addedAt: new Date().toISOString()
         };
 
@@ -458,7 +406,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
         const waitingMsg: ChatMessage = {
           id: 'msg_result_waiting',
           sender: 'ai',
-          text: `أهلاً بك يا ${studentInitialData.studentName}. لقد أتممت المقابلة وحصلت على تقدير ممتاز.\n\nنظراً للإقبال الكبير واكتمال السعة الاستيعابية في جميع الحلقات المناسبة حالياً في ${complex.name}، تم إدراجك في «قائمة الانتظار الرسمية للمجمع» بالرقم: #${queueNum}.\n\nسيتم إشعار ولي الأمر هاتفياً وعبر البريد الإلكتروني فور توفر مقعد شاغر لك.`,
+          text: `أهلاً بك يا ${studentInitialData.studentName}. أتممت المقابلة وحصلت على تقدير ممتاز.\n\nنظراً للإقبال الكبير واكتمال السعة الاستيعابية في جميع الحلقات حالياً بمجمع ${complex.name}، تم إدراجك في «قائمة الانتظار الرسمية للمجمع» برقم الدور: #${queueNum}.\n\nبإمكان المشرف مراجعة ملفك والموافقة على قبولك كطالب إضافي فوراً، وسيصلك إشعار بالبريد فور الاعتماد.`,
           timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
           customWidget: 'result_waiting',
           widgetData: {
@@ -471,100 +419,120 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     }, 1200);
   };
 
-  // Handle user selecting an option
+  // Advance conversation turn adaptively based on user answer
+  const advanceTurnWithAnswer = async (answerText: string, extraData?: Partial<typeof interviewData>) => {
+    // 1. Post user bubble
+    const userMsg: ChatMessage = {
+      id: `user_${Date.now()}`,
+      sender: 'user',
+      text: answerText,
+      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    const updatedData = {
+      ...interviewData,
+      ...extraData,
+      userAnswersList: [...interviewData.userAnswersList, answerText]
+    };
+    setInterviewData(updatedData);
+
+    // 2. Set thoughtful AI thinking state
+    setIsTyping(true);
+    setTypingMessage('المساعد الذكي يحلل إجابتك بدقة ويفحص أبعادها القرآنية والتربوية...');
+
+    // 3. Call dynamic turn engine
+    const nextTurn = turnIndex + 1;
+    setTurnIndex(nextTurn);
+
+    try {
+      const response: DynamicInterviewResponse = await executeDynamicInterviewTurn({
+        studentInitialData,
+        complex,
+        turnIndex: nextTurn,
+        chatHistory: [...messages, userMsg].map(m => ({ sender: m.sender, text: m.text })),
+        lastUserAnswer: answerText,
+        accumulatedData: updatedData
+      });
+
+      setTimeout(() => {
+        setIsTyping(false);
+
+        if (response.isCompleted) {
+          // Final greeting message
+          const finalMsg: ChatMessage = {
+            id: `msg_final_${nextTurn}`,
+            sender: 'ai',
+            text: response.replyText,
+            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+          };
+          setMessages(prev => [...prev, finalMsg]);
+
+          // Proceed to mosque selection or direct placement
+          if (isMultiMosqueSystem && complex.mosques && complex.mosques.length > 0) {
+            askMosqueSelectionQuestion();
+          } else {
+            performAIPlacementAndPlanCalculation();
+          }
+        } else {
+          // Next adaptive question bubble
+          const nextQMsg: ChatMessage = {
+            id: `msg_q_${nextTurn}`,
+            sender: 'ai',
+            text: response.replyText,
+            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+            isQuestion: true,
+            questionKey: response.nextQuestion?.questionId || `turn_${nextTurn}`,
+            options: response.nextQuestion?.options,
+            isLiveTest: response.nextQuestion?.isLiveRecitationTest,
+            surahNumber: response.nextQuestion?.surahNumber,
+            ayahNumber: response.nextQuestion?.ayahNumber
+          };
+          setMessages(prev => [...prev, nextQMsg]);
+        }
+      }, 800);
+    } catch (e) {
+      setIsTyping(false);
+      // Fallback: proceed to placement
+      performAIPlacementAndPlanCalculation();
+    }
+  };
+
+  // Handle clicking an option button
   const handleSelectOption = (qKey: string, opt: { label: string; value: any }) => {
-    // 1. Post user response bubble
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: opt.label,
-      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages(prev => [...prev, userMsg]);
+    let extra: Partial<typeof interviewData> = {};
 
-    // 2. Process based on question key
-    if (qKey === 'tajweed_1') {
-      const isCorrect = opt.value === 'correct';
-      if (isCorrect) {
-        setInterviewData(prev => ({
-          ...prev,
-          tajweedScore: prev.tajweedScore + 1,
-          tajweedAnswers: { ...prev.tajweedAnswers, q1: opt.label }
-        }));
+    if (opt.value === 'correct') {
+      extra.tajweedScore = interviewData.tajweedScore + 1;
+    } else if (typeof opt.value === 'number') {
+      if (qKey.includes('consolidated') || qKey.includes('cons')) {
+        extra.consolidatedCount = opt.value;
       }
-      setTimeout(() => askTajweedQuestion2(), 500);
-    } else if (qKey === 'tajweed_2') {
-      const isCorrect = opt.value === 'correct';
-      if (isCorrect) {
-        setInterviewData(prev => ({
-          ...prev,
-          tajweedScore: prev.tajweedScore + 1,
-          tajweedAnswers: { ...prev.tajweedAnswers, q2: opt.label }
-        }));
+    } else if (typeof opt.value === 'object' && opt.value !== null) {
+      if (opt.value.newPages !== undefined) {
+        extra.dailyNewPages = opt.value.newPages;
+        extra.dailyReviewPages = opt.value.reviewPages;
       }
-      setTimeout(() => askTajweedQuestion3(), 500);
-    } else if (qKey === 'tajweed_3') {
-      const isCorrect = opt.value === 'correct';
-      if (isCorrect) {
-        setInterviewData(prev => ({
-          ...prev,
-          tajweedScore: prev.tajweedScore + 1,
-          tajweedAnswers: { ...prev.tajweedAnswers, q3: opt.label }
-        }));
-      }
-      setTimeout(() => askIjazahQuestion(), 500);
-    } else if (qKey === 'ijazah') {
-      setInterviewData(prev => ({ ...prev, hasIjazah: Boolean(opt.value) }));
-      setTimeout(() => askPaceAndGoalQuestion(), 500);
     }
+
+    advanceTurnWithAnswer(opt.label, extra);
   };
 
-  // Submit consolidated juz selector widget
-  const handleConsolidatedJuzSubmit = (val: number) => {
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: `أحفظ ${studentInitialData.memorizedJuzList.length || 1} جزءاً، والأجزاء المثبتة لدي هي ${val} جزءاً.`,
-      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages(prev => [...prev, userMsg]);
-    setInterviewData(prev => ({
-      ...prev,
-      consolidatedCount: val,
-      memorizedCount: studentInitialData.memorizedJuzList.length || 1
-    }));
-    setTimeout(() => askTajweedQuestion1(), 600);
+  // Handle free text typed input
+  const handleSendCustomInput = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userInput.trim() || isTyping) return;
+    const text = userInput.trim();
+    setUserInput('');
+    advanceTurnWithAnswer(text);
   };
 
-  // Submit pace selector widget
-  const handlePaceSubmit = (newPages: number, revPages: number, goalText: string) => {
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: `هدفي: ${goalText} • بمعدل ${newPages} وجه جديد و${revPages} أوجه مراجعة يومياً.`,
-      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages(prev => [...prev, userMsg]);
-    setInterviewData(prev => ({
-      ...prev,
-      dailyNewPages: newPages,
-      dailyReviewPages: revPages,
-      goal: goalText
-    }));
-
-    if (isMultiMosqueSystem && complex.mosques && complex.mosques.length > 0) {
-      setTimeout(() => askMosqueSelectionQuestion(), 600);
-    } else {
-      setTimeout(() => performAIPlacementAndPlanCalculation(), 600);
-    }
-  };
-
-  // Submit mosque selector widget
+  // Mosque selection
   const handleMosqueSelect = (mosque: Mosque) => {
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
       sender: 'user',
-      text: `المسجد الأقرب لي هو: ${mosque.name} (${mosque.address || 'ضمن المنظومة'})`,
+      text: `المسجد الأنسب لي هو: جامع «${mosque.name}» (${mosque.address || 'ضمن مساجد المنظومة'})`,
       timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
     };
     setMessages(prev => [...prev, userMsg]);
@@ -574,12 +542,12 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       selectedMosqueName: mosque.name
     }));
 
-    setTimeout(() => performAIPlacementAndPlanCalculation(mosque.id), 600);
+    performAIPlacementAndPlanCalculation(mosque.id);
   };
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md select-none" dir="rtl">
-      <div className="w-full max-w-3xl bg-[#022c22] border-2 border-[#fbbf24]/50 rounded-3xl shadow-2xl flex flex-col h-[90vh] max-h-[820px] overflow-hidden">
+      <div className="w-full max-w-3xl bg-[#022c22] border-2 border-amber-400/60 rounded-3xl shadow-2xl flex flex-col h-[90vh] max-h-[820px] overflow-hidden">
         {/* Header Bar */}
         <div className="bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-b border-[#065f46] px-5 py-3.5 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-3">
@@ -594,8 +562,8 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
                 <h3 className="font-heading font-black text-sm sm:text-base text-white">
                   المساعد الذكي لتسكين وتوجيه الطلاب
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fbbf24] text-[#064e3b]">
-                  مقابلة فورية
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#fbbf24] text-[#064e3b]">
+                  حوار تكيفي حي
                 </span>
               </div>
               <p className="text-xs text-[#86efac]/80">
@@ -609,7 +577,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             onClick={onCancel}
             className="text-xs text-white/60 hover:text-white px-3 py-1.5 rounded-xl border border-white/10 hover:border-white/30 transition-all cursor-pointer"
           >
-            إلغاء
+            إغلاق
           </button>
         </div>
 
@@ -645,6 +613,21 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
                   {msg.text}
                 </div>
 
+                {/* Live Ayah Recitation Test Box */}
+                {msg.isLiveTest && (
+                  <div className="p-3.5 rounded-2xl bg-black/30 border border-amber-400/40 text-amber-200 text-xs flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
+                      <Mic className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-white block">فحص الاستحضار المباشر للآيات:</span>
+                      <span className="text-[11px] text-[#86efac]">
+                        بإمكانك كتابة بداية الآية في صندوق الرد بالأسفل أو اختيار الجاهزية مباشرة
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Question Interactive Options */}
                 {msg.options && msg.options.length > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -660,32 +643,6 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
                       </button>
                     ))}
                   </div>
-                )}
-
-                {/* Custom Widget: Consolidated Juz Selector */}
-                {msg.customWidget === 'juz_selector' && (
-                  <div className="p-4 rounded-2xl bg-[#064e3b]/80 border border-[#fbbf24]/40 space-y-3">
-                    <p className="text-xs text-amber-200 font-bold">
-                      اختر عدد الأجزاء المتقنة المثبتة (من 0 إلى {msg.widgetData?.totalMemorized}):
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {Array.from({ length: Math.min(31, (msg.widgetData?.totalMemorized || 1) + 1) }).map((_, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleConsolidatedJuzSubmit(idx)}
-                          className="w-10 h-10 rounded-xl bg-[#022c22] hover:bg-[#fbbf24] hover:text-[#064e3b] text-white font-mono font-bold text-xs border border-[#065f46] transition-all cursor-pointer shadow-sm flex items-center justify-center active:scale-95"
-                        >
-                          {idx}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Custom Widget: Pace & Daily Goals Selector */}
-                {msg.customWidget === 'pace_selector' && (
-                  <PaceSelectorWidget onSubmit={handlePaceSubmit} />
                 )}
 
                 {/* Custom Widget: Mosque Selection */}
@@ -744,14 +701,40 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             </div>
           ))}
 
-          {/* Typing Indicator */}
+          {/* Typing & Thinking Indicator */}
           {isTyping && (
-            <div className="flex items-center gap-2.5 text-xs text-[#86efac]/80 p-2">
-              <Bot className="w-4 h-4 animate-bounce text-[#fbbf24]" />
-              <span>المساعد الذكي يحلل إجاباتك ويجهز التوجيه المناسب...</span>
+            <div className="flex items-center gap-2.5 text-xs text-[#86efac] p-3 rounded-2xl bg-[#064e3b]/40 border border-[#065f46] animate-pulse">
+              <Bot className="w-4 h-4 animate-bounce text-[#fbbf24] shrink-0" />
+              <span>{typingMessage}</span>
             </div>
           )}
         </div>
+
+        {/* Interactive Chat Input Form (For free text and custom dynamic answers) */}
+        {!placementResult.status && (
+          <form
+            onSubmit={handleSendCustomInput}
+            className="p-3 bg-[#064e3b] border-t border-[#065f46] flex items-center gap-2 shrink-0"
+          >
+            <input
+              type="text"
+              value={userInput}
+              onChange={e => setUserInput(e.target.value)}
+              placeholder="اكتب إجابتك أو استفسارك هنا للمساعد الذكي..."
+              disabled={isTyping}
+              className="flex-1 bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-400 outline-none transition-all font-bold disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={!userInput.trim() || isTyping}
+              className="p-2.5 sm:px-4 sm:py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-amber-400 disabled:opacity-40 text-[#064e3b] font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 shrink-0"
+              title="إرسال الإجابة"
+            >
+              <Send className="w-4 h-4" />
+              <span className="hidden sm:inline">إرسال</span>
+            </button>
+          </form>
+        )}
 
         {/* Footer info banner */}
         <div className="bg-[#022c22] border-t border-[#065f46] px-5 py-2.5 flex items-center justify-between text-[11px] text-[#86efac]/70">
@@ -762,113 +745,6 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           <span>منظومة عمران القرآنية</span>
         </div>
       </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Subcomponent: Pace & Goal Selector Widget
-// -------------------------------------------------------------------------
-interface PaceSelectorWidgetProps {
-  onSubmit: (newPages: number, reviewPages: number, goalText: string) => void;
-}
-
-const PaceSelectorWidget: React.FC<PaceSelectorWidgetProps> = ({ onSubmit }) => {
-  const [newPages, setNewPages] = useState<number>(1);
-  const [reviewPages, setReviewPages] = useState<number>(5);
-  const [selectedGoal, setSelectedGoal] = useState<string>('ختم القرآن الكريم وتثبيته كاملاً');
-
-  const goals = [
-    'ختم القرآن الكريم وتثبيته كاملاً',
-    'تثبيت وضبط آخر ١٠ أجزاء',
-    'إتقان وتثبيت الأجزاء السابقة مع الحفظ الجديد',
-    'المراجعة المكثفة لغرض نيل الإجازة والسند'
-  ];
-
-  return (
-    <div className="p-4 rounded-2xl bg-[#064e3b]/90 border border-[#fbbf24]/50 space-y-4 text-xs text-white">
-      {/* Target Goal */}
-      <div>
-        <label className="block text-amber-200 font-bold mb-1.5">الهدف التثبيتي الرئيسي في الحلقة:</label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-          {goals.map(g => (
-            <button
-              key={g}
-              type="button"
-              onClick={() => setSelectedGoal(g)}
-              className={`p-2 rounded-xl text-right text-xs font-bold transition-all border cursor-pointer ${
-                selectedGoal === g
-                  ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] font-black'
-                  : 'bg-[#022c22] text-white/80 border-[#065f46] hover:bg-[#022c22]/80'
-              }`}
-            >
-              {g}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Daily New Target */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-bold text-amber-200">كم وجهاً جديداً تستطيع حفظه وتسميعه يومياً؟</span>
-          <span className="px-2 py-0.5 rounded-lg bg-[#fbbf24] text-[#064e3b] font-black">
-            {newPages} {newPages === 1 ? 'وجه' : newPages === 2 ? 'وجهان' : 'أوجه'}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          {[1, 2, 3, 4, 5].map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setNewPages(p)}
-              className={`flex-1 py-1.5 rounded-xl font-bold text-xs border cursor-pointer transition-all ${
-                newPages === p
-                  ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24]'
-                  : 'bg-[#022c22] text-white border-[#065f46]'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Daily Review Target */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-bold text-amber-200">كم وجه مراجعة وتثبيت تستطيع تسميعه يومياً؟</span>
-          <span className="px-2 py-0.5 rounded-lg bg-[#fbbf24] text-[#064e3b] font-black">
-            {reviewPages} {reviewPages >= 10 ? 'وجهاً' : 'أوجه'} ({Math.round((reviewPages / 20) * 10) / 10} جزء)
-          </span>
-        </div>
-        <div className="flex gap-2">
-          {[3, 5, 10, 15, 20].map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setReviewPages(p)}
-              className={`flex-1 py-1.5 rounded-xl font-bold text-xs border cursor-pointer transition-all ${
-                reviewPages === p
-                  ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24]'
-                  : 'bg-[#022c22] text-white border-[#065f46]'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Submit Button */}
-      <button
-        type="button"
-        onClick={() => onSubmit(newPages, reviewPages, selectedGoal)}
-        className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-amber-400 hover:from-amber-400 hover:to-amber-500 text-[#064e3b] font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
-      >
-        <Check className="w-4 h-4" />
-        <span>اعتماد الوتيرة والهدف والبحث عن الحلقة المناسبة</span>
-      </button>
     </div>
   );
 };
@@ -887,7 +763,7 @@ interface PlacementSuccessCardProps {
 }
 
 const PlacementSuccessCard: React.FC<PlacementSuccessCardProps> = ({ data, onConfirm }) => {
-  const { halaqah, mosque, plan } = data;
+  const { halaqah, mosque, plan, student } = data;
 
   return (
     <div className="p-5 rounded-3xl bg-gradient-to-b from-[#064e3b] to-[#022c22] border-2 border-[#fbbf24] shadow-2xl space-y-4 text-white">
@@ -1007,7 +883,7 @@ const WaitingListCard: React.FC<WaitingListCardProps> = ({ waitingEntry, onConfi
       </div>
 
       <p className="text-[11px] text-white/70 leading-relaxed">
-        💡 تم إشعار المشرف العام للتحقق من إمكانية فتح حلقة إضافية أو قبولك فور توفر أول مقعد شاغر. سيتم التواصل معك على هاتف: {waitingEntry.phone}.
+        💡 تم إشعار المشرف العام للتحقق من إمكانية فتح مقعد إضافي لك أو قبولك فور توفر أول شاغر.
       </p>
 
       <button

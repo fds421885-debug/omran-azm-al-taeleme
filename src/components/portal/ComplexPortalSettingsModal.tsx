@@ -210,9 +210,14 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [isLoadingApps, setIsLoadingApps] = useState(false);
   const [isRefreshingApps, setIsRefreshingApps] = useState(false);
   const [lastRefreshedTime, setLastRefreshedTime] = useState<string>('مُحدّث');
-  const [appFilter, setAppFilter] = useState<'all' | 'pending' | 'accepted' | 'rejected'>('all');
+  const [appFilter, setAppFilter] = useState<'all' | 'pending' | 'waiting' | 'accepted' | 'rejected'>('all');
   const [appSearch, setAppSearch] = useState('');
   const [selectedHalaqahFilter, setSelectedHalaqahFilter] = useState<string>('all');
+
+  // Bulk Selection and Progress for Waiting List & Applications
+  const [selectedAppIds, setSelectedAppIds] = useState<string[]>([]);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [bulkProgressText, setBulkProgressText] = useState('');
 
   // Selected Application for Accept / Reject / View Details Modal
   const [appToAccept, setAppToAccept] = useState<StudentRegistrationApplication | null>(null);
@@ -234,7 +239,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
     : `?complexPortal=${encodeURIComponent(complex.id)}&tab=register`;
 
   const executeWithPreFlightCheck = (action: () => void) => {
-    const hasMissingMosqueLoc = (complex.mosques || []).some(m => (!m.latitude && !m.longitude) || (!m.address && !m.locationName));
+    const hasMissingMosqueLoc = !complex.mosques || complex.mosques.length === 0 || complex.mosques.some(m => (!m.latitude && !m.longitude) || (!m.address && !m.locationName));
     const hasMissingHalaqahCap = halaqahs.some(h => !h.capacity || h.capacity <= 0);
 
     if (hasMissingMosqueLoc || hasMissingHalaqahCap) {

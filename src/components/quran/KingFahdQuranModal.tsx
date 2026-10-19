@@ -606,9 +606,9 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                 </button>
               </div>
             ) : (
-              <span className="hidden lg:inline-flex items-center gap-1 text-[11px] text-[#86efac]/80 font-medium bg-[#064e3b]/40 px-2.5 py-1 rounded-xl border border-[#065f46]">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#86efac] font-bold bg-[#064e3b]/80 px-3 py-1 rounded-xl border border-amber-400/50 shadow-sm animate-pulse">
                 <span>💡</span>
-                <span>لرصد خطأ تسميع: اضغط مطولاً 2.5 ثانية على الآية</span>
+                <span>لرصد خطأ تسميع: انقر نقرتين متتاليتين (Double Click / Tap) على الآية</span>
               </span>
             )}
           </div>

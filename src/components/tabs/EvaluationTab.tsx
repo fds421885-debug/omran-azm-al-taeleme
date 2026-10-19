@@ -735,68 +735,101 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           }
         ]);
       } else {
-        // Fallback default initialization from student profile
-        const studentSurah = activeStudent.currentSurah || 78;
-        const studentAyah = activeStudent.currentAyah || 1;
-        const surahInfo = getSurahInfo(studentSurah);
-        const totalAyahs = surahInfo.numberOfAyahs;
+        // Check if student has an active AI Plan or Memorization Plan first!
+        const aiAssignment = activeStudent.aiPlan?.currentDailyAssignment;
+        const planAssignment = activeStudent.memorizationPlan?.nextDayAssignment;
+        
+        let loadedFromPlan = false;
+        if (aiAssignment?.newItem) {
+          const sNum = aiAssignment.newItem.surahNumber || activeStudent.currentSurah || 78;
+          const toSNum = aiAssignment.newItem.toSurahNumber || sNum;
+          const fAyah = aiAssignment.newItem.fromAyah || activeStudent.currentAyah || 1;
+          const tAyah = aiAssignment.newItem.toAyah || (fAyah + 7);
 
-        const step = activeStudent.level === 'ضعيف' ? 4 : activeStudent.level === 'قوي' ? 12 : 7;
-        const endAyah = Math.min(studentAyah + step - 1, totalAyahs);
+          setTodayNewSurah(sNum);
+          setTodayNewFromAyah(fAyah);
+          setTodayNewToSurah(toSNum);
+          setTodayNewToAyah(tAyah);
 
-        setTodayNewSurah(studentSurah);
-        setTodayNewFromAyah(studentAyah);
-        setTodayNewToSurah(studentSurah);
-        setTodayNewToAyah(endAyah);
+          if (aiAssignment.reviewItems && aiAssignment.reviewItems.length > 0) {
+            setTodayReviews(aiAssignment.reviewItems.map((r, idx) => ({ ...r, id: `rev_plan_${Date.now()}_${idx}` })));
+            setTomReviews(aiAssignment.reviewItems.map((r, idx) => ({ ...r, id: `tom_plan_${Date.now()}_${idx}` })));
+          }
 
-        // Default review (check persistent items first)
-        if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
-          setTodayReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}` })));
-          setTomReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
-        } else {
-          const revSurah = studentSurah < 114 ? studentSurah + 1 : 113;
-          const revInfo = getSurahInfo(revSurah);
-          setTodayReviews([
-            {
-              id: `rev_${Date.now()}`,
-              type: REVIEW_TYPES[0],
-              surahNumber: revSurah,
-              surahName: revInfo.name,
-              fromAyah: 1,
-              toSurahNumber: revSurah,
-              toSurahName: revInfo.name,
-              toAyah: revInfo.numberOfAyahs,
-              isFullSurah: true
-            }
-          ]);
-
-          setTomReviews([
-            {
-              id: `tom_rev_${Date.now()}`,
-              type: REVIEW_TYPES[0],
-              surahNumber: studentSurah,
-              surahName: surahInfo.name,
-              fromAyah: 1,
-              toSurahNumber: studentSurah,
-              toSurahName: surahInfo.name,
-              toAyah: endAyah,
-              isFullSurah: endAyah >= totalAyahs
-            }
-          ]);
+          const sInfo = getSurahInfo(sNum);
+          const toInfo = getSurahInfo(toSNum);
+          const loadedText = formatQuranPortion(sInfo.name, fAyah, tAyah, sInfo.numberOfAyahs, 'حفظ جديد', toInfo.name, toInfo.numberOfAyahs);
+          setAutoFilledNotice(`تم تحميل ورد التسميع اليومي مباشرة من الخطة القرآنية الذكية للطالب: ${loadedText}`);
+          loadedFromPlan = true;
         }
 
-        if (endAyah < totalAyahs) {
-          setTomNewSurah(studentSurah);
-          setTomNewFromAyah(endAyah + 1);
-          setTomNewToSurah(studentSurah);
-          setTomNewToAyah(Math.min(endAyah + step, totalAyahs));
-        } else {
-          const nextSurahNum = studentSurah < 114 ? studentSurah + 1 : 1;
-          const nextSurahInfo = getSurahInfo(nextSurahNum);
-          setTomNewSurah(nextSurahNum);
-          setTomNewFromAyah(1);
-          setTomNewToSurah(nextSurahNum);
-          setTomNewToAyah(Math.min(step, nextSurahInfo.numberOfAyahs));
+        if (!loadedFromPlan) {
+          // Fallback default initialization from student profile
+          const studentSurah = activeStudent.currentSurah || 78;
+          const studentAyah = activeStudent.currentAyah || 1;
+          const surahInfo = getSurahInfo(studentSurah);
+          const totalAyahs = surahInfo.numberOfAyahs;
+
+          const step = activeStudent.level === 'ضعيف' ? 4 : activeStudent.level === 'قوي' ? 12 : 7;
+          const endAyah = Math.min(studentAyah + step - 1, totalAyahs);
+
+          setTodayNewSurah(studentSurah);
+          setTodayNewFromAyah(studentAyah);
+          setTodayNewToSurah(studentSurah);
+          setTodayNewToAyah(endAyah);
+
+          const sInfo = getSurahInfo(studentSurah);
+          const portionText = formatQuranPortion(sInfo.name, studentAyah, endAyah, sInfo.numberOfAyahs, 'حفظ جديد');
+          setAutoFilledNotice(`تم تحميل الورد المعتمد للطالب: ${portionText}`);
+
+          // Default review (check persistent items first)
+          if (activeStudent.persistentReviewItems && activeStudent.persistentReviewItems.length > 0) {
+            setTodayReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `rev_${Date.now()}_${idx}` })));
+            setTomReviews(activeStudent.persistentReviewItems.map((r, idx) => ({ ...r, id: `tom_rev_${Date.now()}_${idx}` })));
+          } else {
+            const revSurah = studentSurah < 114 ? studentSurah + 1 : 113;
+            const revInfo = getSurahInfo(revSurah);
+            setTodayReviews([
+              {
+                id: `rev_${Date.now()}`,
+                type: REVIEW_TYPES[0],
+                surahNumber: revSurah,
+                surahName: revInfo.name,
+                fromAyah: 1,
+                toSurahNumber: revSurah,
+                toSurahName: revInfo.name,
+                toAyah: revInfo.numberOfAyahs,
+                isFullSurah: true
+              }
+            ]);
+            setTomReviews([
+              {
+                id: `tom_rev_${Date.now()}`,
+                type: REVIEW_TYPES[0],
+                surahNumber: studentSurah,
+                surahName: surahInfo.name,
+                fromAyah: 1,
+                toSurahNumber: studentSurah,
+                toSurahName: surahInfo.name,
+                toAyah: endAyah,
+                isFullSurah: endAyah >= totalAyahs
+              }
+            ]);
+          }
+
+          if (endAyah < totalAyahs) {
+            setTomNewSurah(studentSurah);
+            setTomNewFromAyah(endAyah + 1);
+            setTomNewToSurah(studentSurah);
+            setTomNewToAyah(Math.min(endAyah + step, totalAyahs));
+          } else {
+            const nextSurahNum = studentSurah < 114 ? studentSurah + 1 : 1;
+            const nextSurahInfo = getSurahInfo(nextSurahNum);
+            setTomNewSurah(nextSurahNum);
+            setTomNewFromAyah(1);
+            setTomNewToSurah(nextSurahNum);
+            setTomNewToAyah(Math.min(step, nextSurahInfo.numberOfAyahs));
+          }
         }
       }
 

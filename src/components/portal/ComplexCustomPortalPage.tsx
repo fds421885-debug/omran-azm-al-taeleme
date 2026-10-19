@@ -2308,6 +2308,35 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
             try {
               await OmranDataService.saveStudent(newStudent);
               setExistingStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+
+              // Update registration application so supervisor dashboard immediately reflects admission!
+              const allApps = await OmranDataService.loadRegistrationApplications(complex.id);
+              const matchingApp = allApps.find(a => a.trackingCode === interviewStudentData.trackingCode || a.studentName === newStudent.name);
+              if (matchingApp) {
+                const updatedApp: StudentRegistrationApplication = {
+                  ...matchingApp,
+                  status: 'accepted',
+                  studentAcceptanceStatus: 'confirmed_by_student',
+                  assignedHalaqahId: newStudent.halaqahId,
+                  assignedHalaqahName: newStudent.halaqahName,
+                  assignedStudentId: newStudent.id,
+                  admittedAt: new Date().toISOString(),
+                  studentConfirmedAt: new Date().toISOString(),
+                  reviewedAt: new Date().toISOString(),
+                  reviewedByName: 'المساعد القرآني الذكي'
+                };
+                await OmranDataService.saveRegistrationApplication(updatedApp);
+
+                // Send immediate real confirmation email
+                const emailPayload = buildApplicationAcceptedEmail(complex, updatedApp, newStudent.halaqahName || 'الحلقة القرآنية', portalUrl);
+                sendRealPortalEmail(emailPayload).catch(() => {});
+              }
+
+              // Dispatch real-time student update event for any active supervisor session
+              try {
+                window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: newStudent }));
+              } catch (e) {}
+
               setIsAIInterviewOpen(false);
               onLoginSuccess({ username: newStudent.name, role: 'student', studentId: newStudent.id }, undefined, newStudent);
             } catch (err) {
@@ -2325,6 +2354,19 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 waitingList: updatedWait
               };
               await OmranDataService.saveComplex(updatedComplex);
+
+              // Update registration application to reflect waiting list status
+              const allApps = await OmranDataService.loadRegistrationApplications(complex.id);
+              const matchingApp = allApps.find(a => a.trackingCode === waitingEntry.applicationTrackingCode);
+              if (matchingApp) {
+                const updatedApp: StudentRegistrationApplication = {
+                  ...matchingApp,
+                  status: 'pending',
+                  queueNumber: waitingEntry.queueNumber,
+                  notes: `${matchingApp.notes || ''} • مدرج في قائمة الانتظار للمجمع بالدور #${waitingEntry.queueNumber}`.trim()
+                };
+                await OmranDataService.saveRegistrationApplication(updatedApp);
+              }
             } catch (err) {
               console.warn('Waiting list save note:', err);
             }
