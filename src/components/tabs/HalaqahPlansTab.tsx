@@ -99,8 +99,17 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   // 1. Load and sync Plan Schedule Configuration from Cloud Firestore on Mount
   useEffect(() => {
     let isMounted = true;
-    const initialConfig = activeComplex?.planScheduleConfig;
 
+    // Always fetch the freshest configuration from Cloud Firestore
+    OmranDataService.loadPlanScheduleConfig(activeComplex?.id).then(cfg => {
+      if (!isMounted || !cfg) return;
+      if (cfg.selectedDays && cfg.selectedDays.length > 0) setSelectedDays(cfg.selectedDays);
+      if (typeof cfg.dailyHours === 'number' && cfg.dailyHours > 0) setDailyHours(cfg.dailyHours);
+      if (cfg.strategyPreset) setStrategyPreset(cfg.strategyPreset);
+      if (cfg.targetScope) setTargetScope(cfg.targetScope);
+    });
+
+    const initialConfig = activeComplex?.planScheduleConfig;
     if (initialConfig) {
       if (initialConfig.selectedDays && initialConfig.selectedDays.length > 0) {
         setSelectedDays(initialConfig.selectedDays);
@@ -114,14 +123,6 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
       if (initialConfig.targetScope) {
         setTargetScope(initialConfig.targetScope);
       }
-    } else {
-      OmranDataService.loadPlanScheduleConfig(activeComplex?.id).then(cfg => {
-        if (!isMounted || !cfg) return;
-        if (cfg.selectedDays && cfg.selectedDays.length > 0) setSelectedDays(cfg.selectedDays);
-        if (typeof cfg.dailyHours === 'number' && cfg.dailyHours > 0) setDailyHours(cfg.dailyHours);
-        if (cfg.strategyPreset) setStrategyPreset(cfg.strategyPreset);
-        if (cfg.targetScope) setTargetScope(cfg.targetScope);
-      });
     }
 
     const unsub = OmranDataService.subscribePlanScheduleConfig(cfg => {
@@ -154,12 +155,15 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
     };
     try {
       await OmranDataService.savePlanScheduleConfig(cfg, activeComplex?.id);
-      if (activeComplex && onUpdateComplex) {
+      if (activeComplex) {
         const updatedComplex: QuranComplex = {
           ...activeComplex,
           planScheduleConfig: cfg
         };
-        await onUpdateComplex(updatedComplex);
+        await OmranDataService.saveComplex(updatedComplex);
+        if (onUpdateComplex) {
+          await onUpdateComplex(updatedComplex);
+        }
       }
     } catch (e) {
       console.warn('Notice saving plan schedule configuration:', e);
@@ -344,13 +348,18 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
 
         updatedList.push(updatedStudent);
 
+        // Instant Progressive Cloud Save: Save every student directly to Cloud Firestore as it processes
+        await OmranDataService.saveStudent(updatedStudent).catch(e => {
+          console.warn(`Notice saving student ${student.name} plan to cloud:`, e);
+        });
+
         // Small delay for UI smoothness
         if (targetStudents.length < 20) {
           await new Promise(r => setTimeout(r, 40));
         }
       }
 
-      // 3. Batch save all updated students directly to Cloud Firestore & Local Dual Cache
+      // 3. Batch save all updated students directly to Cloud Firestore across all active and central databases
       await OmranDataService.saveStudentsBatch(updatedList);
 
       // 4. Update memory / state in parent component

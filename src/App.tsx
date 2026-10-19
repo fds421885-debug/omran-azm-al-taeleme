@@ -567,8 +567,15 @@ export function App() {
       setLeaderboardSettings(loadedLeaderboard);
       setGoogleAuthConfig(loadedGoogleOAuth);
       setRecordings(loadedRecordings);
-      setRecordingsConfig(loadedRecordingsConfig);
-      setComplexes(loadedComplexes);
+      // Enrich complexes with cloud-persisted planScheduleConfig if not directly attached
+      const enrichedComplexes = await Promise.all(
+        loadedComplexes.map(async c => {
+          if (c.planScheduleConfig?.selectedDays?.length) return c;
+          const cfg = await OmranDataService.loadPlanScheduleConfig(c.id).catch(() => null);
+          return cfg ? { ...c, planScheduleConfig: cfg } : c;
+        })
+      );
+      setComplexes(enrichedComplexes);
       setCertificates(loadedCertificates);
       setListeningLogs(loadedListeningLogs);
       setLibraryDocs(loadedLibraryDocs);
@@ -1119,13 +1126,19 @@ export function App() {
         const currentMem = currentPlan?.memorizedJuzCount || (student.currentSurah ? Math.max(1, Math.round((114 - student.currentSurah) / 3.8)) : 1);
         const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
 
+        const scheduleCfg = activeComplex?.planScheduleConfig;
+        const weeklyDaysCount = scheduleCfg?.selectedDays?.length || currentPlan?.weeklyDaysCount || 5;
+        const dailyHoursCount = scheduleCfg?.dailyHours || currentPlan?.dailyHoursCount || 2;
+        const startDate = new Date();
+
         const timeline = calculateRealisticKhatmTimeline({
           memorizedJuz: currentMem,
           consolidatedJuz: currentCons,
           dailyNewPages: currentPlan?.dailyNewPages || 1,
           dailyReviewPages: currentPlan?.dailyReviewPages || 5,
-          weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
-          dailyHoursCount: currentPlan?.dailyHoursCount || 2
+          weeklyDaysCount,
+          dailyHoursCount,
+          startDate
         });
 
         const updatedStudent: Student = {
@@ -1965,13 +1978,19 @@ export function App() {
       memorizationPlan: studentData.memorizationPlan || (() => {
         const memJuz = studentData.memorizedJuzList?.length || 1;
         const consJuz = Math.max(0, memJuz - 2);
+        const scheduleCfg = activeComplex?.planScheduleConfig;
+        const weeklyDaysCount = scheduleCfg?.selectedDays?.length || 5;
+        const dailyHoursCount = scheduleCfg?.dailyHours || 2;
+        const startDate = new Date();
+
         const timeline = calculateRealisticKhatmTimeline({
           memorizedJuz: memJuz,
           consolidatedJuz: consJuz,
           dailyNewPages: studentData.dailyNewTarget?.includes('وجهين') ? 2 : 1,
           dailyReviewPages: 5,
-          weeklyDaysCount: 5,
-          dailyHoursCount: 2
+          weeklyDaysCount,
+          dailyHoursCount,
+          startDate
         });
         return {
           dailyNewPages: 1,

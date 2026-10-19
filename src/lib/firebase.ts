@@ -5706,6 +5706,17 @@ export class OmranDataService {
           return data;
         }
       }
+      // Fallback: Check if active complex document has planScheduleConfig
+      if (complexId && complexId !== 'default') {
+        const complexSnap = await safeGetDoc(doc(this.getActiveDb(), 'complexes', complexId));
+        if (complexSnap && complexSnap.exists()) {
+          const cData = complexSnap.data() as QuranComplex;
+          if (cData?.planScheduleConfig) {
+            setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, cData.planScheduleConfig);
+            return cData.planScheduleConfig;
+          }
+        }
+      }
     } catch (e) {
       console.warn('[OmranDataService] Notice loading plan schedule config from cloud:', e);
     }
@@ -5726,18 +5737,36 @@ export class OmranDataService {
     setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, clean);
     broadcastDataUpdate('plan_schedule', clean);
 
+    // Also update complex in local cache if complexId provided
+    if (complexId && complexId !== 'default') {
+      const complexes = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
+      const idx = complexes.findIndex(c => c.id === complexId);
+      if (idx >= 0) {
+        complexes[idx] = { ...complexes[idx], planScheduleConfig: clean };
+        setLocalCache(OMRAN_CACHE_KEYS.COMPLEXES, complexes);
+      }
+    }
+
     const dbs = [this.getActiveDb()];
     if (this.getCentralDb() !== this.getActiveDb()) {
       dbs.push(this.getCentralDb());
     }
 
     try {
-      await Promise.allSettled(
-        dbs.flatMap(targetDb => [
-          setDoc(doc(targetDb, 'settings', docKey), clean, { merge: true }),
-          setDoc(doc(targetDb, 'settings', 'plan_schedule_default'), clean, { merge: true }),
-        ])
-      );
+      const writes: Promise<any>[] = dbs.flatMap(targetDb => [
+        setDoc(doc(targetDb, 'settings', docKey), clean, { merge: true }),
+        setDoc(doc(targetDb, 'settings', 'plan_schedule_default'), clean, { merge: true }),
+      ]);
+
+      if (complexId && complexId !== 'default') {
+        dbs.forEach(targetDb => {
+          writes.push(
+            setDoc(doc(targetDb, 'complexes', complexId), { planScheduleConfig: clean }, { merge: true })
+          );
+        });
+      }
+
+      await Promise.allSettled(writes);
     } catch (e) {
       console.warn('[OmranDataService] Plan schedule saved locally, cloud sync notice:', e);
     }

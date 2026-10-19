@@ -2071,17 +2071,23 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 <button
                   type="button"
                   onClick={async () => {
+                    const planCfg = activeComplex?.planScheduleConfig;
+                    const weeklyDays = planCfg?.selectedDays?.length || 5;
+                    const dailyHours = planCfg?.dailyHours || 2;
+                    const todayDate = new Date();
+
                     const timeline = calculateRealisticKhatmTimeline({
                       memorizedJuz: studentMemJuz,
                       consolidatedJuz: Math.max(0, studentMemJuz - 2),
-                      dailyNewPages: 1,
-                      dailyReviewPages: 5,
-                      weeklyDaysCount: 5,
-                      dailyHoursCount: 2
+                      dailyNewPages: viewingPlanStudent.memorizationPlan?.dailyNewPages || 1,
+                      dailyReviewPages: viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5,
+                      weeklyDaysCount: weeklyDays,
+                      dailyHoursCount: dailyHours,
+                      startDate: todayDate
                     });
                     const updatedPlan: StudentMemorizationPlan = {
-                      dailyNewPages: 1,
-                      dailyReviewPages: 5,
+                      dailyNewPages: viewingPlanStudent.memorizationPlan?.dailyNewPages || 1,
+                      dailyReviewPages: viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5,
                       consolidatedJuzCount: Math.max(0, studentMemJuz - 2),
                       memorizedJuzCount: studentMemJuz,
                       targetJuz: 30,
@@ -2089,17 +2095,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       estimatedDaysRemaining: timeline.estimatedDaysRemaining,
                       progressPercentage: timeline.progressPercentage,
                       status: 'on_track',
-                      weeklyDaysCount: 5,
-                      dailyHoursCount: 2,
+                      weeklyDaysCount: weeklyDays,
+                      dailyHoursCount: dailyHours,
                       tathbeetStopsCount: timeline.tathbeetStopsCount,
                       milestones: timeline.milestones,
                       nextDayAssignment: {
                         newMemorization: `سورة ${viewingPlanStudent.currentSurahName || 'النبأ'}: وجه جديد`,
-                        review: `مراجعة 5 أوجه من الماضي مع التثبيت`,
+                        review: `مراجعة ${viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5} أوجه من الماضي مع التثبيت`,
                         action: 'advance_page',
                         reason: 'تحديث منهجي بالذكاء الاصطناعي'
                       },
-                      aiNotes: timeline.pedagogicalNote,
+                      aiNotes: `تم الضبط بواسطة المشرف بناءً على جدول (${weeklyDays} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من (${timeline.calculatedFromDate}). ${timeline.pedagogicalNote}`,
                       lastUpdated: new Date().toISOString()
                     };
                     const updatedStudent: Student = {

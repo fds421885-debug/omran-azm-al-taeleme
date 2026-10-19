@@ -50,7 +50,9 @@ import {
   Headphones,
   UserPlus,
   Moon,
-  Lightbulb
+  Lightbulb,
+  Sliders,
+  BrainCircuit
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { jsPDF } from 'jspdf';
@@ -295,6 +297,34 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   const [selectedCoachingStudent, setSelectedCoachingStudent] = useState<Student | null>(null);
   const [isStudentPickerOpen, setIsStudentPickerOpen] = useState<boolean>(false);
   const [studentCoachingSearch, setStudentCoachingSearch] = useState<string>('');
+
+  // Real-time Plan Schedule Configuration from Cloud Firestore
+  const [livePlanScheduleConfig, setLivePlanScheduleConfig] = useState<any>(
+    activeComplex?.planScheduleConfig || null
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    if (activeComplex?.planScheduleConfig) {
+      setLivePlanScheduleConfig(activeComplex.planScheduleConfig);
+    }
+    OmranDataService.loadPlanScheduleConfig(activeComplex?.id).then(cfg => {
+      if (isMounted && cfg) {
+        setLivePlanScheduleConfig(cfg);
+      }
+    });
+
+    const unsub = OmranDataService.subscribePlanScheduleConfig(cfg => {
+      if (isMounted && cfg) {
+        setLivePlanScheduleConfig(cfg);
+      }
+    }, activeComplex?.id);
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [activeComplex?.id, activeComplex?.planScheduleConfig]);
 
   // Complex Theme Colors strictly mapped to platform theme
   const theme = activeComplex?.theme;
@@ -1251,7 +1281,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             planScheduleConfig: c.planScheduleConfig,
           })),
           metrics: platformMetrics,
-          planScheduleConfig: activeComplex?.planScheduleConfig || (() => {
+          planScheduleConfig: livePlanScheduleConfig || activeComplex?.planScheduleConfig || (() => {
             try {
               const docKey = activeComplex?.id ? `plan_schedule_${activeComplex.id.replace(/[^a-zA-Z0-9_-]/g, '_')}` : 'plan_schedule_default';
               const raw = localStorage.getItem(`omran_plan_schedule_data_${docKey}`) || localStorage.getItem('omran_plan_schedule_data_plan_schedule_default');
@@ -1269,6 +1299,13 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             dayName: new Date().toLocaleDateString('ar-SA', { weekday: 'long' }),
             formattedArabic: new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
             timeArabic: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+            hijriEstimate: (() => {
+              try {
+                return new Date().toLocaleDateString('ar-SA-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' });
+              } catch {
+                return '';
+              }
+            })(),
           },
         },
       };
@@ -6716,6 +6753,75 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                               <span>فتح تفاصيل الخطة في قسم ضبط الخطط ومواعيد الختم</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* ---------------------------------------------------- */}
+                        {/* 15. Plan Settings & Khatm Configuration Card         */}
+                        {/* ---------------------------------------------------- */}
+                        {msg.action?.type === 'SHOW_PLAN_SETTINGS' && msg.action.data && (
+                          <div
+                            style={{
+                              backgroundColor: `${primaryColor}FA`,
+                              borderColor: accentColor,
+                            }}
+                            className="mt-3 p-4 rounded-2xl border text-xs text-white space-y-3.5 shadow-2xl animate-fade-in text-right"
+                            dir="rtl"
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
+                                  <BrainCircuit className="w-4 h-4 text-amber-300" />
+                                </div>
+                                <div className="truncate">
+                                  <span className="font-black text-amber-300 text-sm block truncate">
+                                    ضبط الخطة ومواعيد الختم المعتمدة
+                                  </span>
+                                  <span className="text-[10px] text-slate-300 truncate block">
+                                    {msg.action.data.complexName || 'المجمع القرآني'} • محفوظة في السحابة
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black border border-emerald-500/30 shrink-0">
+                                سحابي معتمد 🎯
+                              </span>
+                            </div>
+
+                            {/* Settings Grid */}
+                            <div className="grid grid-cols-2 gap-2 text-center">
+                              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                                <span className="text-[10px] text-slate-400 font-bold block">أيام الحلقة أسبوعياً</span>
+                                <span className="text-xs font-black text-white">{msg.action.data.daysLabels || 'الأحد إلى الخميس'}</span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                                <span className="text-[10px] text-slate-400 font-bold block">مدة جلسة التسميع</span>
+                                <span className="text-xs font-black text-amber-300">{msg.action.data.dailyHours} ساعة يومياً</span>
+                              </div>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-400/30 space-y-1">
+                              <span className="text-[10px] text-emerald-300 font-bold block">استراتيجية التثبيت والإتقان:</span>
+                              <div className="text-xs font-black text-white">{msg.action.data.strategyLabel}</div>
+                            </div>
+
+                            {/* Navigation Shortcut to halaqah_plans */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (onNavigateTab) {
+                                  onNavigateTab('halaqah_plans');
+                                  setIsOpen(false);
+                                }
+                              }}
+                              className="w-full py-2.5 px-4 rounded-xl font-black text-xs cursor-pointer shadow transition-all flex items-center justify-center gap-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: accentColor,
+                                color: '#022c22'
+                              }}
+                            >
+                              <Sliders className="w-3.5 h-3.5" />
+                              <span>فتح وتعديل شاشة ضبط الخطة ومواعيد الختم</span>
                             </button>
                           </div>
                         )}
