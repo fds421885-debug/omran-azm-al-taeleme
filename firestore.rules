@@ -9,7 +9,7 @@ service cloud.firestore {
 
     // Hardened Primitives
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function incoming() {
@@ -51,9 +51,7 @@ service cloud.firestore {
     match /halaqahs/{halaqahId} {
       allow read: if true;
       allow create, update: if isValidId(halaqahId)
-        && incoming().name is string
-        && incoming().name.size() > 0
-        && incoming().name.size() <= 200;
+        && (incoming().name is string || (resource != null && resource.data.name is string));
       allow delete: if isValidId(halaqahId);
     }
 
@@ -61,9 +59,7 @@ service cloud.firestore {
     match /students/{studentId} {
       allow read: if true;
       allow create, update: if isValidId(studentId)
-        && incoming().name is string
-        && incoming().name.size() > 0
-        && incoming().name.size() <= 200;
+        && (incoming().name is string || (resource != null && resource.data.name is string));
       allow delete: if isValidId(studentId);
     }
 
