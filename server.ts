@@ -438,36 +438,59 @@ app.post("/api/mail/send-registration", async (req, res) => {
     const activeHost = stored.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
     const activePort = Number(stored.smtpPort || process.env.SMTP_PORT || (activeHost === "smtp.gmail.com" ? 465 : 587));
 
-    const transporter = nodemailer.createTransport(
-      activeHost !== "smtp.gmail.com"
-        ? {
-            host: activeHost,
-            port: activePort,
-            secure: activePort === 465,
-            auth: { user: effectiveUser, pass: effectivePass }
-          }
-        : {
-            host: "smtp.gmail.com",
-            port: 465,
-            secure: true,
-            auth: { user: effectiveUser, pass: effectivePass }
-          }
-    );
+    let info: any = null;
+    try {
+      const transporter = nodemailer.createTransport(
+        activeHost !== "smtp.gmail.com"
+          ? {
+              host: activeHost,
+              port: activePort,
+              secure: activePort === 465,
+              auth: { user: effectiveUser, pass: effectivePass }
+            }
+          : {
+              host: "smtp.gmail.com",
+              port: 465,
+              secure: true,
+              auth: { user: effectiveUser, pass: effectivePass }
+            }
+      );
 
-    const info = await transporter.sendMail({
-      from: `"${cleanFromName}" <${cleanFrom}>`,
-      to: cleanTo,
-      subject: finalSubject,
-      html: html || text,
-      text: text || undefined
-    });
+      info = await transporter.sendMail({
+        from: `"${cleanFromName}" <${cleanFrom}>`,
+        to: cleanTo,
+        subject: finalSubject,
+        html: html || text,
+        text: text || undefined
+      });
+    } catch (primaryErr: any) {
+      if (activeHost === "smtp.gmail.com") {
+        console.warn("[MailService] Primary 465 failed, trying 587 STARTTLS:", primaryErr?.message);
+        const fallbackTransporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false,
+          auth: { user: effectiveUser, pass: effectivePass }
+        });
 
-    console.log(`[MailService] Registration email sent successfully to ${cleanTo} (Tracking: ${trackingCode}, MsgId: ${info.messageId})`);
+        info = await fallbackTransporter.sendMail({
+          from: `"${cleanFromName}" <${cleanFrom}>`,
+          to: cleanTo,
+          subject: finalSubject,
+          html: html || text,
+          text: text || undefined
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    console.log(`[MailService] Registration email sent successfully to ${cleanTo} (Tracking: ${trackingCode}, MsgId: ${info?.messageId})`);
 
     return res.json({
       success: true,
       provider: "smtp",
-      messageId: info.messageId,
+      messageId: info?.messageId,
       trackingCode,
       verificationUrl,
       studentName

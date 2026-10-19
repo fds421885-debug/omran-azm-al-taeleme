@@ -41,7 +41,9 @@ import {
   List,
   RotateCcw,
   Lock,
-  Timer
+  Timer,
+  Mail,
+  Key
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -63,6 +65,7 @@ import {
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
+import { QuickMailSetupModal } from './QuickMailSetupModal';
 import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
 import { calculatePortionFromPace } from '../../data/quranPagesData';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
@@ -236,6 +239,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPreFlightOpen, setIsPreFlightOpen] = useState(false);
   const [pendingPreFlightAction, setPendingPreFlightAction] = useState<(() => void) | null>(null);
+  const [isMailModalOpen, setIsMailModalOpen] = useState(false);
 
   // Compute direct registration link for this complex
   const portalUrl = typeof window !== 'undefined'
@@ -1034,6 +1038,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 {pendingCount} جديدة
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsMailModalOpen(true)}
+            className="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer border-2 border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 active:translate-y-0.5 shrink-0"
+            title="تهيئة خدمة البريد الإلكتروني الفعلي (SMTP) للمجمع"
+          >
+            <Mail className="w-4 h-4 text-amber-300" />
+            <span className="hidden sm:inline">خدمة البريد (SMTP)</span>
+            <span className="sm:hidden">البريد</span>
           </button>
         </div>
 
@@ -3095,6 +3110,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             }
           }}
           onSaveComplex={onUpdateComplex}
+        />
+        {/* Quick Mail Setup Modal for Supervisor */}
+        <QuickMailSetupModal
+          isOpen={isMailModalOpen}
+          onClose={() => setIsMailModalOpen(false)}
         />
       </div>
     </div>
