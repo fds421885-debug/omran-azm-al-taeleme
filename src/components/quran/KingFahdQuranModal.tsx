@@ -149,7 +149,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     } catch {}
 
     const sInfo = getSurahInfo(surahNumber);
-    setLastErrorNotification(`⚠️ تم رصد خطأ تسميع بالضغط المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setLastErrorNotification(`⚡ تم رصد خطأ تسميع بالنقر المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
     setTimeout(() => setLastErrorNotification(null), 3500);
   };
 

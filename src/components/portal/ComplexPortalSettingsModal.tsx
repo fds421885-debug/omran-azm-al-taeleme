@@ -63,6 +63,8 @@ import {
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
+import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+import { toArabicNumerals } from '../quran/KingFahdQuranModal';
 
 interface ComplexPortalSettingsModalProps {
   isOpen: boolean;
@@ -225,6 +227,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [appToReject, setAppToReject] = useState<StudentRegistrationApplication | null>(null);
   const [rejectionReason, setRejectionReason] = useState('نعتذر، اكتملت المقاعد المتاحة في هذه الفترة.');
   const [appDetailsToView, setAppDetailsToView] = useState<StudentRegistrationApplication | null>(null);
+  const [appPlanToView, setAppPlanToView] = useState<StudentRegistrationApplication | null>(null);
   const [appToDelete, setAppToDelete] = useState<StudentRegistrationApplication | null>(null);
   const [isProcessingApp, setIsProcessingApp] = useState(false);
 
@@ -583,6 +586,194 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       console.error('Error deleting application:', e);
     } finally {
       setIsProcessingApp(false);
+    }
+  };
+
+  // Accept a single application as an extra student beyond capacity
+  const handleAcceptSingleAsExtra = async (app: StudentRegistrationApplication, specificHalaqahId?: string) => {
+    setIsBulkProcessing(true);
+    setBulkProgressText(`جارٍ قبول الطالب (${app.studentName}) كطالب إضافي وتوليد حسابه وإرسال بريد القبول...`);
+    try {
+      const hId = specificHalaqahId || app.preferredHalaqahId || halaqahs[0]?.id || '';
+      const targetHalaqah = halaqahs.find(h => h.id === hId) || halaqahs[0];
+      const newStudentId = `std_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+      const maxJuz = app.memorizedJuzList && app.memorizedJuzList.length > 0
+        ? Math.max(...app.memorizedJuzList)
+        : 30;
+
+      const newStudent: Student = {
+        id: newStudentId,
+        name: app.studentName,
+        password: '123',
+        phone: app.parentPhone || '0500000000',
+        age: app.age || 10,
+        parentName: app.parentName || 'ولي الأمر',
+        parentPhones: [app.parentPhone].filter(Boolean),
+        parentPhone: app.parentPhone,
+        currentSurah: maxJuz === 30 ? 78 : 2,
+        currentSurahName: maxJuz === 30 ? 'النبأ' : 'البقرة',
+        currentAyah: 1,
+        dailyNewTarget: 'نصف وجه',
+        dailyReviewTarget: 'ربع جزء',
+        level: 'متوسط',
+        isExtraStudent: true,
+        complexId: complex.id,
+        complexName: complex.name,
+        halaqahId: targetHalaqah?.id,
+        halaqahName: targetHalaqah?.name,
+        notes: `تم قبوله كطالب إضافي زائد عن السعة الاستيعابية • الأجزاء المحفوظة: ${app.memorizedJuzList?.join(', ') || 'لا يوجد'}`,
+        createdAt: new Date().toISOString()
+      };
+
+      await OmranDataService.saveStudent(newStudent);
+      if (onStudentCreatedFromApp) onStudentCreatedFromApp(newStudent);
+
+      const updatedApp: StudentRegistrationApplication = {
+        ...app,
+        status: 'accepted',
+        isExtraStudent: true,
+        assignedHalaqahId: targetHalaqah?.id,
+        assignedHalaqahName: targetHalaqah?.name,
+        createdStudentId: newStudentId,
+        studentAcceptanceStatus: 'pending_student_confirmation',
+        reviewedAt: new Date().toISOString(),
+        reviewedByName: `${complex.supervisorTeacherName || 'مشرف المجمع'} (قبول إضافي)`
+      };
+
+      await OmranDataService.saveRegistrationApplication(updatedApp);
+      setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+
+      if (updatedApp.email) {
+        const acceptedEmail = buildApplicationAcceptedEmail(
+          complex,
+          updatedApp,
+          targetHalaqah?.name || 'الحلقة القرآنية',
+          portalUrl
+        );
+        await sendRealPortalEmail(acceptedEmail).catch(() => {});
+      }
+    } catch (e) {
+      console.error('Error accepting single as extra:', e);
+    } finally {
+      setIsBulkProcessing(false);
+      setBulkProgressText('');
+    }
+  };
+
+  // Bulk accept selected applications as extra students
+  const handleBulkAcceptSelectedAsExtra = async () => {
+    if (selectedAppIds.length === 0) return;
+    setIsBulkProcessing(true);
+    const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
+    const total = targetApps.length;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const app = targetApps[i];
+        setBulkProgressText(`جارٍ قبول وتسكين الطالب (${app.studentName}) كطالب إضافي وإرسال بريد القبول (${i + 1} من ${total})...`);
+
+        const hId = app.preferredHalaqahId || halaqahs[0]?.id || '';
+        const targetHalaqah = halaqahs.find(h => h.id === hId) || halaqahs[0];
+        const newStudentId = `std_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+        const maxJuz = app.memorizedJuzList && app.memorizedJuzList.length > 0 ? Math.max(...app.memorizedJuzList) : 30;
+
+        const newStudent: Student = {
+          id: newStudentId,
+          name: app.studentName,
+          password: '123',
+          phone: app.parentPhone || '0500000000',
+          age: app.age || 10,
+          parentName: app.parentName || 'ولي الأمر',
+          parentPhones: [app.parentPhone].filter(Boolean),
+          parentPhone: app.parentPhone,
+          currentSurah: maxJuz === 30 ? 78 : 2,
+          currentSurahName: maxJuz === 30 ? 'النبأ' : 'البقرة',
+          currentAyah: 1,
+          dailyNewTarget: 'نصف وجه',
+          dailyReviewTarget: 'ربع جزء',
+          level: 'متوسط',
+          isExtraStudent: true,
+          complexId: complex.id,
+          complexName: complex.name,
+          halaqahId: targetHalaqah?.id,
+          halaqahName: targetHalaqah?.name,
+          notes: `تم قبوله كطالب إضافي زائد عن السعة الاستيعابية • الأجزاء المحفوظة: ${app.memorizedJuzList?.join(', ') || 'لا يوجد'}`,
+          createdAt: new Date().toISOString()
+        };
+
+        await OmranDataService.saveStudent(newStudent);
+        if (onStudentCreatedFromApp) onStudentCreatedFromApp(newStudent);
+
+        const updatedApp: StudentRegistrationApplication = {
+          ...app,
+          status: 'accepted',
+          isExtraStudent: true,
+          assignedHalaqahId: targetHalaqah?.id,
+          assignedHalaqahName: targetHalaqah?.name,
+          createdStudentId: newStudentId,
+          studentAcceptanceStatus: 'pending_student_confirmation',
+          reviewedAt: new Date().toISOString(),
+          reviewedByName: `${complex.supervisorTeacherName || 'مشرف المجمع'} (اعتماد إضافي جماعي)`
+        };
+
+        await OmranDataService.saveRegistrationApplication(updatedApp);
+        setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+
+        if (updatedApp.email) {
+          const acceptedEmail = buildApplicationAcceptedEmail(
+            complex,
+            updatedApp,
+            targetHalaqah?.name || 'الحلقة القرآنية',
+            portalUrl
+          );
+          await sendRealPortalEmail(acceptedEmail).catch(() => {});
+        }
+      }
+
+      setSelectedAppIds([]);
+      alert(`✨ تم قبول وتسكين (${total}) طلاب بنجاح كطلاب إضافيين، وإرسال بريد القبول والتسجيل لكل طالب.`);
+    } catch (e) {
+      console.error('Bulk accept error:', e);
+    } finally {
+      setIsBulkProcessing(false);
+      setBulkProgressText('');
+    }
+  };
+
+  // Bulk reject selected applications
+  const handleBulkRejectSelected = async () => {
+    if (selectedAppIds.length === 0) return;
+    if (!confirm(`هل أنت متأكد من رغبتك في الاعتذار لـ (${selectedAppIds.length}) طلبات دفعة واحدة؟`)) return;
+
+    setIsBulkProcessing(true);
+    const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
+    const total = targetApps.length;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const app = targetApps[i];
+        setBulkProgressText(`جارٍ تحديث وإرسال إشعار الاعتذار للطلب (${i + 1} من ${total})...`);
+
+        const updatedApp: StudentRegistrationApplication = {
+          ...app,
+          status: 'rejected',
+          rejectionReason: 'نعتذر عن عدم توفر شاغر في الفترة الحالية لاكتمال السعة الاستيعابية.',
+          reviewedAt: new Date().toISOString(),
+          reviewedByName: complex.supervisorTeacherName || 'مشرف المجمع'
+        };
+
+        await OmranDataService.saveRegistrationApplication(updatedApp);
+        setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+      }
+
+      setSelectedAppIds([]);
+      alert(`تم الاعتذار لـ (${total}) طلبات وتحديث حالتها بنجاح.`);
+    } catch (e) {
+      console.error('Bulk reject error:', e);
+    } finally {
+      setIsBulkProcessing(false);
+      setBulkProgressText('');
     }
   };
 
@@ -1743,20 +1934,86 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {filteredApps.map(app => (
+                  {/* Bulk Selection Bar for Waiting List & Applications */}
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={filteredApps.length > 0 && selectedAppIds.length === filteredApps.length}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedAppIds(filteredApps.map(a => a.id));
+                            } else {
+                              setSelectedAppIds([]);
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-emerald-500 cursor-pointer accent-emerald-500"
+                        />
+                        <span>تحديد الكل ({filteredApps.length})</span>
+                      </label>
+                      {selectedAppIds.length > 0 && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 font-bold">
+                          تم تحديد {selectedAppIds.length} طلب
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedAppIds.length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={handleBulkAcceptSelectedAsExtra}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#58cc02] text-white font-black text-xs flex items-center gap-1.5 shadow-md hover:brightness-110 cursor-pointer"
+                          title="قبول جميع الطلاب المحددين كطلاب إضافيين وإرسال بريد القبول لكل شخص"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>قبول الجميع كطلاب إضافيين ({selectedAppIds.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleBulkRejectSelected}
+                          className="px-3.5 py-1.5 rounded-xl bg-red-600/30 text-red-300 border border-red-500/40 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-red-600/40 cursor-pointer"
+                          title="الاعتذار لجميع الطلبات المحددة"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span>اعتذار للمحدد ({selectedAppIds.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAppIds([])}
+                          className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-white text-xs cursor-pointer"
+                        >
+                          إلغاء التحديد
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {filteredApps.map(app => {
+                    const isSelected = selectedAppIds.includes(app.id);
+                    return (
                     <div
                       key={app.id}
-                      className="rounded-2xl border-2 border-b-4 p-4.5 space-y-3 shadow-md transition-all"
+                      className={`rounded-2xl border-2 border-b-4 p-4.5 space-y-3 shadow-md transition-all ${
+                        isSelected ? 'ring-2 ring-amber-400' : ''
+                      }`}
                       style={{
                         backgroundColor: theme.backgroundColor || '#131f24',
                         borderColor:
-                          app.status === 'accepted'
+                          isSelected
+                            ? '#fbbf24'
+                            : app.status === 'accepted'
                             ? '#58cc02'
                             : app.status === 'rejected'
                             ? '#ff4b4b'
                             : themeCardBorder,
                         borderBottomColor:
-                          app.status === 'accepted'
+                          isSelected
+                            ? '#d97706'
+                            : app.status === 'accepted'
                             ? '#46a302'
                             : app.status === 'rejected'
                             ? '#ea2b2b'
@@ -1764,10 +2021,26 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       }}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="space-y-1">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              setSelectedAppIds(prev =>
+                                prev.includes(app.id) ? prev.filter(id => id !== app.id) : [...prev, app.id]
+                              );
+                            }}
+                            className="mt-1 w-4 h-4 rounded text-emerald-500 cursor-pointer accent-emerald-500 shrink-0"
+                          />
+                          <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="text-sm sm:text-base font-black text-white">{app.studentName}</h4>
                             <span className="text-[11px] font-bold text-slate-300">({app.age} سنة)</span>
+                            {app.isExtraStudent && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                                طالب إضافي
+                              </span>
+                            )}
                             <span
                               className="text-[10px] px-2 py-0.5 rounded-lg border font-mono font-black"
                               style={{
@@ -1799,11 +2072,22 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                             <span>الحلقة المطلوبة: {app.preferredHalaqahName || 'توجيه تلقائي'}</span>
                           </div>
                         </div>
+                        </div>
 
                         {/* Status Label & Action Buttons */}
                         <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
                           {app.status === 'pending' ? (
                             <>
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptSingleAsExtra(app)}
+                                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 active:translate-y-0.5 shadow-sm cursor-pointer flex items-center gap-1.5"
+                                title="قبول الطالب فوراً كطالب إضافي زائد عن السعة الاستيعابية وإرسال بريد القبول"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>قبول كطالب إضافي</span>
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1813,7 +2097,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                 className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black bg-[#58cc02] text-white border-[#58cc02] active:translate-y-0.5 shadow-sm hover:brightness-110 cursor-pointer flex items-center gap-1"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>قبول واعتماد</span>
+                                <span>قبول وتحديد حلقة</span>
                               </button>
 
                               <button
@@ -1878,6 +2162,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               </button>
                             </div>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => setAppPlanToView(app)}
+                            className="px-2.5 py-1.5 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                            title="عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم"
+                          >
+                            <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                            <span>عرض الخطة</span>
+                          </button>
 
                           <button
                             type="button"
@@ -1946,9 +2240,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         </p>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
+            )}
             </div>
           )}
         </div>
@@ -2308,6 +2603,22 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 )}
               </div>
 
+              {/* View Full Plan Button */}
+              <div className="pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = appDetailsToView;
+                    setAppDetailsToView(null);
+                    setAppPlanToView(target);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-2xl border-2 border-b-4 bg-amber-400/20 text-amber-300 border-amber-400/40 text-xs font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-amber-400/30 shadow-md active:translate-y-0.5"
+                >
+                  <BookOpen className="w-4 h-4 text-amber-400" />
+                  <span>عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم</span>
+                </button>
+              </div>
+
               {/* Action Buttons inside Details */}
               <div className="flex items-center gap-2 pt-2 border-t border-white/10">
                 {appDetailsToView.status === 'pending' ? (
@@ -2560,7 +2871,148 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               </div>
             </div>
           </div>
-        )}
+        {/* Plan Dialog for Student Registration Application */}
+        {appPlanToView && (() => {
+          const memJuz = appPlanToView.memorizedJuzList?.length || 1;
+          const consJuz = Math.max(0, memJuz - 2);
+          const timeline = calculateRealisticKhatmTimeline({
+            memorizedJuz: memJuz,
+            consolidatedJuz: consJuz,
+            dailyNewPages: 1,
+            dailyReviewPages: 5,
+            weeklyDaysCount: 5,
+            dailyHoursCount: 2
+          });
+
+          return (
+            <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+              <div
+                className="w-full max-w-xl rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-5 shadow-2xl my-auto animate-fadeIn text-right"
+                style={{
+                  backgroundColor: themeCard,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow
+                }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: themeCardBorder }}>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">
+                        الخطة القرآنية المنهجية للطالب: {appPlanToView.studentName}
+                      </h3>
+                      <p className="text-xs text-slate-300 font-bold">
+                        {appPlanToView.assignedHalaqahName ? `الحلقة المعتمدة: ${appPlanToView.assignedHalaqahName}` : `الحلقة المرغوبة: ${appPlanToView.preferredHalaqahName || 'توجيه المشرف'}`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAppPlanToView(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="space-y-4 max-h-[68vh] overflow-y-auto pr-1 text-xs">
+                  {/* Target Khatm Card */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-[#022c22] border-2 border-amber-400/40 space-y-2.5 shadow-md">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-[11px] font-black text-amber-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>موعد الختم المحسوب بالذكاء الاصطناعي:</span>
+                      </span>
+                      <span className="text-xs font-mono font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                        متبقي قرابة {toArabicNumerals(timeline.estimatedDaysRemaining)} يوماً
+                      </span>
+                    </div>
+                    <div className="text-xl sm:text-2xl font-black text-white font-heading">
+                      {timeline.targetCompletionDate}
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-[11px] text-[#86efac] font-bold">
+                        <span>نسبة الإنجاز نحو الختمة (30 جزء):</span>
+                        <span className="font-mono font-black text-amber-300">{timeline.progressPercentage}%</span>
+                      </div>
+                      <div className="w-full h-3 rounded-full bg-black/40 border border-[#065f46] overflow-hidden p-0.5">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-500"
+                          style={{ width: `${Math.min(100, Math.max(5, timeline.progressPercentage))}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pedagogical Note */}
+                  <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-white/10 space-y-1.5">
+                    <span className="text-[11px] font-black text-amber-300 block">
+                      خارطة الطريق وقاعدة التثبيت المعتمدة:
+                    </span>
+                    <p className="text-slate-200 leading-relaxed text-xs font-bold">
+                      {timeline.pedagogicalNote}
+                    </p>
+                  </div>
+
+                  {/* Daily Assignment */}
+                  <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-white/10 space-y-2">
+                    <span className="text-[11px] font-black text-[#86efac] block">
+                      مقرر الورد اليومي والتثبيت المبرمج:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                        <span className="text-slate-400 font-bold block text-[10px]">الحفظ الجديد اليومي:</span>
+                        <span className="font-black text-amber-300">وجه واحد يومياً (مع المراجعة)</span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                        <span className="text-slate-400 font-bold block text-[10px]">المراجعة والتثبيت:</span>
+                        <span className="font-black text-emerald-300">5 أوجه يومياً من المحفوظ السابق</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Milestones */}
+                  {timeline.milestones && timeline.milestones.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-white/10 space-y-2">
+                      <span className="text-[11px] font-black text-white block">
+                        مراحل ووقفات التثبيت التراكمية ({timeline.tathbeetStopsCount} وقفات):
+                      </span>
+                      <div className="space-y-1.5">
+                        {timeline.milestones.map((m, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/5 text-xs">
+                            <span className="text-slate-200 font-bold">{m.label}</span>
+                            <span className="text-amber-300 font-mono font-black">{m.targetDate}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="flex justify-end pt-2 border-t" style={{ borderColor: themeCardBorder }}>
+                  <button
+                    type="button"
+                    onClick={() => setAppPlanToView(null)}
+                    className="py-2.5 px-6 rounded-xl font-black text-xs cursor-pointer shadow-md"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: accentTextColor
+                    }}
+                  >
+                    إغلاق الخطة
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Pre-Flight Checklist Modal Before Opening / Sharing Link */}
         <PortalPreFlightChecklistModal

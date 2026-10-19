@@ -251,6 +251,8 @@ export interface StudentRegistrationApplication {
   // الدور في قائمة الانتظار والمراجعة
   queueNumber?: number; // رقم ترتيب الطلب
   pendingAheadCount?: number; // كم طلب قبله في قائمة الانتظار
+  isWaitingList?: boolean; // هل الطلب مدرج في قائمة الانتظار بسبب امتلاء الحلقات
+  isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن الطاقة الاستيعابية
 
   // حالة تأكيد ودخول الطالب بعد القبول
   studentAcceptanceStatus?: StudentAcceptanceConfirmationStatus;
@@ -804,6 +806,7 @@ export interface Student {
   dailyNewTarget: string;
   dailyReviewTarget: string;
   level: StudentLevel;
+  isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن سعة الحلقة
   aiPlan?: StudentAIPlan;
   memorizationPlan?: StudentMemorizationPlan; // الخطة الذكية للتثبيت حتى الختم مع الحساب الزمني والأهداف
   mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المطول

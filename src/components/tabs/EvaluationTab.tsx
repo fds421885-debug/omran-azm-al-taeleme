@@ -355,7 +355,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
     const sInfo = getSurahInfo(surah);
     const surahName = sInfo?.name || `سورة ${surah}`;
-    const errorNote = `[رصد خطأ تسميع بالضغط المطول]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
+    const errorNote = `[رصد خطأ تسميع بالنقر المزدوج ⚡]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
 
     setTeacherNotes(prev => {
       if (!prev.includes(errorNote)) {
@@ -740,7 +740,23 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         const planAssignment = activeStudent.memorizationPlan?.nextDayAssignment;
         
         let loadedFromPlan = false;
-        if (aiAssignment?.newItem) {
+        if (planAssignment?.surahNumber) {
+          const sNum = planAssignment.surahNumber;
+          const toSNum = planAssignment.toSurahNumber || sNum;
+          const fAyah = planAssignment.fromAyah || 1;
+          const tAyah = planAssignment.toAyah || 10;
+
+          setTodayNewSurah(sNum);
+          setTodayNewFromAyah(fAyah);
+          setTodayNewToSurah(toSNum);
+          setTodayNewToAyah(tAyah);
+
+          const sInfo = getSurahInfo(sNum);
+          const toInfo = getSurahInfo(toSNum);
+          const loadedText = formatQuranPortion(sInfo.name, fAyah, tAyah, sInfo.numberOfAyahs, 'حفظ جديد', toInfo.name, toInfo.numberOfAyahs);
+          setAutoFilledNotice(`✨ تم تحميل ورد التسميع اليومي وفق الخطة المنهجية المعتمدة للطالب: ${loadedText}`);
+          loadedFromPlan = true;
+        } else if (aiAssignment?.newItem) {
           const sNum = aiAssignment.newItem.surahNumber || activeStudent.currentSurah || 78;
           const toSNum = aiAssignment.newItem.toSurahNumber || sNum;
           const fAyah = aiAssignment.newItem.fromAyah || activeStudent.currentAyah || 1;
@@ -760,6 +776,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           const toInfo = getSurahInfo(toSNum);
           const loadedText = formatQuranPortion(sInfo.name, fAyah, tAyah, sInfo.numberOfAyahs, 'حفظ جديد', toInfo.name, toInfo.numberOfAyahs);
           setAutoFilledNotice(`تم تحميل ورد التسميع اليومي مباشرة من الخطة القرآنية الذكية للطالب: ${loadedText}`);
+          loadedFromPlan = true;
+        } else if (activeStudent.memorizationPlan?.dailyNewPages) {
+          const sNum = activeStudent.currentSurah || 78;
+          const fAyah = activeStudent.currentAyah || 1;
+          const sInfo = getSurahInfo(sNum);
+          const pages = activeStudent.memorizationPlan.dailyNewPages;
+          const step = Math.max(4, Math.round(pages * 8));
+          const tAyah = Math.min(fAyah + step - 1, sInfo.numberOfAyahs);
+
+          setTodayNewSurah(sNum);
+          setTodayNewFromAyah(fAyah);
+          setTodayNewToSurah(sNum);
+          setTodayNewToAyah(tAyah);
+
+          const loadedText = formatQuranPortion(sInfo.name, fAyah, tAyah, sInfo.numberOfAyahs, 'حفظ جديد');
+          setAutoFilledNotice(`تم ضبط ورد اليوم وفق معدل الحفظ اليومي في خطة الطالب (${pages} وجه): ${loadedText}`);
           loadedFromPlan = true;
         }
 
@@ -2165,6 +2197,65 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     تاريخ التسميع: {selectedDate}
                   </span>
                 </div>
+
+                {/* Student Active Plan Overview & Quick Apply Button */}
+                {activeStudent && (activeStudent.memorizationPlan || activeStudent.aiPlan) && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-[#064e3b] to-amber-500/15 border border-amber-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-400/30">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-amber-300">الخطة القرآنية المنهجية المعتمدة:</span>
+                          {activeStudent.memorizationPlan?.targetCompletionDate && (
+                            <span className="text-white font-bold">
+                              الختم المتوقع: <strong className="text-emerald-300">{activeStudent.memorizationPlan.targetCompletionDate}</strong>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#86efac]/90 font-bold">
+                          المقرر: {activeStudent.memorizationPlan?.dailyNewPages || 1} وجه جديد • {activeStudent.memorizationPlan?.dailyReviewPages || 5} أوجه مراجعة وتثبيت
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const plan = activeStudent.memorizationPlan;
+                        const aiPlan = activeStudent.aiPlan;
+                        const aiAssignment = aiPlan?.currentDailyAssignment;
+                        const planAssignment = plan?.nextDayAssignment;
+                        if (planAssignment?.surahNumber) {
+                          setTodayNewSurah(planAssignment.surahNumber);
+                          setTodayNewFromAyah(planAssignment.fromAyah || 1);
+                          setTodayNewToSurah(planAssignment.toSurahNumber || planAssignment.surahNumber);
+                          setTodayNewToAyah(planAssignment.toAyah || 10);
+                        } else if (aiAssignment?.newItem) {
+                          setTodayNewSurah(aiAssignment.newItem.surahNumber || activeStudent.currentSurah || 78);
+                          setTodayNewFromAyah(aiAssignment.newItem.fromAyah || activeStudent.currentAyah || 1);
+                          setTodayNewToSurah(aiAssignment.newItem.toSurahNumber || activeStudent.currentSurah || 78);
+                          setTodayNewToAyah(aiAssignment.newItem.toAyah || 10);
+                        } else if (plan?.dailyNewPages) {
+                          const sNum = activeStudent.currentSurah || 78;
+                          const fAyah = activeStudent.currentAyah || 1;
+                          const sInfo = getSurahInfo(sNum);
+                          const step = Math.max(4, Math.round(plan.dailyNewPages * 8));
+                          setTodayNewSurah(sNum);
+                          setTodayNewFromAyah(fAyah);
+                          setTodayNewToSurah(sNum);
+                          setTodayNewToAyah(Math.min(fAyah + step - 1, sInfo.numberOfAyahs));
+                        }
+                        setAutoFilledNotice(`✨ تم تطبيق وضبط الورد اليومي بنجاح استناداً إلى الخطة المنهجية المعتمدة للطالب (${activeStudent.name})`);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 self-start sm:self-auto shrink-0"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>تطبيق وضبط الورد فوراً من الخطة</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Real-time Indicator: Did the student listen to yesterday's / current assignment? */}
                 {activeStudent && (
