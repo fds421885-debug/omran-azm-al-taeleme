@@ -131,16 +131,26 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }, DURATION);
   };
 
+  const lastRecordedTimeRef = useRef<{ [key: string]: number }>({});
+
   const recordAyahError = (surahNumber: number, ayahNumber: number) => {
     const key = `${surahNumber}:${ayahNumber}`;
+    const now = Date.now();
+    // Guard against duplicate triggers (e.g. synthetic dblclick after touchstart double tap, or rapid double clicks)
+    if (lastRecordedTimeRef.current[key] && (now - lastRecordedTimeRef.current[key]) < 450) {
+      return;
+    }
+    lastRecordedTimeRef.current[key] = now;
+
+    let computedNext = 1;
     setAyahErrors(prev => {
-      const nextCount = (prev[key] || 0) + 1;
-      const updated = { ...prev, [key]: nextCount };
-      if (onRecordAyahError) {
-        onRecordAyahError(surahNumber, ayahNumber, nextCount);
-      }
-      return updated;
+      computedNext = (prev[key] || 0) + 1;
+      return { ...prev, [key]: computedNext };
     });
+
+    if (onRecordAyahError) {
+      onRecordAyahError(surahNumber, ayahNumber, computedNext);
+    }
 
     try {
       if (typeof window !== 'undefined' && 'navigator' in window && (navigator as any).vibrate) {
@@ -149,16 +159,17 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     } catch {}
 
     const sInfo = getSurahInfo(surahNumber);
-    setLastErrorNotification(`⚡ تم رصد خطأ تسميع بالنقر المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setLastErrorNotification(`⚡ تم رصد خطأ تسميع (${computedNext}) بالنقر المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
     setTimeout(() => setLastErrorNotification(null), 3500);
   };
 
   const lastTapRef = useRef<{ time: number; surah: number; ayah: number }>({ time: 0, surah: 0, ayah: 0 });
 
-  const handleTouchStartWithDoubleTap = (surahNumber: number, ayahNumber: number) => {
+  const handleTouchStartWithDoubleTap = (e: React.TouchEvent, surahNumber: number, ayahNumber: number) => {
     const now = Date.now();
     if (lastTapRef.current.surah === surahNumber && lastTapRef.current.ayah === ayahNumber && (now - lastTapRef.current.time) < 350) {
       // Double tap detected!
+      if (e.cancelable) e.preventDefault();
       cancelLongPress();
       recordAyahError(surahNumber, ayahNumber);
       lastTapRef.current = { time: 0, surah: 0, ayah: 0 };
@@ -685,7 +696,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                               onMouseDown={() => startLongPress(sec.surahNumber, ayah.ayahNumber)}
                               onMouseUp={cancelLongPress}
                               onMouseLeave={cancelLongPress}
-                              onTouchStart={() => handleTouchStartWithDoubleTap(sec.surahNumber, ayah.ayahNumber)}
+                              onTouchStart={e => handleTouchStartWithDoubleTap(e, sec.surahNumber, ayah.ayahNumber)}
                               onTouchEnd={cancelLongPress}
                               onTouchCancel={cancelLongPress}
                               className={`transition-all rounded-lg px-2 py-1 inline duration-200 relative cursor-pointer select-none ${

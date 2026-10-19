@@ -154,6 +154,14 @@ export interface StudentMemorizationPlan {
     suggestedSheikh?: string;
     action: 'repeat_surah' | 'advance_page' | 'reinforce_errors';
     reason: string;
+    surahNumber?: number;
+    toSurahNumber?: number;
+    fromAyah?: number;
+    toAyah?: number;
+    reviewSurahNumber?: number;
+    reviewFromAyah?: number;
+    reviewToSurahNumber?: number;
+    reviewToAyah?: number;
   };
   aiNotes?: string;
   lastUpdated: string;
@@ -243,9 +251,11 @@ export interface StudentRegistrationApplication {
   rejectionReason?: string;
   assignedHalaqahId?: string;
   assignedHalaqahName?: string;
+  assignedStudentId?: string;
   createdStudentId?: string;
   appliedAt: string;
   reviewedAt?: string;
+  admittedAt?: string;
   reviewedByName?: string;
 
   // الدور في قائمة الانتظار والمراجعة
@@ -806,6 +816,7 @@ export interface Student {
   dailyNewTarget: string;
   dailyReviewTarget: string;
   level: StudentLevel;
+  memorizedJuzList?: number[]; // قائمة أجزاء القرآن المحفوظة
   isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن سعة الحلقة
   aiPlan?: StudentAIPlan;
   memorizationPlan?: StudentMemorizationPlan; // الخطة الذكية للتثبيت حتى الختم مع الحساب الزمني والأهداف

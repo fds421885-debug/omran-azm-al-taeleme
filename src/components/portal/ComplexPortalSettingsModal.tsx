@@ -277,7 +277,18 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       setIsLoadingApps(false);
     }, complex.id);
 
-    return () => unsub();
+    const handleAppsUpdated = () => {
+      refreshAllApps();
+    };
+
+    window.addEventListener('omran:students-updated', handleAppsUpdated);
+    window.addEventListener('omran:apps-updated', handleAppsUpdated);
+
+    return () => {
+      unsub();
+      window.removeEventListener('omran:students-updated', handleAppsUpdated);
+      window.removeEventListener('omran:apps-updated', handleAppsUpdated);
+    };
   }, [complex.id]);
 
   // Open Question Editor for New Question
@@ -629,6 +640,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       await OmranDataService.saveStudent(newStudent);
       if (onStudentCreatedFromApp) onStudentCreatedFromApp(newStudent);
 
+      try {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: newStudent }));
+        window.dispatchEvent(new CustomEvent('omran:apps-updated'));
+      } catch (e) {}
+
       const updatedApp: StudentRegistrationApplication = {
         ...app,
         status: 'accepted',
@@ -704,6 +720,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         await OmranDataService.saveStudent(newStudent);
         if (onStudentCreatedFromApp) onStudentCreatedFromApp(newStudent);
+        try {
+          window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: newStudent }));
+        } catch (e) {}
 
         const updatedApp: StudentRegistrationApplication = {
           ...app,
@@ -730,6 +749,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           await sendRealPortalEmail(acceptedEmail).catch(() => {});
         }
       }
+
+      try {
+        window.dispatchEvent(new CustomEvent('omran:apps-updated'));
+      } catch (e) {}
 
       setSelectedAppIds([]);
       alert(`✨ تم قبول وتسكين (${total}) طلاب بنجاح كطلاب إضافيين، وإرسال بريد القبول والتسجيل لكل طالب.`);
@@ -2871,6 +2894,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               </div>
             </div>
           </div>
+        )}
+
         {/* Plan Dialog for Student Registration Application */}
         {appPlanToView && (() => {
           const memJuz = appPlanToView.memorizedJuzList?.length || 1;

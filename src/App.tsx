@@ -1962,6 +1962,44 @@ export function App() {
       halaqahId: chosenHalaqahId,
       halaqahName: chosenHalaqahName,
       notes: studentData.notes || '',
+      memorizationPlan: studentData.memorizationPlan || (() => {
+        const memJuz = studentData.memorizedJuzList?.length || 1;
+        const consJuz = Math.max(0, memJuz - 2);
+        const timeline = calculateRealisticKhatmTimeline({
+          memorizedJuz: memJuz,
+          consolidatedJuz: consJuz,
+          dailyNewPages: studentData.dailyNewTarget?.includes('وجهين') ? 2 : 1,
+          dailyReviewPages: 5,
+          weeklyDaysCount: 5,
+          dailyHoursCount: 2
+        });
+        return {
+          dailyNewPages: 1,
+          dailyReviewPages: 5,
+          consolidatedJuzCount: consJuz,
+          memorizedJuzCount: memJuz,
+          targetJuz: 30,
+          targetCompletionDate: timeline.targetCompletionDate,
+          estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+          progressPercentage: timeline.progressPercentage,
+          status: 'on_track' as const,
+          weeklyDaysCount: 5,
+          dailyHoursCount: 2,
+          tathbeetStopsCount: timeline.tathbeetStopsCount,
+          milestones: timeline.milestones,
+          nextDayAssignment: {
+            newMemorization: `${studentData.currentSurahName || 'النبأ'} (الآيات ${studentData.currentAyah || 1}-${Math.min((studentData.currentAyah || 1) + 9, 40)})`,
+            review: 'الفاتحة وقصار السور',
+            action: 'advance_page' as const,
+            reason: 'خطة منهجية تأسيسية متقنة ومدروسة',
+            surahNumber: studentData.currentSurah || 78,
+            fromAyah: studentData.currentAyah || 1,
+            toSurahNumber: studentData.currentSurah || 78,
+            toAyah: Math.min((studentData.currentAyah || 1) + 9, 40)
+          },
+          lastUpdated: new Date().toISOString()
+        };
+      })(),
       createdAt: new Date().toISOString()
     };
 

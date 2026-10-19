@@ -56,6 +56,7 @@ import {
   verifyEmailOtp,
   buildOtpVerificationEmail,
   buildApplicationReceivedEmail,
+  buildApplicationAcceptedEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
 

@@ -981,6 +981,164 @@ app.post("/api/gemini/batch-recalculate-halaqah-plans", async (req, res) => {
   }
 });
 
+// 5. Generate Tomorrow's Plan adaptively considering today's performance, errors, history, and halaqah duration
+app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
+  try {
+    const {
+      student,
+      todayEvaluation,
+      ayahErrors = [],
+      evaluationsHistory = [],
+      halaqahDailyHours = 2.0
+    } = req.body;
+
+    const studentName = student?.name || "الطالب";
+    const studentLevel = student?.level || "متوسط";
+    const errorsCount = Array.isArray(ayahErrors) ? ayahErrors.length : 0;
+    const didNotRecite = !!todayEvaluation?.didNotRecite;
+
+    // Check Gemini API
+    if (process.env.GEMINI_API_KEY) {
+      const prompt = `أنت الخبير القرآني والتربوي الأول في «منظومة عمران القرآنية».
+مهمتك: صياغة وتحديد خطة ومقرر غد للطالب (حفظ جديد + مراجعات متعددة وتثبيت أخطاء) بناءً على أداء اليوم وسجل الأخطاء وتاريخ الأيام السابقة وزمن الحلقة المتاح.
+
+بيانات الطالب:
+- الاسم: ${studentName}
+- المستوى: ${studentLevel}
+- زمن الحلقة اليومي: ${halaqahDailyHours} ساعة
+- ما سمعه اليوم في الجديد: سورة ${todayEvaluation?.todayNewSurahName || ''} (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || 10})
+- هل تعذر عليه التسميع اليوم (لم يسمع): ${didNotRecite ? "نعم" : "لا"}
+- أخطاء التسميع المرصودة في المصحف اليوم:
+${errorsCount > 0 ? ayahErrors.map((e: any) => `- سورة ${e.surahName || e.surahNumber} آية ${e.ayahNumber} (تكرر الخطأ ${e.errorCount} مرات)`).join('\n') : "لا توجد أخطاء اليوم، أداء متقن 100%"}
+- تاريخ التقييمات السابقة (آخر الجلسات):
+${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}: درجة ${h.score || 10}/10، ملاحظات: ${h.notes || 'طيبة'}`).join('\n') || "جلسات سابقة منتظمة"}
+
+القواعد التربوية الحاكمة:
+1. القاعدة الذهبية: "مش الطالب يختم بسرعة، المهم يختم وهو مثبت وإتقانه تام".
+2. إذا كان على الطالب أخطاء اليوم (خاصة متكررة) أو لم يسمع:
+   - يجب إما تكرار سورة/آيات اليوم لتثبيتها (repeat_surah أو reinforce_errors)، أو التقدم بمقدار يسير جداً مع إضافة بند مراجعة صريحة للآيات التي أخطأ فيها.
+   - وضع بند مراجعة خاص بعنوان: "تثبيت الأخطاء والمتشابهات" للسورة والآيات التي وقع فيها خطأ.
+3. إذا كان الطالب متقناً بدون أي خطأ:
+   - يتقدم في الحفظ الجديد بمقدار يناسب خطته (مثلاً وجه أو نصف وجه).
+   - توضع مراجعة صغرى لما سمعه اليوم ومراجعة كبرى للأجزاء السابقة.
+4. التناسب مع زمن الحلقة (${halaqahDailyHours} ساعة):
+   - يجب ألا يتجاوز المقدار الإجمالي (جديد + مراجعات) طاقة الطالب وزمن التسميع المتاح له في الحلقة (عادة 10-15 دقيقة لكل طالب).
+
+المطلوب: إرجاع النتيجة بصيغة JSON فقط:
+{
+  "tomNewSurah": 78,
+  "tomNewFromAyah": 1,
+  "tomNewToSurah": 78,
+  "tomNewToAyah": 10,
+  "action": "repeat_surah",
+  "tomReviews": [
+    {
+      "id": "tom_rev_1",
+      "type": "مراجعة صغرى",
+      "surahNumber": 78,
+      "surahName": "النبأ",
+      "fromAyah": 1,
+      "toSurahNumber": 78,
+      "toSurahName": "النبأ",
+      "toAyah": 10,
+      "isFullSurah": false,
+      "note": "تثبيت ما تم تسميعه اليوم ومعالجة الآيات ذات الأخطاء"
+    }
+  ],
+  "rationale": "شرح تربوي دقيق لسبب وضع هذه الخطة وكيف تراعي التثبيت وزمن الحلقة"
+}`;
+
+      const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+      if (aiText) {
+        try {
+          const parsed = JSON.parse(aiText);
+          if (parsed && parsed.tomNewSurah) {
+            return res.json(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Resilient pedagogical fallback generator
+    const curEndSurah = Number(todayEvaluation?.todayNewToSurah) || 78;
+    const curEndAyah = Number(todayEvaluation?.todayNewToAyah) || 10;
+
+    let tomNewSurah = curEndSurah;
+    let tomNewFromAyah = 1;
+    let tomNewToSurah = curEndSurah;
+    let tomNewToAyah = curEndAyah;
+    let action: 'repeat_surah' | 'advance_page' | 'reinforce_errors' = 'advance_page';
+    let rationale = "";
+
+    if (didNotRecite) {
+      action = 'repeat_surah';
+      tomNewSurah = Number(todayEvaluation?.todayNewSurah) || curEndSurah;
+      tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
+      tomNewToSurah = curEndSurah;
+      tomNewToAyah = curEndAyah;
+      rationale = "نظراً لعدم التسميع اليوم، تقرر تثبيت وإبقاء نفس الورد لمجلس الغد لضبطه وحفظه أولاً قبل مراكمة جديد.";
+    } else if (errorsCount >= 2) {
+      action = 'reinforce_errors';
+      tomNewSurah = curEndSurah;
+      tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
+      tomNewToSurah = curEndSurah;
+      tomNewToAyah = curEndAyah;
+      rationale = `لوحظ وجود (${errorsCount}) أخطاء في جلسة اليوم؛ تطبيقاً لقاعدة «الختم بتثبيت أولى من الاستعجال»، خُصص غد لتكرار وتثبيت هذا الموضع ليرسخ بالصدر.`;
+    } else {
+      action = 'advance_page';
+      const step = studentLevel === 'قوي' ? 10 : 7;
+      tomNewSurah = curEndSurah;
+      tomNewFromAyah = curEndAyah + 1;
+      tomNewToSurah = curEndSurah;
+      tomNewToAyah = curEndAyah + step;
+      rationale = `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن الحلقة (${halaqahDailyHours} ساعة).`;
+    }
+
+    const tomReviews = [];
+    tomReviews.push({
+      id: `tom_rev_1_${Date.now()}`,
+      type: "مراجعة صغرى",
+      surahNumber: Number(todayEvaluation?.todayNewSurah) || curEndSurah,
+      surahName: todayEvaluation?.todayNewSurahName || "السورة المقررة",
+      fromAyah: Number(todayEvaluation?.todayNewFromAyah) || 1,
+      toSurahNumber: curEndSurah,
+      toSurahName: todayEvaluation?.todayNewToSurahName || todayEvaluation?.todayNewSurahName || "السورة المقررة",
+      toAyah: curEndAyah,
+      isFullSurah: false,
+      note: "مراجعة ورد اليوم لتثبيته في الصدر"
+    });
+
+    if (errorsCount > 0 && ayahErrors[0]) {
+      const errSurah = Number(ayahErrors[0]?.surahNumber) || curEndSurah;
+      tomReviews.push({
+        id: `tom_rev_err_${Date.now()}`,
+        type: "تثبيت الأخطاء والمتشابهات",
+        surahNumber: errSurah,
+        surahName: ayahErrors[0]?.surahName || "السورة",
+        fromAyah: Math.max(1, (Number(ayahErrors[0]?.ayahNumber) || 1) - 2),
+        toSurahNumber: errSurah,
+        toSurahName: ayahErrors[0]?.surahName || "السورة",
+        toAyah: (Number(ayahErrors[0]?.ayahNumber) || 1) + 2,
+        isFullSurah: false,
+        note: `معالجة وتكرار الآيات التي وقع فيها خطأ (${ayahErrors[0]?.errorCount || 1} أخطاء)`
+      });
+    }
+
+    return res.json({
+      tomNewSurah,
+      tomNewFromAyah,
+      tomNewToSurah,
+      tomNewToAyah,
+      action,
+      tomReviews,
+      rationale
+    });
+  } catch (err: any) {
+    console.error("Generate tomorrow plan error:", err);
+    return res.status(500).json({ error: err?.message || "Error generating plan" });
+  }
+});
+
 // Helper: Format seconds into MM:SS or HH:MM:SS
 function formatSeconds(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
