@@ -13,7 +13,8 @@ import {
 } from "./src/data/quranData.ts";
 import {
   calculateRecitationFractionalFaces,
-  getPageOfAyah
+  getPageOfAyah,
+  calculatePortionFromPace
 } from "./src/data/quranPagesData.ts";
 import {
   resolveStudentQuery,
@@ -533,6 +534,15 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
     const surah = getSurahInfo(student.currentSurah || student.currentSurahName || 78);
     const startAyah = Math.max(1, Math.min(student.currentAyah || 1, surah.numberOfAyahs));
 
+    const pagePace = (student.dailyNewTarget || "").includes("وجهين")
+      ? 2.0
+      : (student.dailyNewTarget || "").includes("نصف")
+      ? 0.5
+      : (student.dailyNewTarget || "").includes("ربع")
+      ? 0.25
+      : 1.0;
+    const computedPortion = calculatePortionFromPace(surah.number, startAyah, pagePace);
+
     if (!process.env.GEMINI_API_KEY) {
       return res.json({ plan: getFallbackPlan(student) });
     }
@@ -542,28 +552,32 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
 - اسم الطالب: ${student.name}
 - العمر: ${student.age} سنة
 - المستوى: ${student.level} (ضعيف / متوسط / قوي)
-- طاقة الحفظ اليومي للجديد: ${student.dailyNewTarget}
+- طاقة الحفظ اليومي للجديد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
 - طاقة المراجعة اليومية: ${student.dailyReviewTarget}
 - ملاحظات المعلم: ${student.notes || "لا توجد"}
 
-بيانات موضع الحفظ القرآني الحالي (حقائق قرآنية ملزمة):
+بيانات موضع الحفظ القرآني الحالي (حقائق قرآنية ملزمة من مصحف المدينة النبوية - 604 أوجه):
 - السورة الحالية: سورة ${surah.name} (رقم ${surah.number} في المصحف، نوعها: ${surah.revelationType}، الجزء: ${surah.juz})
 - عدد آيات السورة الإجمالي: ${surah.numberOfAyahs} آية فقط!
 - الآية الحالية التي يقف عندها: الآية رقم ${startAyah}
+- الحساب القرآني الدقيق للورد اليومي بناءً على صفحات مصحف مجمع الملك فهد:
+  * المقدار المعتمد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
+  * حدود الآيات المحسوبة بدقة لمصحف المدينة: من سورة ${surah.name} آية (${computedPortion.fromAyah}) إلى آية (${computedPortion.toAyah}) [${computedPortion.description}]
 
 قواعد قرآنية وتربوية صارمة يجب الالتزام بها 100%:
-1. [قاعدة حاسمة]: إجمالي آيات سورة ${surah.name} هو ${surah.numberOfAyahs} آية فقط! ممنوع نهائياً ومطلقاً ذكر أي رقم آية يتجاوز ${surah.numberOfAyahs} (مثلاً: سورة الناس 6 آيات فقط، سورة الفلق 5، الإخلاص 4، الفاتحة 7، الكوثر 3، إلخ).
-2. إذا كان مقدار حفظ الطالب يصل لنهاية السورة، اكتب: "سورة ${surah.name} كاملة (الآيات 1 - ${surah.numberOfAyahs})" أو "سورة ${surah.name}: من الآية ${startAyah} إلى الآية ${surah.numberOfAyahs} (ختام السورة)".
-3. حدد ورد المراجعة بالسورة والآيات، واقترح قارئاً معلماً معتمداً مناسباً لعمر ومستوى الطالب (مثلاً: الشيخ المنشاوي المعلم، أو الحصري المعلم، أو العفاسي).
-4. اكتب توجيهاً منزلياً عملياً لولي الأمر للربط والتكرار والتثبيت قبل النوم.
+1. [قاعدة حاسمة]: إذا كان ورد الطالب نصف وجه، التزم بالحدود المحسوبة لمصحف المدينة (من الآية ${computedPortion.fromAyah} إلى ${computedPortion.toAyah}). لا تختزل نصف الوجه إلى 4 آيات عشوائياً، ولا تكلف الطالب بسورة كاملة فجأة!
+2. إجمالي آيات سورة ${surah.name} هو ${surah.numberOfAyahs} آية فقط! ممنوع نهائياً ومطلقاً ذكر أي رقم آية يتجاوز ${surah.numberOfAyahs}.
+3. إذا انتهت السورة، يتم الانتقال للسورة التالية من الآية 1 بنفس الوتيرة المعتدلة.
+4. حدد ورد المراجعة بالسورة والآيات، واقترح قارئاً معلماً معتمداً مناسباً لعمر ومستوى الطالب.
+5. اكتب توجيهاً منزلياً عملياً لولي الأمر للربط والتكرار والتثبيت قبل النوم.
 
 أخرج النتيجة بصيغة JSON فقط:
 {
   "roadmapSummary": "ملخص تربوي واستراتيجي لخطة الطالب في إتمام الحفظ والمراجعة",
   "currentDailyAssignment": {
-    "newMemorization": "تحديد الآيات بالضبط للحفظ الجديد لليوم مع الالتزام التام بعدد آيات السورة (${surah.numberOfAyahs})",
+    "newMemorization": "${computedPortion.description}",
     "review": "تحديد ورد المراجعة اليومي بدقة مع أسماء السور والآيات",
-    "suggestedSheikh": "اسم الشيخ المقترح للاستماع له (مثل: الشيخ محمد صديق المنشاوي - المصحف المعلم)",
+    "suggestedSheikh": "اسم الشيخ المقترح للاستماع له (مثل: الشيخ محمود خليل الحصري - المصحف المعلم)",
     "tajweedFocus": "الحكم التجويدي أو المهارة الصوتية للتركيز عليها اليوم",
     "dailyNote": "توجيه تربوي عملي للربط والتكرار بالمنزل"
   },
@@ -1047,6 +1061,21 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
     const errorsCount = Array.isArray(ayahErrors) ? ayahErrors.length : 0;
     const didNotRecite = !!todayEvaluation?.didNotRecite;
 
+    const studentDailyTarget = student?.dailyNewTarget || (student?.memorizationPlan?.dailyNewPages ? `${student.memorizationPlan.dailyNewPages} وجه` : "نصف وجه");
+    const pace = (studentDailyTarget.includes("وجهين") ? 2.0 : studentDailyTarget.includes("نصف") ? 0.5 : studentDailyTarget.includes("ربع") ? 0.25 : 1.0);
+    const curEndSurah = Number(todayEvaluation?.todayNewToSurah) || 78;
+    const curEndAyah = Number(todayEvaluation?.todayNewToAyah) || 1;
+    const advanceStartAyah = curEndAyah + 1;
+    const computedTomorrowPortion = calculatePortionFromPace(curEndSurah, advanceStartAyah, pace);
+
+    // Adaptive Monthly Progression detection
+    const evaluations = Array.isArray(evaluationsHistory) ? evaluationsHistory : [];
+    const validDates = evaluations.map((e: any) => e.date ? new Date(e.date).getTime() : 0).filter((t: number) => t > 0).sort((a: number, b: number) => a - b);
+    const daysSpan = validDates.length >= 2 ? Math.round((validDates[validDates.length - 1] - validDates[0]) / (1000 * 60 * 60 * 24)) : evaluations.length * 2;
+    const isMonthlyExcellence = evaluations.length >= 8 && (daysSpan >= 20 || evaluations.length >= 12) && errorsCount <= 1;
+    const recommendedPace = isMonthlyExcellence ? Math.min(3.0, pace + 0.5) : pace;
+    const targetTomorrowPortion = isMonthlyExcellence ? calculatePortionFromPace(curEndSurah, advanceStartAyah, recommendedPace) : computedTomorrowPortion;
+
     // Check Gemini API
     if (process.env.GEMINI_API_KEY) {
       const prompt = `أنت الخبير القرآني والتربوي الأول في «منظومة عمران القرآنية».
@@ -1056,46 +1085,50 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
 - الاسم: ${studentName}
 - المستوى: ${studentLevel}
 - زمن الحلقة اليومي: ${halaqahDailyHours} ساعة
-- ما سمعه اليوم في الجديد: سورة ${todayEvaluation?.todayNewSurahName || ''} (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || 10})
+- طاقة الحفظ اليومي المعتمدة: ${studentDailyTarget} (${pace} وجه)
+- ما سمعه اليوم في الجديد: سورة ${todayEvaluation?.todayNewSurahName || ''} (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah})
 - هل تعذر عليه التسميع اليوم (لم يسمع): ${didNotRecite ? "نعم" : "لا"}
 - أخطاء التسميع المرصودة في المصحف اليوم:
 ${errorsCount > 0 ? ayahErrors.map((e: any) => `- سورة ${e.surahName || e.surahNumber} آية ${e.ayahNumber} (تكرر الخطأ ${e.errorCount} مرات)`).join('\n') : "لا توجد أخطاء اليوم، أداء متقن 100%"}
 - تاريخ التقييمات السابقة (آخر الجلسات):
 ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}: درجة ${h.score || 10}/10، ملاحظات: ${h.notes || 'طيبة'}`).join('\n') || "جلسات سابقة منتظمة"}
+- الحساب القرآني الدقيق للغد (حقائق قرآنية ملزمة بناءً على مصحف المدينة 604 أوجه):
+  * بداية مقرر الغد: يبدأ من الآية رقم (${advanceStartAyah})
+  * المقدار المقرر للغد: من سورة ${getSurahInfo(targetTomorrowPortion.fromSurah).name} آية (${targetTomorrowPortion.fromAyah}) إلى آية (${targetTomorrowPortion.toAyah}) [${targetTomorrowPortion.description}]
+  * حالة التطور الشهري: ${isMonthlyExcellence ? `الطالب متفوق ومتميز بعد شهر من التسميع المنتظم، تم زيادة ورده بنصف وجه إضافي ليصبح ${recommendedPace} وجه` : 'الاستمرار بالوتيرة الحالية لضمان التثبيت'}
 
-القواعد التربوية الحاكمة:
-1. القاعدة الذهبية: "مش الطالب يختم بسرعة، المهم يختم وهو مثبت وإتقانه تام".
+القواعد التربوية الحاكمة الصارمة:
+1. [قاعدة حاسمة ومطلقة]: إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات)، فإن مقرر الغد يبدأ من الآية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}). ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة!
 2. إذا كان على الطالب أخطاء اليوم (خاصة متكررة) أو لم يسمع:
-   - يجب إما تكرار سورة/آيات اليوم لتثبيتها (repeat_surah أو reinforce_errors)، أو التقدم بمقدار يسير جداً مع إضافة بند مراجعة صريحة للآيات التي أخطأ فيها.
-   - وضع بند مراجعة خاص بعنوان: "تثبيت الأخطاء والمتشابهات" للسورة والآيات التي وقع فيها خطأ.
+   - يجب تكرار وتثبيت نفس الآيات التي سمّعها اليوم فقط (${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah})، وليس السورة كاملة!
+   - وضع بند مراجعة خاص بعنوان: "تثبيت الأخطاء والمتشابهات" للآيات التي وقع فيها خطأ.
 3. إذا كان الطالب متقناً بدون أي خطأ:
-   - يتقدم في الحفظ الجديد بمقدار يناسب خطته (مثلاً وجه أو نصف وجه).
+   - يتقدم في الحفظ الجديد بمقدار الورد المعتمد بدقة (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}).
    - توضع مراجعة صغرى لما سمعه اليوم ومراجعة كبرى للأجزاء السابقة.
-4. التناسب مع زمن الحلقة (${halaqahDailyHours} ساعة):
-   - يجب ألا يتجاوز المقدار الإجمالي (جديد + مراجعات) طاقة الطالب وزمن التسميع المتاح له في الحلقة (عادة 10-15 دقيقة لكل طالب).
+4. التناسب مع زمن الحلقة (${halaqahDailyHours} ساعة).
 
 المطلوب: إرجاع النتيجة بصيغة JSON فقط:
 {
-  "tomNewSurah": 78,
-  "tomNewFromAyah": 1,
-  "tomNewToSurah": 78,
-  "tomNewToAyah": 10,
-  "action": "repeat_surah",
+  "tomNewSurah": ${targetTomorrowPortion.fromSurah},
+  "tomNewFromAyah": ${targetTomorrowPortion.fromAyah},
+  "tomNewToSurah": ${targetTomorrowPortion.toSurah},
+  "tomNewToAyah": ${targetTomorrowPortion.toAyah},
+  "action": "${errorsCount >= 2 ? 'reinforce_errors' : didNotRecite ? 'repeat_surah' : 'advance_page'}",
   "tomReviews": [
     {
       "id": "tom_rev_1",
       "type": "مراجعة صغرى",
-      "surahNumber": 78,
-      "surahName": "النبأ",
-      "fromAyah": 1,
-      "toSurahNumber": 78,
-      "toSurahName": "النبأ",
-      "toAyah": 10,
+      "surahNumber": ${Number(todayEvaluation?.todayNewSurah) || curEndSurah},
+      "surahName": "${todayEvaluation?.todayNewSurahName || 'السورة المقررة'}",
+      "fromAyah": ${Number(todayEvaluation?.todayNewFromAyah) || 1},
+      "toSurahNumber": ${curEndSurah},
+      "toSurahName": "${todayEvaluation?.todayNewToSurahName || todayEvaluation?.todayNewSurahName || 'السورة المقررة'}",
+      "toAyah": ${curEndAyah},
       "isFullSurah": false,
       "note": "تثبيت ما تم تسميعه اليوم ومعالجة الآيات ذات الأخطاء"
     }
   ],
-  "rationale": "شرح تربوي دقيق لسبب وضع هذه الخطة وكيف تراعي التثبيت وزمن الحلقة"
+  "rationale": "شرح تربوي دقيق لسبب وضع هذه الخطة وكيف تراعي التثبيت وزمن وتطور الطالب"
 }`;
 
       const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
@@ -1110,9 +1143,6 @@ ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}
     }
 
     // Resilient pedagogical fallback generator
-    const curEndSurah = Number(todayEvaluation?.todayNewToSurah) || 78;
-    const curEndAyah = Number(todayEvaluation?.todayNewToAyah) || 10;
-
     let tomNewSurah = curEndSurah;
     let tomNewFromAyah = 1;
     let tomNewToSurah = curEndSurah;
@@ -1129,19 +1159,20 @@ ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}
       rationale = "نظراً لعدم التسميع اليوم، تقرر تثبيت وإبقاء نفس الورد لمجلس الغد لضبطه وحفظه أولاً قبل مراكمة جديد.";
     } else if (errorsCount >= 2) {
       action = 'reinforce_errors';
-      tomNewSurah = curEndSurah;
+      tomNewSurah = Number(todayEvaluation?.todayNewSurah) || curEndSurah;
       tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
       tomNewToSurah = curEndSurah;
       tomNewToAyah = curEndAyah;
-      rationale = `لوحظ وجود (${errorsCount}) أخطاء في جلسة اليوم؛ تطبيقاً لقاعدة «الختم بتثبيت أولى من الاستعجال»، خُصص غد لتكرار وتثبيت هذا الموضع ليرسخ بالصدر.`;
+      rationale = `لوحظ وجود (${errorsCount}) أخطاء في جلسة اليوم؛ تطبيقاً لقاعدة «الختم بتثبيت أولى من الاستعجال»، خُصص غد لتكرار وتثبيت نفس الآيات التي سمّعها اليوم فقط (الآيات ${tomNewFromAyah} إلى ${tomNewToAyah}) لترسخ في الصدر.`;
     } else {
       action = 'advance_page';
-      const step = studentLevel === 'قوي' ? 10 : 7;
-      tomNewSurah = curEndSurah;
-      tomNewFromAyah = curEndAyah + 1;
-      tomNewToSurah = curEndSurah;
-      tomNewToAyah = curEndAyah + step;
-      rationale = `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن الحلقة (${halaqahDailyHours} ساعة).`;
+      tomNewSurah = targetTomorrowPortion.fromSurah;
+      tomNewFromAyah = targetTomorrowPortion.fromAyah;
+      tomNewToSurah = targetTomorrowPortion.toSurah;
+      tomNewToAyah = targetTomorrowPortion.toAyah;
+      rationale = isMonthlyExcellence
+        ? `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تميزاً وتطوراً كبيراً بعد مرور شهر من التسميع؛ تم رفع ورد الحفظ بنصف وجه إضافي ليبدأ من الآية (${tomNewFromAyah}) إلى (${tomNewToAyah}) [${targetTomorrowPortion.description}].`
+        : `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن (${studentDailyTarget}) يبدأ من الآية (${tomNewFromAyah}) إلى (${tomNewToAyah}) مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن وتوقيت الحلقة (${halaqahDailyHours} ساعة).`;
     }
 
     const tomReviews = [];
@@ -1392,39 +1423,30 @@ function calculateSmartAssignmentFromRecords(student: any, recentEvaluations: an
     highPerformance = false;
   }
 
-  // Step size calculation (ayahs per day) based on the 3-record trend
-  let step = student.level === "ضعيف" ? 4 : student.level === "قوي" ? 12 : 7;
-  if (highPerformance && student.level !== "ضعيف") {
-    step = Math.min(step + 2, 15);
-  } else if (!highPerformance) {
-    step = Math.max(step - 2, 3);
-  }
+  // Step size calculation (ayahs per day) based on the exact King Fahd Mushaf page pace
+  const studentDailyTarget = student?.dailyNewTarget || "نصف وجه";
+  const pace = studentDailyTarget.includes("وجهين")
+    ? 2.0
+    : studentDailyTarget.includes("نصف")
+    ? 0.5
+    : studentDailyTarget.includes("ربع")
+    ? 0.25
+    : 1.0;
 
-  // 4. Calculate Next Session's New Memorization Portion
-  let nextNewSurah = currentSurahNum;
-  let nextNewFromAyah = currentEndAyah + 1;
-  let nextNewToSurah = currentSurahNum;
-  let nextNewToAyah = currentEndAyah + step;
-
-  if (nextNewFromAyah > totalAyahs) {
-    // Current surah completed! Move to next surah in sequence
-    const nextSurahId = currentSurahNum < 114 ? currentSurahNum + 1 : 1;
-    const nextInfo = getSurahInfo(nextSurahId);
-    nextNewSurah = nextSurahId;
-    nextNewFromAyah = 1;
-    nextNewToSurah = nextSurahId;
-    nextNewToAyah = Math.min(step, nextInfo.numberOfAyahs);
-  } else if (nextNewToAyah > totalAyahs) {
-    nextNewToAyah = totalAyahs;
-  }
+  // 4. Calculate Next Session's New Memorization Portion using exact page boundaries
+  const portion = calculatePortionFromPace(currentSurahNum, currentEndAyah + 1, pace);
+  let nextNewSurah = portion.fromSurah;
+  let nextNewFromAyah = portion.fromAyah;
+  let nextNewToSurah = portion.toSurah;
+  let nextNewToAyah = portion.toAyah;
 
   const nextStartInfo = getSurahInfo(nextNewSurah);
   const nextEndInfo = getSurahInfo(nextNewToSurah);
+  const isNaturalFull = nextNewSurah === nextNewToSurah && nextNewFromAyah === 1 && nextNewToAyah >= nextStartInfo.numberOfAyahs && nextStartInfo.numberOfAyahs <= 10;
 
-  const formattedNew =
-    nextNewSurah === nextNewToSurah && nextNewFromAyah === 1 && nextNewToAyah >= nextStartInfo.numberOfAyahs
-      ? `سورة ${nextStartInfo.name} كاملة (الآيات 1 - ${nextStartInfo.numberOfAyahs})`
-      : `سورة ${nextStartInfo.name}: من الآية (${nextNewFromAyah}) إلى الآية (${nextNewToAyah})`;
+  const formattedNew = isNaturalFull
+    ? `سورة ${nextStartInfo.name} كاملة (الآيات 1 - ${nextStartInfo.numberOfAyahs})`
+    : portion.description;
 
   // 5. Calculate Comprehensive Review based on the last 3 recitation records (تثبيت ومراجعة التسجيلات السابقة)
   // Extract portions recited in the last 3 records so the student rigorously reviews their previous lessons
@@ -3805,8 +3827,33 @@ app.post("/api/gemini/assistant", async (req, res) => {
       });
     }
 
+    const isReferentialQuestion =
+      normUserMessage === "ماهذا" ||
+      normUserMessage === "ما هذا" ||
+      normUserMessage === "وش هذا" ||
+      normUserMessage === "ايش هذا" ||
+      normUserMessage === "شنو هذا" ||
+      normUserMessage === "شو هذا" ||
+      normUserMessage === "ايه ده" ||
+      normUserMessage === "ده ايه" ||
+      normUserMessage === "دا ايه" ||
+      normUserMessage === "عندي مشكلة" ||
+      normUserMessage === "عندي مشكله" ||
+      normUserMessage.startsWith("ماهذا") ||
+      normUserMessage.startsWith("ما هذا") ||
+      normUserMessage.startsWith("وش هذا") ||
+      normUserMessage.startsWith("ايش هذا") ||
+      normUserMessage.startsWith("عندي مشكل") ||
+      normUserMessage.includes("ما معنى هذا") ||
+      normUserMessage.includes("ماذا يعني هذا") ||
+      normUserMessage.includes("اشرح لي") ||
+      normUserMessage.includes("وضح لي") ||
+      normUserMessage.includes("وش يعني") ||
+      normUserMessage.includes("ايش يعني");
+
     // Guard 3: Explicit student name not found - Never fall back to all students!
     const hasSpecialIntent =
+      isReferentialQuestion ||
       hasChartDiagnosticIntent ||
       hasAttendanceTableIntent ||
       hasGeneralTableIntent ||

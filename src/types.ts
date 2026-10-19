@@ -831,6 +831,7 @@ export interface Student {
   memorizedJuzList?: number[]; // قائمة أجزاء القرآن المحفوظة
   isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن سعة الحلقة
   aiPlan?: StudentAIPlan;
+  isGeneratingPlan?: boolean; // حالة جاري إعداد الخطة بالذكاء الاصطناعي بواسطة جيميناي
   memorizationPlan?: StudentMemorizationPlan; // الخطة الذكية للتثبيت حتى الختم مع الحساب الزمني والأهداف
   mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المطول
   assignedMosqueId?: string; // المسجد الملحق به الطالب في حال المنظومة

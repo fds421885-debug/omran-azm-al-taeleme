@@ -1,3 +1,5 @@
+import { calculatePortionFromPace } from './quranPagesData';
+
 export interface SurahInfo {
   number: number;
   name: string;
@@ -197,37 +199,29 @@ export function calculateRealisticQuranAssignment(
 ) {
   const surah = getSurahInfo(surahIdentifier);
   const totalAyahs = surah.numberOfAyahs;
-  
   const validStartAyah = Math.max(1, Math.min(startAyah, totalAyahs));
-  
-  // Determine realistic ayah count based on surah length and student level
-  let step = 5;
-  if (totalAyahs <= 10) {
-    // Short Surahs (e.g. Al-Ikhlas, An-Nas, Al-Falaq, Al-Kawthar, Al-Asr)
-    step = totalAyahs; // Assign whole surah or remaining
-  } else if (totalAyahs <= 30) {
-    step = level === 'ضعيف' ? 4 : level === 'قوي' ? 10 : 6;
-  } else {
-    // Long Surahs (Al-Baqarah, etc.)
-    step = level === 'ضعيف' ? 5 : level === 'قوي' ? 15 : 8;
-  }
 
-  let endAyah = validStartAyah + step - 1;
-  let isCompleteSurah = false;
+  const pagePace = dailyTarget.includes('وجهين')
+    ? 2.0
+    : dailyTarget.includes('نصف')
+    ? 0.5
+    : dailyTarget.includes('ربع')
+    ? 0.25
+    : 1.0;
+
+  // Exact King Fahd Mushaf portion calculation
+  const portion = calculatePortionFromPace(surah.number, validStartAyah, pagePace);
+  let endAyah = portion.toSurah === surah.number ? portion.toAyah : totalAyahs;
+  endAyah = Math.min(Math.max(validStartAyah, endAyah), totalAyahs);
+
+  // A surah is only marked "كاملة" if starting at ayah 1 AND ending at totalAyahs AND surah is short (<= 10 ayahs)
+  const isCompleteSurah = validStartAyah === 1 && endAyah >= totalAyahs && totalAyahs <= 12;
+
   let nextSurahRecommendation = '';
-
-  if (validStartAyah === 1 && (endAyah >= totalAyahs || totalAyahs <= 12)) {
-    // Whole surah
-    endAyah = totalAyahs;
-    isCompleteSurah = true;
-  } else if (endAyah >= totalAyahs) {
-    endAyah = totalAyahs;
-    // Next surah in order
-    if (surah.number > 1) {
-      const prevSurahInJuz = QURAN_SURAHS.find(s => s.number === surah.number - 1);
-      if (prevSurahInJuz) {
-        nextSurahRecommendation = `ثم الشروع في سورة ${prevSurahInJuz.name}`;
-      }
+  if (endAyah >= totalAyahs && surah.number > 1) {
+    const prevSurahInJuz = QURAN_SURAHS.find(s => s.number === surah.number - 1);
+    if (prevSurahInJuz) {
+      nextSurahRecommendation = `ثم الشروع في سورة ${prevSurahInJuz.name}`;
     }
   }
 
@@ -237,7 +231,7 @@ export function calculateRealisticQuranAssignment(
   } else if (validStartAyah === endAyah) {
     newMemorizationText = `سورة ${surah.name}: الآية (${validStartAyah}) مع إتقانها وتثبيتها`;
   } else {
-    newMemorizationText = `سورة ${surah.name}: من الآية (${validStartAyah}) إلى الآية (${endAyah})`;
+    newMemorizationText = `سورة ${surah.name}: من الآية (${validStartAyah}) إلى الآية (${endAyah}) [${dailyTarget || 'نصف وجه'}]`;
     if (endAyah === totalAyahs) {
       newMemorizationText += ` (ختام السورة)`;
     }

@@ -505,3 +505,90 @@ export function calculateStudentCompletedPages(
     currentSurahName: getSurahInfo(curSurah).name
   };
 }
+
+/**
+ * Calculates exact Quran portion (starting and ending surah & ayah) from a given start point
+ * and a daily page pace (e.g. 0.5 = نصف وجه, 1.0 = وجه كامل, 2.0 = وجهان).
+ * Grounded 100% in the King Fahd 604-page Mushaf boundaries so the student gets realistic
+ * verse ranges rather than arbitrary numbers.
+ */
+export function calculatePortionFromPace(
+  startSurah: number = 78,
+  startAyah: number = 1,
+  pagePace: number = 0.5
+): {
+  fromSurah: number;
+  fromAyah: number;
+  toSurah: number;
+  toAyah: number;
+  pageCount: number;
+  description: string;
+} {
+  const safeStartSurah = Math.max(1, Math.min(startSurah || 78, 114));
+  const sInfo = getSurahInfo(safeStartSurah);
+  const safeStartAyah = Math.max(1, Math.min(startAyah || 1, sInfo.numberOfAyahs));
+  const safePace = Math.max(0.25, Math.min(pagePace || 0.5, 5));
+
+  const startPageNum = getPageOfAyah(safeStartSurah, safeStartAyah);
+  const startPage = getKingFahdPageInfo(startPageNum);
+
+  // If pace is half a page (0.5 وجه أو أقل):
+  if (safePace <= 0.6) {
+    if (startPage.startSurah === startPage.endSurah && startPage.startSurah === safeStartSurah) {
+      const pageAyahs = startPage.endAyah - startPage.startAyah + 1;
+      const midAyah = startPage.startAyah + Math.ceil(pageAyahs / 2) - 1;
+
+      if (safeStartAyah <= midAyah) {
+        return {
+          fromSurah: safeStartSurah,
+          fromAyah: safeStartAyah,
+          toSurah: safeStartSurah,
+          toAyah: midAyah,
+          pageCount: 0.5,
+          description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${midAyah}) [نصف وجه]`
+        };
+      } else {
+        return {
+          fromSurah: safeStartSurah,
+          fromAyah: safeStartAyah,
+          toSurah: safeStartSurah,
+          toAyah: startPage.endAyah,
+          pageCount: 0.5,
+          description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${startPage.endAyah}) [نصف وجه]`
+        };
+      }
+    } else {
+      const maxInSurahOnPage = (startPage.endSurah === safeStartSurah) ? startPage.endAyah : sInfo.numberOfAyahs;
+      const remainingInSurah = Math.max(1, maxInSurahOnPage - safeStartAyah + 1);
+      const halfStep = Math.max(2, Math.ceil(remainingInSurah / 2));
+      const targetAyah = Math.min(safeStartAyah + halfStep - 1, maxInSurahOnPage);
+      return {
+        fromSurah: safeStartSurah,
+        fromAyah: safeStartAyah,
+        toSurah: safeStartSurah,
+        toAyah: targetAyah,
+        pageCount: 0.5,
+        description: `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${targetAyah}) [نصف وجه]`
+      };
+    }
+  }
+
+  // If pace is 1.0 page or more (وجه كامل أو أكثر):
+  const pageAdvance = Math.max(1, Math.round(safePace));
+  const targetPageNum = Math.min(604, startPageNum + pageAdvance - (safeStartAyah === startPage.startAyah ? 1 : 0));
+  const targetPage = getKingFahdPageInfo(targetPageNum);
+  const endSurah = targetPage.endSurah;
+  const endAyah = targetPage.endAyah;
+  const endSurahInfo = getSurahInfo(endSurah);
+
+  return {
+    fromSurah: safeStartSurah,
+    fromAyah: safeStartAyah,
+    toSurah: endSurah,
+    toAyah: endAyah,
+    pageCount: safePace,
+    description: safeStartSurah === endSurah
+      ? `سورة ${sInfo.name}: من الآية (${safeStartAyah}) إلى الآية (${endAyah}) [${safePace} وجه]`
+      : `من سورة ${sInfo.name} (${safeStartAyah}) إلى سورة ${endSurahInfo.name} (${endAyah}) [${safePace} وجه]`
+  };
+}

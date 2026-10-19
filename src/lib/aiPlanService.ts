@@ -8,6 +8,8 @@
 
 import { Student, StudentMemorizationPlan, Halaqah, QuranComplex } from '../types';
 import { ApiConfig } from './apiConfig';
+import { calculatePortionFromPace } from '../data/quranPagesData';
+import { getSurahInfo } from '../data/quranData';
 
 export interface DynamicInterviewQuestion {
   questionId: string;
@@ -208,6 +210,95 @@ export function calculateRealisticKhatmTimeline(params: {
     milestones,
     pedagogicalNote,
     calculatedFromDate
+  };
+}
+
+/**
+ * Adaptive Monthly AI Progression Analyzer
+ * Evaluates student recitation history over ~3-4 weeks (or 8+ evaluations):
+ * - If the student has progressed with excellence (high avg score >= 8.5, low errors <= 2, good attendance),
+ *   the AI recommends elevating their daily new target by +0.5 page (e.g. from 0.5 to 1.0 page)!
+ * - If performance is still developing or struggling ("مش ولا بد"), it maintains current pace with reinforcement notes.
+ */
+export function analyzeMonthlyProgression(
+  evaluations: any[] = [],
+  currentDailyNewPages: number = 0.5,
+  ayahErrorsCount: number = 0
+): {
+  shouldIncreasePace: boolean;
+  recommendedPace: number;
+  reasoning: string;
+  isStruggling: boolean;
+  evaluationsCount: number;
+  daysSpan: number;
+} {
+  const currentPace = Math.max(0.25, Number(currentDailyNewPages) || 0.5);
+  if (!Array.isArray(evaluations) || evaluations.length < 5) {
+    return {
+      shouldIncreasePace: false,
+      recommendedPace: currentPace,
+      reasoning: 'الفترة المسجلة ما زالت في بدايتها؛ الاستمرار في الورد الحالي لضمان التأسيس والتثبيت.',
+      isStruggling: false,
+      evaluationsCount: evaluations?.length || 0,
+      daysSpan: 0
+    };
+  }
+
+  const validDates = evaluations
+    .map(e => e.date ? new Date(e.date).getTime() : 0)
+    .filter(t => t > 0)
+    .sort((a, b) => a - b);
+  const daysSpan = validDates.length >= 2
+    ? Math.round((validDates[validDates.length - 1] - validDates[0]) / (1000 * 60 * 60 * 24))
+    : evaluations.length * 2;
+
+  let totalScoreSum = 0;
+  let scoreCount = 0;
+  evaluations.forEach(ev => {
+    if (ev.criteriaValues && typeof ev.criteriaValues === 'object') {
+      Object.values(ev.criteriaValues).forEach((val: any) => {
+        if (typeof val === 'number') {
+          totalScoreSum += val;
+          scoreCount++;
+        }
+      });
+    }
+  });
+
+  const avgScore = scoreCount > 0 ? (totalScoreSum / scoreCount) : 8.0;
+  const isStruggling = avgScore < 7.5 || ayahErrorsCount >= 3;
+  const isExcelling = avgScore >= 8.5 && ayahErrorsCount <= 1 && evaluations.length >= 8 && (daysSpan >= 20 || evaluations.length >= 12);
+
+  if (isExcelling) {
+    const recommendedPace = Math.min(3.0, currentPace + 0.5);
+    return {
+      shouldIncreasePace: true,
+      recommendedPace,
+      reasoning: `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تفوقاً والتزاماً عالياً على مدار (${evaluations.length} جلسة خلال قرابة ${Math.max(1, Math.round(daysSpan / 30))} شهر) بمتوسط تقييم ممتاز (${avgScore.toFixed(1)}/10)؛ تقرر رفع ورد الحفظ اليومي بمقدار (نصف وجه إضافي) ليصبح (${recommendedPace} وجه) لمواكبة تطوره وإتقانه.`,
+      isStruggling: false,
+      evaluationsCount: evaluations.length,
+      daysSpan
+    };
+  }
+
+  if (isStruggling) {
+    return {
+      shouldIncreasePace: false,
+      recommendedPace: currentPace,
+      reasoning: `مستوى الطالب يحتاج مزيداً من التثبيت والتكرار (متوسط التقييم ${avgScore.toFixed(1)}/10 مع وجود ملاحظات)؛ تقرر الإبقاء على المقدار الحالي (${currentPace} وجه) مع تكثيف المراجعة التراكمية، عملاً بقاعدة: «الختم بتثبيت خير من التعجل بالتفلت».`,
+      isStruggling: true,
+      evaluationsCount: evaluations.length,
+      daysSpan
+    };
+  }
+
+  return {
+    shouldIncreasePace: false,
+    recommendedPace: currentPace,
+    reasoning: `أداء الطالب منتظم ومستقر؛ الاستمرار في الورد الحالي (${currentPace} وجه) مع المراجعة الموازية حتى تمام ترسيخ المحفوظ.`,
+    isStruggling: false,
+    evaluationsCount: evaluations.length,
+    daysSpan
   };
 }
 
@@ -436,6 +527,9 @@ function getPedagogicalTurnFallback(params: {
     dailyHoursCount: 2
   });
 
+  const startSurah = memCount >= 30 ? 2 : 78;
+  const startPortion = calculatePortionFromPace(startSurah, 1, newPages);
+
   const studentPlan: StudentMemorizationPlan = {
     dailyNewPages: newPages,
     dailyReviewPages: reviewPages,
@@ -451,10 +545,14 @@ function getPedagogicalTurnFallback(params: {
     tathbeetStopsCount: timeline.tathbeetStopsCount,
     milestones: timeline.milestones,
     nextDayAssignment: {
-      newMemorization: `سورة ${memCount >= 30 ? 'البقرة' : 'النبأ'}: الآيات 1 إلى 10`,
+      newMemorization: startPortion.description,
       review: `مراجعة الجزء ${Math.max(1, memCount)} كاملاً مع التكرار والتثبيت`,
       action: 'advance_page',
-      reason: 'انطلاقة قوية مع التركيز على التثبيت المتقن'
+      reason: 'انطلاقة قوية مع التركيز على التثبيت المتقن وفق وتيرة الحفظ المعتمدة',
+      surahNumber: startPortion.fromSurah,
+      fromAyah: startPortion.fromAyah,
+      toSurahNumber: startPortion.toSurah,
+      toAyah: startPortion.toAyah
     },
     aiNotes: timeline.pedagogicalNote,
     lastUpdated: new Date().toISOString()

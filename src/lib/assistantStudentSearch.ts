@@ -633,13 +633,24 @@ const GENERIC_STUDENT_WORDS = [
   'للان', 'للآن', 'الان', 'الآن', 'هنا', 'هناك', 'كذا', 'يعني', 'بس', 'عشان', 'ليش', 'علشان', 'برضه', 'برضو', 'كمان',
   'كم عدد الحلقات', 'عدد الحلقات', 'كم حلقة', 'كم حلقه', 'الحلقات', 'حلقات', 'حلقة', 'حلقه', 'الحلقة', 'الحلقه',
   'المساجد', 'مساجد', 'مسجد', 'جامع', 'جوامع', 'المجمع', 'مجمع', 'المنظومة', 'منظومة', 'المنظومه', 'منظومه',
-  'اكثر الطلاب تسميعا', 'أكثر الطلاب تسميعاً', 'من اكثر الطلاب', 'من أكثر الطلاب', 'تسميعا للاوجه', 'تسميعاً للأوجه', 'تسميع الاوجه', 'تسميع الأوجه'
+  'اكثر الطلاب تسميعا', 'أكثر الطلاب تسميعاً', 'من اكثر الطلاب', 'من أكثر الطلاب', 'تسميعا للاوجه', 'تسميعاً للأوجه', 'تسميع الاوجه', 'تسميع الأوجه',
+  // Demonstrative pronouns & question phrases (must NEVER be treated as student names)
+  'ماهذا', 'ما هذا', 'ما هذه', 'وش هذا', 'وش هذه', 'ايش هذا', 'ايش هذه', 'شنو هذا', 'شو هذا', 'ايه هذا', 'ايه ده', 'إيه ده', 'ده ايه', 'دا ايه',
+  'هذا', 'هذه', 'هذان', 'هاتان', 'هؤلاء', 'ذلك', 'تلك', 'اولئك', 'أولئك',
+  'مشكلة', 'مشكله', 'عندي مشكلة', 'عندي مشكله', 'عندي استفسار', 'عندي سؤال', 'عندي ملاحظة', 'عندي ملاحظه', 'عندي اقتراح',
+  'ايش يعني', 'وش يعني', 'ماذا يعني', 'ما معنى', 'ما معنى هذا',
+  'اشرح لي', 'اشرح لي اكثر', 'اشرح لي أكثر', 'وضح لي', 'وضح اكثر', 'وضح أكثر', 'فهمني', 'فصل لي', 'فصّل لي',
+  'وش السالفة', 'ايش السالفة', 'وش صاير', 'ايش صاير', 'وش الحل', 'ايش الحل', 'ما الحل', 'وش اسوي', 'ايش اسوي', 'ماذا افعل', 'ماذا أفعل', 'كيف كذا', 'ليه كذا',
+  'ابي اسال', 'أبي أسأل', 'بدي اسأل', 'ودي اسأل', 'ودي اعرف', 'ابغى اعرف', 'ابغى أسأل'
 ];
 const GENERIC_STUDENT_TERMS = new Set(
   GENERIC_STUDENT_WORDS.flatMap(w => [w, normalizeArabicText(w)])
 );
 
 const NON_STUDENT_INTENT_PATTERNS = [
+  /^(?:ماهذا|ما\s+هذا|ما\s+هذه|وش\s+هذا|ايش\s+هذا|شنو\s+هذا|شو\s+هذا|ايه\s+ده|ده\s+ايه|دا\s+ايه)/i,
+  /(?:عندي\s+مشكل[ةه]|عندي\s+سؤال|عندي\s+استفسار|واجهتني\s+مشكل[ةه]|عندي\s+ملاحظ[ةه])/i,
+  /(?:اشرح\s+لي|وضح\s+لي|فصل\s+لي|فهمني|ماذا\s+يعني|ما\s+معنى|وش\s+يعني|ايش\s+يعني|وش\s+الحل|ايش\s+الحل|وش\s+اسوي|ايش\s+اسوي)/i,
   /رسم\s+بياني/i,
   /تشخيص\s+بياني/i,
   /مخطط\s+بياني/i,
@@ -1176,9 +1187,10 @@ export function resolveStudentsQuery(
   }
 
   // Extract name tokens from query or filter.studentNames
+  const isExplicitStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|طالب|الطلاب)\s+[^\s,،\.\?!]+/i.test(rawQuery);
   const extractedTokens = (filter.studentNames && filter.studentNames.length > 0)
     ? filter.studentNames
-    : extractCandidateNamesFromMessage(rawQuery);
+    : extractCandidateNamesFromMessage(rawQuery, filter, allStudentsPool);
 
   if (extractedTokens.length > 0) {
     const matchedSet = new Map<string, any>();
@@ -1203,7 +1215,9 @@ export function resolveStudentsQuery(
             pageInfo: { total: 0, limit: 10, offset: 0, hasMore: false }
           };
         }
-        notFound.push(token);
+        if (isExplicitStudentQuery) {
+          notFound.push(token);
+        }
       } else if (candidates.length === 1) {
         matchedSet.set(candidates[0].id, candidates[0]);
       } else {
@@ -1236,7 +1250,7 @@ export function resolveStudentsQuery(
       };
     }
 
-    if (matchedSet.size === 0 && notFound.length > 0) {
+    if (matchedSet.size === 0 && notFound.length > 0 && isExplicitStudentQuery) {
       return {
         status: 'NOT_FOUND',
         message: `لم يتم العثور على طالب باسم «${notFound.join('، ')}» ضمن الطلاب المصرح لك بالوصول إليهم.`,
