@@ -64,6 +64,7 @@ import {
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
 import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+import { calculatePortionFromPace } from '../../data/quranPagesData';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
 
 interface ComplexPortalSettingsModalProps {
@@ -496,6 +497,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         ? ` • إجابات التسجيل: ${appToAccept.customQuestionResponses.map(r => `${r.questionLabel}: ${Array.isArray(r.answer) ? r.answer.join(', ') : r.answer}`).join(' | ')}`
         : '';
 
+      const startSurah = maxJuz === 30 ? 78 : 2;
+      const initialPortion = calculatePortionFromPace(startSurah, 1, 0.5);
+      const timeline = calculateRealisticKhatmTimeline({
+        memorizedJuz: maxJuz === 30 ? 1 : 0,
+        consolidatedJuz: 0,
+        dailyNewPages: 0.5,
+        dailyReviewPages: 3,
+        weeklyDaysCount: 5,
+        dailyHoursCount: 2
+      });
+
       const newStudent: Student = {
         id: newStudentId,
         name: appToAccept.studentName,
@@ -505,7 +517,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         parentName: appToAccept.parentName || 'ولي الأمر',
         parentPhones: [appToAccept.parentPhone].filter(Boolean),
         parentPhone: appToAccept.parentPhone,
-        currentSurah: maxJuz === 30 ? 78 : 2,
+        currentSurah: startSurah,
         currentSurahName: maxJuz === 30 ? 'النبأ' : 'البقرة',
         currentAyah: 1,
         dailyNewTarget: 'نصف وجه',
@@ -516,6 +528,33 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         halaqahId: targetHalaqah?.id,
         halaqahName: targetHalaqah?.name,
         notes: `تم قبوله عبر بوابة المجمع الإلكترونية • الأجزاء المحفوظة: ${appToAccept.memorizedJuzList?.join(', ') || 'لا يوجد'}${customNotesSummary}`,
+        isGeneratingPlan: true,
+        memorizationPlan: {
+          dailyNewPages: 0.5,
+          dailyReviewPages: 3,
+          consolidatedJuzCount: 0,
+          memorizedJuzCount: maxJuz === 30 ? 1 : 0,
+          targetJuz: 30,
+          targetCompletionDate: timeline.targetCompletionDate,
+          estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+          progressPercentage: timeline.progressPercentage,
+          status: 'on_track',
+          weeklyDaysCount: 5,
+          dailyHoursCount: 2,
+          tathbeetStopsCount: timeline.tathbeetStopsCount,
+          milestones: timeline.milestones,
+          nextDayAssignment: {
+            newMemorization: initialPortion.description,
+            review: 'الفاتحة وتثبيت الحفظ',
+            action: 'advance_page',
+            reason: 'خطة تأسيسية منهجية متقنة بمعدل نصف وجه',
+            surahNumber: initialPortion.fromSurah,
+            fromAyah: initialPortion.fromAyah,
+            toSurahNumber: initialPortion.toSurah,
+            toAyah: initialPortion.toAyah
+          },
+          lastUpdated: new Date().toISOString()
+        },
         createdAt: new Date().toISOString()
       };
 

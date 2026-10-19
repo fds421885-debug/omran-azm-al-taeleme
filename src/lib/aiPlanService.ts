@@ -415,6 +415,285 @@ export async function executeDynamicInterviewTurn(params: {
   return getPedagogicalTurnFallback(params);
 }
 
+// Helper to shuffle options so correct answer is NOT always option A or index 0!
+export function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * 2-Week Post-Completion Daily Consolidation Rule:
+ * "والسورة اللي يخلصها خليها قاعدة عنده مثلا الطالب عليه مراجعة اليوم ١٠ اوجه يحط معاها اليوم مثلا هو لسه مخلص سورة جديد يخليه يراجعها بشكل يومي لمدة اسبوعين"
+ * "طيب في الاسبوعين لا والله خلص سورتين يصبح ينوع مرة ده ومرة ده واللي مثبتة اكثر تكون مراتها قليلة بعكس اللي اخطاءها كثيرة"
+ * "طيب لو قصار السور لا هنا يجمعهم مش هيسمعها لوحدها مثلا لا بالاضافة الى المراجعة هيسمع اخر السور اللي حفظها اخر اسبوعين بحيث يثبت بالاضافة الى المراجعة الغير مثبتة والتي يحددها ال ai"
+ */
+export function calculateRecentlyCompletedSurahsReview(params: {
+  recentlyCompletedSurahs?: Array<{
+    surahNumber: number;
+    surahName: string;
+    completedDate: string;
+    errorCount?: number;
+    totalAyahs?: number;
+  }>;
+  currentDate?: string;
+  activeErrorsMap?: Record<string, number>;
+}): {
+  reviewItems: any[];
+  summaryNote: string;
+} {
+  const { recentlyCompletedSurahs = [], currentDate = new Date().toISOString().split('T')[0], activeErrorsMap = {} } = params;
+  if (!recentlyCompletedSurahs || recentlyCompletedSurahs.length === 0) {
+    return { reviewItems: [], summaryNote: '' };
+  }
+
+  const nowMs = new Date(currentDate).getTime();
+  const twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
+
+  // Filter surahs completed within the last 14 days
+  const activeCompleted = recentlyCompletedSurahs.filter(s => {
+    if (!s.completedDate) return true;
+    const compMs = new Date(s.completedDate).getTime();
+    return !isNaN(compMs) && (nowMs - compMs) <= twoWeeksMs;
+  });
+
+  if (activeCompleted.length === 0) {
+    return { reviewItems: [], summaryNote: '' };
+  }
+
+  // Split into Short Surahs (قصار السور <= 15 verses or Juz Amma surahs 90-114) vs Regular Surahs
+  const shortSurahs = activeCompleted.filter(s => s.surahNumber >= 90 || (s.totalAyahs && s.totalAyahs <= 15));
+  const regularSurahs = activeCompleted.filter(s => s.surahNumber < 90 && (!s.totalAyahs || s.totalAyahs > 15));
+
+  const items: any[] = [];
+  const notes: string[] = [];
+
+  // RULE A: Short surahs are CLUSTERED together as a single unified group, never a 3-verse surah alone!
+  if (shortSurahs.length > 0) {
+    const surahNames = shortSurahs.map(s => `سورة ${s.surahName}`).join('، ');
+    const minS = Math.min(...shortSurahs.map(s => s.surahNumber));
+    const maxS = Math.max(...shortSurahs.map(s => s.surahNumber));
+    const firstInfo = getSurahInfo(minS);
+    const lastInfo = getSurahInfo(maxS);
+
+    items.push({
+      id: `two_week_qisar_${Date.now()}`,
+      type: 'تثبيت السور حديثة الحفظ',
+      surahNumber: minS,
+      surahName: shortSurahs.length === 1 ? firstInfo.name : `باقة قصار السور (${shortSurahs.length} سور)`,
+      fromAyah: 1,
+      toSurahNumber: maxS,
+      toSurahName: lastInfo.name,
+      toAyah: lastInfo.numberOfAyahs,
+      isFullSurah: true,
+      notes: `تثبيت ومراجعة قصار السور المنجزة خلال الأسبوعين الماضيين (${surahNames}) لربطها وتثبيتها بالصدر.`
+    });
+    notes.push(`تثبيت باقة قصار السور حديثة الحفظ: ${surahNames}`);
+  }
+
+  // RULE B: Regular surahs
+  if (regularSurahs.length === 1) {
+    const s = regularSurahs[0];
+    const sInfo = getSurahInfo(s.surahNumber);
+    items.push({
+      id: `two_week_reg_${Date.now()}_${s.surahNumber}`,
+      type: 'تثبيت السور حديثة الحفظ',
+      surahNumber: s.surahNumber,
+      surahName: sInfo.name,
+      fromAyah: 1,
+      toSurahNumber: s.surahNumber,
+      toSurahName: sInfo.name,
+      toAyah: sInfo.numberOfAyahs,
+      isFullSurah: true,
+      notes: `قاعدة التثبيت اليومي للسورة حديثة الإتمام (لمدة أسبوعين) لسورة ${sInfo.name} لترسيخها بعد الختام.`
+    });
+    notes.push(`تثبيت سورة ${sInfo.name} يومياً لمدة أسبوعين من تاريخ إتمامها.`);
+  } else if (regularSurahs.length >= 2) {
+    // Calculate error counts for each surah
+    const scoredSurahs = regularSurahs.map(s => {
+      let errs = s.errorCount || 0;
+      Object.entries(activeErrorsMap).forEach(([key, count]) => {
+        if (key.startsWith(`${s.surahNumber}:`)) {
+          errs += count;
+        }
+      });
+      return { ...s, totalErrors: errs };
+    });
+
+    // Sort descending by error count: more errors = higher priority!
+    scoredSurahs.sort((a, b) => b.totalErrors - a.totalErrors);
+
+    // Pick the most error-prone for today, while logging alternation
+    const chosenSurah = scoredSurahs[0];
+    const secondarySurah = scoredSurahs[1];
+    const cInfo = getSurahInfo(chosenSurah.surahNumber);
+    const sInfo = getSurahInfo(secondarySurah.surahNumber);
+
+    items.push({
+      id: `two_week_alt_${Date.now()}_${chosenSurah.surahNumber}`,
+      type: 'تثبيت السور حديثة الحفظ',
+      surahNumber: chosenSurah.surahNumber,
+      surahName: cInfo.name,
+      fromAyah: 1,
+      toSurahNumber: chosenSurah.surahNumber,
+      toSurahName: cInfo.name,
+      toAyah: cInfo.numberOfAyahs,
+      isFullSurah: true,
+      notes: `تنويع السور حديثة الإتمام (أسبوعين): تم ترجيح سورة ${cInfo.name} اليوم لكثرة أخطائها (${chosenSurah.totalErrors} خطأ) لضبطها، بالتناوب مع سورة ${sInfo.name}.`
+    });
+    notes.push(`تنويع السور حديثة الإتمام: مراجعة سورة ${cInfo.name} اليوم مع جدولة سورة ${sInfo.name} بالتناوب.`);
+  }
+
+  return {
+    reviewItems: items,
+    summaryNote: notes.join(' • ')
+  };
+}
+
+/**
+ * Intelligent Ayah Error Tracking & Distribution Engine:
+ * "وعايزه يتبع يعني الاخطاء اللي يحطها المعلم ولو لاحظ تحسن والله في التاريخ الفلااني كان عنده خطأ في الاية ده بس انلهارده لا بس السورة الثانية لا والله اكثر الاخطاء زي ماهي فيزود على السورة الثانية... مش هيخليها كلها في يوم واحد لا يخلي مثلا كم خطأ كل يوم بحيث يخلص السور الضعيفة اللي عنده في اقرب مدة"
+ */
+export function analyzeAndDistributeAyahErrors(params: {
+  existingErrors: any[];
+  todayEvaluatedRange?: { fromSurah: number; fromAyah: number; toSurah: number; toAyah: number };
+  todayReportedErrors?: Record<string, number>;
+  dailyMaxErrorVerses?: number;
+}): {
+  updatedErrorsList: any[];
+  improvedCount: number;
+  targetedReviewItem: any | null;
+  rationale: string;
+} {
+  const {
+    existingErrors = [],
+    todayEvaluatedRange,
+    todayReportedErrors = {},
+    dailyMaxErrorVerses = 3
+  } = params;
+
+  let improvedCount = 0;
+  const updatedErrorsList: any[] = [];
+
+  // 1. Check each past error: did today's recitation cover it without error?
+  existingErrors.forEach(err => {
+    const s = Number(err.surahNumber);
+    const a = Number(err.ayahNumber);
+    const key = `${s}:${a}`;
+
+    const wasRecitedToday = todayEvaluatedRange &&
+      todayEvaluatedRange.fromSurah === s &&
+      todayEvaluatedRange.toSurah === s &&
+      a >= todayEvaluatedRange.fromAyah &&
+      a <= todayEvaluatedRange.toAyah;
+
+    const hadErrorToday = todayReportedErrors[key] !== undefined && todayReportedErrors[key] > 0;
+
+    if (wasRecitedToday && !hadErrorToday) {
+      // Improved!
+      improvedCount++;
+      updatedErrorsList.push({
+        ...err,
+        cleared: true,
+        improvedDate: new Date().toISOString(),
+        notes: 'تحسن الطالب في هذا الموضع وتم التثبيت بنجاح'
+      });
+    } else {
+      const additionalCount = todayReportedErrors[key] || 0;
+      updatedErrorsList.push({
+        ...err,
+        errorCount: (err.errorCount || 1) + additionalCount,
+        lastErrorDate: hadErrorToday ? new Date().toISOString() : err.lastErrorDate,
+        cleared: false
+      });
+    }
+  });
+
+  // Add any brand new errors from today
+  Object.entries(todayReportedErrors).forEach(([key, count]) => {
+    if (count > 0) {
+      const [s, a] = key.split(':').map(Number);
+      const alreadyIn = updatedErrorsList.some(e => e.surahNumber === s && e.ayahNumber === a);
+      if (!alreadyIn) {
+        updatedErrorsList.push({
+          id: `err_${Date.now()}_${s}_${a}`,
+          surahNumber: s,
+          ayahNumber: a,
+          surahName: getSurahInfo(s).name,
+          errorCount: count,
+          lastErrorDate: new Date().toISOString(),
+          cleared: false
+        });
+      }
+    }
+  });
+
+  // 2. Identify active / uncleared errors grouped by surah
+  const activeErrors = updatedErrorsList.filter(e => !e.cleared && e.errorCount > 0);
+  if (activeErrors.length === 0) {
+    return {
+      updatedErrorsList,
+      improvedCount,
+      targetedReviewItem: null,
+      rationale: improvedCount > 0 ? `ما شاء الله، تم معالجة وتثبيت (${improvedCount}) مواضع أخطاء سابقة بنجاح اليوم!` : 'لا توجد أخطاء مرصودة.'
+    };
+  }
+
+  // Count active errors per surah to find which surah has lingering/repeated errors
+  const surahErrorMap: Record<number, { count: number; ayahs: number[]; surahName: string }> = {};
+  activeErrors.forEach(e => {
+    if (!surahErrorMap[e.surahNumber]) {
+      surahErrorMap[e.surahNumber] = {
+        count: 0,
+        ayahs: [],
+        surahName: e.surahName || getSurahInfo(e.surahNumber).name
+      };
+    }
+    surahErrorMap[e.surahNumber].count += e.errorCount || 1;
+    surahErrorMap[e.surahNumber].ayahs.push(e.ayahNumber);
+  });
+
+  // Sort surahs by error count descending
+  const sortedSurahs = Object.entries(surahErrorMap).sort((a, b) => b[1].count - a[1].count);
+  const highestSurahEntry = sortedSurahs[0];
+  const targetSurahNum = Number(highestSurahEntry[0]);
+  const targetSurahData = highestSurahEntry[1];
+
+  // Pick up to dailyMaxErrorVerses (e.g. 2-3 ayahs)
+  const targetAyahs = targetSurahData.ayahs.slice(0, dailyMaxErrorVerses);
+  const minA = Math.min(...targetAyahs);
+  const maxA = Math.max(...targetAyahs);
+  const sInfo = getSurahInfo(targetSurahNum);
+
+  const fromRange = Math.max(1, minA - 1);
+  const toRange = Math.min(sInfo.numberOfAyahs, maxA + 1);
+
+  const targetedReviewItem = {
+    id: `err_target_${Date.now()}`,
+    type: 'تثبيت الأخطاء ومواضع الضعف',
+    surahNumber: targetSurahNum,
+    surahName: sInfo.name,
+    fromAyah: fromRange,
+    toSurahNumber: targetSurahNum,
+    toSurahName: sInfo.name,
+    toAyah: toRange,
+    isFullSurah: false,
+    notes: `معالجة مواضع الضعف المسجلة من المعلم في سورة ${sInfo.name} (الآيات ${targetAyahs.join('، ')}) بالتدرج اليومي لتصفية الأخطاء دون إرهاق.`
+  };
+
+  const rationale = `لوحظ وجود أخطاء متكررة في سورة ${sInfo.name} (${targetSurahData.count} أخطاء)؛ تم جدولة (${targetAyahs.length}) آيات لغد لمعالجتها وتثبيتها بالتدريج.${improvedCount > 0 ? ` (مع تسجيل تحسن في ${improvedCount} مواضع أخرى).` : ''}`;
+
+  return {
+    updatedErrorsList,
+    improvedCount,
+    targetedReviewItem,
+    rationale
+  };
+}
+
 function getPedagogicalTurnFallback(params: {
   studentInitialData: {
     studentName: string;
@@ -434,133 +713,125 @@ function getPedagogicalTurnFallback(params: {
     goal: string;
     dailyNewPages: number;
     dailyReviewPages: number;
+    reachedSurah?: number;
+    reachedAyah?: number;
+    reviewDirection?: 'from_baqarah' | 'from_nas';
   };
 }): DynamicInterviewResponse {
   const { studentInitialData, turnIndex, accumulatedData } = params;
   const memCount = studentInitialData.memorizedJuzList?.length || accumulatedData.memorizedCount || 1;
   const isKhatim = memCount >= 30;
-  const isYoung = studentInitialData.age <= 10;
 
-  // Turn 0: Greeting already displayed, Turn 1: Consolidated count
+  // Turn 1: Quran Surah & Ayah Reached Picker!
+  // "اين وصل في سور القرءان والطالب يختار من قائمة منسدلة من كل سور القرءان ويمكنه البحث ويحدد اي اي وصل"
   if (turnIndex === 1) {
-    if (isKhatim) {
-      return {
-        replyText: `ما شاء الله تبارك الرحمن يا ${studentInitialData.studentName}! ختم القرآن الكريم نعمة عظيمة ومسؤولية جليلة، جعلنا الله وإياك من أهل القرآن الذين هم أهل الله وخاصته.\n\nبما أنك خاتم لكتاب الله، فالمعيار الأهم لدينا هو «قوة السرد والتثبيت»:\nكم جزءاً من القرآن الكريم تستطيع سرده الآن غيباً على الشيخ في جلسة واحدة دون أي تردد أو خطأ؟`,
-        isCompleted: false,
-        nextQuestion: {
-          questionId: 'khatim_sard_capacity',
-          questionText: 'طاقة السرد المتقن في جلسة واحدة:',
-          category: 'memorization_depth',
-          options: [
-            { label: '١ إلى ٣ أجزاء متقنة', value: 2, subtext: 'تثبيت أسبوعي ومراجعة' },
-            { label: '٥ إلى ١٠ أجزاء متقنة', value: 7, subtext: 'مستوى متقدم ما شاء الله' },
-            { label: 'أكثر من ١٠ أجزاء أو المصحف كاملاً', value: 20, subtext: 'مستوى إجازة وسند متصل' }
-          ]
-        }
-      };
-    } else if (isYoung) {
-      return {
-        replyText: `حياك الله يا بطل ${studentInitialData.studentName} في حلقات القرآن الكريم! 🌟\n\nما شاء الله عليك، أنت تحفظ ${memCount} جزءاً. كم جزءاً منها تحبه وتتذكره جيداً وكأنك تقرأ من المصحف؟`,
-        isCompleted: false,
-        nextQuestion: {
-          questionId: 'child_consolidated',
-          questionText: 'الأجزاء المحفوظة بقوة وإتقان:',
-          category: 'memorization_depth',
-          options: [
-            { label: 'جزء عم فقط (الجزء 30)', value: 1, subtext: 'قصير وسهل الحفظ' },
-            { label: 'جزء عم وتبارك (جزأين)', value: 2, subtext: 'ما شاء الله' },
-            { label: `${Math.min(memCount, 3)} أجزاء أو أكثر`, value: Math.min(memCount, 3), subtext: 'همة عالية' }
-          ]
-        }
-      };
-    } else {
-      return {
-        replyText: `ما شاء الله يا ${studentInitialData.studentName}، حفظك لـ (${memCount}) جزءاً أساس متين.\n\nدعنا نحدد مستوى التثبيت الحالي لديك: كم جزءاً منها تعتبره ثابتاً تماماً وتستطيع تسميعه فوراً بأقل من خطأين؟`,
-        isCompleted: false,
-        nextQuestion: {
-          questionId: 'standard_consolidated',
-          questionText: 'عدد الأجزاء المثبتة بإتقان:',
-          category: 'memorization_depth',
-          options: [
-            { label: `نصف ما حفظت تقريباً (~${Math.max(1, Math.round(memCount / 2))} أجزاء)`, value: Math.max(1, Math.round(memCount / 2)) },
-            { label: `معظم ما حفظت بنسبة 80% (~${Math.max(1, Math.round(memCount * 0.8))} أجزاء)`, value: Math.max(1, Math.round(memCount * 0.8)) },
-            { label: 'تحتاج الأجزاء كلها إلى إعادة جرد وتثبيت', value: 1, subtext: 'سنبدأ ببرنامج تثبيت مكثف' }
-          ]
-        }
-      };
-    }
-  }
-
-  // Turn 2: Tajweed & Makharij Probe or Mutashabihat for Khatim
-  if (turnIndex === 2) {
-    if (isKhatim) {
-      return {
-        replyText: `ممتاز جداً! بما أن هدفك التثبيت والإتقان الكامل، دعنا نجري اختباراً دقيقاً في المتشابهات والتوجيه اللفظي:\n\nفي قوله تعالى: ﴿قُلْ إِنَّ هُدَى اللَّهِ هُوَ الْهُدَىٰ﴾ بسورة البقرة، بينما في آل عمران جاءت: ﴿قُلْ إِنَّ الْهُدَىٰ هُدَى اللَّهِ﴾.\nما السر في تقديم وتأخير لفظ (هو) و(الهدى) هنا؟`,
-        isCompleted: false,
-        nextQuestion: {
-          questionId: 'mutashabihat_test',
-          questionText: 'ضبط المتشابهات اللفظية:',
-          category: 'mutashabihat',
-          options: [
-            { label: 'في البقرة حصر وتأكيد لمواجهة ادعاء اليهود والنصارى، وفي آل عمران تأكيد أن الهدى الحقيقي بيد الله', value: 'correct', subtext: 'إجابة دقيقة متقنة' },
-            { label: 'لا يوجد فرق معنوي، هو مجرد اختلاف لفظي فقط', value: 'wrong', subtext: 'توجد حكمة بلاغية دقيقة' }
-          ]
-        }
-      };
-    } else {
-      return {
-        replyText: `أحسنت! ننتقل الآن لفحص إتقانك لأحكام التلاوة والتجويد العملي:\n\nفي قوله تعالى: ﴿مَن يَقُولُ﴾، ما هو الحكم التجويدي الصحيح للنون الساكنة هنا؟ وكيف يُنطق؟`,
-        isCompleted: false,
-        nextQuestion: {
-          questionId: 'tajweed_quick',
-          questionText: 'الحكم التجويدي:',
-          category: 'tajweed',
-          options: [
-            { label: 'إدغام بغنة (ناقص)', value: 'correct', subtext: 'الياء من حروف (ينمو)' },
-            { label: 'إظهار حلقي', value: 'wrong', subtext: 'ليس من حروف الحلق' },
-            { label: 'إقلاب', value: 'wrong', subtext: 'ليس حرف باء' }
-          ]
-        }
-      };
-    }
-  }
-
-  // Turn 3: Live interactive mini recitation test on the fly!
-  if (turnIndex === 3) {
-    const testSurah = isKhatim ? 2 : (memCount > 5 ? 67 : 112);
-    const testSurahName = isKhatim ? 'البقرة' : (memCount > 5 ? 'الملك' : 'الإخلاص');
     return {
-      replyText: `رائع! والآن دعنا نجري اختباراً سريعاً للتأكد من استحضارك للآيات ومخارج الحروف 🎙️:\n\nاقرأ الآية الأولى من سورة (${testSurahName}) أو اكتب كلماتها الأولى للتأكد من انطلاقتك:`,
+      replyText: `أهلاً وسهلاً بك يا ${studentInitialData.studentName} في مجمع «${params.complex.name}»! 🌟\n\nأنا المساعد القرآني والتربوي الذكي، ومهمتي هي التعرف على موضع حفظك الحالي بدقة وضبط جدولك القرآني المتقن.\n\n📖 **أين وصلت في سور القرآن الكريم؟**\nاختر السورة والآية التي تقف عندها من القائمة المنسدلة بالأسفل لنبدأ معك منها مباشرة:`,
       isCompleted: false,
       nextQuestion: {
-        questionId: 'live_recitation_check',
-        questionText: `اختبار سريع في سورة ${testSurahName}:`,
-        category: 'live_test',
-        isLiveRecitationTest: true,
-        surahNumber: testSurah,
-        ayahNumber: 1,
-        options: [
-          { label: 'جاهز وحفظي فيها متقن ومثبت ١٠٠٪', value: 'ready', subtext: 'استحضار سريع ومتقن' },
-          { label: 'أحتاج ثوانٍ لتذكر البداية ثم أنطلق', value: 'needs_moment', subtext: 'تحتاج تذكيراً بالرابط' }
-        ]
+        questionId: 'quran_position_reached',
+        questionText: 'موضع الوصول الحالي في سور القرآن الكريم:',
+        category: 'memorization_depth',
+        options: [] // Managed via customWidget
       }
     };
   }
 
-  // Turn 4: Psychology, daily schedule, and dedication
+  // Turn 2: Review Direction (Khatim: Al-Baqarah vs An-Nas / Non-Khatim: Starting direction)
+  // "يسأل الطالب هل يحب يبدأ مراجعة من البقرة ام من الناس طبعا للخاتم"
+  if (turnIndex === 2) {
+    if (isKhatim) {
+      const khatimOptions = shuffleArray([
+        { label: 'البدء من سورة البقرة (تدرج من أول المصحف للأمام)', value: 'from_baqarah', subtext: 'مسار السرد الكلاسيكي المنهجي' },
+        { label: 'البدء من سورة الناس (صعوداً من جزء عم وقصار السور)', value: 'from_nas', subtext: 'تثبيت قصار السور ثم الأطول' }
+      ]);
+
+      return {
+        replyText: `ما شاء الله تبارك الرحمن! هنيئاً لك ختم كتاب الله كاملاً، جعله الله لك شفيعاً ونوراً في الدارين.\n\nبما أنك خاتم وتريد مراجعة القرآن كاملاً وتثبيته لنيل السند والإجازة بإذن الله:\n**هل تفضل أن تبدأ مراجعتك الشاملة من سورة البقرة أم من سورة الناس؟**`,
+        isCompleted: false,
+        nextQuestion: {
+          questionId: 'khatim_review_direction',
+          questionText: 'مسار انطلاق مراجعة المصحف كاملاً:',
+          category: 'memorization_depth',
+          options: khatimOptions
+        }
+      };
+    } else {
+      const nonKhatimOptions = shuffleArray([
+        { label: 'بدأت من سورة الناس صعوداً (المسار المعتاد من جزء عم)', value: 'from_nas', subtext: 'البدء من قصار السور صعوداً' },
+        { label: 'بدأت من سورة البقرة ونزولاً في المصحف', value: 'from_baqarah', subtext: 'البدء من طوال السور للأمام' }
+      ]);
+
+      return {
+        replyText: `أحسنت الاختيار! موضع بداية مبارك بإذن الله.\n\nلتحديد اتجاه المراجعة التراكمية اليومية:\n**هل بدأت حفظك سابقاً من سورة الناس (صعوداً من جزء عم) أم بدأت من سورة البقرة ونزولاً؟**`,
+        isCompleted: false,
+        nextQuestion: {
+          questionId: 'non_khatim_review_direction',
+          questionText: 'اتجاه مسار الحفظ والمراجعة السابق:',
+          category: 'memorization_depth',
+          options: nonKhatimOptions
+        }
+      };
+    }
+  }
+
+  // Turn 3: Diagnostic Tajweed / Mutashabihat Test with SHUFFLED options!
+  // Options are explicitly shuffled so the answer is NEVER statically (A) or first!
+  if (turnIndex === 3) {
+    if (isKhatim) {
+      const mutashabihOptions = shuffleArray([
+        { label: 'في البقرة حصر وتأكيد لمواجهة ادعاء اليهود والنصارى، وفي آل عمران تأكيد أن الهدى بيد الله', value: 'correct', subtext: 'فهم بلاغي وتفسيري دقيق' },
+        { label: 'لا يوجد فرق معنوي بينهما، هو مجرد تنويع لفظي فقط', value: 'wrong', subtext: 'توجد دلالة بلاغية دقيقة في كل موضع' },
+        { label: 'الموضعان وردا بالتقديم في آل عمران والتأخير في البقرة بالعكس', value: 'wrong', subtext: 'عكس للموضعين' }
+      ]);
+
+      return {
+        replyText: `ممتاز جداً! بما أن هدفك الإتقان والسند المتصل، دعنا نجري فحصاً سريعاً في المتشابهات اللفظية:\n\nفي قوله تعالى: ﴿قُلْ إِنَّ هُدَى اللَّهِ هُوَ الْهُدَىٰ﴾ بسورة البقرة، بينما في آل عمران: ﴿قُلْ إِنَّ الْهُدَىٰ هُدَى اللَّهِ﴾.\nما السر الدقيق في تقديم وتأخير لفظ (هو) و(الهدى) بين السورتين؟`,
+        isCompleted: false,
+        nextQuestion: {
+          questionId: 'mutashabihat_test',
+          questionText: 'ضبط المتشابهات اللفظية وتوجيهها:',
+          category: 'mutashabihat',
+          options: mutashabihOptions
+        }
+      };
+    } else {
+      const tajweedOptions = shuffleArray([
+        { label: 'إدغام بغنة ناقص', value: 'correct', subtext: 'الياء من حروف الإدغام بغنة (ينمو)' },
+        { label: 'إظهار حلقي', value: 'wrong', subtext: 'ليس من حروف الحلق الستة' },
+        { label: 'إخفاء حقيقي', value: 'wrong', subtext: 'الياء ليست من حروف الإخفاء' },
+        { label: 'إقلاب بميم مخفاة', value: 'wrong', subtext: 'الإقلاب خاص بحرف الباء فقط' }
+      ]);
+
+      return {
+        replyText: `أحسنت! ننتقل الآن لفحص سريع لأحكام التلاوة والتجويد العملي:\n\nفي قوله تعالى: ﴿مَن يَقُولُ﴾، ما هو الحكم التجويدي الصحيح للنون الساكنة هنا؟`,
+        isCompleted: false,
+        nextQuestion: {
+          questionId: 'tajweed_quick',
+          questionText: 'الحكم التجويدي للنون الساكنة في (مَن يقول):',
+          category: 'tajweed',
+          options: tajweedOptions
+        }
+      };
+    }
+  }
+
+  // Turn 4: Pace and Daily Commitment with SHUFFLED options!
   if (turnIndex === 4) {
+    const commitmentOptions = shuffleArray([
+      { label: 'نصف وجه جديد + ٥ أوجه مراجعة يومياً', value: { newPages: 0.5, reviewPages: 5 }, subtext: 'مسار التثبيت المتأنّي المتين' },
+      { label: 'وجه واحد جديد + ١٠ أوجه مراجعة يومياً', value: { newPages: 1.0, reviewPages: 10 }, subtext: 'المعدل الذهبي المتوازن والموصى به' },
+      { label: 'وجهان جديدان + ٢٠ وجهاً مراجعة يومياً', value: { newPages: 2.0, reviewPages: 20 }, subtext: 'لأصحاب التفرغ والهمم العالية' }
+    ]);
+
     return {
-      replyText: `ما شاء الله عليك، عزيمتك طيبة وأداؤك مبشر بالخير! 🌿\n\nأخبرني عن وقتك اليومي المخصص للحلقة والمراجعة في البيت:\nكم صفحة تستطيع حفظها وتثبيتها يومياً دون أن تشعر بالإرهاق، مع الالتزام التام بالمراجعة؟`,
+      replyText: `عزيمتك مباركة ووعيك طيب يا ${studentInitialData.studentName}! 🌿\n\nأخبرنا عن طاقتك اليومية المريحة في مجلس الشيخ والمنزل:\nكم مقدار الحفظ الجديد والمراجعة اليومية الذي تستطيع الالتزام به بإتقان دون انقطاع؟`,
       isCompleted: false,
       nextQuestion: {
         questionId: 'pace_and_commitment',
-        questionText: 'معدل الحفظ اليومي المناسب لك:',
+        questionText: 'المعدل اليومي المفضل لديك:',
         category: 'psychology_commitment',
-        options: [
-          { label: 'نصف وجه يومياً (تثبيت متأنٍ ومتقن جداً)', value: { newPages: 0.5, reviewPages: 3 } },
-          { label: 'وجه واحد يومياً (المعدل الذهبي المتزن)', value: { newPages: 1, reviewPages: 5 } },
-          { label: 'وجهان يومياً (للهمم العالية والمتفرغين)', value: { newPages: 2, reviewPages: 10 } }
-        ]
+        options: commitmentOptions
       }
     };
   }
@@ -568,7 +839,9 @@ function getPedagogicalTurnFallback(params: {
   // Final Turn (Turn 5): Complete assessment and generate realistic Khatm plan!
   const weeklyDays = 5;
   const newPages = accumulatedData.dailyNewPages || 1;
-  const reviewPages = accumulatedData.dailyReviewPages || 5;
+  const reviewPages = accumulatedData.dailyReviewPages || 10;
+  const reachedS = accumulatedData.reachedSurah || (isKhatim ? (accumulatedData.reviewDirection === 'from_nas' ? 114 : 2) : 78);
+  const reachedA = accumulatedData.reachedAyah || 1;
 
   const timeline = calculateRealisticKhatmTimeline({
     memorizedJuz: memCount,
@@ -579,9 +852,10 @@ function getPedagogicalTurnFallback(params: {
     dailyHoursCount: 2
   });
 
-  const startSurah = memCount >= 30 ? 2 : 78;
-  const startPortion = calculatePortionFromPace(startSurah, 1, newPages);
+  const startPortion = calculatePortionFromPace(reachedS, reachedA, newPages);
 
+  // Day 1 Protocol:
+  // "اول يوم للقارئ وهيبدأ لو خاتم مش هيكون فيه مراجعة اول يوم ﻷنه لسه هيبدأ وهيسمع لكن بكرة لا خلاص اللي سمعه يحب يبدأ عليه المراجعة من الحفظ اللي سمعه امبارح"
   const studentPlan: StudentMemorizationPlan = {
     dailyNewPages: newPages,
     dailyReviewPages: reviewPages,
@@ -598,9 +872,11 @@ function getPedagogicalTurnFallback(params: {
     milestones: timeline.milestones,
     nextDayAssignment: {
       newMemorization: startPortion.description,
-      review: `مراجعة الجزء ${Math.max(1, memCount)} كاملاً مع التكرار والتثبيت`,
+      review: isKhatim
+        ? 'لا توجد مراجعة في اليوم الأول (انطلاقة التسميع الأولى - وتبدأ المراجعة غداً مما يتم تسميعه اليوم)'
+        : 'اليوم الأول مخصص للتسميع الجديد (وتبدأ المراجعة التراكمية غداً مما يُسمّع اليوم)',
       action: 'advance_page',
-      reason: 'انطلاقة قوية مع التركيز على التثبيت المتقن وفق وتيرة الحفظ المعتمدة',
+      reason: 'انطلاقة تأسيسية ذكية تبدأ من موضع الوصول المحدد بدقة مع بروتوكول اليوم الأول',
       surahNumber: startPortion.fromSurah,
       fromAyah: startPortion.fromAyah,
       toSurahNumber: startPortion.toSurah,
@@ -611,13 +887,13 @@ function getPedagogicalTurnFallback(params: {
   };
 
   return {
-    replyText: `🎉 الحمد لله الذي بنعمته تتم الصالحات! تم فحص مستواك القرآني وتحليله بدقة متناهية.\n\n📊 **الخلاصة التقييمية لمستواك:**\n• المستوى القرآني: ${isKhatim ? 'مستوى الإتقان والإجازة' : memCount > 5 ? 'مستوى متوسط متقدم' : 'مستوى تأسيسي مبشر'}\n• الأجزاء المحفوظة: ${memCount} جزءاً • المثبتة: ${accumulatedData.consolidatedCount} أجزاء\n• موعد الختم الواقعي المحسوب: **${timeline.targetCompletionDate}**\n\n📌 **مبدأ خطتك المعتمدة:** ${timeline.pedagogicalNote}\n\nنبحث لك الآن عن الحلقة والمسجد الأنسب في مجمع ${params.complex.name}...`,
+    replyText: `🎉 الحمد لله الذي بنعمته تتم الصالحات! تم تحليل مستواك القرآني وتحديد موضع البداية بدقة.\n\n📊 **الخلاصة التقييمية لمسارك:**\n• موضع الانطلاق: سورة ${getSurahInfo(reachedS).name} (الآية ${reachedA})\n• اتجاه المراجعة: ${accumulatedData.reviewDirection === 'from_nas' ? 'من سورة الناس صعوداً' : 'من سورة البقرة نزولاً'}\n• بروتوكول اليوم الأول: تسميع الورد الجديد فقط، وتبدأ المراجعة التراكمية من الغد لربط ما يُسمّع اليوم.\n• موعد الختم المتوقع: **${timeline.targetCompletionDate}**\n\n📌 **مبدأ الخطة:** ${timeline.pedagogicalNote}\n\nنبحث لك الآن عن الحلقة والمسجد الأنسب في مجمع ${params.complex.name}...`,
     isCompleted: true,
     aiInsights: {
       studentLevel: isKhatim ? 'خاتم ومتقن' : memCount > 5 ? 'متوسط' : 'مبتدئ',
-      psychologicalProfile: 'طالب حريص وذو استيعاب طيب، يناسبه أسلوب التشجيع وربط الحفظ الجديد بالمراجعة المستمرة.',
-      commitmentAssessment: 'جاهزية عالية للالتزام بورد يومي منتظم.',
-      recommendedHalaqahLevel: isKhatim ? 'حلقة الإتقان والسرد' : 'حلقة الحفظ والمراجعة التراكمية',
+      psychologicalProfile: 'طالب حريص وجاهز للالتزام بجدول التثبيت اليومي وبروتوكول المراجعة التراكمية.',
+      commitmentAssessment: 'ممتاز',
+      recommendedHalaqahLevel: isKhatim ? 'حلقة الإتقان والسند المتصل' : 'حلقة الحفظ والمراجعة التراكمية',
       suggestedDailyNewPages: newPages,
       suggestedDailyReviewPages: reviewPages
     },

@@ -544,40 +544,47 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
     const computedPortion = calculatePortionFromPace(surah.number, startAyah, pagePace);
 
     if (!process.env.GEMINI_API_KEY) {
-      return res.json({ plan: getFallbackPlan(student) });
+      return res.json({ plan: getFallbackPlan(student), portion: computedPortion });
     }
 
     const prompt = `أنت شيخ مقرئ ومربٍ خبير في تحفيظ القرآن الكريم وتوجيه الحلقات القرآنية.
-المطلوب: وضع خطة يومية تربوية دقيقة وخارطة طريق تحفيظ للطالب التالي:
+المطلوب: التفكير بروية وحكمة، وبناء خطة يومية تربوية دقيقة وخارطة طريق تحفيظ للطالب التالي:
 - اسم الطالب: ${student.name}
 - العمر: ${student.age} سنة
 - المستوى: ${student.level} (ضعيف / متوسط / قوي)
 - طاقة الحفظ اليومي للجديد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
-- طاقة المراجعة اليومية: ${student.dailyReviewTarget}
+- طاقة المراجعة اليومية: ${student.dailyReviewTarget || 'وجه واحد'}
 - ملاحظات المعلم: ${student.notes || "لا توجد"}
 
-بيانات موضع الحفظ القرآني الحالي (حقائق قرآنية ملزمة من مصحف المدينة النبوية - 604 أوجه):
+بيانات موضع الحفظ القرآني الحالي (حقائق قرآنية ملزمة من مصحف المدينة النبوية - 604 أوجه، كل وجه 15 سطراً):
 - السورة الحالية: سورة ${surah.name} (رقم ${surah.number} في المصحف، نوعها: ${surah.revelationType}، الجزء: ${surah.juz})
 - عدد آيات السورة الإجمالي: ${surah.numberOfAyahs} آية فقط!
 - الآية الحالية التي يقف عندها: الآية رقم ${startAyah}
-- الحساب القرآني الدقيق للورد اليومي بناءً على صفحات مصحف مجمع الملك فهد:
+- الحساب المعياري لمصحف مجمع الملك فهد:
   * المقدار المعتمد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
-  * حدود الآيات المحسوبة بدقة لمصحف المدينة: من سورة ${surah.name} آية (${computedPortion.fromAyah}) إلى آية (${computedPortion.toAyah}) [${computedPortion.description}]
+  * تقدير الحدود المعيارية: من سورة ${surah.name} آية (${computedPortion.fromAyah}) إلى آية (${computedPortion.toAyah}) [${computedPortion.description}]
 
 قواعد قرآنية وتربوية صارمة يجب الالتزام بها 100%:
-1. [قاعدة حاسمة]: إذا كان ورد الطالب نصف وجه، التزم بالحدود المحسوبة لمصحف المدينة (من الآية ${computedPortion.fromAyah} إلى ${computedPortion.toAyah}). لا تختزل نصف الوجه إلى 4 آيات عشوائياً، ولا تكلف الطالب بسورة كاملة فجأة!
-2. إجمالي آيات سورة ${surah.name} هو ${surah.numberOfAyahs} آية فقط! ممنوع نهائياً ومطلقاً ذكر أي رقم آية يتجاوز ${surah.numberOfAyahs}.
-3. إذا انتهت السورة، يتم الانتقال للسورة التالية من الآية 1 بنفس الوتيرة المعتدلة.
-4. حدد ورد المراجعة بالسورة والآيات، واقترح قارئاً معلماً معتمداً مناسباً لعمر ومستوى الطالب.
-5. اكتب توجيهاً منزلياً عملياً لولي الأمر للربط والتكرار والتثبيت قبل النوم.
+1. [قاعدة حاسمة في نصف الوجه]:
+   - الوجه في مصحف المدينة 15 سطراً، ونصف الوجه يعادل 7 إلى 8 أسطر تقريباً.
+   - إذا كانت الآيات قصيرة (مثل قصار السور أو جزء عم أو تسارع الآيات)، نصف الوجه يستوعب من 10 إلى 16 آية تقريباً، ولا يجوز اختزاله إلى 4 آيات عشوائياً!
+   - إذا كانت الآيات طويلة أو متوسطة، قف عند رأس الآية المناسبة التي تحقق حوالي 7-8 أسطر مع مراعاة تمام المعنى.
+   - الآيات المحسوبة لمصحف المدينة هي من الآية (${computedPortion.fromAyah}) إلى (${computedPortion.toAyah}). اضبط الورد بدقة بناءً عليها.
+2. [حدود السورة]: إجمالي آيات سورة ${surah.name} هو ${surah.numberOfAyahs} آية فقط! ممنوع نهائياً ومطلقاً ذكر أي رقم آية يتجاوز ${surah.numberOfAyahs}. وإذا انتهت السورة، انتقل للسورة التالية من الآية 1.
+3. [ممنوع التكليف بسورة كاملة فجأة]: لا تكلف الطالب بسورة كاملة فجأة أبداً إلا إذا كانت سورة قصيرة جداً (3-6 آيات) ويستطيعها.
+4. حدد ورد المراجعة بالسورة والآيات، واقترح قارئاً معلماً معتمداً، واكتب توجيهاً منزلياً لولي الأمر.
 
 أخرج النتيجة بصيغة JSON فقط:
 {
+  "fromSurah": ${computedPortion.fromSurah},
+  "fromAyah": ${computedPortion.fromAyah},
+  "toSurah": ${computedPortion.toSurah},
+  "toAyah": ${computedPortion.toAyah},
   "roadmapSummary": "ملخص تربوي واستراتيجي لخطة الطالب في إتمام الحفظ والمراجعة",
   "currentDailyAssignment": {
     "newMemorization": "${computedPortion.description}",
     "review": "تحديد ورد المراجعة اليومي بدقة مع أسماء السور والآيات",
-    "suggestedSheikh": "اسم الشيخ المقترح للاستماع له (مثل: الشيخ محمود خليل الحصري - المصحف المعلم)",
+    "suggestedSheikh": "الشيخ محمود خليل الحصري - المصحف المعلم",
     "tajweedFocus": "الحكم التجويدي أو المهارة الصوتية للتركيز عليها اليوم",
     "dailyNote": "توجيه تربوي عملي للربط والتكرار بالمنزل"
   },
@@ -592,7 +599,23 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
     if (aiText) {
       try {
         const plan = JSON.parse(aiText);
-        return res.json({ plan, portion: computedPortion });
+        if (plan) {
+          const resFromSurah = Number(plan.fromSurah) || computedPortion.fromSurah;
+          const resFromAyah = Number(plan.fromAyah) || computedPortion.fromAyah;
+          const resToSurah = Number(plan.toSurah) || computedPortion.toSurah;
+          const toSurahInfo = getSurahInfo(resToSurah);
+          const resToAyah = Math.min(Number(plan.toAyah) || computedPortion.toAyah, toSurahInfo.numberOfAyahs);
+
+          const finalPortion = {
+            ...computedPortion,
+            fromSurah: resFromSurah,
+            fromAyah: resFromAyah,
+            toSurah: resToSurah,
+            toAyah: resToAyah,
+            description: plan.currentDailyAssignment?.newMemorization || computedPortion.description
+          };
+          return res.json({ plan, portion: finalPortion });
+        }
       } catch (e) {}
     }
 
@@ -1201,7 +1224,7 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
     // Check Gemini API
     if (process.env.GEMINI_API_KEY) {
       const prompt = `أنت الخبير القرآني والتربوي الأول في «منظومة عمران القرآنية».
-مهمتك: صياغة وتحديد خطة ومقرر غد للطالب (حفظ جديد + مراجعات متعددة وتثبيت أخطاء) بناءً على أداء اليوم وسجل الأخطاء وتاريخ الأيام السابقة وزمن الحلقة المتاح.
+مهمتك: التفكير بحكمة وبناء خطة ومقرر غد للطالب (حفظ جديد + مراجعات متعددة وتثبيت أخطاء) بناءً على ما سمعه اليوم وسجل الأخطاء وتاريخ الجلسات السابقة وزمن وتوقيت الحلقة.
 
 بيانات الطالب:
 - الاسم: ${studentName}
@@ -1215,18 +1238,21 @@ ${errorsCount > 0 ? ayahErrors.map((e: any) => `- سورة ${e.surahName || e.su
 - تاريخ التقييمات السابقة (آخر الجلسات):
 ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}: درجة ${h.score || 10}/10، ملاحظات: ${h.notes || 'طيبة'}`).join('\n') || "جلسات سابقة منتظمة"}
 - الحساب القرآني الدقيق للغد (حقائق قرآنية ملزمة بناءً على مصحف المدينة 604 أوجه):
-  * بداية مقرر الغد: يبدأ من الآية رقم (${advanceStartAyah})
+  * بداية مقرر الغد للجديد: يبدأ حتماً من الآية التالية (${advanceStartAyah})
   * المقدار المقرر للغد: من سورة ${getSurahInfo(targetTomorrowPortion.fromSurah).name} آية (${targetTomorrowPortion.fromAyah}) إلى آية (${targetTomorrowPortion.toAyah}) [${targetTomorrowPortion.description}]
   * حالة التطور الشهري: ${isMonthlyExcellence ? `الطالب متفوق ومتميز بعد شهر من التسميع المنتظم، تم زيادة ورده بنصف وجه إضافي ليصبح ${recommendedPace} وجه` : 'الاستمرار بالوتيرة الحالية لضمان التثبيت'}
 
-القواعد التربوية الحاكمة الصارمة:
-1. [قاعدة حاسمة ومطلقة]: إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات)، فإن مقرر الغد يبدأ من الآية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}). ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة!
+القواعد التربوية الحاكمة الصارمة للذكاء الاصطناعي:
+1. [قاعدة حاسمة ومطلقة لمنع التكليف بالسورة كاملة]:
+   - إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات: من الآية 1 إلى 4)، فإن مقرر الغد يبدأ حتماً من الآية التالية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}).
+   - ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة فجأة!
+   - لا تعد للطالب إلى الآية 1 ولا تكلفه بالسورة كاملة!
 2. إذا كان على الطالب أخطاء اليوم (خاصة متكررة) أو لم يسمع:
    - يجب تكرار وتثبيت نفس الآيات التي سمّعها اليوم فقط (${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah})، وليس السورة كاملة!
    - وضع بند مراجعة خاص بعنوان: "تثبيت الأخطاء والمتشابهات" للآيات التي وقع فيها خطأ.
 3. إذا كان الطالب متقناً بدون أي خطأ:
    - يتقدم في الحفظ الجديد بمقدار الورد المعتمد بدقة (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}).
-   - توضع مراجعة صغرى لما سمعه اليوم ومراجعة كبرى للأجزاء السابقة.
+   - توضع مراجعة صغرى لما سمعه اليوم (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah}) لتثبيتها في الصدر.
 4. التناسب مع زمن الحلقة (${halaqahDailyHours} ساعة).
 
 المطلوب: إرجاع النتيجة بصيغة JSON فقط:
@@ -1235,7 +1261,7 @@ ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}
   "tomNewFromAyah": ${targetTomorrowPortion.fromAyah},
   "tomNewToSurah": ${targetTomorrowPortion.toSurah},
   "tomNewToAyah": ${targetTomorrowPortion.toAyah},
-  "action": "${errorsCount >= 2 ? 'reinforce_errors' : didNotRecite ? 'repeat_surah' : 'advance_page'}",
+  "action": "${errorsCount >= 2 ? 'reinforce_errors' : didNotRecite ? 'repeat_portion' : 'advance_page'}",
   "tomReviews": [
     {
       "id": "tom_rev_1",
@@ -1258,22 +1284,39 @@ ${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}
         try {
           const parsed = JSON.parse(aiText);
           if (parsed && parsed.tomNewSurah) {
-            return res.json(parsed);
+            let resToAyah = Number(parsed.tomNewToAyah) || targetTomorrowPortion.toAyah;
+            let resFromAyah = Number(parsed.tomNewFromAyah) || targetTomorrowPortion.fromAyah;
+            const resSurah = Number(parsed.tomNewSurah) || targetTomorrowPortion.fromSurah;
+            const resSurahInfo = getSurahInfo(resSurah);
+
+            // Safety check against whole surah hallucination
+            if (resFromAyah === 1 && resToAyah >= resSurahInfo.numberOfAyahs && resSurahInfo.numberOfAyahs > 6 && !didNotRecite) {
+              resFromAyah = targetTomorrowPortion.fromAyah;
+              resToAyah = targetTomorrowPortion.toAyah;
+            }
+
+            return res.json({
+              ...parsed,
+              tomNewSurah: resSurah,
+              tomNewFromAyah: resFromAyah,
+              tomNewToSurah: Number(parsed.tomNewToSurah) || targetTomorrowPortion.toSurah,
+              tomNewToAyah: resToAyah
+            });
           }
         } catch (e) {}
       }
     }
 
     // Resilient pedagogical fallback generator
-    let tomNewSurah = curEndSurah;
-    let tomNewFromAyah = 1;
-    let tomNewToSurah = curEndSurah;
-    let tomNewToAyah = curEndAyah;
-    let action: 'repeat_surah' | 'advance_page' | 'reinforce_errors' = 'advance_page';
+    let tomNewSurah = targetTomorrowPortion.fromSurah;
+    let tomNewFromAyah = targetTomorrowPortion.fromAyah;
+    let tomNewToSurah = targetTomorrowPortion.toSurah;
+    let tomNewToAyah = targetTomorrowPortion.toAyah;
+    let action: 'repeat_portion' | 'advance_page' | 'reinforce_errors' = 'advance_page';
     let rationale = "";
 
     if (didNotRecite) {
-      action = 'repeat_surah';
+      action = 'repeat_portion';
       tomNewSurah = Number(todayEvaluation?.todayNewSurah) || curEndSurah;
       tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
       tomNewToSurah = curEndSurah;

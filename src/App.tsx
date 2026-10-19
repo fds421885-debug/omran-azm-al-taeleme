@@ -2264,6 +2264,20 @@ export function App() {
         points: Math.max(0, (targetStudent.points || 0) + deltaTotal),
         persistentReviewItems: newAssignment?.reviewItems || targetStudent.persistentReviewItems,
         activeListeningAssignment: listeningAssignment || targetStudent.activeListeningAssignment,
+        memorizationPlan: targetStudent.memorizationPlan && newAssignment ? {
+          ...targetStudent.memorizationPlan,
+          nextDayAssignment: {
+            ...targetStudent.memorizationPlan.nextDayAssignment,
+            newMemorization: newAssignment.newMemorization,
+            review: newAssignment.review,
+            suggestedSheikh: newAssignment.suggestedSheikh,
+            surahNumber: newAssignment.newItem?.surahNumber || finalSurahNum,
+            fromAyah: newAssignment.newItem?.fromAyah || 1,
+            toSurahNumber: newAssignment.newItem?.toSurahNumber || finalSurahNum,
+            toAyah: newAssignment.newItem?.toAyah || finalAyah
+          },
+          lastUpdated: new Date().toISOString()
+        } : targetStudent.memorizationPlan,
         aiPlan: newAssignment ? {
           roadmapSummary: targetStudent.aiPlan?.roadmapSummary || 'خطة الحفظ والمراجعة التراكمية',
           difficultyAdjustment: targetStudent.aiPlan?.difficultyAdjustment || 'وتيرة متوازنة',
@@ -3961,6 +3975,46 @@ export function App() {
           onUpdateComplex={handleSaveComplex}
           onStudentCreatedFromApp={(newStudent) => {
             setStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+            if (newStudent.isGeneratingPlan) {
+              fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ student: newStudent })
+              })
+                .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
+                .then(data => {
+                  const aiPlanObj = data?.plan;
+                  const aiPortion = data?.portion;
+                  const withPlan: Student = {
+                    ...newStudent,
+                    isGeneratingPlan: false,
+                    aiPlan: aiPlanObj ? { ...aiPlanObj, lastUpdated: new Date().toISOString() } : undefined,
+                    memorizationPlan: {
+                      ...newStudent.memorizationPlan!,
+                      nextDayAssignment: {
+                        ...newStudent.memorizationPlan!.nextDayAssignment!,
+                        newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion?.description || newStudent.memorizationPlan!.nextDayAssignment!.newMemorization,
+                        review: aiPlanObj?.currentDailyAssignment?.review || newStudent.memorizationPlan!.nextDayAssignment!.review,
+                        suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+                        surahNumber: aiPortion?.fromSurah || newStudent.currentSurah || 78,
+                        fromAyah: aiPortion?.fromAyah || newStudent.currentAyah || 1,
+                        toSurahNumber: aiPortion?.toSurah || newStudent.currentSurah || 78,
+                        toAyah: aiPortion?.toAyah || 15
+                      },
+                      lastUpdated: new Date().toISOString()
+                    }
+                  };
+                  setStudents(prev => prev.map(s => s.id === newStudent.id ? withPlan : s));
+                  OmranDataService.saveStudent(withPlan).catch(() => {});
+                  window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: withPlan }));
+                })
+                .catch(() => {
+                  const resolved = { ...newStudent, isGeneratingPlan: false };
+                  setStudents(prev => prev.map(s => s.id === newStudent.id ? resolved : s));
+                  OmranDataService.saveStudent(resolved).catch(() => {});
+                  window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: resolved }));
+                });
+            }
           }}
           initialTab={applicationsModalInitialTab}
         />

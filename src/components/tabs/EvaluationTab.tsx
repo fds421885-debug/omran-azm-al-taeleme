@@ -632,6 +632,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     if (!activeStudent) return;
     setAutoFilledNotice('');
 
+    // If student has no plan at all, automatically trigger background AI plan generation
+    if (!activeStudent.memorizationPlan && !activeStudent.aiPlan && !activeStudent.isGeneratingPlan && !isManualGeneratingPlan) {
+      handleForceGeneratePlan();
+      return;
+    }
+
     // 1. Check if an evaluation already exists for the selectedDate
     const existing = evaluations.find(
       e => e.date === selectedDate && e.studentId === activeStudent.id
@@ -1091,6 +1097,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     setTomNewFromAyah(tomPortion.fromAyah);
     setTomNewToSurah(tomPortion.toSurah);
     setTomNewToAyah(tomPortion.toAyah);
+
+    // Automatically set tomorrow's review to include today's recited portion for reinforcement
+    const fromInfo = getSurahInfo(fromS);
+    const toInfo = getSurahInfo(toS);
+    setTomReviews([
+      {
+        id: `tom_rev_${Date.now()}`,
+        type: 'مراجعة صغرى',
+        surahNumber: fromS,
+        surahName: fromInfo.name,
+        fromAyah: fromA,
+        toSurahNumber: toS,
+        toSurahName: toInfo.name,
+        toAyah: toA,
+        isFullSurah: false,
+        notes: 'تثبيت ومراجعة ما تم حفظه وتسميعه اليوم في الصدر'
+      }
+    ]);
   };
 
   // Handlers for Today's New
@@ -2518,7 +2542,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               })()}
 
               {/* AI Plan Generating Card (Blocks recitation until plan is finalized) */}
-              {activeStudent.isGeneratingPlan && (
+              {(activeStudent.isGeneratingPlan || isManualGeneratingPlan) && (
                 <div className="bg-gradient-to-r from-amber-500/20 via-emerald-600/25 to-teal-500/20 border-2 border-amber-400/80 rounded-3xl p-6 text-center space-y-4 shadow-[0_0_35px_rgba(251,191,36,0.25)] animate-pulse">
                   <div className="w-16 h-16 rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center mx-auto text-amber-300">
                     <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '3s' }} />
@@ -2610,7 +2634,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               {/* ============================================================ */}
               {/* SECTION 1: TODAY'S RECITATION (ما تم تسميعه بالتفصيل) */}
               {/* ============================================================ */}
-              <div className="bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-5">
+              <div className={`bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-5 transition-opacity ${(activeStudent.isGeneratingPlan || isManualGeneratingPlan) ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                 <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
                   <h4 className="text-sm font-bold text-[#fbbf24] font-heading flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-[#fbbf24]" />
@@ -2791,9 +2815,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             onChange={e => {
                               const val = Number(e.target.value);
                               setTodayNewFromAyah(val);
+                              let targetTo = todayNewToAyah;
                               if (todayNewSurah === todayNewToSurah && todayNewToAyah < val) {
+                                targetTo = val;
                                 setTodayNewToAyah(val);
                               }
+                              recalculateTomorrowFromToday(todayNewSurah, val, todayNewToSurah, targetTo, todayNewDidNotRecite);
                             }}
                             className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
                           >
@@ -2835,25 +2862,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             onChange={e => {
                               const val = Number(e.target.value);
                               setTodayNewToAyah(val);
-                              if (!todayNewDidNotRecite) {
-                                const curSurahInfo = getSurahInfo(todayNewToSurah);
-                                let nextStartS = todayNewToSurah;
-                                let nextStartA = val + 1;
-                                if (nextStartA > curSurahInfo.numberOfAyahs) {
-                                  nextStartS = todayNewToSurah < 114 ? todayNewToSurah + 1 : 1;
-                                  nextStartA = 1;
-                                }
-                                const pace = activeStudent?.memorizationPlan?.dailyNewPages ||
-                                  (activeStudent?.dailyNewTarget?.includes('وجهين') ? 2.0 :
-                                   activeStudent?.dailyNewTarget?.includes('ربع') ? 0.25 :
-                                   activeStudent?.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
-
-                                const tomPortion = calculatePortionFromPace(nextStartS, nextStartA, pace);
-                                setTomNewSurah(tomPortion.fromSurah);
-                                setTomNewFromAyah(tomPortion.fromAyah);
-                                setTomNewToSurah(tomPortion.toSurah);
-                                setTomNewToAyah(tomPortion.toAyah);
-                              }
+                              recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewToSurah, val, todayNewDidNotRecite);
                             }}
                             className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
                           >
@@ -3212,13 +3221,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setTomNewToSurah(tomNewSurah);
-                        setTomNewFromAyah(1);
-                        setTomNewToAyah(startTomNewSurahInfo.numberOfAyahs);
+                        const pace = activeStudent?.memorizationPlan?.dailyNewPages || 0.5;
+                        const p = calculatePortionFromPace(tomNewSurah, tomNewFromAyah, pace);
+                        setTomNewToSurah(p.toSurah);
+                        setTomNewToAyah(p.toAyah);
                       }}
-                      className="px-2.5 py-1 rounded-xl bg-[#022c22] text-[#fbbf24] border border-[#065f46] text-[11px] font-bold cursor-pointer"
+                      className="px-2.5 py-1 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#fbbf24] border border-[#065f46] text-[11px] font-bold cursor-pointer transition-colors"
                     >
-                      كامل سورة {startTomNewSurahInfo.name} ({startTomNewSurahInfo.numberOfAyahs})
+                      ضبط بمعدل الورد ({activeStudent?.dailyNewTarget || 'نصف وجه'})
                     </button>
                   </div>
 
@@ -3836,13 +3846,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                 <button
                   type="button"
-                  disabled={isSaving || !!activeStudent.isGeneratingPlan}
+                  disabled={isSaving || !!activeStudent.isGeneratingPlan || isManualGeneratingPlan}
                   onClick={handleSaveEvaluationRecord}
                   className="px-8 py-3.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-sm font-black shadow-[0_0_25px_rgba(251,191,36,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   {isSaving ? (
                     <span>جاري حفظ السجل وتحديث البيانات...</span>
-                  ) : activeStudent.isGeneratingPlan ? (
+                  ) : (activeStudent.isGeneratingPlan || isManualGeneratingPlan) ? (
                     <span className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-[#064e3b] animate-spin" />
                       <span>يرجى الانتظار حتى اكتمال خطة الذكاء الاصطناعي...</span>

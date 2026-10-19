@@ -836,6 +836,17 @@ export interface Student {
   mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المطول
   assignedMosqueId?: string; // المسجد الملحق به الطالب في حال المنظومة
   assignedMosqueName?: string;
+  reviewStartDirection?: 'from_baqarah' | 'from_nas'; // اتجاه المراجعة: من البقرة نزولاً أو من الناس صعوداً
+  recentlyCompletedSurahs?: Array<{
+    surahNumber: number;
+    surahName: string;
+    completedDate: string;
+    errorCount?: number;
+    totalAyahs?: number;
+  }>; // السور حديثة الإتمام التي تُراجع يومياً لمدة أسبوعين
+  isFirstSession?: boolean; // هل هذه الجلسة الأولى للطالب (اليوم الأول لا توجد مراجعة، ومن الغد تبدأ)
+  startSurahReached?: number; // السورة التي وصل إليها الطالب
+  startAyahReached?: number; // الآية التي وصل إليها
   persistentReviewItems?: QuranRecitationItem[]; // بنود المراجعة والتراكمي والاختبار المحفوظة دائماً للطالب
   notes?: string;
   complexId?: string; // ID of the complex this student belongs to

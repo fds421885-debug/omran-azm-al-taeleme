@@ -570,45 +570,37 @@ export function calculatePortionFromPace(
   }
 
   const safePace = Math.max(0.25, Math.min(pagePace || 0.5, 5));
+  const targetLines = Math.max(3.5, 15 * safePace); // 7.5 lines for half-page (15 lines per standard page)
 
-  const startPageNum = getPageOfAyah(safeStartSurah, safeStartAyah);
-  const pageAyahs = getAyahsOnPage(startPageNum);
-  let startIndex = pageAyahs.findIndex(it => it.surah === safeStartSurah && it.ayah === safeStartAyah);
-  if (startIndex === -1) startIndex = 0;
+  let curPage = getPageOfAyah(safeStartSurah, safeStartAyah);
+  let pageAyahs = getAyahsOnPage(curPage);
+  let startIdx = pageAyahs.findIndex(it => it.surah === safeStartSurah && it.ayah === safeStartAyah);
+  if (startIdx === -1) startIdx = 0;
 
-  const totalOnStart = Math.max(1, pageAyahs.length);
-  const remainingOnStart = totalOnStart - startIndex;
-  const fractionOnStart = remainingOnStart / totalOnStart;
+  let accumulatedLines = 0;
+  let curIdx = startIdx;
+  let lastItem = pageAyahs[curIdx] || { surah: safeStartSurah, ayah: safeStartAyah };
 
-  let targetItem: { surah: number; ayah: number };
+  while (accumulatedLines < targetLines && curPage <= 604) {
+    const totalAyahsOnPage = Math.max(1, pageAyahs.length);
+    const linesPerAyah = 15 / totalAyahsOnPage;
 
-  if (safePace <= fractionOnStart) {
-    const advanceCount = Math.max(1, Math.round(totalOnStart * safePace));
-    const targetIdx = Math.min(totalOnStart - 1, startIndex + advanceCount - 1);
-    targetItem = pageAyahs[targetIdx];
-  } else {
-    let paceRemaining = safePace - fractionOnStart;
-    let curPage = startPageNum + 1;
-    let lastFound = pageAyahs[pageAyahs.length - 1];
-
-    while (curPage <= 604 && paceRemaining > 0) {
-      const nextAyahs = getAyahsOnPage(curPage);
-      if (nextAyahs.length === 0) break;
-      if (paceRemaining <= 1.0) {
-        const takeCount = Math.max(1, Math.round(nextAyahs.length * paceRemaining));
-        const finalIdx = Math.min(nextAyahs.length - 1, takeCount - 1);
-        lastFound = nextAyahs[finalIdx];
-        paceRemaining = 0;
-        break;
-      } else {
-        lastFound = nextAyahs[nextAyahs.length - 1];
-        paceRemaining -= 1.0;
-        curPage++;
-      }
+    while (curIdx < pageAyahs.length && accumulatedLines < targetLines) {
+      accumulatedLines += linesPerAyah;
+      lastItem = pageAyahs[curIdx];
+      curIdx++;
     }
-    targetItem = lastFound;
+
+    if (accumulatedLines < targetLines) {
+      curPage++;
+      if (curPage > 604) break;
+      pageAyahs = getAyahsOnPage(curPage);
+      if (pageAyahs.length === 0) break;
+      curIdx = 0;
+    }
   }
 
+  const targetItem = lastItem;
   const endSurahInfo = getSurahInfo(targetItem.surah);
 
   let paceLabel = `${safePace} وجه`;
