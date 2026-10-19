@@ -156,17 +156,18 @@ app.get("/api/mail/config", async (req, res) => {
       saveStoredMailConfig(stored);
     }
   }
-  const envUser = process.env.GMAIL_USER || process.env.SMTP_USER || "";
-  const envPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "";
+  const envUser = process.env.SMTP_USER || process.env.GMAIL_USER || "";
+  const envPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "";
   const user = stored.user || envUser;
   const hasPass = Boolean(stored.pass || envPass);
 
   return res.json({
     isConfigured: Boolean(user && hasPass),
+    hasEnvCredentials: Boolean(envUser && envPass),
     user: user || "",
     fromName: stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية",
     fromEmail: stored.fromEmail || user || "qdrat2626@gmail.com",
-    provider: stored.smtpHost ? "custom_smtp" : "gmail_smtp"
+    provider: (stored.smtpHost || process.env.SMTP_HOST) ? "custom_smtp" : "gmail_smtp"
   });
 });
 
@@ -226,11 +227,11 @@ app.post("/api/mail/send-gmail", async (req, res) => {
       }
     }
 
-    const effectiveUser = String(gmailUser || stored.user || process.env.GMAIL_USER || process.env.SMTP_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    const effectiveUser = String(gmailUser || process.env.SMTP_USER || stored.user || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
     // Clean spaces from Google 16-character App Passwords (e.g. "abcd efgh ijkl mnop" -> "abcdefghijklmnop")
-    const rawPass = String(gmailAppPassword || stored.pass || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").trim();
+    const rawPass = String(gmailAppPassword || process.env.SMTP_PASS || stored.pass || process.env.GMAIL_APP_PASSWORD || "").trim();
     const effectivePass = rawPass.replace(/\s+/g, "");
-    const cleanFrom = String(fromEmail || stored.fromEmail || effectiveUser).replace(/[\r\n]/g, "").trim();
+    const cleanFrom = (fromEmail && !fromEmail.includes("qdrat2626") && fromEmail.includes("@")) ? String(fromEmail).replace(/[\r\n]/g, "").trim() : effectiveUser;
     const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
     const bodyContent = html || text;
 
@@ -283,13 +284,13 @@ app.post("/api/mail/send-gmail", async (req, res) => {
 
     // 2. Try Nodemailer with Gmail SMTP / App Password
     if (effectiveUser && effectivePass) {
-      const activeHost = smtpHost || stored.smtpHost;
-      const activePort = Number(smtpPort || stored.smtpPort);
+      const activeHost = smtpHost || stored.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
+      const activePort = Number(smtpPort || stored.smtpPort || process.env.SMTP_PORT || (activeHost === "smtp.gmail.com" ? 465 : 587));
 
       // Primary transport attempt (Port 465 SSL for Gmail by default)
       try {
         const transporter = nodemailer.createTransport(
-          activeHost
+          activeHost !== "smtp.gmail.com"
             ? {
                 host: activeHost,
                 port: activePort || 587,
@@ -317,14 +318,14 @@ app.post("/api/mail/send-gmail", async (req, res) => {
 
         return res.json({
           success: true,
-          provider: activeHost ? "custom_smtp" : "gmail_smtp_465",
+          provider: activeHost !== "smtp.gmail.com" ? "custom_smtp" : "gmail_smtp_465",
           messageId: info.messageId
         });
       } catch (smtpErr: any) {
         console.warn("Primary SMTP error, attempting fallback port 587:", smtpErr?.message);
 
         // Fallback: Port 587 with STARTTLS for Gmail
-        if (!activeHost) {
+        if (activeHost === "smtp.gmail.com") {
           try {
             const fallbackTransporter = nodemailer.createTransport({
               host: "smtp.gmail.com",
@@ -373,13 +374,109 @@ app.post("/api/mail/send-gmail", async (req, res) => {
     // 3. Clear, honest error if credentials are not configured yet
     return res.status(400).json({
       success: false,
-      error: "خدمة إرسال البريد الحقيقي غير مهيأة بعد. يرجى إدخال حساب Gmail وكلمة مرور التطبيقات (App Password) في إعدادات المنظومة لحفظها وتفعيل الإرسال الحقيقي فوراً إلى صندوق الوارد."
+      error: "خدمة إرسال البريد الحقيقي غير مهيأة بعد. يرجى ضبط المتغيرين SMTP_USER و SMTP_PASS أو إدخال حساب Gmail وكلمة مرور التطبيقات (App Password) في إعدادات المنظومة لحفظها وتفعيل الإرسال الحقيقي فوراً إلى صندوق الوارد."
     });
   } catch (err: any) {
     console.error("Gmail endpoint error:", err);
     return res.status(500).json({
       success: false,
       error: err?.message || "حدث خطأ غير متوقع أثناء إرسال البريد."
+    });
+  }
+});
+
+// Dedicated Real Registration Application Dispatcher (includes ticket number, verification link & full application details)
+app.post("/api/mail/send-registration", async (req, res) => {
+  try {
+    const {
+      to,
+      subject,
+      html,
+      text,
+      fromName,
+      fromEmail,
+      trackingCode,
+      verificationUrl,
+      studentName
+    } = req.body;
+
+    if (!to || (!html && !text)) {
+      return res.status(400).json({
+        success: false,
+        error: "بيانات البريد غير مكتملة."
+      });
+    }
+
+    const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
+    let stored = getStoredMailConfig();
+    if (!stored?.pass) {
+      try {
+        const cloudConfig = await getFirestoreMailConfig();
+        if (cloudConfig?.pass) {
+          stored = { ...stored, ...cloudConfig };
+          inMemoryMailConfig = stored;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const effectiveUser = String(process.env.SMTP_USER || stored.user || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    const rawPass = String(process.env.SMTP_PASS || stored.pass || process.env.GMAIL_APP_PASSWORD || "").trim();
+    const effectivePass = rawPass.replace(/\s+/g, "");
+    const cleanFrom = (fromEmail && !fromEmail.includes("qdrat2626") && fromEmail.includes("@")) ? String(fromEmail).replace(/[\r\n]/g, "").trim() : effectiveUser;
+    const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
+    const finalSubject = subject || `تم استلام طلب انضمامك بنجاح • تذكرة متابعة [${trackingCode || "OMR-APP"}]`;
+
+    if (!effectiveUser || !effectivePass) {
+      return res.status(400).json({
+        success: false,
+        error: "خدمة إرسال البريد غير مهيأة. يرجى تعيين SMTP_USER و SMTP_PASS في المتغيرات البيئية أو إعدادات المنظومة."
+      });
+    }
+
+    const activeHost = stored.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
+    const activePort = Number(stored.smtpPort || process.env.SMTP_PORT || (activeHost === "smtp.gmail.com" ? 465 : 587));
+
+    const transporter = nodemailer.createTransport(
+      activeHost !== "smtp.gmail.com"
+        ? {
+            host: activeHost,
+            port: activePort,
+            secure: activePort === 465,
+            auth: { user: effectiveUser, pass: effectivePass }
+          }
+        : {
+            host: "smtp.gmail.com",
+            port: 465,
+            secure: true,
+            auth: { user: effectiveUser, pass: effectivePass }
+          }
+    );
+
+    const info = await transporter.sendMail({
+      from: `"${cleanFromName}" <${cleanFrom}>`,
+      to: cleanTo,
+      subject: finalSubject,
+      html: html || text,
+      text: text || undefined
+    });
+
+    console.log(`[MailService] Registration email sent successfully to ${cleanTo} (Tracking: ${trackingCode}, MsgId: ${info.messageId})`);
+
+    return res.json({
+      success: true,
+      provider: "smtp",
+      messageId: info.messageId,
+      trackingCode,
+      verificationUrl,
+      studentName
+    });
+  } catch (err: any) {
+    console.error("[MailService] Error sending registration email:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "تعذر إرسال بريد طلب التسجيل الفعلي."
     });
   }
 });
@@ -7668,7 +7765,9 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Omran Quran Platform server listening on port ${PORT}`);
+    const activeUser = process.env.SMTP_USER || process.env.GMAIL_USER;
+    const hasSmtp = Boolean((process.env.SMTP_USER && process.env.SMTP_PASS) || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD));
+    console.log(`Omran Quran Platform server listening on port ${PORT} [Real SMTP: ${hasSmtp ? `CONFIGURED (${activeUser})` : 'AWAITING SMTP_USER & SMTP_PASS'}]`);
   });
 }
 

@@ -57,6 +57,7 @@ import {
   buildOtpVerificationEmail,
   buildApplicationReceivedEmail,
   buildApplicationAcceptedEmail,
+  buildWaitingListEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
 
@@ -383,6 +384,9 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
     const cleanEmail = studentEmail.trim().toLowerCase();
     setIsSendingOtp(true);
+    setEmailError(null);
+    setEmailSuccessNotice(null);
+
     try {
       // Generate 6-digit OTP
       const code = generateEmailOtp(cleanEmail);
@@ -390,32 +394,21 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       // Build Branded Email from the complex with direct registration link
       const emailPayload = buildOtpVerificationEmail(complex, cleanEmail, code, portalUrl);
 
-      let isDeliveredToInbox = false;
-      try {
-        // Trigger REAL email delivery via Gmail SMTP / Google Workspace
-        const sendRes = await sendRealPortalEmail(emailPayload);
-        if (sendRes.success) {
-          isDeliveredToInbox = true;
-        }
-      } catch (sendErr) {
-        console.warn('Real email sending attempt warning:', sendErr);
-      }
+      // Trigger REAL email delivery via Gmail SMTP / Google Workspace
+      const sendRes = await sendRealPortalEmail(emailPayload);
 
-      setOtpSent(true);
-      setOtpCountdown(60);
-
-      if (isDeliveredToInbox) {
+      if (sendRes.success) {
+        setOtpSent(true);
+        setOtpCountdown(60);
+        setEnteredOtp(''); // Clear so student enters real OTP received in their actual inbox
         setEmailSuccessNotice(`تم إرسال رمز التحقق المكون من 6 أرقام إلى صندوق بريدك (${cleanEmail}) بنجاح! تفقد صندوق الوارد أو مجلد الرسائل غير المرغوب فيها (Spam).`);
       } else {
-        // Instant fallback: pre-fill the OTP code so registration is NEVER blocked even if SMTP is unconfigured!
-        setEnteredOtp(code);
-        setEmailSuccessNotice(`تم تجهيز رمز التحقق الخاص بك: [ ${code} ]. تم إدراجه تلقائياً في الخانة بالأسفل، اضغط "تأكيد الرمز" لإتمام التوثيق فوراً.`);
+        setOtpSent(false);
+        setEmailError(`تعذر إرسال رمز التحقق إلى بريدك الإلكتروني (${cleanEmail}): ${sendRes.error || 'يرجى التأكد من كتابة البريد بشكل صحيح أو التحقق من إعدادات SMTP_USER و SMTP_PASS في المنظومة.'}`);
       }
     } catch (e: any) {
-      const fallbackCode = generateEmailOtp(cleanEmail);
-      setOtpSent(true);
-      setEnteredOtp(fallbackCode);
-      setEmailSuccessNotice(`كود التحقق الخاص بك: [ ${fallbackCode} ]. تم إدراجه تلقائياً لمتابعة التسجيل بنجاح.`);
+      setOtpSent(false);
+      setEmailError(`حدث خطأ أثناء محاولة إرسال البريد: ${e?.message || 'تعذر الاتصال بخدمة البريد'}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -433,18 +426,16 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     setIsVerifyingOtp(true);
     try {
       const res = verifyEmailOtp(studentEmail, enteredOtp);
-      if (res.success || enteredOtp.trim().length === 6) {
+      if (res.success) {
         setIsEmailVerified(true);
         setEmailVerificationMethod('otp');
         setEmailError(null);
         setEmailSuccessNotice('تم تأكيد رمز التحقق وتوثيق بريدك الإلكتروني بنجاح! ✅');
       } else {
-        setEmailError(res.error || 'رمز التحقق غير صحيح.');
+        setEmailError(res.error || 'رمز التحقق غير صحيح. تأكد من إدخال الرمز الواصل في بريدك بدقة.');
       }
     } catch {
-      setIsEmailVerified(true);
-      setEmailVerificationMethod('otp');
-      setEmailSuccessNotice('تم اعتماد وتوثيق البريد الإلكتروني بنجاح!');
+      setEmailError('حدث خطأ أثناء التحقق من الرمز.');
     } finally {
       setIsVerifyingOtp(false);
     }
@@ -2367,6 +2358,20 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   notes: `${matchingApp.notes || ''} • مدرج في قائمة الانتظار للمجمع بالدور #${waitingEntry.queueNumber}`.trim()
                 };
                 await OmranDataService.saveRegistrationApplication(updatedApp);
+
+                // Send real waiting list confirmation email to student/parent
+                const targetEmail = interviewStudentData.email || matchingApp?.email;
+                if (targetEmail) {
+                  const waitPayload = buildWaitingListEmail(
+                    complex,
+                    waitingEntry.applicationTrackingCode,
+                    waitingEntry.studentName,
+                    targetEmail,
+                    waitingEntry.queueNumber,
+                    portalUrl
+                  );
+                  sendRealPortalEmail(waitPayload).catch(err => console.warn('Could not send waiting list email:', err));
+                }
               }
             } catch (err) {
               console.warn('Waiting list save note:', err);

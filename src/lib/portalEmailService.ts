@@ -268,6 +268,9 @@ export interface BrandedEmailPayload {
   title: string;
   greeting: string;
   bodyParagraphs: string[];
+  ticketNumber?: string;
+  verificationUrl?: string;
+  detailsTable?: Array<{ label: string; value: string }>;
   highlightBox?: {
     label: string;
     value: string;
@@ -355,26 +358,53 @@ export function buildApplicationReceivedEmail(
   const ahead = application.pendingAheadCount !== undefined ? application.pendingAheadCount : Math.max(0, queueNo - 1);
   const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
   const sep = fullPortalUrl.includes('?') ? '&' : '?';
+  const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`;
+
+  const detailsTable: Array<{ label: string; value: string }> = [
+    { label: 'رقم التذكرة والمتابعة', value: application.trackingCode },
+    { label: 'اسم الطالب الثلاثي / الرباعي', value: application.studentName },
+    { label: 'العمر', value: `${application.age} سنة` },
+    { label: 'ولي الأمر', value: application.parentName || 'ولي الأمر' },
+    { label: 'رقم هاتف ولي الأمر', value: application.parentPhone },
+    { label: 'البريد الإلكتروني المعتمد', value: application.email || '—' },
+    { label: 'حالة توثيق البريد', value: application.isEmailVerified ? 'تم التوثيق برمز التحقق (OTP) بنجاح ✅' : 'مقدم برمز التحقق' },
+    {
+      label: 'مقدار الحفظ الحالي',
+      value: application.memorizedJuzList && application.memorizedJuzList.length > 0
+        ? `${application.memorizedJuzList.length} أجزاء من القرآن الكريم`
+        : 'بداية مشوار الحفظ المبارك'
+    },
+    { label: 'الحلقة المرشحة / التوجيه', value: application.preferredHalaqahName || 'توجيه المشرف المباشر' },
+    { label: 'ترتيبك في الدور وقائمة الفرز', value: `رقم #${queueNo} (${ahead > 0 ? `${ahead} طلبات تسبقك` : 'في الصدارة'})` },
+    { label: 'تاريخ ووقت التقديم', value: new Date(application.appliedAt).toLocaleString('ar-SA') }
+  ];
+
+  if (application.notes) {
+    detailsTable.push({ label: 'ملاحظات مقدم الطلب', value: application.notes });
+  }
 
   return {
     toEmail: application.email || '',
     fromEmail: 'qdrat2626@gmail.com',
-    subject: `تم استلام طلب انضمامك في ${complex.name} • رقم المتابعة [${application.trackingCode}]`,
+    subject: `تم استلام طلب انضمامك في ${complex.name} • رقم التذكرة [${application.trackingCode}]`,
     title: `تأكيد استلام طلب الانضمام • ${complex.name}`,
     greeting: `حياك الله وبياك أخي ولي أمر الطالب / ${application.studentName} حفظه الله ورعاه..`,
     bodyParagraphs: [
-      `يسر إدارة مجمع ${complex.name} إبلاغكم بأنه تم استلام طلب انضمام ابنكم المبارك بنجاح إلى حلقات القرآن الكريم.`,
-      `طلبكم الآن مدرج في قائمة المراجعة والفرز التربوي لدى المشرف التعليمي للمجمع، وسيتم دراسته وتسكينه في الحلقة الأنسب لمستواه وحفظه بإذن الله.`
+      `يسر إدارة مجمع ${complex.name} إبلاغكم بأنه تم استلام وتوثيق طلب انضمام ابنكم المبارك بنجاح إلى حلقات القرآن الكريم.`,
+      `طلبكم الآن معتمد ومدرج برقم تذكرة رسمي في قائمة المراجعة والفرز التربوي لدى المشرف التعليمي للمجمع، وسيتم دراسته وتسكينه في الحلقة الأنسب لمستواه وحفظه بإذن الله.`
     ],
+    ticketNumber: application.trackingCode,
+    verificationUrl: directTrackingUrl,
+    detailsTable,
     highlightBox: {
-      label: 'ترتيبك في الدور وقائمة المراجعة:',
-      value: `الترتيب رقم #${queueNo}`,
-      sublabel: ahead > 0 ? `يوجد ${ahead} طلبات قبلك قيد المراجعة` : 'طلبك في مقدمة قائمة المراجعة الحالية'
+      label: 'رقم تذكرة المتابعة المعتمدة للمجمع:',
+      value: application.trackingCode,
+      sublabel: `ترتيبك في قائمة الفرز #${queueNo} • احتفظ برقم التذكرة لمتابعة القبول وتأكيد المقعد`
     },
-    badgeText: `رقم متابعة الطلب: ${application.trackingCode}`,
+    badgeText: `تذكرة طلب رسمي #${application.trackingCode}`,
     actionButton: {
-      text: 'متابعة وتفقد حالة الطلب مباشرة عبر الرابط',
-      url: `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`
+      text: 'متابعة والتحقق من حالة الطلب مباشرة عبر الرابط',
+      url: directTrackingUrl
     },
     footerNote: `مجمع ${complex.name} • منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية.`,
     sentAt: new Date().toISOString(),
@@ -394,30 +424,93 @@ export function buildApplicationAcceptedEmail(
 ): BrandedEmailPayload {
   const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
   const sep = fullPortalUrl.includes('?') ? '&' : '?';
+  const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`;
+
+  const detailsTable: Array<{ label: string; value: string }> = [
+    { label: 'رقم التذكرة', value: application.trackingCode },
+    { label: 'اسم الطالب المقبول', value: application.studentName },
+    { label: 'الحلقة المعتمدة', value: halaqahName },
+    { label: 'حالة القبول', value: 'تم الاعتماد والموافقة رسمياً 🎉' },
+    { label: 'تاريخ الاعتماد', value: new Date().toLocaleString('ar-SA') }
+  ];
 
   return {
     toEmail: application.email || '',
     fromEmail: 'qdrat2626@gmail.com',
-    subject: `🎉 بشرى سارة: تم قبول الطالب ${application.studentName} في ${complex.name}!`,
+    subject: `🎉 بشرى سارة: تم قبول الطالب ${application.studentName} في ${complex.name}! [${application.trackingCode}]`,
     title: `بشرى القبول والاعتماد • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته 🌿`,
     bodyParagraphs: [
       `نهنئكم ونسأل الله أن يبارك في ابننا الغالي / ${application.studentName}.`,
       `يسر المشرف التعليمي لمجمع ${complex.name} إبلاغكم بأنه تم اعتماد وقبول طلب انضمامه رسمياً وإلحاقه في:`,
       `📖 الحلقة المعتمدة: ${halaqahName}`,
-      `لتثبيت المقعد واستلام بيانات الحلقة والبدء في مسيرة الحفظ المباركة، يرجى الضغط على زر تأكيد القبول بالأسفل ودخول بوابة الطالب.`
+      `لتثبيت المقعد واستلام بيانات الحلقة والبدء في مسيرة الحفظ المباركة، يرجى الضغط على زر تأكيد القبول بالأسفل ودخول بوابة الطالب فوراً.`
     ],
+    ticketNumber: application.trackingCode,
+    verificationUrl: directTrackingUrl,
+    detailsTable,
     highlightBox: {
       label: 'الحلقة القرآنية المخصصة:',
       value: halaqahName,
-      sublabel: 'في انتظار تأكيد الطالب واستلام المقعد'
+      sublabel: `تذكرة رقم: ${application.trackingCode} • يرجى تأكيد الدخول وتثبيت المقعد`
     },
     badgeText: 'تم القبول والاعتماد 🎉',
     actionButton: {
       text: 'تأكيد القبول والدخول لحساب الطالب الآن',
-      url: `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`
+      url: directTrackingUrl
     },
     footerNote: `مع تحيات إدارة ومحفظي مجمع ${complex.name} • منظومة عُمْرَان.`,
+    sentAt: new Date().toISOString(),
+    complexName: complex.name,
+    complexTheme: complex.theme
+  };
+}
+
+/**
+ * Builds the Waiting List Notification Email
+ */
+export function buildWaitingListEmail(
+  complex: QuranComplex,
+  trackingCode: string,
+  studentName: string,
+  toEmail: string,
+  queueNumber: number,
+  portalUrl: string
+): BrandedEmailPayload {
+  const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
+  const sep = fullPortalUrl.includes('?') ? '&' : '?';
+  const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(trackingCode)}`;
+
+  return {
+    toEmail,
+    fromEmail: 'qdrat2626@gmail.com',
+    subject: `إشعار إدراج في قائمة الانتظار • مجمع ${complex.name} [${trackingCode}]`,
+    title: `قائمة الانتظار الرسمية • ${complex.name}`,
+    greeting: `السلام عليكم ورحمة الله وبركاته، مرحباً بك يا ${studentName}..`,
+    bodyParagraphs: [
+      `تم استلام طلب انضمامك إلى مجمع ${complex.name} ومراجعته بنجاح.`,
+      `نظراً لاكتمال الطاقة الاستيعابية للحلقات حالياً، تم إدراج طلبك في قائمة الانتظار المعتمدة بالدور رقم #${queueNumber}.`,
+      `سيقوم المشرف بمراجعة طلبك وقبولك كطالب إضافي أو فور توفر مقعد شاغر، وسيصلك إشعار بالبريد الإلكتروني فور الاعتماد.`
+    ],
+    ticketNumber: trackingCode,
+    verificationUrl: directTrackingUrl,
+    detailsTable: [
+      { label: 'رقم التذكرة', value: trackingCode },
+      { label: 'اسم الطالب', value: studentName },
+      { label: 'رقم الدور في قائمة الانتظار', value: `#${queueNumber}` },
+      { label: 'حالة الطلب', value: 'في قائمة الانتظار الرسمية' }
+    ],
+    highlightBox: {
+      label: 'رقم الدور في قائمة الانتظار:',
+      value: `#${queueNumber}`,
+      sublabel: `تذكرة رقم: ${trackingCode}`
+    },
+    badgeText: `قائمة الانتظار #${queueNumber}`,
+    actionButton: {
+      text: 'متابعة حالة قائمة الانتظار والطلب',
+      url: directTrackingUrl
+    },
+    footerNote: `مجمع ${complex.name} • منظومة عُمْرَان.`,
     sentAt: new Date().toISOString(),
     complexName: complex.name,
     complexTheme: complex.theme
@@ -438,6 +531,54 @@ export function renderBrandedEmailHtml(payload: BrandedEmailPayload): string {
         `<p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.8; color: #334155;">${p}</p>`
     )
     .join('');
+
+  const ticketVoucherHtml = payload.ticketNumber
+    ? `
+      <div style="margin: 20px 0; padding: 18px 24px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 2px dashed ${primaryColor}; border-radius: 16px; text-align: center;">
+        <div style="font-size: 12px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+          تذكرة التسجيل والمتابعة الرسمية
+        </div>
+        <div style="font-size: 28px; font-weight: 900; letter-spacing: 3px; color: #0f172a; font-family: monospace, Arial, sans-serif; direction: ltr; margin: 4px 0;">
+          ${payload.ticketNumber}
+        </div>
+        ${payload.verificationUrl ? `
+          <div style="margin-top: 10px;">
+            <a href="${payload.verificationUrl}" target="_blank" style="display: inline-block; font-size: 12px; font-weight: bold; color: ${primaryColor}; text-decoration: underline;">
+              رابط التحقق والمتابعة المباشر المخصص للطلب &larr;
+            </a>
+          </div>
+        ` : ''}
+      </div>
+    `
+    : '';
+
+  const detailsTableHtml = payload.detailsTable && payload.detailsTable.length > 0
+    ? `
+      <div style="margin: 24px 0;">
+        <h3 style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 12px; border-right: 4px solid ${primaryColor}; padding-right: 8px;">
+          تفاصيل طلب التسجيل المعتمد:
+        </h3>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13px;">
+          <tbody>
+            ${payload.detailsTable
+              .map(
+                (row, idx) => `
+                <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 10px 14px; font-weight: 700; color: #475569; width: 40%; vertical-align: top;">
+                    ${row.label}
+                  </td>
+                  <td style="padding: 10px 14px; font-weight: 600; color: #0f172a; direction: rtl; text-align: right;">
+                    ${row.value}
+                  </td>
+                </tr>
+              `
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+    : '';
 
   const highlightHtml = payload.highlightBox
     ? `
@@ -488,6 +629,8 @@ export function renderBrandedEmailHtml(payload: BrandedEmailPayload): string {
           <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 800; color: #0f172a;">${payload.title}</h2>
           <p style="margin: 0 0 20px 0; font-size: 15px; font-weight: 700; color: #334155;">${payload.greeting}</p>
           ${paragraphsHtml}
+          ${ticketVoucherHtml}
+          ${detailsTableHtml}
           ${highlightHtml}
           ${actionButtonHtml}
         </div>
@@ -518,6 +661,36 @@ export async function sendRealPortalEmail(
 
   try {
     const html = renderBrandedEmailHtml(payload);
+
+    // If it's a registration application email with a ticket, try dedicated registration dispatcher
+    if (payload.ticketNumber) {
+      try {
+        const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-registration'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: payload.toEmail,
+            subject: payload.subject,
+            html,
+            fromName: payload.complexName || 'منظومة عُمْرَان',
+            fromEmail: payload.fromEmail || 'qdrat2626@gmail.com',
+            trackingCode: payload.ticketNumber,
+            verificationUrl: payload.verificationUrl
+          })
+        });
+
+        if (srvRes.ok) {
+          const srvData = await srvRes.json();
+          if (srvData?.success) {
+            return { success: true, messageId: srvData.messageId };
+          }
+        }
+      } catch (endpointErr) {
+        console.warn('Dedicated send-registration endpoint fallback to GoogleWorkspaceService:', endpointErr);
+      }
+    }
+
+    // Standard fallback via GoogleWorkspaceService
     const result = await GoogleWorkspaceService.sendGmailMessage(
       payload.toEmail,
       payload.subject,

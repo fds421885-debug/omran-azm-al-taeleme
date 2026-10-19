@@ -577,6 +577,40 @@ export class GoogleWorkspaceService {
     }
   }
 
+  /**
+   * Dedicated Registration Email Sender (connects to SMTP_USER / SMTP_PASS & GoogleWorkspaceService)
+   */
+  static async sendRegistrationEmail(params: {
+    to: string;
+    subject: string;
+    html: string;
+    trackingCode: string;
+    verificationUrl?: string;
+    studentName?: string;
+    fromEmail?: string;
+    fromName?: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-registration'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      let srvData: any = null;
+      try {
+        srvData = await srvRes.json();
+      } catch {}
+
+      if (srvRes.ok && srvData?.success) {
+        return { success: true, messageId: srvData.messageId };
+      }
+      // Fallback to sendGmailMessage if dedicated endpoint fails
+      return this.sendGmailMessage(params.to, params.subject, params.html, params.fromEmail, params.fromName);
+    } catch {
+      return this.sendGmailMessage(params.to, params.subject, params.html, params.fromEmail, params.fromName);
+    }
+  }
+
   // -------------------------------------------------------------
   // STUDENT GOOGLE AUTHENTICATION & AUTOMATIC GRADE LOOKUP
   // -------------------------------------------------------------
