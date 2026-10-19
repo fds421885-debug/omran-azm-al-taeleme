@@ -70,6 +70,7 @@ import {
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
+import { OmranAIService } from '../../lib/omranAIService';
 
 interface EvaluationTabProps {
   students: Student[];
@@ -525,19 +526,54 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       let aiPlanObj: any = null;
       let aiPortion = initialPortion;
 
+      // 1. Direct client-side generation via OmranAIService (works on Netlify without backend!)
       try {
-        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student: activeStudent })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          aiPlanObj = data?.plan;
-          aiPortion = data?.portion || initialPortion;
+        const config = await OmranAIService.loadConfig();
+        if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
+          const prompt = `أنت الموجه القرآني الذكي في منصة عمران. قم بإنشاء خطة حفظ قرآنية دقيقة للطالب:
+بيانات الطالب: ${JSON.stringify(activeStudent)}
+المقدار اليومي الجديد المطلوب: ${pace} وجه.
+المطلوب: توليد الخطة التربوية بصيغة JSON حصراً:
+{
+  "plan": {
+    "estimatedDaysRemaining": number,
+    "targetKhatmDate": "YYYY-MM-DD",
+    "pedagogicalAdvice": "نصائح وتوجيهات الحفظ والتثبيت"
+  }
+}`;
+          const aiRes = await OmranAIService.generateContent({
+            prompt,
+            role: 'teachers',
+            jsonMode: true,
+            temperature: 0.3
+          });
+          if (aiRes.success && aiRes.text) {
+            const parsed = JSON.parse(aiRes.text.replace(/```json\n?|\n?```/g, '').trim());
+            if (parsed && parsed.plan) {
+              aiPlanObj = parsed.plan;
+            }
+          }
         }
-      } catch (e) {
-        console.warn('Manual plan generation notice:', e);
+      } catch (directErr) {
+        console.warn('Direct AI plan notice:', directErr);
+      }
+
+      // 2. Server Proxy Fallback (if backend is running)
+      if (!aiPlanObj) {
+        try {
+          const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student: activeStudent })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            aiPlanObj = data?.plan;
+            aiPortion = data?.portion || initialPortion;
+          }
+        } catch (e) {
+          console.warn('Manual plan generation notice:', e);
+        }
       }
 
       const updatedStd: Student = {
@@ -1290,17 +1326,62 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       };
 
       let result: any = null;
+
+      // 1. Direct client-side execution via OmranAIService (works on Netlify without backend!)
       try {
-        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-tomorrow-plan'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-          result = await res.json();
+        const config = await OmranAIService.loadConfig();
+        if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
+          const prompt = `أنت الموجه القرآني الذكي في منصة عمران. قم بإعداد خطة ورد الغد للطالب وفق القواعد التربوية:
+بيانات التقييم اليومي:
+- الطالب: ${activeStudent.name}
+- الورد اليومي المقرر: ${activeStudent.dailyNewTarget || 'وجه واحد'}
+- ما تم تسميعه اليوم: الجديد (${todayNewSurah}:${todayNewFromAyah}-${todayNewToAyah})، درجة التقييم: ${dailyGrade}/10.
+- المراجعة اليومية: ${JSON.stringify(todayReviews)}
+- أخطاء الآيات المسجلة اليوم: ${JSON.stringify(errorsList)}
+- مدة الحلقة اليومية: ${halaqahHours} ساعة.
+
+المطلوب: توليد خطة الغد بصيغة JSON حصراً بالمفاتيح:
+{
+  "tomNewSurah": number,
+  "tomNewFromAyah": number,
+  "tomNewToSurah": number,
+  "tomNewToAyah": number,
+  "tomReviews": [
+    { "type": "مراجعة صغرى", "surahNumber": number, "fromAyah": number, "toSurahNumber": number, "toAyah": number, "reason": "سبب التعيين" }
+  ],
+  "reasoning": "التوجيه والتعليل التربوي"
+}`;
+          const aiRes = await OmranAIService.generateContent({
+            prompt,
+            role: 'teachers',
+            jsonMode: true,
+            temperature: 0.3
+          });
+          if (aiRes.success && aiRes.text) {
+            const parsed = JSON.parse(aiRes.text.replace(/```json\n?|\n?```/g, '').trim());
+            if (parsed && parsed.tomNewSurah) {
+              result = parsed;
+            }
+          }
         }
-      } catch (e) {
-        console.warn('Backend tomorrow plan call note, using local engine:', e);
+      } catch (directErr) {
+        console.warn('Direct AI tomorrow plan note:', directErr);
+      }
+
+      // 2. Server Proxy Fallback (if server.ts is active)
+      if (!result) {
+        try {
+          const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-tomorrow-plan'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            result = await res.json();
+          }
+        } catch (e) {
+          console.warn('Backend tomorrow plan call note, using local engine:', e);
+        }
       }
 
       if (result && result.tomNewSurah) {

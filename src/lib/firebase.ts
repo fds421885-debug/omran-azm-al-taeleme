@@ -1473,6 +1473,7 @@ export async function syncTombstonesFromCloud(): Promise<{
   deletedHalaqahs: Set<string>;
   deletedExams: Set<string>;
   deletedTeachers: Set<string>;
+  deletedApplications: Set<string>;
 }> {
   const localStudents = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []);
   const localCerts = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_CERTIFICATES, []);
@@ -1480,6 +1481,7 @@ export async function syncTombstonesFromCloud(): Promise<{
   const localHalaqahs = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []);
   const localExams = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_EXAMS, []);
   const localTeachers = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []);
+  const localApps = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, []);
 
   const studentSet = new Set<string>(Array.isArray(localStudents) ? localStudents : []);
   const certSet = new Set<string>(Array.isArray(localCerts) ? localCerts : []);
@@ -1487,6 +1489,7 @@ export async function syncTombstonesFromCloud(): Promise<{
   const halaqahSet = new Set<string>(Array.isArray(localHalaqahs) ? localHalaqahs : []);
   const examSet = new Set<string>(Array.isArray(localExams) ? localExams : []);
   const teacherSet = new Set<string>(Array.isArray(localTeachers) ? localTeachers : []);
+  const appSet = new Set<string>(Array.isArray(localApps) ? localApps : []);
 
   try {
     const centralSnap = await getDoc(doc(OmranDataService.getCentralDb(), 'settings', 'deleted_records'));
@@ -1498,6 +1501,7 @@ export async function syncTombstonesFromCloud(): Promise<{
       if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
       if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
       if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
+      if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
     }
 
     if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
@@ -1511,6 +1515,7 @@ export async function syncTombstonesFromCloud(): Promise<{
           if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
           if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
           if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
+          if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
         }
       } catch {}
     }
@@ -1524,6 +1529,7 @@ export async function syncTombstonesFromCloud(): Promise<{
   setLocalCache(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, Array.from(halaqahSet));
   setLocalCache(OMRAN_CACHE_KEYS.DELETED_EXAMS, Array.from(examSet));
   setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(teacherSet));
+  setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(appSet));
 
   return {
     deletedStudents: studentSet,
@@ -1531,7 +1537,8 @@ export async function syncTombstonesFromCloud(): Promise<{
     deletedComplexes: complexSet,
     deletedHalaqahs: halaqahSet,
     deletedExams: examSet,
-    deletedTeachers: teacherSet
+    deletedTeachers: teacherSet,
+    deletedApplications: appSet
   };
 }
 
@@ -4696,6 +4703,7 @@ export class OmranDataService {
     deletedTeachers: Set<string>;
     deletedHalaqahs: Set<string>;
     deletedComplexes: Set<string>;
+    deletedApplications?: Set<string>;
   }) => void): () => void {
     try {
       const handleSnap = (snap: any) => {
@@ -4705,22 +4713,26 @@ export class OmranDataService {
           const tList = Array.isArray(data.deletedTeachers) ? data.deletedTeachers : [];
           const hList = Array.isArray(data.deletedHalaqahs) ? data.deletedHalaqahs : [];
           const cList = Array.isArray(data.deletedComplexes) ? data.deletedComplexes : [];
+          const aList = Array.isArray(data.deletedApplications) ? data.deletedApplications : [];
 
           const curS = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []), ...sList]);
           const curT = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []), ...tList]);
           const curH = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []), ...hList]);
           const curC = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []), ...cList]);
+          const curA = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, []), ...aList]);
 
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_STUDENTS, Array.from(curS));
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(curT));
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, Array.from(curH));
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, Array.from(curC));
+          setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(curA));
 
           callback({
             deletedStudents: curS,
             deletedTeachers: curT,
             deletedHalaqahs: curH,
-            deletedComplexes: curC
+            deletedComplexes: curC,
+            deletedApplications: curA
           });
         }
       };
@@ -6067,30 +6079,17 @@ export class OmranDataService {
   }
 
   static async loadRegistrationApplications(complexId?: string): Promise<StudentRegistrationApplication[]> {
+    // 0. Ensure tombstones are strictly synchronized from Firestore before querying
+    await syncTombstonesFromCloud().catch(() => {});
     const deletedIds = this.getDeletedApplicationIds();
+
     const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, [])
       .filter(a => a && a.id && !deletedIds.has(a.id));
     const itemsMap = new Map<string, StudentRegistrationApplication>();
     local.forEach(a => { if (a && a.id) itemsMap.set(a.id, a); });
 
     try {
-      // 1. Primary check on registration_applications collection
-      try {
-        const colSnap = await safeGetDocs(collection(this.getCentralDb(), 'registration_applications'));
-        if (colSnap && colSnap.docs) {
-          colSnap.docs.forEach(d => {
-            const data = d.data();
-            if (data && !deletedIds.has(d.id)) {
-              const item = { ...data, id: d.id } as StudentRegistrationApplication;
-              itemsMap.set(item.id, item);
-            }
-          });
-        }
-      } catch (e) {
-        console.warn('[OmranDataService] Col snap error in loadRegistrationApplications:', e);
-      }
-
-      // 2. Resilient check in settings/registration_applications
+      // 1. Resilient check in settings/registration_applications first to ingest tombstones and official items
       try {
         const settingsSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'registration_applications'));
         if (settingsSnap && settingsSnap.exists()) {
@@ -6114,6 +6113,26 @@ export class OmranDataService {
         }
       } catch {}
 
+      // 2. Primary check on registration_applications collection
+      try {
+        const colSnap = await safeGetDocs(collection(this.getCentralDb(), 'registration_applications'));
+        if (colSnap && colSnap.docs) {
+          colSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data && !deletedIds.has(d.id)) {
+              const item = { ...data, id: d.id } as StudentRegistrationApplication;
+              itemsMap.set(item.id, item);
+            } else if (deletedIds.has(d.id)) {
+              // Self-heal: remove document if it exists but is tombstoned
+              deleteDoc(doc(this.getCentralDb(), 'registration_applications', d.id)).catch(() => {});
+              itemsMap.delete(d.id);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('[OmranDataService] Col snap error in loadRegistrationApplications:', e);
+      }
+
       // 3. Fallback check on activeDb if different
       if (this.getActiveDb() !== this.getCentralDb()) {
         try {
@@ -6124,6 +6143,9 @@ export class OmranDataService {
               if (data && !deletedIds.has(d.id)) {
                 const item = { ...data, id: d.id } as StudentRegistrationApplication;
                 itemsMap.set(item.id, item);
+              } else if (deletedIds.has(d.id)) {
+                deleteDoc(doc(this.getActiveDb(), 'registration_applications', d.id)).catch(() => {});
+                itemsMap.delete(d.id);
               }
             });
           }
@@ -6228,20 +6250,45 @@ export class OmranDataService {
   }
 
   static async deleteRegistrationApplication(applicationId: string): Promise<void> {
-    // 1. Immediately record in permanent tombstone set
+    if (!applicationId) return;
+
+    // 1. Immediately record in permanent tombstone set locally and in Firestore deleted_records
     this.markApplicationDeleted(applicationId);
+    await writeTombstoneToBothDbs('deletedApplications', applicationId).catch(() => {});
     const deletedIds = this.getDeletedApplicationIds();
+    deletedIds.add(applicationId);
 
     // 2. Filter local cache immediately
     const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
     const updated = local.filter(a => a && a.id !== applicationId && !deletedIds.has(a.id));
     setLocalCache(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, updated);
 
-    // 3. Dispatch specific deletion event and global broadcast
+    // 3. Purge from any complex waitingList (if this application was on the waiting list)
+    try {
+      const complexes = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
+      let complexesChanged = false;
+      const updatedComplexes = complexes.map(c => {
+        if (c && Array.isArray(c.waitingList) && c.waitingList.some(w => w.id === applicationId || w.applicationTrackingCode === applicationId)) {
+          complexesChanged = true;
+          return {
+            ...c,
+            waitingList: c.waitingList.filter(w => w.id !== applicationId && w.applicationTrackingCode !== applicationId)
+          };
+        }
+        return c;
+      });
+      if (complexesChanged) {
+        setLocalCache(OMRAN_CACHE_KEYS.COMPLEXES, updatedComplexes);
+        broadcastDataUpdate('complexes', updatedComplexes);
+      }
+    } catch {}
+
+    // 4. Dispatch specific deletion event and global broadcast
     try {
       window.dispatchEvent(
         new CustomEvent('omran:registration-application-deleted', { detail: { id: applicationId } })
       );
+      window.dispatchEvent(new CustomEvent('omran:apps-updated'));
     } catch {}
     broadcastDataUpdate('registration_application_deleted', applicationId);
 
@@ -6250,22 +6297,29 @@ export class OmranDataService {
       dbs.push(this.getActiveDb());
     }
 
-    const payload = {
-      items: updated.map(cleanFirestoreData),
-      deletedIds: Array.from(deletedIds),
-      lastUpdated: new Date().toISOString(),
-      deletedAppId: applicationId,
-      bumpTime: Date.now()
-    };
-
-    // 4. Delete Firestore document and update settings document with deletedIds tombstone
+    // 5. Delete Firestore document and update settings document with deletedIds tombstone
     await Promise.all(
       dbs.map(async targetDb => {
         try {
           await deleteDoc(doc(targetDb, 'registration_applications', applicationId));
         } catch {}
         try {
-          await setDoc(doc(targetDb, 'settings', 'registration_applications'), payload, { merge: true });
+          let cloudItems: StudentRegistrationApplication[] = [];
+          const snap = await safeGetDoc(doc(targetDb, 'settings', 'registration_applications'));
+          if (snap && snap.exists()) {
+            const data = snap.data();
+            if (Array.isArray(data?.items)) {
+              cloudItems = (data.items as StudentRegistrationApplication[])
+                .filter(i => i?.id && i.id !== applicationId && !deletedIds.has(i.id));
+            }
+          }
+          await setDoc(doc(targetDb, 'settings', 'registration_applications'), {
+            items: cloudItems.map(cleanFirestoreData),
+            deletedIds: Array.from(deletedIds),
+            lastUpdated: new Date().toISOString(),
+            deletedAppId: applicationId,
+            bumpTime: Date.now()
+          }, { merge: true });
         } catch {}
       })
     );
@@ -6296,7 +6350,11 @@ export class OmranDataService {
 
     const emit = (isRealtime: boolean = false, latestNewApp?: StudentRegistrationApplication) => {
       // Clean any tombstoned IDs
-      deletedIds.forEach(delId => itemsMap.delete(delId));
+      const currentDeleted = OmranDataService.getDeletedApplicationIds();
+      currentDeleted.forEach(delId => {
+        deletedIds.add(delId);
+        itemsMap.delete(delId);
+      });
 
       const sorted = Array.from(itemsMap.values())
         .filter(a => a && a.id && !deletedIds.has(a.id))
@@ -6307,6 +6365,48 @@ export class OmranDataService {
       onData(filtered, isRealtime && !isInitialLoad, latestNewApp);
     };
 
+    // Immediate in-tab deletion listener
+    const handleDeletedEvent = (ev: any) => {
+      const delId = ev?.detail?.id;
+      if (delId) {
+        deletedIds.add(delId);
+        itemsMap.delete(delId);
+        emit(true);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('omran:registration-application-deleted', handleDeletedEvent);
+      unsubs.push(() => window.removeEventListener('omran:registration-application-deleted', handleDeletedEvent));
+    }
+
+    // 0. Live subscription to tombstone changes in settings/deleted_records to purge in real-time
+    try {
+      const unsubTomb = onSnapshot(
+        doc(this.getCentralDb(), 'settings', 'deleted_records'),
+        snap => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (Array.isArray(data?.deletedApplications)) {
+              let hasNewDeleted = false;
+              data.deletedApplications.forEach((id: string) => {
+                if (id && !deletedIds.has(id)) {
+                  deletedIds.add(id);
+                  itemsMap.delete(id);
+                  hasNewDeleted = true;
+                }
+              });
+              if (hasNewDeleted) {
+                setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(deletedIds));
+                emit(true);
+              }
+            }
+          }
+        },
+        () => {}
+      );
+      unsubs.push(unsubTomb);
+    } catch {}
+
     // 1. Live subscription to collection(centralDb, 'registration_applications')
     try {
       const unsubCol = onSnapshot(
@@ -6314,6 +6414,8 @@ export class OmranDataService {
         snapshot => {
           let hasChanges = false;
           let newlyAddedApp: StudentRegistrationApplication | undefined;
+          const freshDeleted = OmranDataService.getDeletedApplicationIds();
+          freshDeleted.forEach(id => deletedIds.add(id));
 
           snapshot.docChanges().forEach(change => {
             const docId = change.doc.id;
@@ -6367,6 +6469,16 @@ export class OmranDataService {
 
             if (Array.isArray(data?.items)) {
               let newlyAdded: StudentRegistrationApplication | undefined;
+              const cloudIds = new Set((data.items as StudentRegistrationApplication[]).map(a => a?.id).filter(Boolean));
+
+              // Crucial Fix: Prune any item from itemsMap that is no longer in data.items or is tombstoned!
+              for (const mapId of Array.from(itemsMap.keys())) {
+                if (!cloudIds.has(mapId) || deletedIds.has(mapId)) {
+                  itemsMap.delete(mapId);
+                  changed = true;
+                }
+              }
+
               (data.items as StudentRegistrationApplication[]).forEach(a => {
                 if (a && a.id && !deletedIds.has(a.id)) {
                   if (!itemsMap.has(a.id) && !isInitialLoad && a.status === 'pending') {
@@ -6395,11 +6507,13 @@ export class OmranDataService {
         const unsubActiveCol = onSnapshot(
           collection(this.getActiveDb(), 'registration_applications'),
           snapshot => {
+            const freshDeleted = OmranDataService.getDeletedApplicationIds();
             snapshot.docChanges().forEach(change => {
-              if (change.type === 'removed' || deletedIds.has(change.doc.id)) {
-                itemsMap.delete(change.doc.id);
+              const docId = change.doc.id;
+              if (change.type === 'removed' || freshDeleted.has(docId) || deletedIds.has(docId)) {
+                itemsMap.delete(docId);
               } else {
-                itemsMap.set(change.doc.id, { ...change.doc.data(), id: change.doc.id } as StudentRegistrationApplication);
+                itemsMap.set(docId, { ...change.doc.data(), id: docId } as StudentRegistrationApplication);
               }
             });
             emit(!isInitialLoad);
@@ -6407,8 +6521,8 @@ export class OmranDataService {
           () => {}
         );
         unsubs.push(unsubActiveCol);
-      } catch {}
-    }
+    } catch {}
+  }
 
     // 4. Local cross-tab & custom event listener
     const handleLocalUpdate = () => {

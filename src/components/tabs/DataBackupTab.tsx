@@ -26,11 +26,38 @@ import {
   Lock,
   Key,
   Copy,
-  Mail
+  Mail,
+  Bot,
+  Cpu,
+  Play,
+  Sliders,
+  Users,
+  GraduationCap,
+  Plus,
+  Edit3,
+  Eye,
+  EyeOff,
+  Activity,
+  Zap,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { OmranDataService, firebaseConfig, TARGET_FIRESTORE_DATABASE_ID } from '../../lib/firebase';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
-import { FullBackupData, GoogleOAuthConfig, QuranComplex, ComplexBackupData, Halaqah, Student } from '../../types';
+import {
+  FullBackupData,
+  GoogleOAuthConfig,
+  QuranComplex,
+  ComplexBackupData,
+  Halaqah,
+  Student,
+  TeacherAccount,
+  PlatformAIConfig,
+  AIGroupKeyAllocation,
+  GOOGLE_GEMINI_MODELS,
+  DEFAULT_AI_CONFIG
+} from '../../types';
+import { OmranAIService } from '../../lib/omranAIService';
 import { ComplexDatabaseTransferModal } from '../ComplexDatabaseTransferModal';
 
 interface DataBackupTabProps {
@@ -43,6 +70,7 @@ interface DataBackupTabProps {
   onSaveComplex?: (complex: QuranComplex) => Promise<void>;
   halaqahs?: Halaqah[];
   students?: Student[];
+  teachers?: TeacherAccount[];
 }
 
 export const DataBackupTab: React.FC<DataBackupTabProps> = ({
@@ -54,7 +82,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   complexes = [],
   onSaveComplex,
   halaqahs = [],
-  students = []
+  students = [],
+  teachers = []
 }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingDrive, setIsExportingDrive] = useState(false);
@@ -145,6 +174,226 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   };
 
   const activeComplex = complexes.find(c => c.id === selectedComplexId) || complexes[0];
+
+  // =========================================================================
+  // AI Platform Key & Partitioning Management State (مفاتيح الذكاء الاصطناعي للمنصة)
+  // =========================================================================
+  const [aiConfig, setAiConfig] = useState<PlatformAIConfig>(DEFAULT_AI_CONFIG);
+  const [masterKeyInput, setMasterKeyInput] = useState<string>('');
+  const [masterModelInput, setMasterModelInput] = useState<string>('gemini-2.5-flash');
+  const [isMasterEnabledInput, setIsMasterEnabledInput] = useState<boolean>(true);
+  const [showMasterKey, setShowMasterKey] = useState<boolean>(false);
+  const [isTestingMasterKey, setIsTestingMasterKey] = useState<boolean>(false);
+  const [masterTestResult, setMasterTestResult] = useState<{
+    success: boolean;
+    latencyMs: number;
+    responseText: string;
+    error?: string;
+  } | null>(null);
+  const [isSavingAIConfig, setIsSavingAIConfig] = useState<boolean>(false);
+  const [aiSaveSuccessMsg, setAiSaveSuccessMsg] = useState<string | null>(null);
+
+  // Group Allocation Modal / Form State
+  const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState<boolean>(false);
+  const [editingAllocationId, setEditingAllocationId] = useState<string | null>(null);
+  const [allocName, setAllocName] = useState<string>('');
+  const [allocTargetRole, setAllocTargetRole] = useState<'supervisors' | 'teachers' | 'public_placement' | 'assistant' | 'custom_group'>('teachers');
+  const [allocKey, setAllocKey] = useState<string>('');
+  const [allocModel, setAllocModel] = useState<string>('gemini-2.5-flash');
+  const [allocIsEnabled, setAllocIsEnabled] = useState<boolean>(true);
+  const [allocSelectedTeacherIds, setAllocSelectedTeacherIds] = useState<string[]>([]);
+  const [allocSelectedComplexId, setAllocSelectedComplexId] = useState<string>('');
+  const [isTestingAllocKey, setIsTestingAllocKey] = useState<boolean>(false);
+  const [allocTestResult, setAllocTestResult] = useState<{
+    success: boolean;
+    latencyMs: number;
+    responseText: string;
+    error?: string;
+  } | null>(null);
+  const [showAllocKey, setShowAllocKey] = useState<boolean>(false);
+
+  // Load AI configuration on mount
+  React.useEffect(() => {
+    let mounted = true;
+    OmranAIService.loadConfig().then(cfg => {
+      if (mounted && cfg) {
+        setAiConfig(cfg);
+        setMasterKeyInput(cfg.masterApiKey || '');
+        setMasterModelInput(cfg.masterModel || 'gemini-2.5-flash');
+        setIsMasterEnabledInput(cfg.isMasterEnabled !== false);
+      }
+    });
+
+    const unsub = OmranAIService.subscribe(updated => {
+      if (mounted && updated) {
+        setAiConfig(updated);
+        setMasterKeyInput(updated.masterApiKey || '');
+        setMasterModelInput(updated.masterModel || 'gemini-2.5-flash');
+        setIsMasterEnabledInput(updated.isMasterEnabled !== false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
+
+  // 1. Test Master Key directly with Google Gemini endpoint
+  const handleTestMasterKey = async () => {
+    if (!masterKeyInput.trim()) {
+      setMasterTestResult({
+        success: false,
+        latencyMs: 0,
+        responseText: '',
+        error: 'يرجى إدخال مفتاح Gemini API قبل بدء الاختبار'
+      });
+      return;
+    }
+
+    setIsTestingMasterKey(true);
+    setMasterTestResult(null);
+    try {
+      const res = await OmranAIService.testApiKeyAndModel(masterKeyInput, masterModelInput);
+      setMasterTestResult(res);
+    } catch (err: any) {
+      setMasterTestResult({
+        success: false,
+        latencyMs: 0,
+        responseText: '',
+        error: err?.message || 'تعذر الاتصال بـ Google'
+      });
+    } finally {
+      setIsTestingMasterKey(false);
+    }
+  };
+
+  // 2. Save Master Key & Model to Cloud Firestore & LocalStorage
+  const handleSaveMasterAIConfig = async () => {
+    setIsSavingAIConfig(true);
+    try {
+      const updatedConfig: PlatformAIConfig = {
+        ...aiConfig,
+        masterApiKey: masterKeyInput.trim(),
+        masterModel: masterModelInput,
+        isMasterEnabled: isMasterEnabledInput,
+        lastVerifiedAt: masterTestResult?.success ? new Date().toISOString() : aiConfig.lastVerifiedAt,
+        lastVerifiedLatencyMs: masterTestResult?.success ? masterTestResult.latencyMs : aiConfig.lastVerifiedLatencyMs,
+        lastVerifiedMessage: masterTestResult?.success ? masterTestResult.responseText : aiConfig.lastVerifiedMessage,
+        lastVerifiedModel: masterModelInput
+      };
+
+      await OmranAIService.saveConfig(updatedConfig);
+      setAiConfig(updatedConfig);
+      setAiSaveSuccessMsg('✨ تم حفظ واعتماد مفتاح الذكاء الاصطناعي الرئيسي للمنصة وتفعيله لجميع المستخدمين بنجاح!');
+      setTimeout(() => setAiSaveSuccessMsg(null), 6000);
+    } catch (e: any) {
+      alert(`خطأ أثناء الحفظ: ${e?.message}`);
+    } finally {
+      setIsSavingAIConfig(false);
+    }
+  };
+
+  // 3. Test Group Allocation Key
+  const handleTestAllocKey = async () => {
+    if (!allocKey.trim()) {
+      setAllocTestResult({
+        success: false,
+        latencyMs: 0,
+        responseText: '',
+        error: 'يرجى إدخال مفتاح API المخصص لهذه المجموعة قبل الاختبار'
+      });
+      return;
+    }
+    setIsTestingAllocKey(true);
+    setAllocTestResult(null);
+    try {
+      const res = await OmranAIService.testApiKeyAndModel(allocKey, allocModel);
+      setAllocTestResult(res);
+    } catch (err: any) {
+      setAllocTestResult({
+        success: false,
+        latencyMs: 0,
+        responseText: '',
+        error: err?.message || 'تعذر الاتصال'
+      });
+    } finally {
+      setIsTestingAllocKey(false);
+    }
+  };
+
+  // 4. Save Group Allocation Rule
+  const handleSaveAllocRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!allocName.trim()) {
+      alert('يرجى كتابة اسم التخصيص أو المجموعة');
+      return;
+    }
+    if (!allocKey.trim()) {
+      alert('يرجى إدخال مفتاح API للمجموعة');
+      return;
+    }
+
+    const newRule: AIGroupKeyAllocation = {
+      id: editingAllocationId || `alloc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: allocName.trim(),
+      targetRole: allocTargetRole,
+      assignedTeacherIds: allocSelectedTeacherIds,
+      complexId: allocSelectedComplexId || undefined,
+      apiKey: allocKey.trim(),
+      model: allocModel,
+      isEnabled: allocIsEnabled,
+      createdAt: new Date().toISOString(),
+      lastTestedAt: allocTestResult ? new Date().toISOString() : undefined,
+      lastTestStatus: allocTestResult ? (allocTestResult.success ? 'success' : 'error') : undefined,
+      lastTestLatencyMs: allocTestResult?.latencyMs,
+      lastTestMessage: allocTestResult?.success ? allocTestResult.responseText : allocTestResult?.error
+    };
+
+    const currentAllocations = aiConfig.groupAllocations || [];
+    const updatedAllocations = editingAllocationId
+      ? currentAllocations.map(a => (a.id === editingAllocationId ? newRule : a))
+      : [...currentAllocations, newRule];
+
+    const updatedConfig: PlatformAIConfig = {
+      ...aiConfig,
+      groupAllocations: updatedAllocations
+    };
+
+    await OmranAIService.saveConfig(updatedConfig);
+    setAiConfig(updatedConfig);
+    setIsAddGroupModalOpen(false);
+    setEditingAllocationId(null);
+    setAllocName('');
+    setAllocKey('');
+    setAllocSelectedTeacherIds([]);
+    setAllocTestResult(null);
+  };
+
+  // 5. Delete Allocation Rule
+  const handleDeleteAllocRule = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف تخصيص المفتاح لهذه المجموعة؟ سيعود أفرادها لاستخدام المفتاح الرئيسي للمنصة.')) return;
+    const updated = (aiConfig.groupAllocations || []).filter(a => a.id !== id);
+    const updatedConfig: PlatformAIConfig = {
+      ...aiConfig,
+      groupAllocations: updated
+    };
+    await OmranAIService.saveConfig(updatedConfig);
+    setAiConfig(updatedConfig);
+  };
+
+  // 6. Toggle Allocation Rule Enabled Status
+  const handleToggleAllocRule = async (id: string) => {
+    const updated = (aiConfig.groupAllocations || []).map(a =>
+      a.id === id ? { ...a, isEnabled: !a.isEnabled } : a
+    );
+    const updatedConfig: PlatformAIConfig = {
+      ...aiConfig,
+      groupAllocations: updated
+    };
+    await OmranAIService.saveConfig(updatedConfig);
+    setAiConfig(updatedConfig);
+  };
 
   // Handle Full Export to Local JSON
   const handleExport = async () => {
@@ -1062,6 +1311,583 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
           </div>
         </div>
       </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SECTION: AI PLATFORM KEY & GROUP PARTITIONING (منظومة ومفاتيح الذكاء الاصطناعي للمنصة) */}
+      {/* ========================================================================= */}
+      {isDeveloper && (
+      <div className="bg-[#022c22]/95 border-2 border-amber-500/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#065f46]">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 text-[#064e3b] flex items-center justify-center shadow-lg shrink-0">
+              <Bot className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-black font-heading text-white">
+                  منظومة ومفاتيح الذكاء الاصطناعي للمنصة (Google Gemini AI Engine)
+                </h3>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+                  خاص بالمبرمج
+                </span>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-400" />
+                  مستقل 100% يعمل على Netlify والسيرفر
+                </span>
+              </div>
+              <p className="text-xs text-[#86efac] mt-0.5">
+                إدارة المفتاح الرئيسي للمنصة وتحديد النموذج واختباره حياً، مع إمكانية فصل المفاتيح وتخصيصها لمجموعات محددة (مشرفين، معلمين، أو بوابة القبول).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingAllocationId(null);
+                setAllocName('');
+                setAllocKey('');
+                setAllocTargetRole('teachers');
+                setAllocSelectedTeacherIds([]);
+                setAllocSelectedComplexId('');
+                setAllocTestResult(null);
+                setIsAddGroupModalOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>تخصيص مفتاح لمجموعة / فئة</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Global Save Alert if present */}
+        {aiSaveSuccessMsg && (
+          <div className="p-4 rounded-2xl bg-emerald-900/60 border border-emerald-400/50 text-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{aiSaveSuccessMsg}</span>
+          </div>
+        )}
+
+        {/* 1. MASTER PLATFORM KEY (المفتاح الرئيسي لكامل المنصة) */}
+        <div className="bg-[#064e3b]/50 border-2 border-amber-400/30 rounded-2xl p-5 sm:p-6 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#065f46] pb-3">
+            <div className="flex items-center gap-2.5">
+              <Key className="w-5 h-5 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-black text-white">
+                  مفتاح الذكاء الاصطناعي الرئيسي للمنصة (Master Gemini API Key)
+                </h4>
+                <p className="text-[11px] text-amber-200/80">
+                  هذا هو المفتاح المركزي الأساسي؛ أي مستخدم أو طالب أو معلم ليس له مفتاح مخصص سيعمل تلقائياً بهذا المفتاح.
+                </p>
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isMasterEnabledInput}
+                onChange={e => setIsMasterEnabledInput(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-400 focus:ring-0 bg-[#022c22] border-[#065f46]"
+              />
+              <span className={isMasterEnabledInput ? 'text-emerald-300' : 'text-slate-400'}>
+                {isMasterEnabledInput ? 'المفتاح الرئيسي مفعل 🟢' : 'المفتاح الرئيسي معطل 🔴'}
+              </span>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Key Input */}
+            <div className="lg:col-span-7 space-y-1.5">
+              <label className="block text-xs font-bold text-[#86efac]">
+                رمز مفتاح Google Gemini API: <span className="text-amber-400">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type={showMasterKey ? 'text' : 'password'}
+                  value={masterKeyInput}
+                  onChange={e => {
+                    setMasterKeyInput(e.target.value);
+                    setMasterTestResult(null);
+                  }}
+                  placeholder="AIzaSy..."
+                  className="w-full bg-[#022c22] border border-[#065f46] rounded-xl pl-10 pr-3 py-2.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowMasterKey(!showMasterKey)}
+                  className="absolute left-3 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title={showMasterKey ? 'إخفاء الرمز' : 'إظهار الرمز'}
+                >
+                  {showMasterKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-300">
+                يمكن استخراج المفتاح مجاناً من Google AI Studio (aistudio.google.com). يتم حفظه وتشفيره سحابياً.
+              </p>
+            </div>
+
+            {/* Model Selector */}
+            <div className="lg:col-span-5 space-y-1.5">
+              <label className="block text-xs font-bold text-[#86efac]">
+                نموذج الذكاء الاصطناعي (Gemini Model): <span className="text-amber-400">*</span>
+              </label>
+              <select
+                value={masterModelInput}
+                onChange={e => {
+                  setMasterModelInput(e.target.value);
+                  setMasterTestResult(null);
+                }}
+                className="w-full bg-[#022c22] border border-[#065f46] rounded-xl px-3 py-2.5 text-xs font-bold text-amber-300 outline-none focus:border-amber-400 cursor-pointer"
+              >
+                {GOOGLE_GEMINI_MODELS.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.speed})
+                  </option>
+                ))}
+              </select>
+              {(() => {
+                const currentModelMeta = GOOGLE_GEMINI_MODELS.find(m => m.id === masterModelInput);
+                return currentModelMeta ? (
+                  <p className="text-[10px] text-amber-200/90 leading-tight">
+                    {currentModelMeta.description} • السياق: {currentModelMeta.contextWindow}
+                  </p>
+                ) : null;
+              })()}
+            </div>
+          </div>
+
+          {/* Test & Verification Result Card */}
+          {masterTestResult && (
+            <div
+              className={`p-4 rounded-xl border text-xs space-y-2 animate-in fade-in ${
+                masterTestResult.success
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                  : 'bg-red-950/60 border-red-500/50 text-red-200'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  {masterTestResult.success ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                      <span className="text-emerald-300">تم فحص وتشغيل المفتاح بنجاح! المفتاح صالح ويعمل 100%</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                      <span className="text-red-300">تعذر الاتصال بالمفتاح المحدد</span>
+                    </>
+                  )}
+                </div>
+
+                {masterTestResult.success && (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[11px] font-bold border border-emerald-400/30">
+                    ⚡ زمن الاستجابة: {masterTestResult.latencyMs}ms
+                  </span>
+                )}
+              </div>
+
+              {masterTestResult.success ? (
+                <div className="p-2.5 bg-black/30 rounded-lg border border-emerald-500/20 text-[11px] text-slate-200">
+                  <span className="text-amber-300 font-bold block mb-0.5">💬 استجابة اختبار الاتصال من Google:</span>
+                  <span className="italic font-serif">«{masterTestResult.responseText}»</span>
+                </div>
+              ) : (
+                <p className="text-[11px] leading-relaxed">{masterTestResult.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
+            <div className="text-[11px] text-slate-300">
+              {aiConfig.lastVerifiedAt && (
+                <span>
+                  آخر فحص ناجح: {new Date(aiConfig.lastVerifiedAt).toLocaleString('ar-SA')}
+                  {aiConfig.lastVerifiedLatencyMs ? ` (${aiConfig.lastVerifiedLatencyMs}ms)` : ''}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleTestMasterKey}
+                disabled={isTestingMasterKey || !masterKeyInput.trim()}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-amber-300 border border-amber-400/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                title="إجراء اتصال مباشر وتجربة النموذج"
+              >
+                {isTestingMasterKey ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>جارٍ الفحص والتشغيل...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 text-amber-400" />
+                    <span>تشغيل واختبار المفتاح الآن</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveMasterAIConfig}
+                disabled={isSavingAIConfig}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:brightness-110 text-[#064e3b] text-xs font-black shadow-lg shadow-amber-400/20 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSavingAIConfig ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جارٍ الحفظ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>حفظ واعتماد كمفتاح رئيسي للمنصة</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. GROUP ALLOCATIONS & PARTITIONING (فصل وتخصيص مفاتيح لكل مجموعة) */}
+        <div className="bg-[#064e3b]/30 border border-[#065f46] rounded-2xl p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#065f46] pb-3">
+            <div className="flex items-center gap-2.5">
+              <Sliders className="w-5 h-5 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-black text-white">
+                  فصل المفاتيح وتخصيصها لمجموعات محددة (Group & Role Key Routing)
+                </h4>
+                <p className="text-[11px] text-amber-200/80">
+                  بإمكانك تخصيص مفتاح منفصل لمشرفين محددين، أو للمعلمين، أو لبوابة تسجيل الطلاب، لتوزيع الحصص والتحكم الدقيق.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingAllocationId(null);
+                setAllocName('');
+                setAllocKey('');
+                setAllocTargetRole('teachers');
+                setAllocSelectedTeacherIds([]);
+                setAllocSelectedComplexId('');
+                setAllocTestResult(null);
+                setIsAddGroupModalOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-[#065f46] hover:bg-[#047857] text-[#86efac] hover:text-white border border-emerald-400/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5 text-amber-400" />
+              <span>إضافة تخصيص مفتاح جديد</span>
+            </button>
+          </div>
+
+          {/* Allocation Rules List */}
+          {aiConfig.groupAllocations && aiConfig.groupAllocations.length > 0 ? (
+            <div className="space-y-3">
+              {aiConfig.groupAllocations.map(rule => (
+                <div
+                  key={rule.id}
+                  className={`p-4 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                    rule.isEnabled
+                      ? 'bg-[#022c22]/80 border-[#065f46] hover:border-amber-400/40'
+                      : 'bg-black/20 border-white/5 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-white">{rule.name}</span>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-900/60 text-blue-300 font-bold border border-blue-400/30">
+                        {rule.targetRole === 'supervisors'
+                          ? 'مشرفين محددين'
+                          : rule.targetRole === 'teachers'
+                          ? 'المعلمين'
+                          : rule.targetRole === 'public_placement'
+                          ? 'بوابة قبول ومقابلة الطلاب'
+                          : rule.targetRole === 'assistant'
+                          ? 'المساعد الذكي'
+                          : 'مجموعة مخصصة'}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-300 font-mono font-bold border border-amber-400/20">
+                        {rule.model}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          rule.isEnabled
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                            : 'bg-slate-700/50 text-slate-400 border border-slate-600'
+                        }`}
+                      >
+                        {rule.isEnabled ? 'نشط 🟢' : 'معطل ⚪'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-300 font-mono flex items-center gap-2">
+                      <span>المفتاح: {rule.apiKey ? `${rule.apiKey.substring(0, 6)}••••••••${rule.apiKey.slice(-4)}` : 'غير محدد'}</span>
+                      {rule.lastTestStatus && (
+                        <span className={`text-[10px] ${rule.lastTestStatus === 'success' ? 'text-emerald-300' : 'text-red-300'}`}>
+                          ({rule.lastTestStatus === 'success' ? `تم الاختبار: ${rule.lastTestLatencyMs || 0}ms` : 'فشل الاختبار'})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAllocRule(rule.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                        rule.isEnabled
+                          ? 'bg-emerald-900/40 text-emerald-200 border-emerald-400/40 hover:bg-emerald-900/60'
+                          : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                      }`}
+                    >
+                      {rule.isEnabled ? 'تعطيل' : 'تفعيل'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingAllocationId(rule.id);
+                        setAllocName(rule.name);
+                        setAllocTargetRole(rule.targetRole);
+                        setAllocKey(rule.apiKey);
+                        setAllocModel(rule.model);
+                        setAllocIsEnabled(rule.isEnabled);
+                        setAllocSelectedTeacherIds(rule.assignedTeacherIds || []);
+                        setAllocSelectedComplexId(rule.complexId || '');
+                        setAllocTestResult(null);
+                        setIsAddGroupModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10 transition-colors cursor-pointer"
+                      title="تعديل"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAllocRule(rule.id)}
+                      className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/30 transition-colors cursor-pointer"
+                      title="حذف هذا التخصيص"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-6 text-center rounded-xl bg-[#022c22]/50 border border-dashed border-[#065f46] space-y-1.5">
+              <p className="text-xs text-amber-200 font-bold">
+                لا توجد مفاتيح منفصلة مخصصة حالياً
+              </p>
+              <p className="text-[11px] text-slate-300 max-w-lg mx-auto">
+                جميع المستخدمين (المشرفين، المعلمين، بوابة قبول الطلاب) يعتمدون تلقائياً على المفتاح الرئيسي للمنصة بالأعلى. يمكنك الضغط على «إضافة تخصيص مفتاح جديد» لربط أي فئة بمفتاح مستقل.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+      )}
+
+      {/* MODAL: ADD / EDIT GROUP KEY ALLOCATION */}
+      {isAddGroupModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#022c22] border-2 border-amber-400/60 rounded-3xl p-6 sm:p-7 max-w-xl w-full shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-[#065f46] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <Sliders className="w-5 h-5 text-amber-400" />
+                <h4 className="text-base font-black text-white">
+                  {editingAllocationId ? 'تعديل تخصيص مفتاح الذكاء الاصطناعي' : 'إضافة تخصيص مفتاح لمجموعة / فئة'}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddGroupModalOpen(false)}
+                className="text-slate-400 hover:text-white text-xs underline cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAllocRule} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#86efac] mb-1">
+                  اسم التخصيص / المجموعة: <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={allocName}
+                  onChange={e => setAllocName(e.target.value)}
+                  placeholder="مثال: مفتاح مشرفي مجمع النور، مفتاح معلمي حلقات الإتقان"
+                  className="w-full bg-[#064e3b] border border-[#065f46] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-[#86efac] mb-1">
+                    الفئة أو الجمهور المستهدف:
+                  </label>
+                  <select
+                    value={allocTargetRole}
+                    onChange={e => setAllocTargetRole(e.target.value as any)}
+                    className="w-full bg-[#064e3b] border border-[#065f46] rounded-xl px-3 py-2 text-xs font-bold text-amber-300 outline-none focus:border-amber-400 cursor-pointer"
+                  >
+                    <option value="supervisors">مشرفين محددين (Supervisors)</option>
+                    <option value="teachers">المعلمين (Teachers)</option>
+                    <option value="public_placement">بوابة تسجيل ومقابلة الطلاب (Placement)</option>
+                    <option value="assistant">المساعد القرآني الذكي (AI Assistant)</option>
+                    <option value="custom_group">مجمع قرآني كامل</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#86efac] mb-1">
+                    نموذج Gemini المخصص:
+                  </label>
+                  <select
+                    value={allocModel}
+                    onChange={e => {
+                      setAllocModel(e.target.value);
+                      setAllocTestResult(null);
+                    }}
+                    className="w-full bg-[#064e3b] border border-[#065f46] rounded-xl px-3 py-2 text-xs font-bold text-amber-300 outline-none focus:border-amber-400 cursor-pointer"
+                  >
+                    {GOOGLE_GEMINI_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* If target role is teachers, allow picking specific teachers */}
+              {allocTargetRole === 'teachers' && teachers && teachers.length > 0 && (
+                <div className="space-y-1.5 p-3 rounded-xl bg-black/20 border border-white/5">
+                  <span className="block text-xs font-bold text-emerald-200">
+                    تطبيق على معلمين محددين (اتركه فارغاً للتطبيق على جميع المعلمين):
+                  </span>
+                  <div className="max-h-32 overflow-y-auto space-y-1 text-xs">
+                    {teachers.map(t => {
+                      const isSelected = allocSelectedTeacherIds.includes(t.id);
+                      return (
+                        <label
+                          key={t.id}
+                          className="flex items-center gap-2 p-1.5 rounded hover:bg-white/5 cursor-pointer text-slate-300 select-none"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              if (isSelected) {
+                                setAllocSelectedTeacherIds(prev => prev.filter(id => id !== t.id));
+                              } else {
+                                setAllocSelectedTeacherIds(prev => [...prev, t.id]);
+                              }
+                            }}
+                            className="rounded text-amber-400 focus:ring-0 bg-[#022c22]"
+                          />
+                          <span>{t.name} ({t.username})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* API Key Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#86efac]">
+                  مفتاح Gemini API المخصص لهذه المجموعة: <span className="text-amber-400">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showAllocKey ? 'text' : 'password'}
+                    required
+                    value={allocKey}
+                    onChange={e => {
+                      setAllocKey(e.target.value);
+                      setAllocTestResult(null);
+                    }}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-[#064e3b] border border-[#065f46] rounded-xl pl-10 pr-3 py-2 text-xs text-white font-mono outline-none focus:border-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAllocKey(!showAllocKey)}
+                    className="absolute left-3 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showAllocKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Group Test Result Card */}
+              {allocTestResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs space-y-1 animate-in fade-in ${
+                    allocTestResult.success
+                      ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                      : 'bg-red-950/60 border-red-500/50 text-red-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold">
+                      {allocTestResult.success ? '⚡ الاتصال ناجح وجاهز للاستخدام!' : 'فشل الاتصال'}
+                    </span>
+                    {allocTestResult.success && (
+                      <span className="font-mono text-[10px]">{allocTestResult.latencyMs}ms</span>
+                    )}
+                  </div>
+                  <p className="text-[11px]">
+                    {allocTestResult.success ? allocTestResult.responseText : allocTestResult.error}
+                  </p>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleTestAllocKey}
+                  disabled={isTestingAllocKey || !allocKey.trim()}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-amber-300 border border-amber-400/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isTestingAllocKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>اختبار هذا المفتاح</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddGroupModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] text-xs font-black shadow-lg transition-all cursor-pointer"
+                  >
+                    حفظ التخصيص
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ========================================================================= */}

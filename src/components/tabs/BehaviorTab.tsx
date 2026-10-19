@@ -26,6 +26,7 @@ import {
 import { Student, BehaviorViolation, ViolationSeverity, AppSettings, QuranComplex } from '../../types';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { ApiConfig } from '../../lib/apiConfig';
+import { OmranAIService } from '../../lib/omranAIService';
 
 interface BehaviorTabProps {
   students: Student[];
@@ -261,6 +262,38 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
     const activeAction =
       formActionTaken === 'إجراء آخر مخصص' ? formCustomAction || 'تنبيه وتوجيه' : formActionTaken;
 
+    // 1. Direct client-side generation via OmranAIService (works on Netlify without server!)
+    try {
+      const config = await OmranAIService.loadConfig();
+      if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
+        const prompt = `أنت موجه تربوي في حلقات تحفيظ القرآن الكريم.
+قم بصياغة رسالة تربوية لطيفة ومؤثرة باللغة العربية لإرسالها لولي أمر الطالب عبر الواتساب لإشعاره بالملاحظة السلوكية والتوجيه الذي تم معه.
+بيانات الملاحظة:
+- اسم الطالب: ${student.name}
+- نوع الملاحظة: ${activeViolationType}
+- درجة الحدة: ${formSeverity}
+- الوصف الإضافي: ${formDescription || 'لا يوجد'}
+- الإجراء المتخذ: ${activeAction}
+- المعلم: ${teacherName || settings.teacherName}
+- الحلقة: ${settings.halaqahName}
+
+أعد نص الرسالة التربوية الموجهة لولي الأمر مباشرة بأسلوب راقٍ يحفظ كرامة الطالب ويدعو للتعاون المشترك بين البيت والحلقة.`;
+        const aiRes = await OmranAIService.generateContent({
+          prompt,
+          role: 'teachers',
+          temperature: 0.5
+        });
+        if (aiRes.success && aiRes.text) {
+          setFormMessageText(aiRes.text.trim());
+          setIsGeneratingMessage(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Direct AI violation message notice:', e);
+    }
+
+    // 2. Server Fallback (if backend is running)
     try {
       const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-violation-message'), {
         method: 'POST',
@@ -280,14 +313,17 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
         const data = await res.json();
         if (data?.message) {
           setFormMessageText(data.message);
+          setIsGeneratingMessage(false);
+          return;
         }
       }
     } catch (e) {
       console.warn('AI Message generation fallback:', e);
-      setFormMessageText(buildDefaultMessage(student.name, activeViolationType, activeAction));
-    } finally {
-      setIsGeneratingMessage(false);
     }
+
+    // 3. Built-in Pedagogical Template Fallback
+    setFormMessageText(buildDefaultMessage(student.name, activeViolationType, activeAction));
+    setIsGeneratingMessage(false);
   };
 
   // Copy Message Helper

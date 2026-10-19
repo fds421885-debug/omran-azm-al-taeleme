@@ -286,13 +286,22 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       refreshAllApps();
     };
 
+    const handleAppDeleted = (e: any) => {
+      const deletedId = e.detail?.id;
+      if (deletedId) {
+        setApplications(prev => prev.filter(a => a.id !== deletedId));
+      }
+    };
+
     window.addEventListener('omran:students-updated', handleAppsUpdated);
     window.addEventListener('omran:apps-updated', handleAppsUpdated);
+    window.addEventListener('omran:registration-application-deleted', handleAppDeleted);
 
     return () => {
       unsub();
       window.removeEventListener('omran:students-updated', handleAppsUpdated);
       window.removeEventListener('omran:apps-updated', handleAppsUpdated);
+      window.removeEventListener('omran:registration-application-deleted', handleAppDeleted);
     };
   }, [complex.id]);
 

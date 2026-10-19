@@ -10,6 +10,7 @@ import { Student, StudentMemorizationPlan, Halaqah, QuranComplex, StudentEvaluat
 import { ApiConfig } from './apiConfig';
 import { calculatePortionFromPace } from '../data/quranPagesData';
 import { getSurahInfo } from '../data/quranData';
+import { OmranAIService } from './omranAIService';
 
 export interface DynamicInterviewQuestion {
   questionId: string;
@@ -317,6 +318,25 @@ export async function evaluateMonthlyProgressionWithGemini(
   isStruggling: boolean;
   pedagogicalAdvice: string;
 }> {
+  return executeMonthlyProgressionAnalysis({
+    student,
+    evaluations: evaluations as StudentEvaluation[],
+    ayahErrors: ayahErrors as QuranRecitationItem[]
+  });
+}
+
+export async function executeMonthlyProgressionAnalysis(params: {
+  student: Student;
+  evaluations: StudentEvaluation[];
+  ayahErrors: QuranRecitationItem[];
+}): Promise<{
+  shouldIncreasePace: boolean;
+  recommendedPace: number;
+  reasoning: string;
+  isStruggling: boolean;
+  pedagogicalAdvice: string;
+}> {
+  const { student, evaluations, ayahErrors } = params;
   const currentPace = student.memorizationPlan?.dailyNewPages || 
     (student.dailyNewTarget?.includes('وجهين') ? 2.0 :
      student.dailyNewTarget?.includes('ربع') ? 0.25 :
@@ -324,6 +344,48 @@ export async function evaluateMonthlyProgressionWithGemini(
 
   const localRes = analyzeMonthlyProgression(evaluations, currentPace, ayahErrors.length);
 
+  // 1. Direct Client-side Execution via OmranAIService (works on Netlify & static hosting)
+  try {
+    const config = await OmranAIService.loadConfig();
+    if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
+      const prompt = `أنت الموجه القرآني والتربوي الذكي في منصة عمران لتحفيظ القرآن الكريم.
+المطلوب تحليل مستوى تقدم الطالب القرآني وتحديد مدى استحقاقه لزيادة مقدار الحفظ اليومي (الترقية التدريجية) وفق القواعد التربوية القرآنية:
+- «الختم بتثبيت خير من التعجل بالتفلت»
+- إذا كان الطالب متميزاً وثابتاً (متوسط درجاته 9 فأعلى والأخطاء قليلة جداً) يقترح زيادة نصف وجه.
+- إذا كان يعاني من تفلت أو أخطاء، يوصى بالبقاء على ورده أو تكثيف المراجعة.
+
+بيانات الطالب: ${student.name}، الورد الحالي: ${currentPace} وجه.
+عدد التقييمات المسجلة: ${evaluations.length} تقييم، عدد أخطاء الآيات: ${ayahErrors.length}.
+النتيجة الحسابية الأولية: ${JSON.stringify(localRes)}
+
+أعد إجابتك حصراً بصيغة JSON بالمفاتيح التالية:
+{
+  "shouldIncreasePace": boolean,
+  "recommendedPace": number,
+  "reasoning": "نص التوجيه التربوي والتعليل باللغة العربية",
+  "isStruggling": boolean,
+  "pedagogicalAdvice": "نصيحة بيداغوجية موجهة للمعلم والطالب"
+}`;
+      const aiRes = await OmranAIService.generateContent({
+        prompt,
+        role: 'teachers',
+        jsonMode: true,
+        temperature: 0.3
+      });
+      if (aiRes.success && aiRes.text) {
+        try {
+          const parsed = JSON.parse(aiRes.text.replace(/```json\n?|\n?```/g, '').trim());
+          if (parsed && typeof parsed.shouldIncreasePace === 'boolean') {
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+  } catch (directErr) {
+    console.warn('Direct AI progression notice:', directErr);
+  }
+
+  // 2. Server Proxy Fallback (if server.ts is active)
   try {
     const res = await fetch(ApiConfig.getEndpoint('/api/gemini/analyze-monthly-progression'), {
       method: 'POST',
@@ -356,6 +418,7 @@ export async function evaluateMonthlyProgressionWithGemini(
 
 /**
  * Runs a dynamic turn of the AI placement interview
+ * Direct client-side Google Gemini integration + Server Fallback + Pedagogical Engine
  */
 export async function executeDynamicInterviewTurn(params: {
   studentInitialData: {
@@ -383,7 +446,66 @@ export async function executeDynamicInterviewTurn(params: {
   const isBeginner = (studentInitialData.memorizedJuzList?.length || 0) <= 2;
   const isChild = studentInitialData.age <= 11;
 
-  // Attempt real AI call via backend
+  // 1. Direct Client-side Execution via OmranAIService (works seamlessly on Netlify without server!)
+  try {
+    const config = await OmranAIService.loadConfig();
+    if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
+      const prompt = `أنت «المساعد القرآني والتربوي الذكي» لمجمع «${complex.name}».
+قم بإجراء الجولة رقم (${turnIndex}) من المقابلة التشخيصية لتحديد موضع الحفظ ومستوى الإتقان للطالب:
+بيانات الطالب: ${JSON.stringify(studentInitialData)}
+البيانات التراكمية: ${JSON.stringify(accumulatedData)}
+آخر إجابة من الطالب: "${lastUserAnswer || 'بداية المقابلة'}"
+تاريخ المحادثة: ${JSON.stringify(params.chatHistory.slice(-4))}
+الحالة: خاتم=${isKhatim}، مبتدئ=${isBeginner}، طفل=${isChild}.
+
+قواعد:
+1. الجولة 1: الترحيب وسؤال الطالب أين وصل في سور القرآن الكريم (سورة وآية).
+2. الجولة 2: للخاتم سؤاله هل يحب البدء من البقرة أم من الناس، ولغير الخاتم سؤاله عن اتجاه حفظه.
+3. الجولات اللاحقة: فحص تجويدي أو متشابهات أو قياس الهمة، وخيارات متباينة غير مكررة.
+4. الجولة 5: خاتمة المقابلة وإعلان التسكين وخطة الحفظ المقترحة (isCompleted: true).
+
+أعد الإجابة بصيغة JSON حصراً:
+{
+  "replyText": "النص التشجيعي والتربوي",
+  "isCompleted": boolean,
+  "nextQuestion": {
+    "questionId": "q_id",
+    "questionText": "نص السؤال",
+    "category": "memorization_depth",
+    "options": [
+      { "label": "خيار 1", "value": "val1", "subtext": "توضيح" },
+      { "label": "خيار 2", "value": "val2", "subtext": "توضيح" }
+    ]
+  },
+  "aiInsights": {
+    "studentLevel": "متوسط",
+    "psychologicalProfile": "...",
+    "commitmentAssessment": "ممتاز",
+    "recommendedHalaqahLevel": "...",
+    "suggestedDailyNewPages": 1,
+    "suggestedDailyReviewPages": 5
+  }
+}`;
+      const aiRes = await OmranAIService.generateContent({
+        prompt,
+        role: 'public_placement',
+        jsonMode: true,
+        temperature: 0.4
+      });
+      if (aiRes.success && aiRes.text) {
+        try {
+          const parsed = JSON.parse(aiRes.text.replace(/```json\n?|\n?```/g, '').trim());
+          if (parsed && parsed.replyText) {
+            return parsed as DynamicInterviewResponse;
+          }
+        } catch {}
+      }
+    }
+  } catch (directErr) {
+    console.warn('Direct AI placement execution note:', directErr);
+  }
+
+  // 2. Server Proxy Fallback (if backend is running)
   try {
     const res = await fetch(ApiConfig.getEndpoint('/api/gemini/dynamic-placement-turn'), {
       method: 'POST',
@@ -411,7 +533,7 @@ export async function executeDynamicInterviewTurn(params: {
     console.warn('Backend dynamic interview call note, using pedagogical engine fallback:', err);
   }
 
-  // Smart Pedagogical Fallback Engine tailored to student profile!
+  // 3. Smart Pedagogical Fallback Engine tailored to student profile!
   return getPedagogicalTurnFallback(params);
 }
 

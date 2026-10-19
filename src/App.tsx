@@ -3804,6 +3804,7 @@ export function App() {
                 onSaveComplex={handleSaveComplex}
                 halaqahs={halaqahs}
                 students={students}
+                teachers={teachers}
               />
             )}
               </>
