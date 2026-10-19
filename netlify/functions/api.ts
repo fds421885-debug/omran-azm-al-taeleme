@@ -22,6 +22,26 @@ export const handler = async (event: any, context: any) => {
     };
   }
 
+  // Normalize path so Express routes (/api/...) always match accurately
+  if (event.path) {
+    if (event.path.startsWith('/.netlify/functions/api')) {
+      event.path = event.path.replace(/^\/\.netlify\/functions\/api/, '/api');
+    }
+    if (!event.path.startsWith('/api')) {
+      event.path = '/api' + (event.path.startsWith('/') ? event.path : '/' + event.path);
+    }
+  }
+
+  if (event.rawUrl) {
+    try {
+      const u = new URL(event.rawUrl);
+      if (u.pathname.startsWith('/.netlify/functions/api')) {
+        u.pathname = u.pathname.replace(/^\/\.netlify\/functions\/api/, '/api');
+        event.rawUrl = u.toString();
+      }
+    } catch {}
+  }
+
   try {
     const res = await serverlessHandler(event, context);
     return res;

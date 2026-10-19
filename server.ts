@@ -2813,7 +2813,18 @@ app.post("/api/gemini/assistant", async (req, res) => {
       activeHalaqah = {},
       activeStudent = null,
       dataContext = {},
+      apiKey = "",
     } = req.body;
+
+    const cleanCurrentMessage = (message || "").trim();
+
+    const effectiveApiKey = (
+      apiKey ||
+      (req.headers["x-gemini-api-key"] as string) ||
+      (typeof req.headers["authorization"] === 'string' ? req.headers["authorization"].replace(/^Bearer\s+/i, "") : "") ||
+      process.env.GEMINI_API_KEY ||
+      ""
+    ).trim();
 
     const currentActiveStudent = activeStudent || dataContext.activeStudent || null;
 
@@ -4359,6 +4370,90 @@ app.post("/api/gemini/assistant", async (req, res) => {
         )
       );
 
+    // 2.12.5.4 Latest Student Joined / New Students Intent (من اخر طالب انضم، احدث طالب، اخر طالب سجل، من انضم حديثاً)
+    let hasLatestStudentIntent =
+      /(?:من\s+اخر\s+طالب|من\s+آخر\s+طالب|اخر\s+طالب\s+انضم|آخر\s+طالب\s+انضم|احدث\s+طالب|أحدث\s+طالب|انضم\s+الينا|انضم\s+إلينا|انضم\s+الين|انضم\s+مؤخرا|انضم\s+مؤخراً|انضم\s+جديد|جديد\s+انضم|اخر\s+المسجلين|آخر\s+المسجلين|احدث\s+المسجلين|أحدث\s+المسجلين|من\s+انضم\s+حديثا|من\s+انضم\s+حديثاً|من\s+سجل\s+مؤخرا|الطلاب\s+الجدد|طلاب\s+جدد|اخر\s+من\s+انضم|آخر\s+من\s+انضم)/i.test(message) ||
+      normUserMessage.includes("اخر طالب") ||
+      normUserMessage.includes("آخر طالب") ||
+      normUserMessage.includes("احدث طالب") ||
+      normUserMessage.includes("أحدث طالب") ||
+      normUserMessage.includes("انضم الينا") ||
+      normUserMessage.includes("انضم الين") ||
+      normUserMessage.includes("انضم جديد") ||
+      normUserMessage.includes("اخر المسجلين") ||
+      normUserMessage.includes("آخر المسجلين") ||
+      normUserMessage.includes("الطلاب الجدد") ||
+      (normUserMessage.includes("اخر") && (normUserMessage.includes("طالب") || normUserMessage.includes("انضم") || normUserMessage.includes("سجل"))) ||
+      (normUserMessage.includes("آخر") && (normUserMessage.includes("طالب") || normUserMessage.includes("انضم") || normUserMessage.includes("سجل")));
+
+    // 2.12.5.5 Total Student Count Intent (كم طالب في المجمع، كم عدد الطلاب، عدد طلاب المنظومة)
+    let hasStudentCountIntent =
+      !hasLatestStudentIntent &&
+      (/(?:كم\s+طالب|كم\s+عدد\s+الطلاب|عدد\s+الطلاب|مجموع\s+الطلاب|إجمالي\s+الطلاب|اجمالي\s+الطلاب|كم\s+طالب\s+مسجل|كم\s+طالب\s+عندنا|كم\s+طالب\s+في\s+المجمع|كم\s+طالب\s+في\s+الحلقة)/i.test(message) ||
+      normUserMessage.includes("كم طالب") ||
+      normUserMessage.includes("كم عدد الطلاب") ||
+      normUserMessage.includes("عدد الطلاب") ||
+      normUserMessage.includes("مجموع الطلاب"));
+
+    // 2.12.5.6 Puzzled / Repeating user intent (e.g. "؟؟" or "رد علي" or "وينك" or "ما جاوبتني")
+    const isPuzzledOrRepeatIntent =
+      normUserMessage === "؟" ||
+      normUserMessage === "؟؟" ||
+      normUserMessage === "؟؟؟" ||
+      normUserMessage === "??" ||
+      normUserMessage === "???" ||
+      normUserMessage.includes("وينك") ||
+      normUserMessage.includes("رد علي") ||
+      normUserMessage === "رد" ||
+      normUserMessage.includes("ما جاوبت") ||
+      normUserMessage.includes("ما جاوبتني") ||
+      normUserMessage.includes("جاوبني") ||
+      normUserMessage.includes("ألو") ||
+      normUserMessage.includes("الو");
+
+    // History contextual lookup for repeats / puzzled prompts
+    const previousUserMsgObj = Array.isArray(history)
+      ? [...history].reverse().find((h: any) =>
+          (h.role === 'user' || h.sender === 'user') &&
+          (h.text || h.parts?.[0]?.text || '').trim() &&
+          (h.text || h.parts?.[0]?.text || '').trim() !== cleanCurrentMessage
+        )
+      : null;
+    const previousUserText = (previousUserMsgObj?.text || previousUserMsgObj?.parts?.[0]?.text || '').trim();
+    const previousUserNorm = normalizeArabicText(previousUserText);
+
+    if (isPuzzledOrRepeatIntent && previousUserNorm) {
+      if (
+        previousUserNorm.includes("اخر") ||
+        previousUserNorm.includes("آخر") ||
+        previousUserNorm.includes("انضم") ||
+        previousUserNorm.includes("احدث") ||
+        previousUserNorm.includes("أحدث")
+      ) {
+        hasLatestStudentIntent = true;
+      } else if (previousUserNorm.includes("كم طالب") || previousUserNorm.includes("عدد الطلاب")) {
+        hasStudentCountIntent = true;
+      }
+    }
+
+    // Sort students by join date (newest first)
+    const sortedStudentsByJoinDate = [...studentsList].sort((a: any, b: any) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (dateA !== dateB) return dateB - dateA;
+
+      const matchA = typeof a.id === 'string' ? a.id.match(/std_(\d+)/) : null;
+      const matchB = typeof b.id === 'string' ? b.id.match(/std_(\d+)/) : null;
+      const tsA = matchA ? Number(matchA[1]) : 0;
+      const tsB = matchB ? Number(matchB[1]) : 0;
+      if (tsA !== tsB) return tsB - tsA;
+
+      return 0;
+    });
+
+    const candidateLatestStudent = sortedStudentsByJoinDate[0] || null;
+    const candidateRecentStudents = sortedStudentsByJoinDate.slice(0, 5);
+
     const hasStudentMention =
       Boolean(candidateStudentForAttendance) ||
       Boolean(candidateStudentForPlan) ||
@@ -5189,7 +5284,7 @@ ${coachingStudentProfile}
 4. قاعدة "الأخذ والعطاء" (استمرار الحوار):
    - في نهاية ردك، اطرح على المعلم سؤالاً أو سؤالين استكشافيين ذكيين لتتعرف على تفاصيل أكثر (مثلاً: "هل لاحظت يا شيخنا متى يكثر تشتته في بداية الحلقة أم نهايتها؟"، "وماذا عن علاقته بزملائه المقربين؟").
    - بشّره وأكد له أنك مستعد لمواصلة النقاش معه واقتراح خطة مخصصة مفصلة آية بآية.
-═════════════════════════════════════════════════════════════════════════════` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
+═════════════════════════════════════════════════════════════════════════════` : ''}${hasLatestStudentIntent && candidateLatestStudent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "آخر طالب انضم إلينا / أحدث الطلاب":\n- المستخدم يسأل خصيصاً عن آخر طالب انضم للمنظومة/الحلقة!\n- أجب بشكل مباشر وصريح في السطر الأول: اذكر أن آخر طالب انضم هو "${candidateLatestStudent.name}" في حلقة "${candidateLatestStudent.halaqahName || 'الحلقة'}"، ومستواه "${candidateLatestStudent.level || 'متوسط'}"، وموضع حفظه الحالي سورة "${candidateLatestStudent.currentSurahName || 'الفاتحة'}" (آية ${candidateLatestStudent.currentAyah || 1})، وتاريخ انضمامه ${candidateLatestStudent.createdAt ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA') : 'مؤخراً'}.\n- اذكر أيضاً قائمة بأحدث 3 إلى 5 طلاب انضموا بعده لتزويده بمعلومات كاملة ووافية.\n- إياك أن تتجاهل السؤال أو تعيد الترحيب به دون الإجابة!` : ''}${hasStudentCountIntent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "كم عدد الطلاب":\n- المستخدم يسأل عن إجمالي عدد الطلاب المقيدين!\n- أجب مباشرة برقم دقيق: إجمالي عدد الطلاب المقيدين في المنظومة هو ${studentsList.length} طالباً.\n- اذكر تفاصيل توزيعهم على الحلقات القرآنية بالأرقام الدقيقة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
 
     // 5. Cleanly build alternating multi-turn conversation history for Gemini
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
@@ -5218,7 +5313,6 @@ ${coachingStudentProfile}
     }
 
     // Ensure incoming message is added as final user turn if not already present
-    const cleanCurrentMessage = (message || "").trim();
     if (cleanCurrentMessage) {
       const lastTurn = chatHistoryParts[chatHistoryParts.length - 1];
       if (!lastTurn || lastTurn.role !== "user" || lastTurn.parts[0].text !== cleanCurrentMessage) {
@@ -5320,24 +5414,34 @@ ${coachingStudentProfile}
 
     // 6. Call Real Gemini API with Multi-Model Fallback Cascade
     let geminiReply = "";
-    if (process.env.GEMINI_API_KEY && chatHistoryParts.length > 0) {
+    if (effectiveApiKey && chatHistoryParts.length > 0) {
+      const activeAi = new GoogleGenAI({
+        apiKey: effectiveApiKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+
       // Prioritize high-availability and fast responsive models
       const candidateModels = [
         "gemini-3.8-flash",
         "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
       ];
 
       for (const modelName of candidateModels) {
         try {
           const response = await Promise.race([
-            ai.models.generateContent({
+            activeAi.models.generateContent({
               model: modelName,
               contents: chatHistoryParts,
               config: {
                 systemInstruction,
               },
             }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 25000)),
           ]);
 
           if (response?.text) {
@@ -5345,7 +5449,7 @@ ${coachingStudentProfile}
             break;
           }
         } catch (modelErr: any) {
-          console.warn(`Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
+          console.warn(`[Assistant] Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
         }
       }
     }
@@ -5519,6 +5623,48 @@ ${coachingStudentProfile}
           geminiReply = `حيّاك الله يا أخي ${firstName}، وأهلاً بك في سهرتنا التربوية الهادئة 🌙📖\n\nضعف الحفظ أو بطء الاستيعاب لدى الطالب ${sName} ليس عيباً في قدراته؛ بل هو اختلاف في نمط التعلم وتخزين الذاكرة. وكم من طالب كان بطيئاً في بدايته ثم صار من أتقن الحفاظ!\n\nإليك **البرنامج العلاجي العملي لرفع كفاءة حفظ وتثبيت ${sName}**:\n\n1. 🎯 **طريقة التكرار التراكمي (2×2):**\nلا تكلفه بحفظ صفحة كاملة دفعة واحدة. اجعله يحفظ آيتين فقط، ويكررهما 5 مرات غيباً، ثم ينتقل للآيتين التاليتين ويصل القديم بالجديد.\n\n2. 🎧 **استثمار الذاكرة السمعية (الاستماع المكرر):**\nكلفه بالاستماع إلى الشيخ الحصري أو المنشاوي 3 مرات متتالية قبل محاولة الحفظ. الأذن تسبق اللسان في تثبيت مخارج الكلمات ونبرة الآيات.\n\n3. ✍️ **تقنية الكتابة واللوح:**\nاجعله يكتب الآيات الصعبة بيده في كراسة خاصة أو على لوح؛ فالكتابة ترسخ صورة الآية في الذاكرة البصرية.\n\n4. ⭐ **الاحتفاء بالإنجاز الصغير:**\nإذا أتقن نصف وجه بدون خطأ، كافئه فوراً بنقاط إضافية في لوحة الشرف وأثنِ عليه أمام الحلقة ليبدد عقدة الخوف من الحفظ.\n\n💭 **شاركنـي يا شيخنا الفاضل:**\nكم مقدار الورد اليومي الذي يكلّف به حالياً؟ وهل تجده يواظب على المراجعة والتكرار في البيت أم يعتمد فقط على وقت الحلقة؟`;
         } else {
           geminiReply = `أهلاً وسهلاً بك يا أخي ${firstName} في هذه السهرة التربوية الهادئة 🌙🌿\n\nتطوير الطالب ${sName} يبدأ من كسب قلبه وفهم مفاتيحه النفسية. إليك أهم ركائز الارتقاء به:\n\n• 🏆 **التحفيز القائم على المنافسة المحمودة:** إدراج اسمه في مسابقات التحدي القرآني ومنحه ألقاباً تشجيعية (مثل: سفير الإتقان، قارئ الأسبوع).\n• 📈 **التدرج المدروس:** تثبيت محفوظ الأمس قبل طلب جديد اليوم، فالتثبيت رأس المال والحفظ الجديد ربح.\n• 🤝 **الشراكة الودية مع الأسرة:** إرسال بطاقة تشجيعية عبر الواتساب لوالده تتضمن إشادة بتقدمه، مما ينعكس إيجابياً على نفسيته في البيت.\n\n💭 **أخبرني يا أخي ${firstName}:** ما هو الجانب الذي ترى أن ${sName} يحتاج دعماً أكبر فيه (الحفظ الجديد، مخارج الحروف والتجويد، أم المواظبة والانضباط)؟`;
+        }
+      } else if (hasLatestStudentIntent) {
+        if (candidateLatestStudent) {
+          const latestName = candidateLatestStudent.name;
+          const halaqah = candidateLatestStudent.halaqahName || "الحلقة القرآنية";
+          const level = candidateLatestStudent.level || "متوسط";
+          const currentSurah = candidateLatestStudent.currentSurahName || "الفاتحة";
+          const currentAyah = candidateLatestStudent.currentAyah || 1;
+          const joinDate = candidateLatestStudent.createdAt
+            ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA')
+            : "مؤخراً";
+          const pts = typeof candidateLatestStudent.points === 'number'
+            ? candidateLatestStudent.points
+            : (candidateLatestStudent.totalPoints || 0);
+
+          const otherRecent = candidateRecentStudents.filter((s: any) => s.id !== candidateLatestStudent.id);
+          const otherRecentText = otherRecent.length > 0
+            ? `\n\n📋 **قائمة أحدث الطلاب المنضمين أيضاً للمنظومة:**\n` +
+              otherRecent.map((s: any, idx: number) =>
+                `${idx + 1}. **${s.name}** - حلقة: ${s.halaqahName || 'الحلقة'} (المستوى: ${s.level || 'متوسط'} • سورة: ${s.currentSurahName || 'الفاتحة'} • رصيد النقاط: ${typeof s.points === 'number' ? s.points : (s.totalPoints || 0)} نقطة)`
+              ).join('\n')
+            : '';
+
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🌿\n\nبناءً على السجلات الرسمية المعتمدة في المنظومة، فإن **آخر طالب انضم إلينا** هو:\n\n• 👤 **اسم الطالب:** **${latestName}**\n• 🕌 **الحلقة:** ${halaqah}\n• 📖 **المستوى القرآني:** ${level} (موضع الحفظ الحالي: سورة ${currentSurah} - آية ${currentAyah})\n• 📅 **تاريخ الانضمام:** ${joinDate}\n• ⭐ **رصيد النقاط:** ${pts} نقطة${otherRecentText}\n\nتفضل بمراجعة تفاصيل الطلاب بالأسفل أو يمكنك تسجيل طالب جديد عبر استبيان التسجيل في أي وقت.`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🌿\n\nبمراجعة سجلات المنظومة، **لم يُسجّل أي طالب حتى الآن** في قاعدة البيانات. يمكنك البدء بتسجيل وإلحاق أول طالب بكل سهولة عبر استبيان التسجيل التفاعلي أدناه:`;
+        }
+      } else if (hasStudentCountIntent) {
+        const totalSt = studentsList.length;
+        const halaqahBreakdown = halaqahsList.map((h: any) => {
+          const count = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+          return `• حلقة **${h.name}**: ${count} طالباً`;
+        }).join('\n');
+
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📊✨\n\nيبلغ **إجمالي عدد الطلاب المقيدين في المنظومة** حالياً **${totalSt} طالباً**${effectiveMatchedComplex ? ` في ${effectiveMatchedComplex.name}` : ''}.\n\n📋 **توزيع الطلاب على الحلقات:**\n${halaqahBreakdown || 'لا توجد حلقات مقسمة بعد'}\n\n• الحاضرون اليوم: ${metrics.presentCount} طالب\n• الغائبون اليوم: ${metrics.absentCount} طالب\n\nتفضل بالاطلاع على كشف الطلاب الموضح أدناه:`;
+      } else if (isPuzzledOrRepeatIntent && (previousUserNorm || previousUserText)) {
+        if (candidateLatestStudent && (previousUserNorm.includes("اخر") || previousUserNorm.includes("آخر") || previousUserNorm.includes("انضم") || previousUserNorm.includes("جديد"))) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر، وأنا معك بكامل تركيزي واهتمامي!\n\nإجابةً لسؤالك: **آخر طالب انضم إلينا** هو الطالب المبارك **${candidateLatestStudent.name}** في حلقة **${candidateLatestStudent.halaqahName || 'الحلقة'}** (مستواه: ${candidateLatestStudent.level || 'متوسط'}، وموضعه بسورة ${candidateLatestStudent.currentSurahName || 'الفاتحة'}).\n\nوقد أرفقت لك بالأسفل كشف أحدث الطلاب المنضمين للمنظومة تفضل بمراجعته فوراً.`;
+        } else if (previousUserNorm.includes("كم") || previousUserNorm.includes("عدد") || previousUserNorm.includes("طالب")) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 معك واعتذر على أي تأخر؛ يبلغ **إجمالي عدد الطلاب المقيدين في المنظومة** حالياً **${studentsList.length} طالباً**، والحاضرون اليوم ${metrics.presentCount} طالب.\n\nتفضل بمراجعة الكشف الموضح أدناه.`;
+        } else {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر؛ أنا معك ومتابع لكل كلمة تقولها بكامل الاهتمام. تفضل بطرح ما ترغب في معرفته أو تنفيذه وسأجيبك فوراً وبأدق الأرقام من واقع سجلات المجمع الحية.`;
         }
       } else if (chatHistoryParts.length > 2) {
         // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
@@ -6793,6 +6939,45 @@ ${coachingStudentProfile}
           overallAttendanceRate: studentOverallPct,
           parentPhone: candidateStudentForCoaching.parentPhone || candidateStudentForCoaching.phone || "",
         }
+      };
+    } else if (hasLatestStudentIntent && candidateRecentStudents.length > 0) {
+      action = {
+        type: "SHOW_DATA_TABLE",
+        title: "كشف أحدث الطلاب المنضمين للمنظومة",
+        tableType: "custom_students_progress",
+        data: {
+          complexName,
+          totalStudents: candidateRecentStudents.length,
+          students: candidateRecentStudents.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahName: s.halaqahName || "الحلقة القرآنية",
+            level: s.level || "متوسط",
+            currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: typeof s.points === 'number' ? s.points : (s.totalPoints || 0),
+            createdAt: s.createdAt,
+          })),
+        },
+      };
+    } else if (hasStudentCountIntent && studentsList.length > 0) {
+      action = {
+        type: "SHOW_DATA_TABLE",
+        title: `كشف إجمالي طلاب المنظومة (${studentsList.length} طالباً)`,
+        tableType: "custom_students_progress",
+        data: {
+          complexName,
+          totalStudents: studentsList.length,
+          students: studentsList.slice(0, 15).map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahName: s.halaqahName || "الحلقة القرآنية",
+            level: s.level || "متوسط",
+            currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: typeof s.points === 'number' ? s.points : (s.totalPoints || 0),
+          })),
+        },
       };
     }
 

@@ -1359,15 +1359,51 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       saveSessionMessages(finalMessages, activeSessionId);
     } catch (err: any) {
       console.error('AI assistant error:', err);
+      const normText = (textToSend || '').trim();
+      const currentStudentCohort = (students && students.length > 0 ? students : scopedStudents);
+      let fallbackText = messages.length > 1
+        ? `معذرة يا أخي ${userFirstName}، حدث تعذر لحظي في معالجة الرد عبر الخادم. تفضل بتأكيد ما ترغب به وسأواصل معك فوراً.`
+        : `أهلاً بك يا أخي ${userFirstName} في منصة عُمْرَان. أنا في خدمتك، كيف يمكنني مساعدتك؟`;
+
+      let fallbackAction: any = undefined;
+
+      if (/(?:اخر|آخر|احدث|أحدث)\s*طالب|انضم\s*(?:الينا|الين|إلينا|جديد)/i.test(normText)) {
+        const sorted = [...currentStudentCohort].sort((a, b) => {
+          const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tB - tA;
+        });
+        const latest = sorted[0];
+        if (latest) {
+          fallbackText = `أهلاً بك يا أخي ${userFirstName} 🌿\n\nبناءً على السجلات الرسمية في المنظومة، فإن **آخر طالب انضم إلينا** هو:\n\n• 👤 **اسم الطالب:** **${latest.name}**\n• 🕌 **الحلقة:** ${latest.halaqahName || 'الحلقة القرآنية'}\n• 📖 **المستوى:** ${latest.level || 'متوسط'} (موضع الحفظ الحالي: سورة ${latest.currentSurahName || 'الفاتحة'})\n• 📅 **تاريخ الانضمام:** ${latest.createdAt ? new Date(latest.createdAt).toLocaleDateString('ar-SA') : 'مؤخراً'}\n• ⭐ **رصيد النقاط:** ${latest.totalPoints || latest.points || 0} نقطة`;
+          fallbackAction = {
+            type: 'SHOW_DATA_TABLE',
+            title: 'أحدث الطلاب المنضمين للمنظومة',
+            tableType: 'custom_students_progress',
+            data: {
+              students: sorted.slice(0, 5).map(s => ({
+                id: s.id,
+                name: s.name,
+                halaqahName: s.halaqahName || 'الحلقة القرآنية',
+                level: s.level || 'متوسط',
+                currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+                dailyTarget: s.dailyNewTarget || 'نصف وجه',
+                totalPoints: s.totalPoints || s.points || 0,
+                createdAt: s.createdAt,
+              })),
+            },
+          };
+        }
+      } else if (/(?:كم\s*طالب|عدد\s*الطلاب|مجموع\s*الطلاب)/i.test(normText)) {
+        fallbackText = `أهلاً بك يا أخي ${userFirstName} 📊✨\n\nيبلغ إجمالي عدد الطلاب المقيدين في المنظومة **${currentStudentCohort.length} طالباً**.`;
+      }
+
       const fallbackMsg: ChatMessage = {
         id: `ai_fallback_${Date.now()}`,
         sender: 'assistant',
-        text: stripFaceEmojis(
-          messages.length > 1
-            ? `معذرة يا أخي ${userFirstName}، حدث تعذر لحظي في معالجة الرد. تفضل بتأكيد ما ترغب به وسأواصل معك فوراً.`
-            : `أهلاً بك يا أخي ${userFirstName} في منصة عُمْرَان. أنا في خدمتك، كيف يمكنني مساعدتك؟`
-        ),
+        text: stripFaceEmojis(fallbackText),
         timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+        action: fallbackAction,
       };
       const finalMessages = [...updatedWithUser, fallbackMsg];
       setMessages(finalMessages);
