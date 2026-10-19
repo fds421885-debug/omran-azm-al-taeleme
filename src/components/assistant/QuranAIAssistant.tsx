@@ -115,7 +115,8 @@ export interface ChatMessage {
       | 'SHOW_STUDENT_ATTENDANCE'
       | 'SHOW_STUDENT_REPORT'
       | 'SHOW_MULTI_STUDENT_REPORT'
-      | 'SHOW_STUDENT_COACHING_CARD';
+      | 'SHOW_STUDENT_COACHING_CARD'
+      | 'SHOW_STUDENT_PLAN';
     title?: string;
     data?: any;
     chartType?: string;
@@ -1070,7 +1071,9 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
               complexName: s.complexName,
               level: s.level,
               dailyNewTarget: s.dailyNewTarget,
+              currentSurah: s.currentSurah,
               currentSurahName: s.currentSurahName,
+              currentAyah: s.currentAyah,
               totalPoints: ptsData.totalPoints,
               points: ptsData.totalPoints,
               examPoints: ptsData.examPoints,
@@ -1080,6 +1083,29 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
               bonusPoints: ptsData.bonusPoints,
               phone: s.phone,
               parentPhone: s.parentPhone,
+              memorizationPlan: s.memorizationPlan ? {
+                targetCompletionDate: s.memorizationPlan.targetCompletionDate,
+                estimatedDaysRemaining: s.memorizationPlan.estimatedDaysRemaining,
+                dailyNewPages: s.memorizationPlan.dailyNewPages,
+                dailyReviewPages: s.memorizationPlan.dailyReviewPages,
+                memorizedJuzCount: s.memorizationPlan.memorizedJuzCount,
+                consolidatedJuzCount: s.memorizationPlan.consolidatedJuzCount,
+                status: s.memorizationPlan.status,
+                aiNotes: s.memorizationPlan.aiNotes,
+                nextDayAssignment: s.memorizationPlan.nextDayAssignment,
+              } : null,
+              aiPlan: s.aiPlan ? {
+                roadmapSummary: s.aiPlan.roadmapSummary,
+                difficultyAdjustment: s.aiPlan.difficultyAdjustment,
+                estimatedDaysToFinishJuz: s.aiPlan.estimatedDaysToFinishJuz,
+                currentDailyAssignment: s.aiPlan.currentDailyAssignment,
+              } : null,
+              mushafErrors: (s.mushafErrors || []).filter(e => !e.cleared && e.errorCount > 0).map(e => ({
+                surahNumber: e.surahNumber,
+                surahName: e.surahName,
+                ayahNumber: e.ayahNumber,
+                errorCount: e.errorCount
+              })),
             };
           }),
           scopedStudents: scopedStudents.map(s => {
@@ -1093,7 +1119,9 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
               complexName: s.complexName,
               level: s.level,
               dailyNewTarget: s.dailyNewTarget,
+              currentSurah: s.currentSurah,
               currentSurahName: s.currentSurahName,
+              currentAyah: s.currentAyah,
               totalPoints: ptsData.totalPoints,
               points: ptsData.totalPoints,
               examPoints: ptsData.examPoints,
@@ -1101,6 +1129,23 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
               listeningPoints: ptsData.listeningPoints,
               attendancePoints: ptsData.attendancePoints,
               bonusPoints: ptsData.bonusPoints,
+              memorizationPlan: s.memorizationPlan ? {
+                targetCompletionDate: s.memorizationPlan.targetCompletionDate,
+                estimatedDaysRemaining: s.memorizationPlan.estimatedDaysRemaining,
+                dailyNewPages: s.memorizationPlan.dailyNewPages,
+                dailyReviewPages: s.memorizationPlan.dailyReviewPages,
+                memorizedJuzCount: s.memorizationPlan.memorizedJuzCount,
+                consolidatedJuzCount: s.memorizationPlan.consolidatedJuzCount,
+                status: s.memorizationPlan.status,
+                aiNotes: s.memorizationPlan.aiNotes,
+                nextDayAssignment: s.memorizationPlan.nextDayAssignment,
+              } : null,
+              aiPlan: s.aiPlan ? {
+                roadmapSummary: s.aiPlan.roadmapSummary,
+                difficultyAdjustment: s.aiPlan.difficultyAdjustment,
+                estimatedDaysToFinishJuz: s.aiPlan.estimatedDaysToFinishJuz,
+                currentDailyAssignment: s.aiPlan.currentDailyAssignment,
+              } : null,
             };
           }),
           halaqahs: effectiveHalaqahs.map(h => ({
@@ -1203,8 +1248,28 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             name: c.name,
             description: c.description || '',
             themeColor: c.themeColor || '',
+            planScheduleConfig: c.planScheduleConfig,
           })),
           metrics: platformMetrics,
+          planScheduleConfig: activeComplex?.planScheduleConfig || (() => {
+            try {
+              const docKey = activeComplex?.id ? `plan_schedule_${activeComplex.id.replace(/[^a-zA-Z0-9_-]/g, '_')}` : 'plan_schedule_default';
+              const raw = localStorage.getItem(`omran_plan_schedule_data_${docKey}`) || localStorage.getItem('omran_plan_schedule_data_plan_schedule_default');
+              if (raw) return JSON.parse(raw);
+            } catch {}
+            return null;
+          })() || {
+            selectedDays: ['sun', 'mon', 'tue', 'wed', 'thu'],
+            dailyHours: 2.0,
+            strategyPreset: 'tathbeet_first',
+            targetScope: 'all',
+          },
+          todayDateInfo: {
+            date: new Date().toISOString().slice(0, 10),
+            dayName: new Date().toLocaleDateString('ar-SA', { weekday: 'long' }),
+            formattedArabic: new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+            timeArabic: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+          },
         },
       };
 
@@ -6579,6 +6644,79 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                 <span>طلب خطة علاجية مخصصة</span>
                               </button>
                             </div>
+                          </div>
+                        )}
+
+                        {/* ---------------------------------------------------- */}
+                        {/* 14. Student Quranic Memorization & Khatm Plan Card   */}
+                        {/* ---------------------------------------------------- */}
+                        {msg.action?.type === 'SHOW_STUDENT_PLAN' && msg.action.data && (
+                          <div
+                            style={{
+                              backgroundColor: `${primaryColor}FA`,
+                              borderColor: accentColor,
+                            }}
+                            className="mt-3 p-4 rounded-2xl border text-xs text-white space-y-3.5 shadow-2xl animate-fade-in text-right"
+                            dir="rtl"
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0">
+                                  <BookOpen className="w-4 h-4 text-amber-300" />
+                                </div>
+                                <div className="truncate">
+                                  <span className="font-black text-amber-300 text-sm block truncate">
+                                    خطة وموعد ختم: {msg.action.data.studentName}
+                                  </span>
+                                  <span className="text-[10px] text-slate-300 truncate block">
+                                    {msg.action.data.halaqahName} • السورة الحالية: {msg.action.data.currentSurahName}
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black border border-emerald-500/30 shrink-0">
+                                موعد معتمد 🎯
+                              </span>
+                            </div>
+
+                            {/* Khatm Date Banner */}
+                            <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-400/30 text-center space-y-1">
+                              <span className="text-[11px] font-bold text-amber-300 block">موعد الختم المحسوب بالذكاء الاصطناعي:</span>
+                              <div className="text-base font-black text-white">{msg.action.data.targetCompletionDate}</div>
+                              <span className="text-[10px] text-slate-300 font-bold block">
+                                المتبقي تقريباً: ~{msg.action.data.estimatedDaysRemaining} يوماً على وتيرة الحفظ والتثبيت
+                              </span>
+                            </div>
+
+                            {/* Targets Grid */}
+                            <div className="grid grid-cols-2 gap-2 text-center">
+                              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                                <span className="text-[10px] text-slate-400 font-bold block">مقرر الحفظ اليومي</span>
+                                <span className="text-xs font-black text-white">{msg.action.data.dailyNewPages} وجه جديد</span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                                <span className="text-[10px] text-slate-400 font-bold block">مقرر المراجعة والتثبيت</span>
+                                <span className="text-xs font-black text-emerald-300">{msg.action.data.dailyReviewPages} أوجه ماضي</span>
+                              </div>
+                            </div>
+
+                            {/* Navigation Shortcut */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (onNavigateTab) {
+                                  onNavigateTab('halaqah_plans', { highlightId: msg.action.data.studentId });
+                                  setIsOpen(false);
+                                }
+                              }}
+                              className="w-full py-2.5 px-4 rounded-xl font-black text-xs cursor-pointer shadow transition-all flex items-center justify-center gap-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: accentColor,
+                                color: '#022c22'
+                              }}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>فتح تفاصيل الخطة في قسم ضبط الخطط ومواعيد الختم</span>
+                            </button>
                           </div>
                         )}
                       </div>

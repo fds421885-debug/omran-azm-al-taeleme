@@ -52,7 +52,8 @@ import {
   LibraryDocument,
   getTeacherSixDigitCode,
   StudentRegistrationApplication,
-  ComplexPortalConfig
+  ComplexPortalConfig,
+  ComplexPlanScheduleConfig
 } from '../types';
 
 // Web app's Firebase configuration from firebase-applet-config.json
@@ -1450,6 +1451,7 @@ export const OMRAN_CACHE_KEYS = {
   DELETED_EXAMS: 'omran_deleted_exams',
   DELETED_TEACHERS: 'omran_deleted_teachers',
   REGISTRATION_APPLICATIONS: 'omran_registration_applications',
+  PLAN_SCHEDULE: 'omran_plan_schedule_data',
   INITIALIZED_FLAG: 'omran_platform_initialized_flag'
 };
 
@@ -3838,7 +3840,7 @@ export class OmranDataService {
     return this.loadStudents();
   }
 
-  // Save Student directly with Dual Persistence
+  // Save Student directly with Dual Persistence and resilient multi-database cloud sync
   static async saveStudent(student: Student): Promise<void> {
     OmranDataService.removeDeletedStudentId(student.id);
     const parentPhone = student.parentPhone || (student.parentPhones && student.parentPhones.length > 0 ? student.parentPhones[0] : student.phone) || '';
@@ -3854,10 +3856,56 @@ export class OmranDataService {
       }
     } catch {}
 
+    const targetDbs = [this.getActiveDb()];
+    if (this.getCentralDb() !== this.getActiveDb()) {
+      targetDbs.push(this.getCentralDb());
+    }
+
+    await Promise.allSettled(
+      targetDbs.map(targetDb =>
+        setDoc(doc(targetDb, 'students', clean.id), clean).catch(e => {
+          console.warn('[OmranDataService] Student saved locally, cloud sync notice:', e);
+        })
+      )
+    );
+  }
+
+  // Batch Save Multiple Students directly with Dual Persistence and Full Cloud Firestore Sync
+  static async saveStudentsBatch(students: Student[]): Promise<boolean> {
+    if (!students || students.length === 0) return true;
+    for (const s of students) {
+      OmranDataService.removeDeletedStudentId(s.id);
+    }
+    const cleanList = students.map(st => {
+      const parentPhone = st.parentPhone || (st.parentPhones && st.parentPhones.length > 0 ? st.parentPhones[0] : st.phone) || '';
+      return cleanFirestoreData({ ...st, parentPhone });
+    });
+
+    // 1. Update local cache immediately
+    const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
+    const map = new Map<string, Student>();
+    for (const s of local) if (s?.id) map.set(s.id, s);
+    for (const s of cleanList) if (s?.id) map.set(s.id, s);
+    const merged = Array.from(map.values());
+    setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
+    broadcastDataUpdate('students-batch', cleanList);
+
+    // 2. Persist to Firestore across activeDb and centralDb in parallel
+    const targetDbs = [this.getActiveDb()];
+    if (this.getCentralDb() !== this.getActiveDb()) {
+      targetDbs.push(this.getCentralDb());
+    }
+
     try {
-      await setDoc(doc(this.getActiveDb(), 'students', clean.id), clean);
-    } catch (e) {
-      console.warn('[OmranDataService] Student saved locally, cloud sync pending/offline:', e);
+      await Promise.allSettled(
+        targetDbs.flatMap(targetDb =>
+          cleanList.map(item => setDoc(doc(targetDb, 'students', item.id), item))
+        )
+      );
+      return true;
+    } catch (err) {
+      console.warn('[OmranDataService] Cloud batch students save notice:', err);
+      return false;
     }
   }
 
@@ -5622,6 +5670,102 @@ export class OmranDataService {
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `settings/${docKey}`);
       throw e;
+    }
+  }
+
+  // =========================================================================
+  // Plan Schedule Configuration (أوقات الحلقات وجدولة الختم والتثبيت بالسحابة)
+  // =========================================================================
+  static async loadPlanScheduleConfig(complexId?: string): Promise<ComplexPlanScheduleConfig | null> {
+    const safeId = (complexId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docKey = `plan_schedule_${safeId}`;
+    const local =
+      getLocalCache<ComplexPlanScheduleConfig | null>(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, null) ||
+      getLocalCache<ComplexPlanScheduleConfig | null>(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, null);
+
+    try {
+      const snap = await safeGetDoc(doc(this.getActiveDb(), 'settings', docKey));
+      if (snap && snap.exists()) {
+        const data = snap.data() as ComplexPlanScheduleConfig;
+        setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, data);
+        setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, data);
+        return data;
+      }
+      // Check default fallback in activeDb
+      const defSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'plan_schedule_default'));
+      if (defSnap && defSnap.exists()) {
+        const data = defSnap.data() as ComplexPlanScheduleConfig;
+        setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, data);
+        return data;
+      }
+      if (this.getActiveDb() !== this.getCentralDb()) {
+        const centralSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', docKey));
+        if (centralSnap && centralSnap.exists()) {
+          const data = centralSnap.data() as ComplexPlanScheduleConfig;
+          setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, data);
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn('[OmranDataService] Notice loading plan schedule config from cloud:', e);
+    }
+    return local;
+  }
+
+  static async savePlanScheduleConfig(config: ComplexPlanScheduleConfig, complexId?: string): Promise<void> {
+    const safeId = (complexId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docKey = `plan_schedule_${safeId}`;
+    const enriched: ComplexPlanScheduleConfig = {
+      ...config,
+      lastUpdated: new Date().toISOString()
+    };
+    const clean = cleanFirestoreData(enriched);
+
+    // Save in local cache for both specific complex key and default
+    setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, clean);
+    setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, clean);
+    broadcastDataUpdate('plan_schedule', clean);
+
+    const dbs = [this.getActiveDb()];
+    if (this.getCentralDb() !== this.getActiveDb()) {
+      dbs.push(this.getCentralDb());
+    }
+
+    try {
+      await Promise.allSettled(
+        dbs.flatMap(targetDb => [
+          setDoc(doc(targetDb, 'settings', docKey), clean, { merge: true }),
+          setDoc(doc(targetDb, 'settings', 'plan_schedule_default'), clean, { merge: true }),
+        ])
+      );
+    } catch (e) {
+      console.warn('[OmranDataService] Plan schedule saved locally, cloud sync notice:', e);
+    }
+  }
+
+  static subscribePlanScheduleConfig(
+    callback: (config: ComplexPlanScheduleConfig) => void,
+    complexId?: string
+  ): () => void {
+    const safeId = (complexId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docKey = `plan_schedule_${safeId}`;
+    try {
+      return onSnapshot(
+        doc(this.getActiveDb(), 'settings', docKey),
+        snap => {
+          if (snap && snap.exists()) {
+            const data = snap.data() as ComplexPlanScheduleConfig;
+            setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, data);
+            setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, data);
+            callback(data);
+          }
+        },
+        err => {
+          console.warn('[OmranDataService] Plan schedule subscription notice:', err);
+        }
+      );
+    } catch {
+      return () => {};
     }
   }
 

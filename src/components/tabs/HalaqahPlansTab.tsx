@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
@@ -28,9 +28,10 @@ import {
   Student,
   Halaqah,
   QuranComplex,
-  StudentMemorizationPlan
+  StudentMemorizationPlan,
+  ComplexPlanScheduleConfig
 } from '../../types';
-import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+import { calculateRealisticKhatmTimeline, getExactTodayArabicInfo } from '../../lib/aiPlanService';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
@@ -66,6 +67,9 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   onUpdateStudents,
   onUpdateComplex
 }) => {
+  // Exact Today Date Information
+  const todayInfo = useMemo(() => getExactTodayArabicInfo(), []);
+
   // Theme calculations
   const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
   const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
@@ -89,6 +93,93 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   const [currentProcessingName, setCurrentProcessingName] = useState('');
   const [recalcSuccessMsg, setRecalcSuccessMsg] = useState('');
   const [selectedViewingStudent, setSelectedViewingStudent] = useState<Student | null>(null);
+  const [isSavingConfigOnly, setIsSavingConfigOnly] = useState(false);
+  const [saveConfigToast, setSaveConfigToast] = useState('');
+
+  // 1. Load and sync Plan Schedule Configuration from Cloud Firestore on Mount
+  useEffect(() => {
+    let isMounted = true;
+    const initialConfig = activeComplex?.planScheduleConfig;
+
+    if (initialConfig) {
+      if (initialConfig.selectedDays && initialConfig.selectedDays.length > 0) {
+        setSelectedDays(initialConfig.selectedDays);
+      }
+      if (typeof initialConfig.dailyHours === 'number' && initialConfig.dailyHours > 0) {
+        setDailyHours(initialConfig.dailyHours);
+      }
+      if (initialConfig.strategyPreset) {
+        setStrategyPreset(initialConfig.strategyPreset);
+      }
+      if (initialConfig.targetScope) {
+        setTargetScope(initialConfig.targetScope);
+      }
+    } else {
+      OmranDataService.loadPlanScheduleConfig(activeComplex?.id).then(cfg => {
+        if (!isMounted || !cfg) return;
+        if (cfg.selectedDays && cfg.selectedDays.length > 0) setSelectedDays(cfg.selectedDays);
+        if (typeof cfg.dailyHours === 'number' && cfg.dailyHours > 0) setDailyHours(cfg.dailyHours);
+        if (cfg.strategyPreset) setStrategyPreset(cfg.strategyPreset);
+        if (cfg.targetScope) setTargetScope(cfg.targetScope);
+      });
+    }
+
+    const unsub = OmranDataService.subscribePlanScheduleConfig(cfg => {
+      if (!isMounted || !cfg) return;
+      if (cfg.selectedDays && cfg.selectedDays.length > 0) setSelectedDays(cfg.selectedDays);
+      if (typeof cfg.dailyHours === 'number' && cfg.dailyHours > 0) setDailyHours(cfg.dailyHours);
+      if (cfg.strategyPreset) setStrategyPreset(cfg.strategyPreset);
+      if (cfg.targetScope) setTargetScope(cfg.targetScope);
+    }, activeComplex?.id);
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [activeComplex?.id]);
+
+  // Helper to persist plan configuration changes to Firestore & parent complex
+  const persistPlanConfig = async (
+    days: string[],
+    hours: number,
+    strategy: 'tathbeet_first' | 'standard' | 'intensive',
+    scope: string
+  ) => {
+    const cfg: ComplexPlanScheduleConfig = {
+      selectedDays: days,
+      dailyHours: hours,
+      strategyPreset: strategy,
+      targetScope: scope,
+      lastUpdated: new Date().toISOString()
+    };
+    try {
+      await OmranDataService.savePlanScheduleConfig(cfg, activeComplex?.id);
+      if (activeComplex && onUpdateComplex) {
+        const updatedComplex: QuranComplex = {
+          ...activeComplex,
+          planScheduleConfig: cfg
+        };
+        await onUpdateComplex(updatedComplex);
+      }
+    } catch (e) {
+      console.warn('Notice saving plan schedule configuration:', e);
+    }
+  };
+
+  const handleExplicitSaveConfig = async () => {
+    setIsSavingConfigOnly(true);
+    setSaveConfigToast('');
+    try {
+      await persistPlanConfig(selectedDays, dailyHours, strategyPreset, targetScope);
+      setSaveConfigToast('🎉 تم بنجاح تام حفظ وتثبيت إعدادات الخطة القرآنية في السحابة وقاعدة البيانات!');
+      setTimeout(() => setSaveConfigToast(''), 4500);
+    } catch {
+      setSaveConfigToast('تم الحفظ محلياً وجاري المزامنة مع السحابة.');
+      setTimeout(() => setSaveConfigToast(''), 4500);
+    } finally {
+      setIsSavingConfigOnly(false);
+    }
+  };
 
   // Filter students based on target scope
   const targetStudents = useMemo(() => {
@@ -114,26 +205,32 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
   // Toggle Day selection
   const handleToggleDay = (dayId: string) => {
     setSelectedDays(prev => {
+      let next: string[];
       if (prev.includes(dayId)) {
         if (prev.length <= 1) return prev; // Keep at least 1 day
-        return prev.filter(d => d !== dayId);
+        next = prev.filter(d => d !== dayId);
       } else {
-        return [...prev, dayId];
+        next = [...prev, dayId];
       }
+      persistPlanConfig(next, dailyHours, strategyPreset, targetScope);
+      return next;
     });
   };
 
   // Preset Selection
   const applyPreset = (type: 'school_5' | 'tri_sat_mon_wed' | 'tri_sun_tue_thu' | 'full_7') => {
+    let nextDays: string[] = [];
     if (type === 'school_5') {
-      setSelectedDays(['sun', 'mon', 'tue', 'wed', 'thu']);
+      nextDays = ['sun', 'mon', 'tue', 'wed', 'thu'];
     } else if (type === 'tri_sat_mon_wed') {
-      setSelectedDays(['sat', 'mon', 'wed']);
+      nextDays = ['sat', 'mon', 'wed'];
     } else if (type === 'tri_sun_tue_thu') {
-      setSelectedDays(['sun', 'tue', 'thu']);
+      nextDays = ['sun', 'tue', 'thu'];
     } else if (type === 'full_7') {
-      setSelectedDays(['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri']);
+      nextDays = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
     }
+    setSelectedDays(nextDays);
+    persistPlanConfig(nextDays, dailyHours, strategyPreset, targetScope);
   };
 
   // Run AI Recalibration for all students in scope
@@ -151,6 +248,12 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
     const updatedList: Student[] = [];
 
     try {
+      // 1. Persist the overall plan configuration directly to Cloud Firestore & parent complex
+      await persistPlanConfig(selectedDays, dailyHours, strategyPreset, targetScope);
+
+      // 2. Exact current date for calculating timeline
+      const todayDate = new Date();
+
       for (let i = 0; i < targetStudents.length; i++) {
         const student = targetStudents[i];
         setCurrentProcessingName(student.name);
@@ -177,14 +280,15 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
           dailyReview = 10;
         }
 
-        // Calculate realistic Khatmah timeline using verified pedagogical math
+        // Calculate realistic Khatmah timeline using verified pedagogical math from today's exact date
         const timeline = calculateRealisticKhatmTimeline({
           memorizedJuz: memCount,
           consolidatedJuz: consCount,
           dailyNewPages: dailyNew,
           dailyReviewPages: dailyReview,
           weeklyDaysCount,
-          dailyHoursCount: dailyHours
+          dailyHoursCount: dailyHours,
+          startDate: todayDate
         });
 
         // Generate tailored next day assignment respecting errors
@@ -216,7 +320,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
             action: nextAction,
             reason: nextReason
           },
-          aiNotes: `تم الضبط بواسطة المشرف بناءً على جدول (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً). ${timeline.pedagogicalNote}`,
+          aiNotes: `تم الضبط بواسطة المشرف بناءً على جدول (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من (${timeline.calculatedFromDate}). ${timeline.pedagogicalNote}`,
           lastUpdated: new Date().toISOString()
         };
 
@@ -238,24 +342,26 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
           }
         };
 
-        // Persist to storage
-        await OmranDataService.saveStudent(updatedStudent);
         updatedList.push(updatedStudent);
 
         // Small delay for UI smoothness
         if (targetStudents.length < 20) {
-          await new Promise(r => setTimeout(r, 60));
+          await new Promise(r => setTimeout(r, 40));
         }
       }
 
+      // 3. Batch save all updated students directly to Cloud Firestore & Local Dual Cache
+      await OmranDataService.saveStudentsBatch(updatedList);
+
+      // 4. Update memory / state in parent component
       if (onUpdateStudents) {
-        onUpdateStudents(updatedList);
+        await onUpdateStudents(updatedList);
       }
 
-      setRecalcSuccessMsg(`🎉 تم بنجاح تام إعادة احتساب وضبط الخطط القرآنية ومواعيد الختم لـ (${targetStudents.length}) طالباً بناءً على جدولك الجديد (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً)!`);
+      setRecalcSuccessMsg(`🎉 تم بنجاح تام حفظ وتحديث الخطط القرآنية ومواعيد الختم لـ (${targetStudents.length}) طالباً في السحابة وقاعدة البيانات بناءً على جدولك الجديد (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من تاريخ اليوم المعتمد: (${todayInfo.formattedArabic})!`);
       confetti({
-        particleCount: 80,
-        spread: 80,
+        particleCount: 90,
+        spread: 90,
         origin: { y: 0.6 }
       });
     } catch (err) {
@@ -279,7 +385,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
         }}
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black shadow-sm"
               style={{
                 backgroundColor: `${themeAccent}25`,
@@ -288,14 +394,25 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
               }}
             >
               <BrainCircuit className="w-4 h-4" />
-              <span>لوحة تحكم المشرف والمبرمج • المنظومة الذكية لخطط الختم والتثبيت</span>
+              <span>لوحة تحكم المشرف والمبرمج • المنظومة الذكية لخطط الختم والتثبيت بالسحابة</span>
             </div>
             <h2 className="text-xl sm:text-2xl md:text-3xl font-black font-heading text-white">
               ضبط أوقات الحلقات وجدولة الختم بالذكاء الاصطناعي
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 font-bold max-w-2xl leading-relaxed">
-              حدّد كم يوم تكون الحلقة أسبوعياً وساعات الحلقة والوتيرة المعتمدة. عند اعتماد التعديل، يبدأ الذكاء الاصطناعي في إعادة احتساب وتحديث مواعيد الختم وأوراد التثبيت لكافة الطلاب تلقائياً بما يناسب الجدول الجديد.
+              حدّد كم يوم تكون الحلقة أسبوعياً وساعات الحلقة والوتيرة المعتمدة. عند اعتماد التعديل، يبدأ الذكاء الاصطناعي في إعادة احتساب وتحديث مواعيد الختم وأوراد التثبيت لكافة الطلاب تلقائياً وحفظ كل شيء فوراً في قاعدة البيانات السحابية.
             </p>
+
+            {/* Prominent Exact Today Date Banner */}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-black shadow-sm">
+                <Calendar className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>تاريخ اليوم المعتمد للحسابات والجدولة: <strong>{todayInfo.formattedArabic}</strong></span>
+                {todayInfo.hijriEstimate && (
+                  <span className="text-[11px] text-amber-200/80 font-bold">({todayInfo.hijriEstimate})</span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 self-start md:self-auto">
@@ -446,7 +563,10 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
                 <button
                   key={h}
                   type="button"
-                  onClick={() => setDailyHours(h)}
+                  onClick={() => {
+                    setDailyHours(h);
+                    persistPlanConfig(selectedDays, h, strategyPreset, targetScope);
+                  }}
                   className={`py-2 rounded-2xl border-2 font-black text-xs transition-all cursor-pointer text-center ${
                     dailyHours === h ? 'border-b-4 shadow-sm' : 'opacity-70 hover:opacity-100'
                   }`}
@@ -468,7 +588,11 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
             <label className="text-xs font-bold text-slate-300 block">نطاق الحلقات المشمولة بالجدولة:</label>
             <select
               value={targetScope}
-              onChange={e => setTargetScope(e.target.value)}
+              onChange={e => {
+                const newScope = e.target.value;
+                setTargetScope(newScope);
+                persistPlanConfig(selectedDays, dailyHours, strategyPreset, newScope);
+              }}
               className="w-full py-2.5 px-3 rounded-2xl border text-xs font-bold text-white outline-none focus:ring-2 focus:ring-amber-400"
               style={{
                 backgroundColor: themePrimary,
@@ -520,7 +644,11 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
               ].map(st => (
                 <div
                   key={st.id}
-                  onClick={() => setStrategyPreset(st.id as any)}
+                  onClick={() => {
+                    const newStrat = st.id as any;
+                    setStrategyPreset(newStrat);
+                    persistPlanConfig(selectedDays, dailyHours, newStrat, targetScope);
+                  }}
                   className={`p-2.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 ${
                     strategyPreset === st.id ? 'bg-amber-400/10 border-amber-400' : 'bg-black/20 border-white/10 hover:border-white/20'
                   }`}
@@ -539,22 +667,40 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
             </div>
           </div>
 
-          {/* Action Trigger Button */}
-          <button
-            type="button"
-            disabled={isRecalculating}
-            onClick={handleRunAIRecalibration}
-            className="w-full py-3.5 px-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xl active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
-            style={{
-              backgroundColor: themeAccent,
-              borderColor: themeAccent,
-              borderBottomColor: themeAccentShadow,
-              color: accentTextColor
-            }}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>حفظ وتحديث خطط الطلاب بالذكاء الاصطناعي</span>
-          </button>
+          {/* Action Trigger Buttons */}
+          <div className="space-y-2.5">
+            <button
+              type="button"
+              disabled={isRecalculating}
+              onClick={handleRunAIRecalibration}
+              className="w-full py-3.5 px-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xl active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
+              style={{
+                backgroundColor: themeAccent,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                color: accentTextColor
+              }}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>حفظ وتحديث خطط ومواعيد ختم الطلاب بالذكاء الاصطناعي في السحابة ({targetStudents.length} طالباً)</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isSavingConfigOnly || isRecalculating}
+              onClick={handleExplicitSaveConfig}
+              className="w-full py-2.5 px-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:translate-y-0.5 disabled:opacity-50"
+            >
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{isSavingConfigOnly ? 'جاري حفظ الإعدادات في السحابة...' : 'حفظ ومزامنة ضبط الجدول والإعدادات فقط في السحابة'}</span>
+            </button>
+
+            {saveConfigToast && (
+              <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-200 text-xs font-black text-center animate-fadeIn">
+                {saveConfigToast}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

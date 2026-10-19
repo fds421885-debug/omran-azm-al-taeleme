@@ -472,6 +472,56 @@ function getFallbackPlan(student: any) {
   };
 }
 
+// Pedagogical & mathematical Khatm timeline calculation
+function calculateServerKhatmTimeline(params: {
+  memorizedJuz: number;
+  consolidatedJuz?: number;
+  dailyNewPages: number;
+  dailyReviewPages: number;
+  weeklyDaysCount?: number;
+  dailyHoursCount?: number;
+  startDate?: Date;
+}) {
+  const totalPagesInQuran = 604;
+  const memorizedJuz = Math.max(0, Math.min(30, Number(params.memorizedJuz) || 0));
+  const consolidatedJuz = Math.max(0, Math.min(memorizedJuz, Number(params.consolidatedJuz) || 0));
+  const weeklyDays = Math.max(1, Math.min(7, Number(params.weeklyDaysCount) || 5));
+  const dailyNewPages = Math.max(0.25, Math.min(5, Number(params.dailyNewPages) || 1));
+  const baseDate = params.startDate ? new Date(params.startDate) : new Date();
+  const safeBaseDate = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+
+  const currentMemorizedPages = memorizedJuz * 20;
+  const remainingPages = Math.max(0, totalPagesInQuran - currentMemorizedPages);
+
+  if (remainingPages <= 0) {
+    const consolidationDays = Math.ceil((30 - consolidatedJuz) * 12);
+    const targetDate = new Date(safeBaseDate.getTime());
+    targetDate.setDate(targetDate.getDate() + Math.max(60, Math.round((consolidationDays / weeklyDays) * 7)));
+    return {
+      targetCompletionDate: targetDate.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
+      estimatedDaysRemaining: Math.round((consolidationDays / weeklyDays) * 7),
+      progressPercentage: 100,
+    };
+  }
+
+  const sessionsNeededForNew = Math.ceil(remainingPages / dailyNewPages);
+  const remainingJuz = Math.ceil(remainingPages / 20);
+  const fiveJuzStops = Math.floor(remainingJuz / 5);
+  const tenJuzStops = Math.floor(remainingJuz / 10);
+  const haltSessions = (fiveJuzStops * 8) + (tenJuzStops * 12) + 20;
+  const totalHalaqahSessions = sessionsNeededForNew + haltSessions;
+  const calendarDays = Math.ceil((totalHalaqahSessions / weeklyDays) * 7);
+
+  const targetDate = new Date(safeBaseDate.getTime());
+  targetDate.setDate(targetDate.getDate() + calendarDays);
+
+  return {
+    targetCompletionDate: targetDate.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
+    estimatedDaysRemaining: calendarDays,
+    progressPercentage: Math.min(99, Math.round((currentMemorizedPages / totalPagesInQuran) * 100)),
+  };
+}
+
 // 1. Generate Daily Quran AI Plan with STRICT Quran Ground Truth
 app.post("/api/gemini/generate-plan", async (req, res) => {
   try {
@@ -2805,6 +2855,62 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const libraryDocsList = Array.isArray(dataContext.libraryDocs) ? dataContext.libraryDocs : [];
     const teachersList = Array.isArray(dataContext.teachers) ? dataContext.teachers : [];
 
+    // Exact Today Date Information
+    const planScheduleConfig = dataContext.planScheduleConfig || complex?.planScheduleConfig || {};
+    const todayDateInfo = dataContext.todayDateInfo || null;
+
+    const nowServer = new Date();
+    const serverDayName = nowServer.toLocaleDateString("ar-SA", { weekday: "long" });
+    const serverDateFormatted = nowServer.toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const serverDateIso = formatLocalDate(nowServer);
+    let hijriEstimate = "";
+    try {
+      hijriEstimate = nowServer.toLocaleDateString("ar-SA-u-ca-islamic-umalqura", { day: "numeric", month: "long", year: "numeric" });
+    } catch {}
+
+    const exactTodayDayName = todayDateInfo?.dayName || serverDayName;
+    const exactTodayFormatted = todayDateInfo?.formattedArabic || serverDateFormatted;
+    const exactTodayIso = todayDateInfo?.date || serverDateIso;
+    const exactTodayTime = todayDateInfo?.timeArabic || nowServer.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+
+    const weekDaysArabicMap: Record<string, string> = {
+      sun: 'الأحد',
+      mon: 'الإثنين',
+      tue: 'الثلاثاء',
+      wed: 'الأربعاء',
+      thu: 'الخميس',
+      fri: 'الجمعة',
+      sat: 'السبت'
+    };
+    const planSelectedDays = Array.isArray(planScheduleConfig.selectedDays) && planScheduleConfig.selectedDays.length > 0
+      ? planScheduleConfig.selectedDays
+      : ['sun', 'mon', 'tue', 'wed', 'thu'];
+    const planDaysLabels = planSelectedDays.map((d: string) => weekDaysArabicMap[d] || d).join('، ');
+    const planDailyHours = typeof planScheduleConfig.dailyHours === 'number' ? planScheduleConfig.dailyHours : 2.0;
+    const planStrategyLabel = planScheduleConfig.strategyPreset === 'intensive'
+      ? 'وتيرة مكثفة للهمم العالية (وجهان جديدان يومياً + مراجعة 10 أوجه)'
+      : planScheduleConfig.strategyPreset === 'standard'
+      ? 'وتيرة قياسية متزنة (وجه جديد يومياً + مراجعة 5 أوجه)'
+      : 'أولوية التثبيت والإتقان (الموصى بها - الختم بتثبيت مع وقفات مراجعة دورية كل 5 أجزاء ومراجعة تراكمية)';
+
+    // Summary of all students' memorization plans & completion dates
+    const studentsPlansSummary = studentsList.slice(0, 30).map((s: any, idx: number) => {
+      const plan = s.memorizationPlan;
+      const memJuz = plan?.memorizedJuzCount || (s.currentSurah ? Math.max(1, Math.round((114 - s.currentSurah) / 3.8)) : 1);
+      const consJuz = plan?.consolidatedJuzCount || 1;
+      const targetDate = plan?.targetCompletionDate || 'خلال سنة تقريباً';
+      const daysRem = plan?.estimatedDaysRemaining || '~365';
+      const dailyNew = plan?.dailyNewPages || s.dailyNewTarget || 1;
+      const dailyRev = plan?.dailyReviewPages || 5;
+      const curSurah = s.currentSurahName || 'سورة جارية';
+      const errCount = Array.isArray(s.mushafErrors) ? s.mushafErrors.length : 0;
+      return `${idx + 1}. الطالب: ${s.name} (${s.halaqahName || 'حلقة غير محددة'})
+   • السورة الحالية: ${curSurah} | المحفوظ: ${memJuz} جزءاً (المثبت: ${consJuz} جزءاً)
+   • ورد الحفظ اليومي: ${dailyNew} وجه | ورد المراجعة: ${dailyRev} أوجه
+   • موعد الختم المحسوب بالذكاء الاصطناعي: ${targetDate} (متبقي: ~${daysRem} يوماً)
+   • حالة التثبيت: ${errCount > 0 ? `يحتاج تثبيت أخطاء (${errCount} مواضع مرصودة بالمصحف)` : 'متقن وعلى المسار'}`;
+    }).join('\n\n');
+
     const lowerMsg = (message || "").toLowerCase();
     const normUserMessage = normalizeArabicText(message || "");
 
@@ -3515,11 +3621,26 @@ app.post("/api/gemini/assistant", async (req, res) => {
         targetNavigateTab = "behavior";
         targetNavigateTabName = "قسم المتابعة السلوكية";
       }
+      else if (lowerMsg.includes("خطة") || lowerMsg.includes("خطه") || lowerMsg.includes("ختم") || lowerMsg.includes("مواعيد الختم") || lowerMsg.includes("ضبط الخطة") || lowerMsg.includes("ضبط الخطه")) {
+        targetNavigateTab = "halaqah_plans";
+        targetNavigateTabName = "قسم ضبط الخطة ومواعيد الختم";
+      }
       else if (lowerMsg.includes("نسخ") || lowerMsg.includes("احتياط") || lowerMsg.includes("بيانات")) {
         targetNavigateTab = "backup";
         targetNavigateTabName = "قسم النسخ الاحتياطي والبيانات";
       }
     }
+
+    const hasPlanScheduleInquiry =
+      /(?:ضبط\s+الخطة|ضبط\s+الخطه|مواعيد\s+الختم|موعد\s+الختم|تاريخ\s+الختم|متى\s+يختم|كم\s+باقي\s+على\s+الختم|كم\s+باقي\s+للختم|خطة\s+الحفظ|خطة\s+التثبيت|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+الحلقة|جدول\s+الختم|خطة\s+الطالب|خطة\s+الطلاب)/i.test(message) ||
+      normUserMessage.includes("ضبط الخطة") ||
+      normUserMessage.includes("ضبط الخطه") ||
+      normUserMessage.includes("مواعيد الختم") ||
+      normUserMessage.includes("موعد الختم") ||
+      normUserMessage.includes("تاريخ الختم") ||
+      normUserMessage.includes("متى يختم") ||
+      normUserMessage.includes("خطة التثبيت") ||
+      normUserMessage.includes("جدول الختم");
 
     // 2.9.5 Theme Customization Intent (تغيير ثيم وهوية المنصة أو المجمع)
     const hasThemeIntent =
@@ -4185,24 +4306,58 @@ app.post("/api/gemini/assistant", async (req, res) => {
     // 2.12.5 Specific Student Match for Attendance and Reports with High Precision
     let candidateStudentForAttendance: any = null;
     let candidateStudentForReport: any = null;
+    let candidateStudentForPlan: any = null;
 
     if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
       candidateStudentForAttendance = studentResolution.matchedStudents[0];
       candidateStudentForReport = studentResolution.matchedStudents[0];
+      candidateStudentForPlan = studentResolution.matchedStudents[0];
     } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery) {
       // Use findBestMatchingStudent directly to guarantee we never pick the wrong student
       const matchedStudentFromMsg = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
       if (matchedStudentFromMsg) {
         candidateStudentForAttendance = matchedStudentFromMsg;
         candidateStudentForReport = matchedStudentFromMsg;
+        candidateStudentForPlan = matchedStudentFromMsg;
       } else if (contextStudents.length === 1 || (hasReferenceToPreviousStudents && contextStudents.length === 1)) {
         candidateStudentForAttendance = contextStudents[0];
         candidateStudentForReport = contextStudents[0];
+        candidateStudentForPlan = contextStudents[0];
       }
     }
 
+    if (!candidateStudentForPlan && studentResolution.matchedStudents.length > 0) {
+      candidateStudentForPlan = studentResolution.matchedStudents[0];
+    }
+
+    // 2.12.5.1 Exact Today Date Inquiry Intent (تاريخ اليوم، كم التاريخ، اليوم كم، اليوم ايش)
+    const hasDateInquiryIntent =
+      /(?:تاريخ\s+اليوم|كم\s+تاريخ|ايش\s+تاريخ|ما\s+هو\s+تاريخ|ما\s+تاريخ|اليوم\s+كم|اليوم\s+ايش|ايش\s+اليوم|ما\s+هو\s+اليوم|كم\s+اليوم\s+في\s+الشهر|كم\s+اليوم|تاريخنا\s+اليوم|تاريخ\s+اليوم\s+بالضبط)/i.test(message) ||
+      normUserMessage.includes("تاريخ اليوم") ||
+      normUserMessage.includes("كم التاريخ") ||
+      normUserMessage.includes("ايش التاريخ") ||
+      normUserMessage.includes("اليوم كم");
+
+    // 2.12.5.2 Plan Configuration Settings Intent (ضبط الخطة، جدول الحلقة، استراتيجية التثبيت، ساعات التسميع)
+    const hasPlanSettingsInquiryIntent =
+      /(?:ضبط\s+الخطة|اعدادات\s+الخطة|إعدادات\s+الخطة|خطة\s+المجمع|جدول\s+الحلقة|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+التسميع|استراتيجية\s+التثبيت|كيف\s+تم\s+ضبط\s+الخطة|ما\s+هي\s+خطة\s+المجمع|نظام\s+الخطة)/i.test(message) ||
+      (normUserMessage.includes("خطة") && (normUserMessage.includes("ضبط") || normUserMessage.includes("مجمع") || normUserMessage.includes("أيام") || normUserMessage.includes("ايام") || normUserMessage.includes("ساعات")));
+
+    // 2.12.5.3 Student Khatm Date or Memorization Plan Inquiry Intent (متى يختم الطالب، موعد ختم، خطة الطالب، كم باقي لفلان حتى يختم)
+    const hasStudentKhatmOrPlanInquiryIntent =
+      Boolean(
+        candidateStudentForPlan &&
+        (
+          /(?:متى\s+يختم|موعد\s+الختم|تاريخ\s+الختم|خطة\s+الطالب|خطة\s+حفظ|كم\s+باقي\s+.*يختم|موعد\s+ختمه|ورد\s+.*اليوم|كم\s+باقي\s+له|خطة\s+.*للحفظ|تاريخ\s+ختمه|موعد\s+ختم)/i.test(message) ||
+          normUserMessage.includes("يختم") ||
+          normUserMessage.includes("ختم") ||
+          (normUserMessage.includes("خطة") && !hasPlanSettingsInquiryIntent)
+        )
+      );
+
     const hasStudentMention =
       Boolean(candidateStudentForAttendance) ||
+      Boolean(candidateStudentForPlan) ||
       normUserMessage.includes("طالب") ||
       normUserMessage.includes("الطالب") ||
       normUserMessage.includes("حضوره") ||
@@ -4868,6 +5023,34 @@ ${excusedListStr}
 أنت تتحدث مع: ${rawName} (صفته: ${role === "developer" ? "المبرمج والمشرف العام" : role === "supervisor" ? "مشرف المجمع" : "معلم الحلقة"}).
 المجمع الحالي أو المستفسر عنه: "${effectiveComplexName}"، والحلقة الحالية: "${halaqahName}".
 
+════════════════════════════════════════════════════════════════
+📅 تاريخ وتوقيت اليوم الحالي المعتمد بالمنظومة (بدقة مطلقة):
+- اليوم: ${exactTodayDayName}
+- التاريخ الميلادي: ${exactTodayIso} (${exactTodayFormatted})
+- التاريخ الهجري (تقريباً): ${hijriEstimate || "حسب تقويم أم القرى"}
+- التوقيت الحالي: ${exactTodayTime}
+* قاعدة إلزامية وحاسمة: إذا سألك المستخدم "ما هو تاريخ اليوم؟" أو "اليوم كم في الشهر؟" أو "كم التاريخ اليوم؟" أو "ايش تاريخ اليوم؟" أو استفسر عن اليوم الحالي وتاريخه:
+أجب فوراً باليوم والتاريخ المعتمد الفعلي أعلاه (${exactTodayDayName} ${exactTodayFormatted}) بكل دقة ووضوح وطمأنينة!
+════════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════════
+🎯 إعدادات ضبط الخطة ومواعيد الختم والتثبيت المعتمدة بالمنظومة:
+- أيام الحلقة أسبوعياً: ${planDaysLabels} (${planSelectedDays.length} أيام في الأسبوع)
+- مدة جلسة التسميع اليومية: ${planDailyHours} ساعة
+- استراتيجية التثبيت والإتقان: ${planStrategyLabel}
+- نطاق الخطة: ${planScheduleConfig.targetScope === 'all' || !planScheduleConfig.targetScope ? 'كافة طلاب وحلقات المجمع' : `حلقة محددة (معرف: ${planScheduleConfig.targetScope})`}
+
+📋 كشف خطط ومواعيد الختم المعتمدة للطلاب في المجمع:
+${studentsPlansSummary || 'لا توجد بيانات خطط مسجلة بعد'}
+
+* قواعد إلزامية خاصة بضبط الخطة ومواعيد الختم:
+1) إذا استفسر المستخدم عن خطة أي طالب أو موعد ختمه (مثل: "ما هي خطة فلان؟"، "متى يختم فلان؟"، "كم باقي لفلان حتى يختم؟"، "ما ورد فلان اليوم؟"):
+   - أجب فوراً بالبيانات المعتمدة الدقيقة لهذا الطالب من الكشف أعلاه: اذكر موعد الختم المحسوب بدقة، والسورة التي هو عندها، ومقدار الحفظ الجديد اليومي، ومقدار المراجعة اليومية، وعدد الأيام المتبقية للختم، مع توضيح حالة تثبيته.
+2) إذا استفسر المستخدم عن ضبط الخطة العامة (مثل: "كيف تم ضبط الخطة؟"، "كم يوم الحلقة بالأسبوع؟"، "كم ساعة مدة التسميع؟"، "ما هي استراتيجية التثبيت المعتمدة؟"):
+   - وضّح له إعدادات الخطة المعتمدة في المجمع الموضحة أعلاه (${planDaysLabels}، مدة ${planDailyHours} ساعات يومياً، مع استراتيجية: ${planStrategyLabel}).
+   - بيّن له أن بإمكانه مراجعة وضبط الخطة في أي وقت من تبويب "ضبط الخطة ومواعيد الختم".
+════════════════════════════════════════════════════════════════
+
 بيانات ${effectiveMatchedComplex ? `مجمع "${effectiveComplexName}"` : (matchedHalaqah ? `حلقة "${matchedHalaqah.name}"` : 'المنظومة')} الحية في هذه اللحظة:
 - إجمالي عدد الطلاب: ${scopedMetrics.totalStudents} طالب.
 - الحضور اليوم: ${scopedMetrics.presentCount} حاضر (${scopedMetrics.totalStudents > 0 ? Math.round((scopedMetrics.presentCount / scopedMetrics.totalStudents) * 100) : 0}%).
@@ -5167,6 +5350,29 @@ ${coachingStudentProfile}
     if (!geminiReply) {
       if (deleteItemTarget) {
         geminiReply = `حياكم الله وبارك فيكم ونفع بكم يا أخي ${firstName}.. 🌿\n\nإكراماً لكتاب الله العظيم وصيانةً لبيانات الحلقات والطلاب من المحو العارض أو غير المقصود ﴿وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ﴾ ﴿وَلَا تَبْخَسُوا النَّاسَ أَشْيَاءَهُمْ﴾، فقد يسّرتُ لك الأمر وأعددتُ لك رابط انتقال مباشر ينقلك فوراً إلى موضع **${deleteItemTarget.name}** أمام عينيك مباشرةً لتتولى مراجعته وتأكيد حذفه بنفسك بكل طمأنينة ويسر.\n\nوسوف **يومض العنصر 3 ومضات بألوان ثيم المجمع** أمام عينيك لتتأكد من أنني فهمت ما تعنيه بدقة، ثم يهدأ الوميض. تفضل بالضغط على الزر أدناه للانتقال فوراً:`;
+      } else if (hasDateInquiryIntent) {
+        geminiReply = `اليوم المبارك هو **${exactTodayDayName}**، الموافق بالتاريخ الميلادي المعتمد: **${exactTodayFormatted}** (${exactTodayIso})${hijriEstimate ? `، والموافق تقريباً بالتقويم الهجري: **${hijriEstimate}**` : ''}، والتوقيت الحالي في المنظومة: **${exactTodayTime}** 🌿✨\n\nوجميع سجلات الحلقات، التحضير، التسميع، والخطط القرآنية المجدولة مرتبطة بدقة بهذا التاريخ.`;
+      } else if (hasPlanSettingsInquiryIntent) {
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🎯🌿\n\nإليك **بيانات وإعدادات ضبط الخطة ومواعيد الختم والتثبيت المعتمدة** حالياً في **${complexName}**:\n\n• 📅 **أيام الحلقة أسبوعياً:** **${planDaysLabels}** (${planSelectedDays.length} أيام في الأسبوع)\n• ⏰ **مدة جلسة التسميع اليومية:** **${planDailyHours} ساعة** يومياً\n• 🛡️ **استراتيجية الإتقان والتثبيت:** **${planStrategyLabel}**\n• 👥 **نطاق التطبيق:** ${planScheduleConfig.targetScope === 'all' || !planScheduleConfig.targetScope ? 'كافة طلاب وحلقات المجمع' : `حلقة محددة (معرف: ${planScheduleConfig.targetScope})`}\n• 🔄 **آخر تحديث للخطة:** ${planScheduleConfig.lastUpdated ? new Date(planScheduleConfig.lastUpdated).toLocaleDateString('ar-SA') : 'معتمد بالمنظومة'}\n\nويمكنك تعديل أي من هذه الإعدادات أو إعادة جدولة خطط ومواعيد ختم الطلاب بالذكاء الاصطناعي بضغطة زر من تبويب «**ضبط الخطة ومواعيد الختم**» أدناه:`;
+      } else if (hasStudentKhatmOrPlanInquiryIntent && candidateStudentForPlan) {
+        const sPlan = candidateStudentForPlan.memorizationPlan;
+        const sMemJuz = sPlan?.memorizedJuzCount || (candidateStudentForPlan.currentSurah ? (candidateStudentForPlan.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - candidateStudentForPlan.currentSurah) / 3.8))) : 1);
+        const sConsJuz = sPlan?.consolidatedJuzCount || Math.max(0, sMemJuz - 2);
+        const sTimeline = calculateServerKhatmTimeline({
+          memorizedJuz: sMemJuz,
+          consolidatedJuz: sConsJuz,
+          dailyNewPages: sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1,
+          dailyReviewPages: sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5,
+          weeklyDaysCount: planSelectedDays.length,
+          dailyHoursCount: planDailyHours,
+          startDate: new Date()
+        });
+        const tDate = sPlan?.targetCompletionDate || sTimeline.targetCompletionDate;
+        const remDays = sPlan?.estimatedDaysRemaining || sTimeline.estimatedDaysRemaining;
+        const dNew = sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1;
+        const dRev = sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5;
+
+        geminiReply = `حيّاك الله يا أخي ${firstName} 📖✨\n\nإليك **تفاصيل الخطة القرآنية وموعد الختم المحسوب بدقة** للطالب المبارك **${candidateStudentForPlan.name}**:\n\n• 🎯 **موعد الختم بإذن الله:** **${tDate}** (المتبقي تقريباً: **~${remDays} يوماً**)\n• 📖 **السورة الحالية:** سورة ${candidateStudentForPlan.currentSurahName || 'الجارية'} (الآية ${candidateStudentForPlan.currentAyah || 1})\n• 🟢 **مقدار الحفظ الجديد اليومي:** ${dNew} وجه\n• 🔵 **مقدار المراجعة والتثبيت اليومي:** ${dRev} أوجه\n• 📊 **المحفوظ الكلي:** ${sMemJuz} جزءاً (منها ${sConsJuz} أجزاء مثبتة تماماً)\n• 📅 **جدول أيام الحلقة:** ${planDaysLabels} (${planDailyHours} ساعات يومياً)\n• 💡 **توجيه الذكاء الاصطناعي:** ${sPlan?.aiNotes || 'التركيز على رسوخ الحفظ وربط الآيات، والختم بتثبيت خير من التعجل بالتفلت.'}\n\nتفضل بمراجعة بطاقة الخطة أدناه والانتقال إليها بضغطة زر:`;
       } else if (isStudentPointsInquiry && candidateStudentForPoints) {
         const sName = candidateStudentForPoints.name;
         const pts = typeof candidateStudentForPoints.points === 'number'

@@ -63,6 +63,18 @@ export interface QuranComplex {
   complexType?: 'single_complex' | 'multi_mosque_system'; // نوع المجمع: مجمع قرآني مباشر أو منظومة قرآنية تضم مساجد متعددة
   mosques?: Mosque[]; // المساجد التابعة للمنظومة القرآنية
   waitingList?: WaitingListStudent[]; // قائمة الانتظار للطلاب في حال اكتمال سعة الحلقات
+
+  // ضبط الخطة ومواعيد الختم والتثبيت بالذكاء الاصطناعي
+  planScheduleConfig?: ComplexPlanScheduleConfig;
+}
+
+export interface ComplexPlanScheduleConfig {
+  selectedDays: string[]; // e.g. ['sun', 'mon', 'tue', 'wed', 'thu']
+  dailyHours: number; // e.g. 2.0
+  strategyPreset: 'tathbeet_first' | 'standard' | 'intensive';
+  targetScope: 'all' | string;
+  lastUpdated?: string;
+  updatedByName?: string;
 }
 
 export interface Mosque {

@@ -47,6 +47,40 @@ export interface DynamicInterviewResponse {
  *    - After every 10 Juz: 15 halaqah days of cumulative test
  *    - Final Khatm revision: 25 halaqah days
  */
+export function getExactTodayArabicInfo(d: Date = new Date()): {
+  dateIso: string;
+  dayName: string;
+  formattedArabic: string;
+  hijriEstimate: string;
+} {
+  const dayName = d.toLocaleDateString('ar-SA', { weekday: 'long' });
+  const formattedArabic = d.toLocaleDateString('ar-SA', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  const dateIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  let hijriEstimate = '';
+  try {
+    hijriEstimate = d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  } catch {
+    hijriEstimate = '';
+  }
+
+  return {
+    dateIso,
+    dayName,
+    formattedArabic,
+    hijriEstimate
+  };
+}
+
 export function calculateRealisticKhatmTimeline(params: {
   memorizedJuz: number;
   consolidatedJuz?: number;
@@ -54,6 +88,7 @@ export function calculateRealisticKhatmTimeline(params: {
   dailyReviewPages: number;
   weeklyDaysCount?: number; // e.g. 5
   dailyHoursCount?: number; // e.g. 2
+  startDate?: Date | string; // تاريخ اليوم المعتمد للبدء
 }): {
   targetCompletionDate: string;
   targetDateObj: Date;
@@ -63,12 +98,22 @@ export function calculateRealisticKhatmTimeline(params: {
   tathbeetStopsCount: number;
   milestones: Array<{ juz: number; targetDate: string; isCompleted: boolean; label: string }>;
   pedagogicalNote: string;
+  calculatedFromDate: string;
 } {
   const totalPagesInQuran = 604;
   const memorizedJuz = Math.max(0, Math.min(30, Number(params.memorizedJuz) || 0));
   const consolidatedJuz = Math.max(0, Math.min(memorizedJuz, Number(params.consolidatedJuz) || 0));
   const weeklyDays = Math.max(1, Math.min(7, Number(params.weeklyDaysCount) || 5));
   const dailyNewPages = Math.max(0.25, Math.min(5, Number(params.dailyNewPages) || 1));
+
+  const baseDate = params.startDate ? new Date(params.startDate) : new Date();
+  const safeBaseDate = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+  const calculatedFromDate = safeBaseDate.toLocaleDateString('ar-SA', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
   // Current memorized pages approx
   const currentMemorizedPages = memorizedJuz * 20;
@@ -77,7 +122,7 @@ export function calculateRealisticKhatmTimeline(params: {
   if (remainingPages <= 0) {
     // Student already memorized all 30 Juz (خاتم)! Focus is 100% on Consolidation & Sanad
     const consolidationDays = Math.ceil((30 - consolidatedJuz) * 12);
-    const targetDate = new Date();
+    const targetDate = new Date(safeBaseDate.getTime());
     targetDate.setDate(targetDate.getDate() + Math.max(60, Math.round((consolidationDays / weeklyDays) * 7)));
 
     return {
@@ -92,7 +137,8 @@ export function calculateRealisticKhatmTimeline(params: {
         { juz: 20, targetDate: 'بعد 4 أشهر', isCompleted: consolidatedJuz >= 20, label: 'تثبيت الثلث الثاني' },
         { juz: 30, targetDate: 'ختام الختمة وسرد السند', isCompleted: consolidatedJuz >= 30, label: 'سرد المصحف غيباً كاملاً' },
       ],
-      pedagogicalNote: 'الطالب خاتم لكتاب الله المبارك. الخطة تركز بنسبة 100% على تثبيت المتشابهات وضبط الوقف والابتداء والسرد غيباً للحصول على الإجازة والسند المتصل.'
+      pedagogicalNote: 'الطالب خاتم لكتاب الله المبارك. الخطة تركز بنسبة 100% على تثبيت المتشابهات وضبط الوقف والابتداء والسرد غيباً للحصول على الإجازة والسند المتصل.',
+      calculatedFromDate
     };
   }
 
@@ -111,7 +157,7 @@ export function calculateRealisticKhatmTimeline(params: {
   // Convert sessions to calendar days using weekly days (e.g. 5 halaqah days per 7 calendar days)
   const calendarDays = Math.ceil((totalHalaqahSessions / weeklyDays) * 7);
 
-  const targetDate = new Date();
+  const targetDate = new Date(safeBaseDate.getTime());
   targetDate.setDate(targetDate.getDate() + calendarDays);
 
   const estimatedMonths = Math.max(1, Math.round(calendarDays / 30.5));
@@ -129,7 +175,7 @@ export function calculateRealisticKhatmTimeline(params: {
     const spanDays = Math.ceil((spanSessions / weeklyDays) * 7);
     accumDays += spanDays;
 
-    const mDate = new Date();
+    const mDate = new Date(safeBaseDate.getTime());
     mDate.setDate(mDate.getDate() + accumDays);
 
     milestones.push({
@@ -147,7 +193,7 @@ export function calculateRealisticKhatmTimeline(params: {
     day: 'numeric'
   });
 
-  const pedagogicalNote = `حُسب موعد الختم بواقع (${weeklyDays} أيام أسبوعياً) مع تضمين ${fiveJuzStops + tenJuzStops + 1} وقفات تثبيت ومراجعة تراكمية لضمان رسوخ الحفظ وعدم التفلت، تحقيقاً لقاعدة: "الختم بتثبيت خير من التعجل بالتفلت".`;
+  const pedagogicalNote = `حُسب موعد الختم ابتداءً من تاريخ اليوم المعتمد (${calculatedFromDate}) بواقع (${weeklyDays} أيام أسبوعياً) مع تضمين ${fiveJuzStops + tenJuzStops + 1} وقفات تثبيت ومراجعة تراكمية لضمان رسوخ الحفظ وعدم التفلت، تحقيقاً لقاعدة: "الختم بتثبيت خير من التعجل بالتفلت".`;
 
   return {
     targetCompletionDate: targetDateStr,
@@ -157,7 +203,8 @@ export function calculateRealisticKhatmTimeline(params: {
     progressPercentage,
     tathbeetStopsCount: fiveJuzStops + tenJuzStops + 1,
     milestones,
-    pedagogicalNote
+    pedagogicalNote,
+    calculatedFromDate
   };
 }
 

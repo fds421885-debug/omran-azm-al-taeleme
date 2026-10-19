@@ -3676,13 +3676,15 @@ export function App() {
 
             {activeTab === 'halaqah_plans' && (isSupervisor || isDeveloper) && (
               <HalaqahPlansTab
-                students={displayedStudents}
+                students={scopedStudents}
                 halaqahs={scopedHalaqahs}
                 activeComplex={activeComplex}
                 activeHalaqahId={activeHalaqahId}
                 isSupervisor={isSupervisor}
                 isDeveloper={isDeveloper}
+                onUpdateComplex={handleSaveComplex}
                 onUpdateStudents={async (updatedStudents) => {
+                  await OmranDataService.saveStudentsBatch(updatedStudents);
                   setStudents(prev => {
                     const map = new Map(prev.map(s => [s.id, s]));
                     updatedStudents.forEach(u => map.set(u.id, u));
