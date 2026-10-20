@@ -257,6 +257,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* Complex Management Button for Developer & Supervisor */}
+            {currentUser?.role === 'admin' && (isDeveloper || isSupervisor) && onOpenComplexManagement && (
+              <button
+                type="button"
+                onClick={onOpenComplexManagement}
+                title="إدارة المجمعات القرآنية وإضافة مجمع جديد"
+                className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
+                style={{
+                  backgroundColor: themeCard,
+                  color: themeAccent,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
+                }}
+              >
+                <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" style={{ color: themeAccent }} />
+                <span className="hidden sm:inline">إدارة المجمعات</span>
+              </button>
+            )}
+
             {currentUser?.role === 'admin' && isSupervisor && !onOpenSettings && onOpenTeacherManagement && (
               <button
                 onClick={onOpenTeacherManagement}

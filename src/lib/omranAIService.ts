@@ -5,6 +5,7 @@ import {
   GOOGLE_GEMINI_MODELS
 } from '../types';
 import { ApiConfig } from './apiConfig';
+import { doc, setDoc } from 'firebase/firestore';
 
 const AI_CONFIG_CACHE_KEY = 'omran_platform_ai_config';
 const MASTER_KEY_LOCAL_KEY = 'omran_gemini_api_key';
@@ -77,12 +78,12 @@ export class OmranAIService {
       }
     }
 
-    // 2. Fetch from Firestore settings collection if available
+    // 2. Fetch from Firestore settings collection in active database if available
     try {
       // Dynamic import to prevent circular dependency
-      const { safeGetDoc, doc, OmranDataService } = await import('./firebase');
-      const centralDb = OmranDataService.getCentralDb();
-      const snap = await safeGetDoc(doc(centralDb, 'settings', 'ai_config'));
+      const { safeGetDoc, OmranDataService } = await import('./firebase');
+      const activeDb = OmranDataService.getActiveDb() || OmranDataService.getCentralDb();
+      const snap = await safeGetDoc(doc(activeDb, 'settings', 'ai_config'));
       if (snap && snap.exists()) {
         const cloudData = snap.data();
         if (cloudData) {
@@ -115,7 +116,7 @@ export class OmranAIService {
   }
 
   /**
-   * Save AI Configuration to localStorage and Cloud Firestore
+   * Save AI Configuration to localStorage and Cloud Firestore (Active DB & Central DB)
    */
   static async saveConfig(updated: PlatformAIConfig): Promise<void> {
     this.cachedConfig = updated;
@@ -132,12 +133,14 @@ export class OmranAIService {
 
     this.notifyListeners(updated);
 
-    // 2. Persist to Firestore settings collection
+    // 2. Persist to Firestore settings collection in active database and central database
     try {
-      const { setDoc, doc, OmranDataService, cleanFirestoreData } = await import('./firebase');
-      const dbs = [OmranDataService.getCentralDb()];
-      if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
-        dbs.push(OmranDataService.getActiveDb());
+      const { OmranDataService, cleanFirestoreData } = await import('./firebase');
+      const activeDb = OmranDataService.getActiveDb();
+      const centralDb = OmranDataService.getCentralDb();
+      const dbs = [activeDb];
+      if (centralDb !== activeDb) {
+        dbs.push(centralDb);
       }
 
       const payload = {

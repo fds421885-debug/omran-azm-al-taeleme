@@ -1451,6 +1451,7 @@ export const OMRAN_CACHE_KEYS = {
   DELETED_EXAMS: 'omran_deleted_exams',
   REGISTRATION_APPLICATIONS: 'omran_registration_applications',
   DELETED_APPLICATIONS: 'omran_deleted_registration_applications',
+  DELETED_TEACHERS: 'omran_deleted_teachers',
   AI_CONFIG: 'omran_platform_ai_config',
   PLAN_SCHEDULE: 'omran_plan_schedule_data',
   INITIALIZED_FLAG: 'omran_platform_initialized_flag'

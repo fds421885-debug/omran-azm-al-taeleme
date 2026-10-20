@@ -1335,7 +1335,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 بيانات التقييم اليومي:
 - الطالب: ${activeStudent.name}
 - الورد اليومي المقرر: ${activeStudent.dailyNewTarget || 'وجه واحد'}
-- ما تم تسميعه اليوم: الجديد (${todayNewSurah}:${todayNewFromAyah}-${todayNewToAyah})، درجة التقييم: ${dailyGrade}/10.
+- ما تم تسميعه اليوم: الجديد (${todayNewSurah}:${todayNewFromAyah}-${todayNewToAyah})، درجة التقييم: 10/10.
 - المراجعة اليومية: ${JSON.stringify(todayReviews)}
 - أخطاء الآيات المسجلة اليوم: ${JSON.stringify(errorsList)}
 - مدة الحلقة اليومية: ${halaqahHours} ساعة.

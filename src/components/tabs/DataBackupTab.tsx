@@ -227,7 +227,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     const unsub = OmranAIService.subscribe(updated => {
       if (mounted && updated) {
         setAiConfig(updated);
-        setMasterKeyInput(updated.masterApiKey || '');
+        setMasterKeyInput(prev => (prev.trim() !== (updated.masterApiKey || '').trim() ? (updated.masterApiKey || '') : prev));
         setMasterModelInput(updated.masterModel || 'gemini-2.5-flash');
         setIsMasterEnabledInput(updated.isMasterEnabled !== false);
       }
@@ -272,9 +272,10 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const handleSaveMasterAIConfig = async () => {
     setIsSavingAIConfig(true);
     try {
+      const cleanKey = (masterKeyInput || '').trim();
       const updatedConfig: PlatformAIConfig = {
         ...aiConfig,
-        masterApiKey: masterKeyInput.trim(),
+        masterApiKey: cleanKey,
         masterModel: masterModelInput,
         isMasterEnabled: isMasterEnabledInput,
         lastVerifiedAt: masterTestResult?.success ? new Date().toISOString() : aiConfig.lastVerifiedAt,
@@ -282,6 +283,13 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
         lastVerifiedMessage: masterTestResult?.success ? masterTestResult.responseText : aiConfig.lastVerifiedMessage,
         lastVerifiedModel: masterModelInput
       };
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('omran_platform_ai_config', JSON.stringify(updatedConfig));
+        if (cleanKey) {
+          localStorage.setItem('omran_gemini_api_key', cleanKey);
+        }
+      }
 
       await OmranAIService.saveConfig(updatedConfig);
       setAiConfig(updatedConfig);
