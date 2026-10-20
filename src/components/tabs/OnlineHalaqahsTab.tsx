@@ -17,8 +17,8 @@ import {
   X
 } from 'lucide-react';
 import { Halaqah, TeacherAccount, QuranComplex, Student } from '../../types';
-import { createGoogleMeetSpace, getGoogleMeetAccessToken } from '../../lib/googleWorkspace';
 import { OmranDataService } from '../../lib/firebase';
+import { getGoogleMeetAccessToken, createGoogleMeetSpace } from '../../lib/googleWorkspace';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface OnlineHalaqahsTabProps {
@@ -76,17 +76,61 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
     return list;
   }, [halaqahs, isDeveloper, isSupervisor, currentTeacher]);
 
+  // Check if current time falls within halaqah scheduled start and end times
+  const isHalaqahTimeActive = (h: Halaqah): boolean => {
+    const start = h.onlineStartTime || h.startTime || '00:00';
+    const end = h.onlineEndTime || h.endTime || '23:59';
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    const startMinutes = (startH || 0) * 60 + (startM || 0);
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingHalaqah) return;
     try {
       await onUpdateHalaqah(editingHalaqah);
-      setSuccessMessage('تم تحديث إعدادات الحلقة الأونلاين بنجاح.');
+      setSuccessMessage('تم تحديث وحفظ إعدادات ورابط الحلقة الأونلاين في السحابة بنجاح.');
       setEditingHalaqah(null);
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'حدث خطأ أثناء حفظ التعديلات.');
+      setErrorMessage(err?.message || 'حدث خطأ أثناء حفظ التعديلات سحابياً.');
+    }
+  };
+
+  const handleGenerateAutoMeet = async () => {
+    if (!editingHalaqah) return;
+    try {
+      setSuccessMessage('جاري الاتصال بحساب Google لتسجيل الدخول وإنشاء مساحة Google Meet وتكوينها مفتوحة للجميع...');
+      const token = await getGoogleMeetAccessToken();
+      if (!token) {
+        throw new Error('تعذر الحصول على رمز المصادقة من Google.');
+      }
+      const meetData = await createGoogleMeetSpace(token);
+      if (!meetData || !meetData.meetingUri) {
+        throw new Error('فشل إنشاء مساحة Google Meet من واجهة برمجية Google.');
+      }
+      setEditingHalaqah({
+        ...editingHalaqah,
+        meetingUri: meetData.meetingUri,
+        meetingCode: meetData.meetingCode,
+        isOnline: true
+      });
+      setSuccessMessage('🎉 تم إنشاء رابط Google Meet تلقائياً وربطه بنجاح!');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'تعذر إنشاء الرابط تلقائياً. تأكد من صلاحيات المتصفح أو أدخله يدوياً.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -119,7 +163,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
             </h2>
           </div>
           <p className="text-xs sm:text-sm font-bold text-slate-300">
-            متابعة الحلقات المرئية عن بُعد، إنشاء روابط Google Meet التلقائية، والدخول المباشر بالاسم المعتمد في المنصة.
+            متابعة الحلقات المرئية عن بُعد، الإنشاء التلقائي أو اليدوي لروابط Google Meet، والدخول بالوقت المحدد بالاسم المعتمد في المنصة.
           </p>
         </div>
 
@@ -168,7 +212,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
           <h3 className="text-lg font-black text-white">لا توجد حلقات أونلاين مسجلة حالياً</h3>
           <p className="text-xs text-slate-300 font-bold max-w-md mx-auto">
             {isSupervisor || isDeveloper
-              ? 'يمكنك ضبط أي حلقة وتعيينها كحلقة أونلاين عبر إعدادات وإدارة المجمعات والحلقات.'
+              ? 'يمكنك ضبط أي حلقة وتعيينها كحلقة أونلاين وعمل إنشاء تلقائي للرابط عبر إعدادات وحلقات المنصة.'
               : 'لم يتم تعيينك في أي حلقة أونلاين حتى الآن. يرجى مراجعة المشرف العام.'}
           </p>
         </div>
@@ -177,15 +221,23 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
           {onlineHalaqahs.map(h => {
             const assignedTeacher = teachers.find(t => t.id === h.primaryTeacherId || (h.teacherIds && h.teacherIds.includes(t.id)));
             const halaqahStudents = students.filter(s => s.halaqahId === h.id || (s.halaqahName && h.name && s.halaqahName.trim() === h.name.trim()));
+            const isAssignedTeacher = currentTeacher && (
+              h.primaryTeacherId === currentTeacher.id ||
+              (h.teacherIds && h.teacherIds.includes(currentTeacher.id)) ||
+              (h.teacherName && currentTeacher.name && h.teacherName.trim() === currentTeacher.name.trim())
+            );
+            const isActiveTime = isHalaqahTimeActive(h);
 
             return (
               <div
                 key={h.id}
-                className="p-6 rounded-3xl border-2 border-b-4 shadow-xl space-y-4 relative overflow-hidden flex flex-col justify-between"
+                className={`p-6 rounded-3xl border-2 border-b-4 shadow-xl space-y-4 relative overflow-hidden flex flex-col justify-between transition-all ${
+                  isActiveTime ? 'opacity-100' : 'opacity-75'
+                }`}
                 style={{
                   backgroundColor: themeCard,
-                  borderColor: themeBorder,
-                  borderBottomColor: themeBorderBottom
+                  borderColor: isActiveTime ? themeAccent : themeBorder,
+                  borderBottomColor: isActiveTime ? themeAccentShadow : themeBorderBottom
                 }}
               >
                 <div className="space-y-3">
@@ -196,10 +248,17 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       </span>
                       <h3 className="text-lg font-black text-white font-heading">{h.name}</h3>
                     </div>
-                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-black shrink-0">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                      <span>نشطة</span>
-                    </span>
+                    {isActiveTime ? (
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-black shrink-0 shadow-lg">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        <span>نشطة الآن (في موعدها)</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-slate-700/40 border border-slate-600 text-slate-400 text-xs font-bold shrink-0">
+                        <span className="w-2 h-2 rounded-full bg-slate-500" />
+                        <span>غير نشطة (خارج وقت الحلقة)</span>
+                      </span>
+                    )}
                   </div>
 
                   {h.description && (
@@ -228,67 +287,46 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                   {h.meetingUri ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <a
-                          href={h.meetingUri}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={async (e) => {
-                            const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
-                            if (!check.exists) {
-                              e.preventDefault();
-                              setErrorMessage(check.message);
-                              setTimeout(() => setErrorMessage(null), 5000);
-                              return;
-                            }
-                            const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
-                            navigator.clipboard.writeText(userName).catch(() => {});
-                            setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة للدخول به في Google Meet بنجاح.`);
-                            setTimeout(() => setSuccessMessage(null), 6000);
-                          }}
-                          className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
-                          style={{
-                            backgroundColor: themeAccent,
-                            color: themePrimary,
-                            border: `2px solid ${themeAccent}`,
-                            borderBottom: `4px solid ${themeAccentShadow}`
-                          }}
-                        >
-                          <Video className="w-4 h-4" />
-                          <span>الانضمام للحلقة (Google Meet)</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                  {h.meetingUri ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={h.meetingUri}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={async (e) => {
-                            const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
-                            if (!check.exists) {
-                              e.preventDefault();
-                              setErrorMessage(check.message);
-                              setTimeout(() => setErrorMessage(null), 5000);
-                              return;
-                            }
-                            const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
-                            navigator.clipboard.writeText(userName).catch(() => {});
-                            setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة للدخول به في Google Meet بنجاح.`);
-                            setTimeout(() => setSuccessMessage(null), 6000);
-                          }}
-                          className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
-                          style={{
-                            backgroundColor: themeAccent,
-                            color: themePrimary,
-                            border: `2px solid ${themeAccent}`,
-                            borderBottom: `4px solid ${themeAccentShadow}`
-                          }}
-                        >
-                          <Video className="w-4 h-4" />
-                          <span>الانضمام للحلقة (Google Meet)</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
+                        {isActiveTime ? (
+                          <a
+                            href={h.meetingUri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={async (e) => {
+                              const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
+                              if (!check.exists) {
+                                e.preventDefault();
+                                setErrorMessage(check.message);
+                                setTimeout(() => setErrorMessage(null), 5000);
+                                return;
+                              }
+                              const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
+                              navigator.clipboard.writeText(userName).catch(() => {});
+                              setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة لضمان الدخول به في Google Meet.`);
+                              setTimeout(() => setSuccessMessage(null), 6000);
+                            }}
+                            className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
+                            style={{
+                              backgroundColor: themeAccent,
+                              color: themePrimary,
+                              border: `2px solid ${themeAccent}`,
+                              borderBottom: `4px solid ${themeAccentShadow}`
+                            }}
+                          >
+                            <Video className="w-4 h-4" />
+                            <span>الانضمام للحلقة (Google Meet)</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="flex-1 py-3 px-4 rounded-2xl font-bold text-xs text-center flex items-center justify-center gap-2 bg-slate-800/80 border border-slate-700 text-slate-400 opacity-50 cursor-not-allowed"
+                          >
+                            <Video className="w-4 h-4 opacity-40" />
+                            <span>زر الدخول مغلق (خارج وقت الحلقة المجدول)</span>
+                          </button>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-300 font-bold text-center">
                         اسم الدخول المعتمد في الاجتماع: <span className="text-amber-300">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
@@ -297,20 +335,20 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                   ) : (
                     <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold text-center space-y-1">
                       <p>لم يتم إدخال رابط Google Meet لهذه الحلقة بعد.</p>
-                      <p className="text-[11px] text-slate-300">يرجى من المشرف كتابة وإدخال رابط Google Meet المعتمد من إعدادات الحلقات أو إدارة المجمعات.</p>
+                      <p className="text-[11px] text-slate-300">يمكن للمشرف أو المعلم استخدام زر «إنشاء الرابط تلقائياً» أو إدخاله يدوياً.</p>
                     </div>
                   )}
 
-                  {(isSupervisor || isDeveloper) && (
+                  {(isSupervisor || isDeveloper || isAssignedTeacher) && (
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] text-slate-400 font-bold">
-                        {h.meetingCode ? `كود الاجتماع: ${h.meetingCode}` : 'لم يتم إنشاء الرابط بعد'}
+                        {h.meetingUri ? 'رابط الاجتماع متاح ومحفوظ سحابياً' : 'أدخل رابط الاجتماع أو أنشئه تلقائياً'}
                       </span>
                       <button
                         onClick={() => setEditingHalaqah(h)}
                         className="text-xs font-bold text-amber-300 hover:underline cursor-pointer"
                       >
-                        تعديل المواعيد والبيانات
+                        إدخال أو تعديل رابط الاجتماع والمواعيد
                       </button>
                     </div>
                   )}
@@ -375,8 +413,32 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                 </div>
               </div>
 
+              {/* Automatic Google Meet Space Creation Button */}
+              <div className="space-y-2 p-4 rounded-2xl bg-black/30 border border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-white">إنشاء رابط Google Meet تلقائياً</span>
+                  <span className="text-[10px] text-amber-300 font-bold">مفتوح للجميع</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateAutoMeet}
+                  className="w-full py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 border shadow-md transition-all cursor-pointer hover:brightness-110 active:translate-y-[1px]"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    color: themePrimary
+                  }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>إنشاء الرابط تلقائياً عبر حساب Google (Google Meet)</span>
+                </button>
+                <p className="text-[10px] text-slate-300 text-center leading-relaxed">
+                  يفتح حساب Google، يسجل الدخول، ويربط اجتماع Google Meet (مفتوح للجميع) تلقائياً بالمنصة ويحفظه سحابياً فوراً.
+                </p>
+              </div>
+
               <div>
-                <label className="block text-xs font-black text-slate-300 mb-1">رابط Google Meet المباشر</label>
+                <label className="block text-xs font-black text-slate-300 mb-1">رابط Google Meet المباشر (أو الرابط المنشأ تلقائياً)</label>
                 <input
                   type="url"
                   value={editingHalaqah.meetingUri || ''}
@@ -402,7 +464,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                     color: themePrimary
                   }}
                 >
-                  حفظ التعديلات
+                  حفظ التعديلات في السحابة
                 </button>
               </div>
             </form>

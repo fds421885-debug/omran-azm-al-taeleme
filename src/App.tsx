@@ -3131,16 +3131,16 @@ export function App() {
     ...(isDeveloper ? [
       { id: 'accounts', label: 'إدارة الحسابات والرتب', icon: UserCog, badge: teachers.length }
     ] : []),
-    { id: 'behavior', label: 'المخالفات السلوكية', icon: ShieldAlert, badge: displayedViolations.length > 0 ? displayedViolations.length : undefined },
-    { id: 'reports', label: 'التقارير الدورية', icon: ClipboardList },
     ...(hasOnlineHalaqahAssigned ? [
       { id: 'online_halaqahs', label: 'حلقات أونلاين', icon: Radio, badge: onlineHalaqahsList.length > 0 ? onlineHalaqahsList.length : undefined }
     ] : []),
-    { id: 'library', label: 'المكتبة والأرشيف', icon: FolderArchive, badge: libraryDocs.length > 0 ? libraryDocs.length : undefined },
+    { id: 'behavior', label: 'المخالفات السلوكية', icon: ShieldAlert, badge: displayedViolations.length > 0 ? displayedViolations.length : undefined },
+    { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
+    { id: 'reports', label: 'التقارير الدورية', icon: ClipboardList },
     ...((isSupervisor || isDeveloper) ? [
       { id: 'halaqah_plans', label: 'ضبط الخطة ومواعيد الختم', icon: BrainCircuit }
     ] : []),
-    { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
+    { id: 'library', label: 'المكتبة والأرشيف', icon: FolderArchive, badge: libraryDocs.length > 0 ? libraryDocs.length : undefined },
     ...(isDeveloper ? [
       { id: 'backup', label: 'النسخ الاحتياطي', icon: Database }
     ] : [])
