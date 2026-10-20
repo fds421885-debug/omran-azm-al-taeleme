@@ -482,7 +482,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <button
               type="button"
               onClick={onOpenPrivacyPolicy}
-              className="text-[#ffd233] hover:text-white underline font-bold cursor-pointer"
+              className="text-[#ffd233] hover:text-white font-bold cursor-pointer"
             >
               سياسة الخصوصية
             </button>
@@ -812,7 +812,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         <button
           type="button"
           onClick={onOpenPrivacyPolicy}
-          className="text-[#ffd233] hover:text-white underline font-bold cursor-pointer mr-1"
+          className="text-[#ffd233] hover:text-white font-bold cursor-pointer mr-1"
         >
           سياسة الخصوصية الرسمية (Privacy Policy)
         </button>

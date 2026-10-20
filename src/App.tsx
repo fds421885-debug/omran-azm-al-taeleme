@@ -3826,7 +3826,7 @@ export function App() {
           <button
             type="button"
             onClick={() => navigatePublic('privacy')}
-            className="hover:text-amber-300 transition-colors font-medium underline cursor-pointer"
+            className="hover:text-amber-300 transition-colors font-medium cursor-pointer"
           >
             وثيقة سياسة الخصوصية (Privacy Policy)
           </button>

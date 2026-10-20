@@ -905,7 +905,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
               <button
                 type="button"
                 onClick={onOpenPrivacyPolicy}
-                className="text-[#ffc800] hover:text-white underline font-bold px-3.5 py-2 rounded-xl bg-[#203843] border-2 border-b-4 border-[#2b4550] cursor-pointer flex items-center gap-1.5 active:translate-y-0.5"
+                className="text-[#ffc800] hover:text-white font-bold px-3.5 py-2 rounded-xl bg-[#203843] border-2 border-b-4 border-[#2b4550] cursor-pointer flex items-center gap-1.5 active:translate-y-0.5"
               >
                 <ShieldCheck className="w-4 h-4 text-[#ffc800]" />
                 <span>سياسة الخصوصية (Privacy Policy)</span>
