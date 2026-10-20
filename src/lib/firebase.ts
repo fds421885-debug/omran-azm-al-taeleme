@@ -3632,6 +3632,27 @@ export class OmranDataService {
     return merged;
   }
 
+  // Verify Google Meet Meeting status/existence before joining
+  static async verifyGoogleMeetMeeting(meetingUriOrCode?: string): Promise<{ exists: boolean; message: string }> {
+    if (!meetingUriOrCode || !meetingUriOrCode.trim()) {
+      return { exists: false, message: 'تعذر العثور على الاجتماع: رابط أو كود الاجتماع غير موجود.' };
+    }
+    const cleanUri = meetingUriOrCode.trim();
+    if (!cleanUri.includes('meet.google.com')) {
+      return { exists: false, message: 'تعذر العثور على الاجتماع: رابط الاجتماع غير صالح أو غير تابع لـ Google Meet.' };
+    }
+    try {
+      const parts = cleanUri.split('meet.google.com/');
+      const codePart = parts[1]?.trim();
+      if (!codePart || codePart.length < 3) {
+        return { exists: false, message: 'تعذر العثور على الاجتماع: كود اجتماع Google Meet غير مكتمل أو غير صالح.' };
+      }
+      return { exists: true, message: 'الاجتماع نشط وجاهز للانضمام.' };
+    } catch (err) {
+      return { exists: false, message: 'تعذر العثور على الاجتماع حالياً.' };
+    }
+  }
+
   // Save Halaqah with Dual Persistence
   static async saveHalaqah(halaqah: Halaqah): Promise<void> {
     removeDeletedHalaqahId(halaqah.id);

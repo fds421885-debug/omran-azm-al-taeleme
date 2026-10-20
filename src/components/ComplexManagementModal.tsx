@@ -364,6 +364,10 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
 
       const assignedMosque = parentComplex?.mosques?.find(m => m.id === editingHalaqah.mosqueId);
 
+      const isOnline = editingHalaqah.isOnline || false;
+      const meetingUri = editingHalaqah.meetingUri?.trim() || '';
+      const meetingCode = meetingUri.includes('meet.google.com') ? (meetingUri.split('/').pop() || '') : '';
+
       const fullHalaqah: Halaqah = {
         id: editingHalaqah.id || `halaqah-${Date.now()}`,
         name: editingHalaqah.name.trim(),
@@ -376,7 +380,13 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
         primaryTeacherId: matchedTeacher?.id || editingHalaqah.primaryTeacherId,
         primaryTeacherName: matchedTeacher?.name || selectedTeacherName || parentComplex?.supervisorTeacherName || teachers[0]?.name || '',
         createdAt: editingHalaqah.createdAt || new Date().toISOString(),
-        isDefault: editingHalaqah.isDefault ?? false
+        isDefault: editingHalaqah.isDefault ?? false,
+        isOnline,
+        onlineStartTime: editingHalaqah.onlineStartTime || '16:00',
+        onlineEndTime: editingHalaqah.onlineEndTime || '18:00',
+        meetingUri,
+        meetingCode,
+        googleSpaceName: editingHalaqah.googleSpaceName || ''
       };
 
       await onSaveHalaqah(fullHalaqah);

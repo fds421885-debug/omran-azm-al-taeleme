@@ -447,6 +447,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         ? teachers.find(t => t.name.trim() === selectedTeacherName || normalizeTeacherText(t.name) === normalizeTeacherText(selectedTeacherName))
         : null;
 
+      const isOnline = editingHalaqah.isOnline || false;
+      const meetingUri = editingHalaqah.meetingUri?.trim() || '';
+      const meetingCode = meetingUri.includes('meet.google.com') ? (meetingUri.split('/').pop() || '') : '';
+
       const halaqahPayload: Halaqah = {
         id: editingHalaqah.id || `halaqah-${Date.now()}`,
         name: editingHalaqah.name.trim(),
@@ -458,6 +462,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         capacity: Number(editingHalaqah.capacity) > 0 ? Number(editingHalaqah.capacity) : 15,
         mosqueId: editingHalaqah.mosqueId,
         mosqueName: editingHalaqah.mosqueName,
+        isOnline,
+        onlineStartTime: editingHalaqah.onlineStartTime || '16:00',
+        onlineEndTime: editingHalaqah.onlineEndTime || '18:00',
+        meetingUri,
+        meetingCode,
+        googleSpaceName: editingHalaqah.googleSpaceName || '',
         createdAt: editingHalaqah.createdAt || new Date().toISOString()
       };
 
@@ -1546,6 +1556,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         placeholder="مثال: حلقة المتقدمين في الحفظ والمراجعة"
                         className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                       />
+                    </div>
+
+                    {/* Online Halaqah Settings */}
+                    <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 space-y-3 sm:col-span-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editingHalaqah.isOnline || false}
+                          onChange={e => setEditingHalaqah({ ...editingHalaqah, isOnline: e.target.checked })}
+                          className="w-4 h-4 rounded text-amber-400 focus:ring-amber-400"
+                        />
+                        <span className="text-xs font-black text-amber-300">هذه الحلقة أونلاين / عن بعد عبر Google Meet</span>
+                      </label>
+
+                      {editingHalaqah.isOnline && (
+                        <div className="space-y-3 pt-2 border-t border-[#065f46]">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت بدء الحلقة اليومي:</label>
+                              <input
+                                type="time"
+                                value={editingHalaqah.onlineStartTime || '16:00'}
+                                onChange={e => setEditingHalaqah({ ...editingHalaqah, onlineStartTime: e.target.value })}
+                                className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت انتهاء الحلقة اليومي:</label>
+                              <input
+                                type="time"
+                                value={editingHalaqah.onlineEndTime || '18:00'}
+                                onChange={e => setEditingHalaqah({ ...editingHalaqah, onlineEndTime: e.target.value })}
+                                className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-emerald-200 font-bold mb-1">رابط Google Meet المباشر (أدخل رابط Google Meet):</label>
+                            <input
+                              type="url"
+                              placeholder="https://meet.google.com/abc-defg-hij"
+                              value={editingHalaqah.meetingUri || ''}
+                              onChange={e => setEditingHalaqah({ ...editingHalaqah, meetingUri: e.target.value })}
+                              className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400 ltr text-left"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

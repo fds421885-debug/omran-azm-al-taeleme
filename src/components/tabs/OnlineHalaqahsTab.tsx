@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Halaqah, TeacherAccount, QuranComplex, Student } from '../../types';
 import { createGoogleMeetSpace, getGoogleMeetAccessToken } from '../../lib/googleWorkspace';
+import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface OnlineHalaqahsTabProps {
@@ -45,7 +46,6 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
   onUpdateHalaqah,
   onRefreshData
 }) => {
-  const [isCreatingMeet, setIsCreatingMeet] = useState<string | null>(null);
   const [editingHalaqah, setEditingHalaqah] = useState<Halaqah | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -76,44 +76,6 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
     return list;
   }, [halaqahs, isDeveloper, isSupervisor, currentTeacher]);
 
-  const handleGenerateMeetLink = async (halaqah: Halaqah) => {
-    setIsCreatingMeet(halaqah.id);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const accessToken = await getGoogleMeetAccessToken();
-      const meetData = await createGoogleMeetSpace(accessToken);
-      if (!meetData || !meetData.meetingUri) {
-        throw new Error('فشل إنشاء غرفة Google Meet عبر Google Meet API.');
-      }
-
-      const updated: Halaqah = {
-        ...halaqah,
-        meetingUri: meetData.meetingUri,
-        meetingCode: meetData.meetingCode,
-        googleSpaceName: meetData.spaceName
-      };
-
-      await onUpdateHalaqah(updated);
-      setSuccessMessage(`تم إنشاء رابط Google Meet بنجاح للحلقة: ${halaqah.name}`);
-      setTimeout(() => setSuccessMessage(null), 5000);
-    } catch (err: any) {
-      console.error('Error generating Google Meet link:', err);
-      // Fallback clean Meet link if GIS not fully connected
-      const randomCode = Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6) + '-' + Math.random().toString(36).substring(2, 5);
-      const fallbackUri = `https://meet.google.com/${randomCode}`;
-      const updated: Halaqah = {
-        ...halaqah,
-        meetingUri: fallbackUri,
-        meetingCode: randomCode
-      };
-      await onUpdateHalaqah(updated);
-      setSuccessMessage(`تم توليد رابط Google Meet الاحتياطي بنجاح للحلقة: ${halaqah.name}`);
-      setTimeout(() => setSuccessMessage(null), 5000);
-    } finally {
-      setIsCreatingMeet(null);
-    }
-  };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,48 +226,79 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                 {/* Meeting Link & Actions */}
                 <div className="pt-4 border-t border-white/10 space-y-3">
                   {h.meetingUri ? (
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={h.meetingUri}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
-                        style={{
-                          backgroundColor: themeAccent,
-                          color: themePrimary,
-                          border: `2px solid ${themeAccent}`,
-                          borderBottom: `4px solid ${themeAccentShadow}`
-                        }}
-                      >
-                        <Video className="w-4 h-4" />
-                        <span>الانضمام للحلقة (Google Meet)</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={h.meetingUri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={async (e) => {
+                            const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
+                            if (!check.exists) {
+                              e.preventDefault();
+                              setErrorMessage(check.message);
+                              setTimeout(() => setErrorMessage(null), 5000);
+                              return;
+                            }
+                            const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
+                            navigator.clipboard.writeText(userName).catch(() => {});
+                            setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة للدخول به في Google Meet بنجاح.`);
+                            setTimeout(() => setSuccessMessage(null), 6000);
+                          }}
+                          className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
+                          style={{
+                            backgroundColor: themeAccent,
+                            color: themePrimary,
+                            border: `2px solid ${themeAccent}`,
+                            borderBottom: `4px solid ${themeAccentShadow}`
+                          }}
+                        >
+                          <Video className="w-4 h-4" />
+                          <span>الانضمام للحلقة (Google Meet)</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                  {h.meetingUri ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={h.meetingUri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={async (e) => {
+                            const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
+                            if (!check.exists) {
+                              e.preventDefault();
+                              setErrorMessage(check.message);
+                              setTimeout(() => setErrorMessage(null), 5000);
+                              return;
+                            }
+                            const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
+                            navigator.clipboard.writeText(userName).catch(() => {});
+                            setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة للدخول به في Google Meet بنجاح.`);
+                            setTimeout(() => setSuccessMessage(null), 6000);
+                          }}
+                          className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
+                          style={{
+                            backgroundColor: themeAccent,
+                            color: themePrimary,
+                            border: `2px solid ${themeAccent}`,
+                            borderBottom: `4px solid ${themeAccentShadow}`
+                          }}
+                        >
+                          <Video className="w-4 h-4" />
+                          <span>الانضمام للحلقة (Google Meet)</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                      <p className="text-[11px] text-slate-300 font-bold text-center">
+                        اسم الدخول المعتمد في الاجتماع: <span className="text-amber-300">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
+                      </p>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => handleGenerateMeetLink(h)}
-                      disabled={isCreatingMeet === h.id}
-                      className="w-full py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px] cursor-pointer"
-                      style={{
-                        backgroundColor: '#1cb0f6',
-                        color: '#ffffff',
-                        border: '2px solid #1cb0f6',
-                        borderBottom: '4px solid #1899d6'
-                      }}
-                    >
-                      {isCreatingMeet === h.id ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>جاري إنشاء رابط Google Meet...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-4 h-4" />
-                          <span>إنشاء رابط Google Meet تلقائياً</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold text-center space-y-1">
+                      <p>لم يتم إدخال رابط Google Meet لهذه الحلقة بعد.</p>
+                      <p className="text-[11px] text-slate-300">يرجى من المشرف كتابة وإدخال رابط Google Meet المعتمد من إعدادات الحلقات أو إدارة المجمعات.</p>
+                    </div>
                   )}
 
                   {(isSupervisor || isDeveloper) && (
