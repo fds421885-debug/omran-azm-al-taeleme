@@ -16,8 +16,50 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile'
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/meetings.space.created',
+  'https://www.googleapis.com/auth/meetings.space.readonly',
+  'https://www.googleapis.com/auth/meetings.space.settings'
 ];
+
+export async function createGoogleMeetSpace(accessToken: string): Promise<{ meetingUri: string; meetingCode: string; spaceName: string } | null> {
+  try {
+    const res = await fetch('https://meet.googleapis.com/v2/spaces', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('Meet API error:', errText);
+      return null;
+    }
+    const data = await res.json();
+    if (data && (data.meetingUri || data.uri)) {
+      const uri = data.meetingUri || data.uri;
+      const code = data.meetingCode || uri.split('/').pop() || '';
+      return {
+        meetingUri: uri,
+        meetingCode: code,
+        spaceName: data.name || ''
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error('Failed to create Google Meet space:', err);
+    return null;
+  }
+}
+
+export async function getGoogleMeetAccessToken(): Promise<string> {
+  const clientId = (firebaseConfig as any).oAuthClientId || '576155598063-9sigjmhkijl03raan3lj117q6sjbcnb6.apps.googleusercontent.com';
+  await loadGoogleGISScript();
+  const res = await requestAccessTokenViaGIS(clientId, GOOGLE_SCOPES);
+  return res.accessToken;
+}
 
 declare global {
   interface Window {

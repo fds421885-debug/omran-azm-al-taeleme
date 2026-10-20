@@ -322,6 +322,12 @@ export interface Halaqah {
   dailyHours?: number; // ساعات الحلقة في اليوم (مثلاً 1.5 أو 2)
   startTime?: string; // وقت البداية (مثلاً "16:00")
   endTime?: string; // وقت النهاية (مثلاً "18:00")
+  isOnline?: boolean; // هل الحلقة أونلاين / عن بعد
+  onlineStartTime?: string; // وقت بدء الحلقة أونلاين
+  onlineEndTime?: string; // وقت انتهاء الحلقة أونلاين
+  meetingUri?: string; // رابط Google Meet الأونلاين
+  meetingCode?: string; // كود الاجتماع
+  googleSpaceName?: string; // اسم السبيس في Google Meet API
 }
 
 export interface TeacherAccount {

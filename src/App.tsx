@@ -121,6 +121,7 @@ import { LibraryTab } from './components/tabs/LibraryTab';
 import { EditAccountModal } from './components/EditAccountModal';
 import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
 import { HalaqahPlansTab } from './components/tabs/HalaqahPlansTab';
+import { OnlineHalaqahsTab } from './components/tabs/OnlineHalaqahsTab';
 import { calculateRealisticKhatmTimeline } from './lib/aiPlanService';
 import { calculatePortionFromPace } from './data/quranPagesData';
 import { applyComplexThemeToDOM } from './lib/themeUtils';
@@ -3105,8 +3106,19 @@ export function App() {
     );
   }
 
+  const onlineHalaqahsList = useMemo(() => {
+    if (isDeveloper || isSupervisor) return scopedHalaqahs.filter(h => h.isOnline);
+    if (!currentTeacher) return [];
+    const tHalaqahs = getTeacherHalaqahsInComplex(currentTeacher, activeComplex?.id || '', halaqahs, teachers, isSupervisor, complexes, students);
+    return tHalaqahs.filter(h => h.isOnline);
+  }, [isDeveloper, isSupervisor, scopedHalaqahs, currentTeacher, activeComplex, halaqahs, teachers, complexes, students]);
+
+  const hasOnlineHalaqahAssigned = useMemo(() => {
+    if (isDeveloper || isSupervisor) return true;
+    return onlineHalaqahsList.length > 0;
+  }, [isDeveloper, isSupervisor, onlineHalaqahsList]);
+
   // Navigation Items for Admin/Teacher
-  // Recordings, Accounts/Ranks Management, and Backup are strictly restricted to Programmer (Mohamed Montaser)
   const navItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'students', label: 'الطلاب والتسجيل', icon: Users, badge: displayedStudents.length },
@@ -3120,11 +3132,14 @@ export function App() {
       { id: 'accounts', label: 'إدارة الحسابات والرتب', icon: UserCog, badge: teachers.length }
     ] : []),
     { id: 'behavior', label: 'المخالفات السلوكية', icon: ShieldAlert, badge: displayedViolations.length > 0 ? displayedViolations.length : undefined },
-    { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
     { id: 'reports', label: 'التقارير الدورية', icon: ClipboardList },
     { id: 'library', label: 'المكتبة والأرشيف', icon: FolderArchive, badge: libraryDocs.length > 0 ? libraryDocs.length : undefined },
     ...((isSupervisor || isDeveloper) ? [
       { id: 'halaqah_plans', label: 'ضبط الخطة ومواعيد الختم', icon: BrainCircuit }
+    ] : []),
+    { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
+    ...(hasOnlineHalaqahAssigned ? [
+      { id: 'online_halaqahs', label: 'حلقات أونلاين', icon: Radio, badge: onlineHalaqahsList.length > 0 ? onlineHalaqahsList.length : undefined }
     ] : []),
     ...(isDeveloper ? [
       { id: 'backup', label: 'النسخ الاحتياطي', icon: Database }
@@ -3734,6 +3749,24 @@ export function App() {
                 senderAccountName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
                 currentUserName={currentUser?.username}
                 activeComplex={activeComplex}
+              />
+            )}
+
+            {activeTab === 'online_halaqahs' && (
+              <OnlineHalaqahsTab
+                halaqahs={scopedHalaqahs}
+                teachers={teachers}
+                students={students}
+                currentUser={currentUser}
+                currentTeacher={currentTeacher}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeComplex={activeComplex}
+                onUpdateHalaqah={async (h) => {
+                  await OmranDataService.saveHalaqah(h);
+                  setHalaqahs(prev => prev.map(item => item.id === h.id ? h : item));
+                }}
+                onRefreshData={() => loadAllData(true)}
               />
             )}
 

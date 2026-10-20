@@ -1293,6 +1293,54 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                 />
               </div>
 
+              {/* Online Halaqah Settings */}
+              <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingHalaqah.isOnline || false}
+                    onChange={e => setEditingHalaqah(prev => ({ ...prev, isOnline: e.target.checked }))}
+                    className="w-4 h-4 rounded text-amber-400 focus:ring-amber-400"
+                  />
+                  <span className="text-xs font-black text-amber-300">هذه الحلقة أونلاين / عن بعد عبر Google Meet</span>
+                </label>
+
+                {editingHalaqah.isOnline && (
+                  <div className="space-y-3 pt-2 border-t border-[#065f46]">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت بدء الحلقة أونلاين:</label>
+                        <input
+                          type="time"
+                          value={editingHalaqah.onlineStartTime || '16:00'}
+                          onChange={e => setEditingHalaqah(prev => ({ ...prev, onlineStartTime: e.target.value }))}
+                          className="w-full bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت انتهاء الحلقة أونلاين:</label>
+                        <input
+                          type="time"
+                          value={editingHalaqah.onlineEndTime || '18:00'}
+                          onChange={e => setEditingHalaqah(prev => ({ ...prev, onlineEndTime: e.target.value }))}
+                          className="w-full bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-emerald-200 font-bold mb-1">رابط Google Meet المباشر:</label>
+                      <input
+                        type="url"
+                        placeholder="https://meet.google.com/abc-defg-hij"
+                        value={editingHalaqah.meetingUri || ''}
+                        onChange={e => setEditingHalaqah(prev => ({ ...prev, meetingUri: e.target.value }))}
+                        className="w-full bg-[#022c22] border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400 ltr text-left"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"

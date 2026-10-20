@@ -736,8 +736,12 @@ export function extractCandidateNamesFromMessage(
   // If user explicitly asks for all students, do not extract names
   if (isQueryRequestingAllStudents(message)) return [];
 
+  const candidateNames: string[] = [];
+
+
+
   // If the query is specifically targeting a category/level and doesn't contain an explicit single student designator
-  const isExplicitSingleStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو)\s+[^\s,،\.\?!]+/i.test(message);
+  const isExplicitSingleStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|بيانات|الطالب|طالب)\s+[^\s,،\.\?!]+/i.test(message);
   if (!isExplicitSingleStudentQuery && detectCategoryOrLevel(message)) {
     const strippedCategory = message
       .replace(/(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|اعرضلي|اعرضي|اعرض|عرض|جدول|كشف|بيانات|بيان|قائمة|سجل|تقرير|احصائيات|إحصائيات|رسم\s+بياني|رسومات\s+بيانية|لي|لنا)?\s*(?:طلاب|الطلاب)?\s*(?:فئة|مستوى)?\s*(?:ضعيف|الضعاف|ضعاف|المتعثرين|متعثرين|متوسط|المتوسطين|متقدم|المتقدمين|قوي|الأقوياء|الاقوياء|ممتاز|الممتازين|متميز|متفوق|مبتدئ|المبتدئين|خاتم|الخاتمين)/gi, '')
@@ -815,7 +819,6 @@ export function extractCandidateNamesFromMessage(
   cleaned = cleaned.replace(/\s+(?:مرتب|مرتبين|ترتيب)\s+(?:حسب|تنازلي|تصاعدي|بالنقاط|ابجديا|أبجدياً).*$/gi, '');
 
   const tokens = cleaned.split(/\s*[,،]\s*|\s+مع\s+|\s+و(?=اخوه|أخوه)\s*|\s+و(?=[\u0600-\u06FF]{3,})|\s+و\s+(?=[\u0600-\u06FF]{3,})/);
-  const candidateNames: string[] = [];
 
   for (const t of tokens) {
     const c = cleanNameToken(t);
@@ -847,8 +850,8 @@ export function extractCandidateNamesFromMessage(
       !GENERIC_STUDENT_TERMS.has(normC) &&
       !candidateNames.includes(c)
     ) {
-      // If a student pool is provided, ONLY keep candidate token if it actually matches at least one student in the system!
-      if (Array.isArray(studentsPool) && studentsPool.length > 0) {
+      // If a student pool is provided, ONLY keep candidate token if it actually matches at least one student in the system (unless explicit query)
+      if (Array.isArray(studentsPool) && studentsPool.length > 0 && !isExplicitSingleStudentQuery) {
         const matchesAnyStudent = studentsPool.some(s => doesStudentMatchNameToken(s, c));
         if (!matchesAnyStudent) {
           continue;
@@ -1187,7 +1190,7 @@ export function resolveStudentsQuery(
   }
 
   // Extract name tokens from query or filter.studentNames
-  const isExplicitStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|طالب|الطلاب)\s+[^\s,،\.\?!]+/i.test(rawQuery);
+  const isExplicitStudentQuery = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|بيانات|الطالب|طالب|الطلاب)\s+[^\s,،\.\?!]+/i.test(rawQuery);
   const extractedTokens = (filter.studentNames && filter.studentNames.length > 0)
     ? filter.studentNames
     : extractCandidateNamesFromMessage(rawQuery, filter, allStudentsPool);
