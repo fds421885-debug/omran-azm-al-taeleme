@@ -19,7 +19,7 @@ import {
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Halaqah, TeacherAccount, QuranComplex, Student } from '../../types';
 import { OmranDataService, auth } from '../../lib/firebase';
-import { getGoogleMeetAccessToken, createGoogleMeetSpace } from '../../lib/googleWorkspace';
+import { GoogleWorkspaceService, createGoogleMeetSpace } from '../../lib/googleWorkspace';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface OnlineHalaqahsTabProps {
@@ -112,73 +112,35 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
   const handleGenerateAutoMeet = async () => {
     if (!editingHalaqah) return;
     try {
-      setSuccessMessage('جاري فتح نافذة حساب Google لاختيار الحساب ومنح أذونات Google Meet واجتماعات الأونلاين...');
-      
-      let accessToken = '';
-      try {
-        accessToken = await getGoogleMeetAccessToken();
-      } catch (gisErr) {
-        console.warn('GIS token notice:', gisErr);
-      }
-
-      if (!accessToken) {
-        try {
-          const provider = new GoogleAuthProvider();
-          provider.addScope('https://www.googleapis.com/auth/meetings.space.created');
-          provider.addScope('https://www.googleapis.com/auth/meetings.space.readonly');
-          provider.setCustomParameters({ prompt: 'select_account' });
-          const res = await signInWithPopup(auth, provider);
-          const cred = GoogleAuthProvider.credentialFromResult(res);
-          accessToken = cred?.accessToken || '';
-        } catch (popupErr) {
-          console.warn('Popup login notice:', popupErr);
+      setSuccessMessage('جاري التحقق من ربط حساب Google الخاص بك...');
+      let token = await GoogleWorkspaceService.getValidAccessToken();
+      if (!token) {
+        setSuccessMessage('الرجاء ربط حساب Google الخاص بك أولاً لمنح الأذونات...');
+        const authRes = await GoogleWorkspaceService.linkGoogleAccount();
+        token = authRes.accessToken;
+        if (!token) {
+          throw new Error('لم يتم إتمام ربط حساب Google بنجاح.');
         }
       }
 
-      let meetingUri = '';
-      let meetingCode = '';
-      if (accessToken) {
-        try {
-          const meetData = await createGoogleMeetSpace(accessToken);
-          if (meetData && meetData.meetingUri) {
-            meetingUri = meetData.meetingUri;
-            meetingCode = meetData.meetingCode;
-          }
-        } catch (meetApiErr) {
-          console.warn('Meet API space creation notice:', meetApiErr);
-        }
-      }
-
-      if (!meetingUri) {
-        const p1 = Math.random().toString(36).substring(2, 5);
-        const p2 = Math.random().toString(36).substring(2, 6);
-        const p3 = Math.random().toString(36).substring(2, 5);
-        meetingCode = `${p1}-${p2}-${p3}`;
-        meetingUri = `https://meet.google.com/${meetingCode}`;
+      setSuccessMessage('جاري إنشاء اجتماع Google Meet حقيقي من حسابك المربوط...');
+      const meetData = await createGoogleMeetSpace(token);
+      if (!meetData || !meetData.meetingUri) {
+        throw new Error('فشل إنشاء مساحة Google Meet من حساب Google الخاص بك.');
       }
 
       setEditingHalaqah({
         ...editingHalaqah,
-        meetingUri,
-        meetingCode,
+        meetingUri: meetData.meetingUri,
+        meetingCode: meetData.meetingCode,
         isOnline: true
       });
-      setSuccessMessage('🎉 تم اختيار حساب Google ومنح الصلاحيات وإنشاء رابط Google Meet بنجاح وجاهز للحفظ!');
+      setSuccessMessage('🎉 تم ربط حسابك وإنشاء اجتماع Google Meet الحقيقي من حسابك بنجاح تام وجاهز للحفظ!');
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
-      const p1 = Math.random().toString(36).substring(2, 5);
-      const p2 = Math.random().toString(36).substring(2, 6);
-      const p3 = Math.random().toString(36).substring(2, 5);
-      const meetingCode = `${p1}-${p2}-${p3}`;
-      const meetingUri = `https://meet.google.com/${meetingCode}`;
-      setEditingHalaqah({
-        ...editingHalaqah,
-        meetingUri,
-        meetingCode,
-        isOnline: true
-      });
-      setSuccessMessage('🎉 تم اختيار حساب Google وإنشاء رابط Google Meet بنجاح!');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      console.error('Error generating Google Meet space from linked account:', err);
+      setErrorMessage(err?.message || 'تعذر إنشاء الرابط. يرجى ربط حساب Google الخاص بك أولاً.');
+      setTimeout(() => setErrorMessage(null), 7000);
     }
   };
 
