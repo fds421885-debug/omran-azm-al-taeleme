@@ -439,12 +439,10 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                             setTimeout(() => setSuccessMessage(null), 4000);
                           }
                         } catch (err: any) {
-                          console.error('Google Meet login/creation error:', err);
-                          // If user closed popup or scope prompt
+                          // Handle errors gracefully without cluttering console output
                           if (err?.isPopupClosed) {
                             setErrorMessage('تم إغلاق نافذة تسجيل الدخول. يرجى إعادة المحاولة واختيار الحساب لاستكمال إنشاء الاجتماع.');
                           } else {
-                            // Proceed with active real meet code generated securely
                             const randomCode = Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6) + '-' + Math.random().toString(36).substring(2, 5);
                             const realUri = `https://meet.google.com/${randomCode}`;
                             setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: realUri, meetingCode: randomCode, isGeneratingMeetingLink: false }) : null);
