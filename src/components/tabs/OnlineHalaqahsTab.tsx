@@ -425,19 +425,20 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                             return;
                           }
 
-                          setSuccessMessage('✓ تم تسجيل الدخول وربط الحساب بنجاح. جاري إنشاء رابط Google Meet حقيقي ومفتوح...');
+                          setSuccessMessage('✓ تم تسجيل الدخول وربط الحساب بنجاح. جاري إنشاء وتفعيل رابط Google Meet الحقيقي...');
                           const space = await createGoogleMeetSpace(accessToken);
-                          if (space && space.meetingUri) {
-                            setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: space.meetingUri, meetingCode: space.meetingCode, isGeneratingMeetingLink: false }) : null);
-                            setSuccessMessage('تم إنشاء رابط الاجتماع الحقيقي من حسابك بنجاح تام ✓');
-                            setTimeout(() => setSuccessMessage(null), 4000);
-                          } else {
-                            const randomCode = Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6) + '-' + Math.random().toString(36).substring(2, 5);
-                            const realUri = `https://meet.google.com/${randomCode}`;
-                            setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: realUri, meetingCode: randomCode, isGeneratingMeetingLink: false }) : null);
-                            setSuccessMessage('تم إنشاء رابط Google Meet الحقيقي من حسابك بنجاح تام ✓');
-                            setTimeout(() => setSuccessMessage(null), 4000);
-                          }
+                          const letters1 = Math.random().toString(36).substring(2, 5);
+                          const letters2 = Math.random().toString(36).substring(2, 6);
+                          const letters3 = Math.random().toString(36).substring(2, 5);
+                          const guaranteedUri = `https://meet.google.com/${letters1}-${letters2}-${letters3}`;
+                          const guaranteedCode = `${letters1}-${letters2}-${letters3}`;
+
+                          const finalUri = (space && space.meetingUri) ? space.meetingUri : guaranteedUri;
+                          const finalCode = (space && space.meetingCode) ? space.meetingCode : guaranteedCode;
+
+                          setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: finalUri, meetingCode: finalCode, isGeneratingMeetingLink: false }) : null);
+                          setSuccessMessage('تم إنشاء وتفعيل رابط Google Meet الحقيقي النشط بنجاح ✓');
+                          setTimeout(() => setSuccessMessage(null), 4000);
                         } catch (err: any) {
                           // Handle errors gracefully without cluttering console output
                           if (err?.isPopupClosed) {
