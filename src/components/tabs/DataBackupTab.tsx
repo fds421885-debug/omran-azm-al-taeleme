@@ -40,7 +40,12 @@ import {
   Activity,
   Zap,
   CheckSquare,
-  Square
+  Square,
+  RotateCcw,
+  BarChart3,
+  Clock,
+  TrendingUp,
+  Info
 } from 'lucide-react';
 import { OmranDataService, firebaseConfig, TARGET_FIRESTORE_DATABASE_ID } from '../../lib/firebase';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
@@ -55,7 +60,9 @@ import {
   PlatformAIConfig,
   AIGroupKeyAllocation,
   GOOGLE_GEMINI_MODELS,
-  DEFAULT_AI_CONFIG
+  DEFAULT_AI_CONFIG,
+  AIUsageMetrics,
+  DEFAULT_AI_USAGE_METRICS
 } from '../../types';
 import { OmranAIService } from '../../lib/omranAIService';
 import { ComplexDatabaseTransferModal } from '../ComplexDatabaseTransferModal';
@@ -174,6 +181,10 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   };
 
   const activeComplex = complexes.find(c => c.id === selectedComplexId) || complexes[0];
+  const accentColor = activeComplex?.theme?.accentColor || '#fbbf24';
+  const primaryColor = activeComplex?.theme?.primaryColor || '#022c22';
+  const secondaryColor = activeComplex?.theme?.secondaryColor || '#064e3b';
+  const surfaceColor = activeComplex?.theme?.surfaceColor || '#033a2e';
 
   // =========================================================================
   // AI Platform Key & Partitioning Management State (مفاتيح الذكاء الاصطناعي للمنصة)
@@ -212,6 +223,12 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   } | null>(null);
   const [showAllocKey, setShowAllocKey] = useState<boolean>(false);
 
+  // AI Usage & Quota Bar State
+  const [usageMetrics, setUsageMetrics] = useState<AIUsageMetrics>(() => OmranAIService.getUsageMetrics());
+  const [isLiveTestingUsage, setIsLiveTestingUsage] = useState<boolean>(false);
+  const [customDailyLimitInput, setCustomDailyLimitInput] = useState<number>(1500);
+  const [showCustomLimitModal, setShowCustomLimitModal] = useState<boolean>(false);
+
   // Load AI configuration on mount
   React.useEffect(() => {
     let mounted = true;
@@ -221,6 +238,9 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
         setMasterKeyInput(cfg.masterApiKey || '');
         setMasterModelInput(cfg.masterModel || 'gemini-2.5-flash');
         setIsMasterEnabledInput(cfg.isMasterEnabled !== false);
+        if (cfg.usageMetrics) {
+          setUsageMetrics(cfg.usageMetrics);
+        }
       }
     });
 
@@ -233,11 +253,64 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       }
     });
 
+    const unsubUsage = OmranAIService.subscribeUsage(metrics => {
+      if (mounted) setUsageMetrics(metrics);
+    });
+
+    const handleUsageEvent = (e: any) => {
+      if (mounted && e.detail) setUsageMetrics(e.detail);
+    };
+    window.addEventListener('omran:ai-usage-updated', handleUsageEvent);
+
     return () => {
       mounted = false;
       unsub();
+      unsubUsage();
+      window.removeEventListener('omran:ai-usage-updated', handleUsageEvent);
     };
   }, []);
+
+  const handleTestLiveRequestAndUpdateBar = async () => {
+    setIsLiveTestingUsage(true);
+    try {
+      const activeKey = masterKeyInput.trim() || aiConfig.masterApiKey;
+      const model = masterModelInput || 'gemini-2.5-flash';
+      if (!activeKey) {
+        alert('يرجى إدخال مفتاح Gemini API في الحقل أدناه أولاً لإجراء الطلب التجريبي.');
+        return;
+      }
+      const res = await OmranAIService.testApiKeyAndModel(activeKey, model);
+      setMasterTestResult(res);
+      setUsageMetrics(OmranAIService.getUsageMetrics());
+    } catch (e: any) {
+      alert(`خطأ أثناء الاختبار: ${e?.message}`);
+    } finally {
+      setIsLiveTestingUsage(false);
+    }
+  };
+
+  const handleResetDailyUsage = () => {
+    if (confirm('هل أنت متأكد من رغبتك في تصفير عداد استهلاك اليوم للبدء من جديد (0 طلب)؟')) {
+      const updated = OmranAIService.resetDailyUsage();
+      setUsageMetrics(updated);
+    }
+  };
+
+  const handleChangeTier = (tier: 'free' | 'pay_as_you_go' | 'custom') => {
+    if (tier === 'custom') {
+      setShowCustomLimitModal(true);
+      return;
+    }
+    const updated = OmranAIService.setTierOrLimit(tier);
+    setUsageMetrics(updated);
+  };
+
+  const handleApplyCustomLimit = () => {
+    if (customDailyLimitInput <= 0) return;
+    const updated = OmranAIService.setTierOrLimit('custom', customDailyLimitInput);
+    setUsageMetrics(updated);
+    setShowCustomLimitModal(false);
+  };
 
   // 1. Test Master Key directly with Google Gemini endpoint
   const handleTestMasterKey = async () => {
@@ -1325,10 +1398,25 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       {/* SECTION: AI PLATFORM KEY & GROUP PARTITIONING (منظومة ومفاتيح الذكاء الاصطناعي للمنصة) */}
       {/* ========================================================================= */}
       {isDeveloper && (
-      <div className="bg-[#022c22]/95 border-2 border-amber-500/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-2xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#065f46]">
+      <div
+        className="border-2 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-2xl transition-all"
+        style={{
+          backgroundColor: `${primaryColor}F5`,
+          borderColor: `${accentColor}50`
+        }}
+      >
+        <div
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
+          style={{ borderColor: `${accentColor}30` }}
+        >
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 text-[#064e3b] flex items-center justify-center shadow-lg shrink-0">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shrink-0"
+              style={{
+                background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`,
+                color: primaryColor
+              }}
+            >
               <Bot className="w-6 h-6 stroke-[2.5]" />
             </div>
             <div>
@@ -1336,7 +1424,14 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <h3 className="text-lg font-black font-heading text-white">
                   منظومة ومفاتيح الذكاء الاصطناعي للمنصة (Google Gemini AI Engine)
                 </h3>
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+                <span
+                  className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border"
+                  style={{
+                    backgroundColor: `${accentColor}20`,
+                    color: accentColor,
+                    borderColor: `${accentColor}40`
+                  }}
+                >
                   خاص بالمبرمج
                 </span>
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
@@ -1363,7 +1458,11 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 setAllocTestResult(null);
                 setIsAddGroupModalOpen(true);
               }}
-              className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
+              style={{
+                backgroundColor: accentColor,
+                color: primaryColor
+              }}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>تخصيص مفتاح لمجموعة / فئة</span>
@@ -1373,17 +1472,414 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
 
         {/* Global Save Alert if present */}
         {aiSaveSuccessMsg && (
-          <div className="p-4 rounded-2xl bg-emerald-900/60 border border-emerald-400/50 text-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <div
+            className="p-4 rounded-2xl border text-xs font-bold flex items-center gap-2 animate-in fade-in"
+            style={{
+              backgroundColor: `${secondaryColor}E0`,
+              borderColor: `${accentColor}50`,
+              color: '#fef08a'
+            }}
+          >
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <span>{aiSaveSuccessMsg}</span>
           </div>
         )}
 
+        {/* ========================================================================= */}
+        {/* AI QUOTA & USAGE PROGRESS BAR (شريط حدود واستهلاك الذكاء الاصطناعي والمتبقي) */}
+        {/* ========================================================================= */}
+        {(() => {
+          const dailyLimit = usageMetrics.dailyLimit || 1500;
+          const requestsToday = usageMetrics.dailyRequestsCount ?? usageMetrics.requestsToday ?? 0;
+          const remainingToday = Math.max(0, dailyLimit - requestsToday);
+          const percentUsed = Math.min(100, Math.round((requestsToday / dailyLimit) * 100));
+          const percentRemaining = Math.max(0, 100 - percentUsed);
+          const isNearLimit = percentUsed >= 85;
+          const isExceeded = requestsToday >= dailyLimit;
+
+          // Time to midnight reset
+          const now = new Date();
+          const midnight = new Date(now);
+          midnight.setHours(24, 0, 0, 0);
+          const diffMs = midnight.getTime() - now.getTime();
+          const hoursToReset = Math.floor(diffMs / (1000 * 60 * 60));
+          const minutesToReset = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+          return (
+            <div
+              className="rounded-2xl p-5 sm:p-6 space-y-5 border-2 shadow-xl transition-all"
+              style={{
+                backgroundColor: `${secondaryColor}80`,
+                borderColor: `${accentColor}50`
+              }}
+            >
+              {/* Header with Title & Live Status Badge */}
+              <div
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b"
+                style={{ borderColor: `${accentColor}30` }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md"
+                    style={{
+                      background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`,
+                      color: primaryColor
+                    }}
+                  >
+                    <BarChart3 className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-black text-white">
+                        شريط حدود وحصة الذكاء الاصطناعي (AI Quota & Usage Monitor)
+                      </h4>
+                      <span
+                        className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1"
+                        style={{
+                          backgroundColor: `${accentColor}20`,
+                          color: accentColor,
+                          borderColor: `${accentColor}40`
+                        }}
+                      >
+                        <Zap className="w-3 h-3" />
+                        {usageMetrics.tier === 'free'
+                          ? 'باقة Gemini المجانية (1,500 طلب/يوم)'
+                          : usageMetrics.tier === 'pay_as_you_go'
+                          ? 'باقة الاستهلاك المرن (50,000 طلب/يوم)'
+                          : `حصة مخصصة (${dailyLimit.toLocaleString('ar-SA')} طلب)`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      مراقبة حية لاستهلاك واستجابة Google Gemini ومعدل الطلبات في الدقيقة والرصيد المتاح والمتبقي.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Status Indicator Pill */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  {isExceeded ? (
+                    <span className="px-3 py-1 rounded-full bg-red-950/80 text-red-300 text-xs font-black border border-red-500/60 flex items-center gap-1.5 animate-pulse">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                      تم استنفاد الحصة اليومية بالكامل 🔴
+                    </span>
+                  ) : isNearLimit ? (
+                    <span className="px-3 py-1 rounded-full bg-amber-950/80 text-amber-300 text-xs font-black border border-amber-500/60 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      تنبيه: اقتربت من 85% من الحصة 🟡
+                    </span>
+                  ) : (
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1.5"
+                      style={{
+                        backgroundColor: `${primaryColor}CC`,
+                        color: accentColor,
+                        borderColor: `${accentColor}50`
+                      }}
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      الحصة متوفرة ومستقرة 🟢
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 4 Summary KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* 1. Daily Limit (RPD) */}
+                <div
+                  className="p-3.5 rounded-xl border space-y-1.5 transition-all"
+                  style={{
+                    backgroundColor: `${primaryColor}95`,
+                    borderColor: `${accentColor}30`
+                  }}
+                >
+                  <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold">
+                    <span className="flex items-center gap-1">
+                      <Layers className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                      الحد الأقصى اليومي
+                    </span>
+                    <span className="text-[10px] text-slate-400">RPD</span>
+                  </div>
+                  <div className="text-lg sm:text-xl font-black text-white font-mono flex items-baseline gap-1">
+                    <span>{dailyLimit.toLocaleString('ar-SA')}</span>
+                    <span className="text-[10px] text-slate-400 font-sans font-normal">طلب/يوم</span>
+                  </div>
+                  <div className="flex items-center gap-1 pt-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleChangeTier('free')}
+                      className={`text-[9px] px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                        usageMetrics.tier === 'free'
+                          ? 'text-[#064e3b] font-black'
+                          : 'bg-white/5 text-slate-400 hover:text-white'
+                      }`}
+                      style={usageMetrics.tier === 'free' ? { backgroundColor: accentColor } : {}}
+                    >
+                      مجاني
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleChangeTier('pay_as_you_go')}
+                      className={`text-[9px] px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                        usageMetrics.tier === 'pay_as_you_go'
+                          ? 'text-[#064e3b] font-black'
+                          : 'bg-white/5 text-slate-400 hover:text-white'
+                      }`}
+                      style={usageMetrics.tier === 'pay_as_you_go' ? { backgroundColor: accentColor } : {}}
+                    >
+                      مرن
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomDailyLimitInput(dailyLimit);
+                        setShowCustomLimitModal(true);
+                      }}
+                      className="text-[9px] px-2 py-0.5 rounded-md font-bold bg-white/5 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      تخصيص
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Used Today */}
+                <div
+                  className="p-3.5 rounded-xl border space-y-1.5 transition-all"
+                  style={{
+                    backgroundColor: `${primaryColor}95`,
+                    borderColor: `${accentColor}30`
+                  }}
+                >
+                  <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold">
+                    <span className="flex items-center gap-1">
+                      <Activity className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                      المستهلك اليوم
+                    </span>
+                    <span className="text-[10px] text-slate-400">Used</span>
+                  </div>
+                  <div className="text-lg sm:text-xl font-black font-mono text-white flex items-baseline gap-1">
+                    <span>{requestsToday.toLocaleString('ar-SA')}</span>
+                    <span className="text-[10px] text-slate-400 font-sans font-normal">طلب</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    نسبة الاستهلاك: <span className="font-bold text-white">{percentUsed}%</span>
+                  </div>
+                </div>
+
+                {/* 3. Remaining Today (Highlight) */}
+                <div
+                  className="p-3.5 rounded-xl border-2 space-y-1.5 transition-all shadow-md"
+                  style={{
+                    backgroundColor: `${primaryColor}95`,
+                    borderColor: accentColor
+                  }}
+                >
+                  <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold">
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                      الرصيد المتبقي
+                    </span>
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      style={{ backgroundColor: `${accentColor}25`, color: accentColor }}
+                    >
+                      {percentRemaining}%
+                    </span>
+                  </div>
+                  <div
+                    className="text-lg sm:text-xl font-black font-mono flex items-baseline gap-1"
+                    style={{ color: accentColor }}
+                  >
+                    <span>{remainingToday.toLocaleString('ar-SA')}</span>
+                    <span className="text-[10px] text-slate-300 font-sans font-normal">طلب متبقٍ</span>
+                  </div>
+                  <div className="text-[10px] text-slate-300 truncate">
+                    حصة اليوم متاحة ومستمرة
+                  </div>
+                </div>
+
+                {/* 4. Live RPM Window */}
+                <div
+                  className="p-3.5 rounded-xl border space-y-1.5 transition-all"
+                  style={{
+                    backgroundColor: `${primaryColor}95`,
+                    borderColor: `${accentColor}30`
+                  }}
+                >
+                  <div className="flex items-center justify-between text-slate-300 text-[11px] font-bold">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                      المعدل بالدقيقة (RPM)
+                    </span>
+                    <span className="text-[10px] text-slate-400">Live 60s</span>
+                  </div>
+                  <div className="text-lg sm:text-xl font-black font-mono text-white flex items-baseline gap-1">
+                    <span>{usageMetrics.recentTimestamps?.length ?? usageMetrics.rollingRequestsCount ?? 0}</span>
+                    <span className="text-[10px] text-slate-400 font-sans font-normal">
+                      / {usageMetrics.rpmLimit || 15} RPM
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                    <span>مباشر في الـ 60 ثانية الأخيرة</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Wide Visual Quota Progress Bar */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs font-bold flex-wrap gap-2">
+                  <div className="flex items-center gap-2 text-white">
+                    <span style={{ color: accentColor }}>■ المستهلك:</span>
+                    <span>{requestsToday.toLocaleString('ar-SA')} طلب ({percentUsed}%)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-white">
+                    <span className="text-emerald-400">■ المتبقي:</span>
+                    <span className="font-mono font-black" style={{ color: accentColor }}>
+                      {remainingToday.toLocaleString('ar-SA')} طلب ({percentRemaining}%)
+                    </span>
+                  </div>
+                </div>
+
+                {/* The Bar */}
+                <div
+                  className="w-full h-7 rounded-2xl p-1 border relative overflow-hidden flex items-center"
+                  style={{
+                    backgroundColor: '#011913',
+                    borderColor: `${accentColor}40`
+                  }}
+                >
+                  {/* Fill Layer */}
+                  <div
+                    className="h-full rounded-xl transition-all duration-700 ease-out flex items-center justify-end px-2"
+                    style={{
+                      width: `${Math.max(4, percentUsed)}%`,
+                      background: isExceeded
+                        ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                        : isNearLimit
+                        ? 'linear-gradient(90deg, #f59e0b, #d97706)'
+                        : `linear-gradient(90deg, ${accentColor}AA, ${accentColor})`
+                    }}
+                  >
+                    {percentUsed > 10 && (
+                      <span
+                        className="text-[10px] font-black font-mono whitespace-nowrap"
+                        style={{ color: primaryColor }}
+                      >
+                        {percentUsed}%
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Marker lines at 25%, 50%, 75% */}
+                  <div className="absolute inset-0 flex justify-between px-3 pointer-events-none items-center">
+                    <span className="w-px h-3 bg-white/10" style={{ left: '25%' }} />
+                    <span className="w-px h-3 bg-white/10" style={{ left: '50%' }} />
+                    <span className="w-px h-3 bg-white/10" style={{ left: '75%' }} />
+                  </div>
+                </div>
+
+                {/* Sub-scale Tick Labels & Reset Countdown */}
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono flex-wrap gap-2">
+                  <div className="flex items-center gap-4">
+                    <span>0% (0)</span>
+                    <span className="hidden sm:inline">25% ({Math.round(dailyLimit * 0.25).toLocaleString('ar-SA')})</span>
+                    <span className="hidden sm:inline">50% ({Math.round(dailyLimit * 0.5).toLocaleString('ar-SA')})</span>
+                    <span className="hidden sm:inline">75% ({Math.round(dailyLimit * 0.75).toLocaleString('ar-SA')})</span>
+                    <span>100% ({dailyLimit.toLocaleString('ar-SA')})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-300 font-sans">
+                    <Clock className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                    <span>يتجدد العداد تلقائياً عند منتصف الليل:</span>
+                    <span className="font-bold text-white font-mono">
+                      {hoursToReset} س و {minutesToReset} د
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Toolbar */}
+              <div
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t"
+                style={{ borderColor: `${accentColor}30` }}
+              >
+                <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 shrink-0" style={{ color: accentColor }} />
+                  <span>
+                    العداد مربوط آلياً بجميع طلبات الذكاء الاصطناعي في المنصة (الخطط، التقييم، وتوليد الأسئلة).
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Test Live Request and Increment Counter */}
+                  <button
+                    type="button"
+                    onClick={handleTestLiveRequestAndUpdateBar}
+                    disabled={isLiveTestingUsage}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    style={{
+                      backgroundColor: accentColor,
+                      color: primaryColor
+                    }}
+                    title="إرسال طلب استجابة حقيقي للنموذج وزيادة العداد وتحديث الشريط"
+                  >
+                    {isLiveTestingUsage ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>جارٍ إرسال الطلب الحي...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>طلب تجريبي حي وتحديث العداد</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Reset Daily Usage */}
+                  <button
+                    type="button"
+                    onClick={handleResetDailyUsage}
+                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    title="تصفير استهلاك اليوم وإعادة العداد إلى 0"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>تصفير عداد اليوم</span>
+                  </button>
+
+                  {/* Edit Custom Limit */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomDailyLimitInput(dailyLimit);
+                      setShowCustomLimitModal(true);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    title="تعيين سقف يومي مخصص"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>تخصيص السقف</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* 1. MASTER PLATFORM KEY (المفتاح الرئيسي لكامل المنصة) */}
-        <div className="bg-[#064e3b]/50 border-2 border-amber-400/30 rounded-2xl p-5 sm:p-6 space-y-4 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#065f46] pb-3">
+        <div
+          className="border-2 rounded-2xl p-5 sm:p-6 space-y-4 shadow-xl transition-all"
+          style={{
+            backgroundColor: `${secondaryColor}80`,
+            borderColor: `${accentColor}40`
+          }}
+        >
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3"
+            style={{ borderColor: `${accentColor}25` }}
+          >
             <div className="flex items-center gap-2.5">
-              <Key className="w-5 h-5 text-amber-400" />
+              <Key className="w-5 h-5" style={{ color: accentColor }} />
               <div>
                 <h4 className="text-sm font-black text-white">
                   مفتاح الذكاء الاصطناعي الرئيسي للمنصة (Master Gemini API Key)
@@ -1400,6 +1896,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 checked={isMasterEnabledInput}
                 onChange={e => setIsMasterEnabledInput(e.target.checked)}
                 className="w-4 h-4 rounded text-amber-400 focus:ring-0 bg-[#022c22] border-[#065f46]"
+                style={{ accentColor }}
               />
               <span className={isMasterEnabledInput ? 'text-emerald-300' : 'text-slate-400'}>
                 {isMasterEnabledInput ? 'المفتاح الرئيسي مفعل 🟢' : 'المفتاح الرئيسي معطل 🔴'}
@@ -1422,7 +1919,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                     setMasterTestResult(null);
                   }}
                   placeholder="AIzaSy..."
-                  className="w-full bg-[#022c22] border border-[#065f46] rounded-xl pl-10 pr-3 py-2.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                  className="w-full bg-[#022c22] border rounded-xl pl-10 pr-3 py-2.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                  style={{ borderColor: `${accentColor}35` }}
                 />
                 <button
                   type="button"
@@ -1449,7 +1947,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   setMasterModelInput(e.target.value);
                   setMasterTestResult(null);
                 }}
-                className="w-full bg-[#022c22] border border-[#065f46] rounded-xl px-3 py-2.5 text-xs font-bold text-amber-300 outline-none focus:border-amber-400 cursor-pointer"
+                className="w-full bg-[#022c22] border rounded-xl px-3 py-2.5 text-xs font-bold text-amber-300 outline-none focus:border-amber-400 cursor-pointer"
+                style={{ borderColor: `${accentColor}35` }}
               >
                 {GOOGLE_GEMINI_MODELS.map(m => (
                   <option key={m.id} value={m.id}>
@@ -1491,14 +1990,12 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                     </>
                   )}
                 </div>
-
                 {masterTestResult.success && (
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[11px] font-bold border border-emerald-400/30">
                     ⚡ زمن الاستجابة: {masterTestResult.latencyMs}ms
                   </span>
                 )}
               </div>
-
               {masterTestResult.success ? (
                 <div className="p-2.5 bg-black/30 rounded-lg border border-emerald-500/20 text-[11px] text-slate-200">
                   <span className="text-amber-300 font-bold block mb-0.5">💬 استجابة اختبار الاتصال من Google:</span>
@@ -1546,7 +2043,11 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 type="button"
                 onClick={handleSaveMasterAIConfig}
                 disabled={isSavingAIConfig}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 hover:brightness-110 text-[#064e3b] text-xs font-black shadow-lg shadow-amber-400/20 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50 hover:brightness-110"
+                style={{
+                  backgroundColor: accentColor,
+                  color: primaryColor
+                }}
               >
                 {isSavingAIConfig ? (
                   <>
@@ -1565,10 +2066,19 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
         </div>
 
         {/* 2. GROUP ALLOCATIONS & PARTITIONING (فصل وتخصيص مفاتيح لكل مجموعة) */}
-        <div className="bg-[#064e3b]/30 border border-[#065f46] rounded-2xl p-5 sm:p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#065f46] pb-3">
+        <div
+          className="border rounded-2xl p-5 sm:p-6 space-y-4 transition-all"
+          style={{
+            backgroundColor: `${secondaryColor}60`,
+            borderColor: `${accentColor}30`
+          }}
+        >
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3"
+            style={{ borderColor: `${accentColor}25` }}
+          >
             <div className="flex items-center gap-2.5">
-              <Sliders className="w-5 h-5 text-amber-400" />
+              <Sliders className="w-5 h-5" style={{ color: accentColor }} />
               <div>
                 <h4 className="text-sm font-black text-white">
                   فصل المفاتيح وتخصيصها لمجموعات محددة (Group & Role Key Routing)
@@ -1591,9 +2101,14 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 setAllocTestResult(null);
                 setIsAddGroupModalOpen(true);
               }}
-              className="px-3.5 py-2 rounded-xl bg-[#065f46] hover:bg-[#047857] text-[#86efac] hover:text-white border border-emerald-400/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto border hover:brightness-110"
+              style={{
+                backgroundColor: `${primaryColor}E0`,
+                color: accentColor,
+                borderColor: `${accentColor}40`
+              }}
             >
-              <Plus className="w-3.5 h-3.5 text-amber-400" />
+              <Plus className="w-3.5 h-3.5" style={{ color: accentColor }} />
               <span>إضافة تخصيص مفتاح جديد</span>
             </button>
           </div>
@@ -1887,13 +2402,124 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] text-xs font-black shadow-lg transition-all cursor-pointer"
+                    className="px-5 py-2 rounded-xl text-xs font-black shadow-lg transition-all cursor-pointer hover:brightness-110"
+                    style={{
+                      backgroundColor: accentColor,
+                      color: primaryColor
+                    }}
                   >
                     حفظ التخصيص
                   </button>
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CUSTOM AI QUOTA LIMIT (تحديد سقف يومي مخصص) */}
+      {showCustomLimitModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div
+            className="border-2 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-5 animate-in zoom-in-95"
+            style={{
+              backgroundColor: primaryColor,
+              borderColor: `${accentColor}70`
+            }}
+          >
+            <div
+              className="flex items-center justify-between border-b pb-3.5"
+              style={{ borderColor: `${accentColor}30` }}
+            >
+              <div className="flex items-center gap-2.5">
+                <Sliders className="w-5 h-5" style={{ color: accentColor }} />
+                <h4 className="text-base font-black text-white">
+                  تحديد سقف وحصة الذكاء الاصطناعي اليومية
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCustomLimitModal(false)}
+                className="text-slate-400 hover:text-white text-xs underline cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                حدد الحد الأقصى المسموح به من الطلبات اليومية (RPD - Requests Per Day) لمفتاح المنصة وفق خطتك في Google AI Studio:
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-[#86efac] mb-1">
+                  الحد اليومي المخصص (عدد الطلبات في اليوم): <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={10}
+                  max={1000000}
+                  step={50}
+                  value={customDailyLimitInput}
+                  onChange={e => setCustomDailyLimitInput(parseInt(e.target.value, 10) || 0)}
+                  className="w-full bg-[#064e3b] border rounded-xl px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-amber-400"
+                  style={{ borderColor: `${accentColor}40` }}
+                />
+              </div>
+
+              {/* Quick Presets */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] text-slate-400 block font-bold">خيارات سريعة جاهزة:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCustomDailyLimitInput(1500)}
+                    className="p-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer bg-white/5 hover:bg-white/10 text-white"
+                    style={customDailyLimitInput === 1500 ? { borderColor: accentColor, color: accentColor } : { borderColor: 'rgba(255,255,255,0.1)' }}
+                  >
+                    1,500 (المجانية)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomDailyLimitInput(5000)}
+                    className="p-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer bg-white/5 hover:bg-white/10 text-white"
+                    style={customDailyLimitInput === 5000 ? { borderColor: accentColor, color: accentColor } : { borderColor: 'rgba(255,255,255,0.1)' }}
+                  >
+                    5,000 (متوسط)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomDailyLimitInput(50000)}
+                    className="p-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer bg-white/5 hover:bg-white/10 text-white"
+                    style={customDailyLimitInput === 50000 ? { borderColor: accentColor, color: accentColor } : { borderColor: 'rgba(255,255,255,0.1)' }}
+                  >
+                    50,000 (المدفوعة)
+                  </button>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t" style={{ borderColor: `${accentColor}30` }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomLimitModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyCustomLimit}
+                  className="px-5 py-2 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-all hover:brightness-110"
+                  style={{
+                    backgroundColor: accentColor,
+                    color: primaryColor
+                  }}
+                >
+                  حفظ وتطبيق السقف
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

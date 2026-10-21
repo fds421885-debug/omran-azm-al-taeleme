@@ -530,23 +530,62 @@ app.get("/api/maps/geocode", async (req, res) => {
   }
 });
 
-// Initialize Google GenAI
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
+// Initialize Google GenAI with dynamic key support from Developer Settings
+let dynamicMasterApiKey = "";
+let dynamicMasterModel = "gemini-2.5-flash";
+
+function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
+  const effectiveKey = (
+    clientKey ||
+    dynamicMasterApiKey ||
+    process.env.GEMINI_API_KEY ||
+    ""
+  ).trim();
+
+  return new GoogleGenAI({
+    apiKey: effectiveKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
     },
-  },
+  });
+}
+
+const ai = getEffectiveGenAI();
+
+function hasServerGeminiKey(req?: any): boolean {
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) return true;
+  if (dynamicMasterApiKey && dynamicMasterApiKey.trim()) return true;
+  if (req && (req.headers?.["x-gemini-api-key"] || req.body?.apiKey)) return true;
+  return false;
+}
+
+// Endpoint to sync the Master API Key and Model configured in Developer Backup Tab
+app.post("/api/gemini/sync-config", (req, res) => {
+  try {
+    const { apiKey, model } = req.body;
+    if (apiKey && typeof apiKey === 'string') {
+      dynamicMasterApiKey = apiKey.trim();
+    }
+    if (model && typeof model === 'string') {
+      dynamicMasterModel = model.trim();
+    }
+    const hasActiveKey = hasServerGeminiKey();
+    return res.json({ success: true, hasActiveKey, model: dynamicMasterModel });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Sync failed' });
+  }
 });
 
 // Helper to call Gemini with robust multi-model fallback cascade
-async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI, contents: any, config?: any): Promise<string> {
+async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI | null, contents: any, config?: any): Promise<string> {
+  const activeAi = aiInstance || getEffectiveGenAI();
   const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
   for (const model of models) {
     try {
       const resp = await Promise.race([
-        aiInstance.models.generateContent({
+        activeAi.models.generateContent({
           model,
           contents,
           config,
@@ -663,7 +702,7 @@ app.post("/api/gemini/generate-plan", async (req, res) => {
       : 1.0;
     const computedPortion = calculatePortionFromPace(surah.number, startAyah, pagePace);
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!hasServerGeminiKey(req)) {
       return res.json({ plan: getFallbackPlan(student), portion: computedPortion });
     }
 
@@ -1296,7 +1335,7 @@ app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
     const targetTomorrowPortion = isMonthlyExcellence ? calculatePortionFromPace(advanceStartSurah, advanceStartAyah, recommendedPace) : computedTomorrowPortion;
 
     // Check Gemini API
-    if (process.env.GEMINI_API_KEY) {
+    if (hasServerGeminiKey(req)) {
       const prompt = `أنت الخبير القرآني والتربوي الأول في «منظومة عمران القرآنية».
 مهمتك: التفكير بحكمة وبناء خطة ومقرر غد للطالب (حفظ جديد + مراجعات متعددة وتثبيت أخطاء) بناءً على ما سمعه اليوم وسجل الأخطاء وتاريخ الجلسات السابقة وزمن وتوقيت الحلقة.
 
@@ -3083,6 +3122,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       apiKey ||
       (req.headers["x-gemini-api-key"] as string) ||
       (typeof req.headers["authorization"] === 'string' ? req.headers["authorization"].replace(/^Bearer\s+/i, "") : "") ||
+      dynamicMasterApiKey ||
       process.env.GEMINI_API_KEY ||
       ""
     ).trim();
@@ -5710,12 +5750,14 @@ ${coachingStudentProfile}
         },
       });
 
-      // Prioritize high-availability and fast responsive models
-      const candidateModels = [
-        "gemini-3.8-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-flash-latest",
-      ];
+      // Prioritize developer's configured model, then high-availability models
+      const candidateModels = Array.from(new Set([
+        dynamicMasterModel || "gemini-2.5-flash",
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-2.5-pro",
+        "gemini-flash-latest"
+      ]));
 
       for (const modelName of candidateModels) {
         try {

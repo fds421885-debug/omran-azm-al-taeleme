@@ -1704,6 +1704,31 @@ export interface AIGroupKeyAllocation {
   lastTestMessage?: string;
 }
 
+export interface AIUsageMetrics {
+  date: string; // 'YYYY-MM-DD'
+  dailyRequestsCount: number;
+  requestsToday?: number; // convenience alias
+  dailyLimit: number; // default 1500 for Google Gemini Free Tier
+  tier: 'free' | 'pay_as_you_go' | 'custom';
+  rpmLimit: number; // default 15 RPM for free tier
+  tpmLimit: number; // default 1,000,000 TPM
+  recentTimestamps: number[]; // rolling 60-second window
+  rollingRequestsCount?: number; // convenience alias
+  totalAllTimeRequests: number;
+  lastRequestAt?: string;
+}
+
+export const DEFAULT_AI_USAGE_METRICS: AIUsageMetrics = {
+  date: new Date().toISOString().split('T')[0],
+  dailyRequestsCount: 0,
+  dailyLimit: 1500,
+  tier: 'free',
+  rpmLimit: 15,
+  tpmLimit: 1000000,
+  recentTimestamps: [],
+  totalAllTimeRequests: 0
+};
+
 export interface PlatformAIConfig {
   masterApiKey: string;
   masterModel: string;
@@ -1720,6 +1745,7 @@ export interface PlatformAIConfig {
     assistant: 'master' | 'group' | 'disabled';
   };
   allowedDomains?: string[]; // e.g. ['localhost', 'omran-quran.netlify.app', 'github.io']
+  usageMetrics?: AIUsageMetrics;
 }
 
 export const DEFAULT_AI_CONFIG: PlatformAIConfig = {
@@ -1732,5 +1758,6 @@ export const DEFAULT_AI_CONFIG: PlatformAIConfig = {
     teachers: 'master',
     publicPlacement: 'master',
     assistant: 'master'
-  }
+  },
+  usageMetrics: DEFAULT_AI_USAGE_METRICS
 };

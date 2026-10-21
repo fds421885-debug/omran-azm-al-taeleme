@@ -52,7 +52,8 @@ import {
   Moon,
   Lightbulb,
   Sliders,
-  BrainCircuit
+  BrainCircuit,
+  Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { jsPDF } from 'jspdf';
@@ -66,10 +67,12 @@ import {
   IssuedCertificate,
   CustomCertificateTemplate,
   SurahRecording,
-  StudentListeningLog
+  StudentListeningLog,
+  AIUsageMetrics
 } from '../../types';
 import { READY_MADE_TEMPLATES } from '../tabs/CertificatesTab';
 import { OmranDataService } from '../../lib/firebase';
+import { OmranAIService } from '../../lib/omranAIService';
 import { triggerComplexThemePulse, dispatchHighlightItem } from '../../utils/highlightHelper';
 import { hashPassword } from '../../utils/security';
 import { exportToExcel } from '../../lib/excelExport';
@@ -358,6 +361,18 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   const [isDraggingBubble, setIsDraggingBubble] = useState(false);
   const [bubbleDragOffset, setBubbleDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hasBubbleMoved, setHasBubbleMoved] = useState(false);
+
+  // AI Quota & Limits Meter State
+  const [usageMetrics, setUsageMetrics] = useState<AIUsageMetrics>(() => OmranAIService.getUsageMetrics());
+  useEffect(() => {
+    const unsub = OmranAIService.subscribeUsage(metrics => setUsageMetrics(metrics));
+    const handleEvent = (e: any) => { if (e.detail) setUsageMetrics(e.detail); };
+    window.addEventListener('omran:ai-usage-updated', handleEvent);
+    return () => {
+      unsub();
+      window.removeEventListener('omran:ai-usage-updated', handleEvent);
+    };
+  }, []);
 
   // ----------------------------------------------------
   // Floating Draggable Chat Window Position & Dragging
@@ -3251,6 +3266,45 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                   {notificationToast}
                 </div>
               )}
+
+              {/* AI Quota & Limits Progress Bar */}
+              {(() => {
+                const dailyLimit = usageMetrics.dailyLimit || 1500;
+                const requestsToday = usageMetrics.dailyRequestsCount ?? usageMetrics.requestsToday ?? 0;
+                const remainingToday = Math.max(0, dailyLimit - requestsToday);
+                const percentUsed = Math.min(100, Math.round((requestsToday / dailyLimit) * 100));
+                const percentRemaining = Math.max(0, 100 - percentUsed);
+                return (
+                  <div
+                    className="px-3.5 py-2.5 border-b text-xs flex flex-col gap-1.5 shrink-0"
+                    style={{
+                      backgroundColor: `${primaryColor}E6`,
+                      borderColor: `${accentColor}35`,
+                    }}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <div className="flex items-center gap-1.5 text-amber-200">
+                        <Zap className="w-3.5 h-3.5" style={{ color: accentColor }} />
+                        <span>حدود استخدام الذكاء الاصطناعي (API Limits):</span>
+                        <span className="font-mono text-white">{requestsToday.toLocaleString('ar-SA')} / {dailyLimit.toLocaleString('ar-SA')} طلب</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-emerald-300">المتبقي:</span>
+                        <span className="font-mono font-black" style={{ color: accentColor }}>{remainingToday.toLocaleString('ar-SA')} ({percentRemaining}%)</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 rounded-full overflow-hidden bg-black/40 border border-white/10 relative">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.max(4, percentUsed)}%`,
+                          backgroundColor: accentColor
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Main Content Area */}
               <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden bg-black/25">

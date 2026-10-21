@@ -2,13 +2,16 @@ import {
   PlatformAIConfig,
   DEFAULT_AI_CONFIG,
   AIGroupKeyAllocation,
-  GOOGLE_GEMINI_MODELS
+  GOOGLE_GEMINI_MODELS,
+  AIUsageMetrics,
+  DEFAULT_AI_USAGE_METRICS
 } from '../types';
 import { ApiConfig } from './apiConfig';
 import { doc, setDoc } from 'firebase/firestore';
 
 const AI_CONFIG_CACHE_KEY = 'omran_platform_ai_config';
 const MASTER_KEY_LOCAL_KEY = 'omran_gemini_api_key';
+const AI_USAGE_CACHE_KEY = 'omran_ai_usage_metrics';
 
 export interface GenerateContentOptions {
   prompt: string;
@@ -25,6 +28,7 @@ export interface GenerateContentOptions {
 export class OmranAIService {
   private static cachedConfig: PlatformAIConfig | null = null;
   private static listeners: Array<(config: PlatformAIConfig) => void> = [];
+  private static usageListeners: Array<(metrics: AIUsageMetrics) => void> = [];
 
   /**
    * Subscribe to AI Config updates across the platform
@@ -36,6 +40,16 @@ export class OmranAIService {
     };
   }
 
+  /**
+   * Subscribe to real-time AI Usage & Quota updates
+   */
+  static subscribeUsage(listener: (metrics: AIUsageMetrics) => void): () => void {
+    this.usageListeners.push(listener);
+    return () => {
+      this.usageListeners = this.usageListeners.filter(l => l !== listener);
+    };
+  }
+
   private static notifyListeners(config: PlatformAIConfig) {
     this.listeners.forEach(l => {
       try {
@@ -44,6 +58,142 @@ export class OmranAIService {
         console.warn('[OmranAIService] Listener notification error:', e);
       }
     });
+  }
+
+  private static notifyUsageListeners(metrics: AIUsageMetrics) {
+    this.usageListeners.forEach(l => {
+      try {
+        l(metrics);
+      } catch (e) {
+        console.warn('[OmranAIService] Usage listener notification error:', e);
+      }
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('omran:ai-usage-updated', { detail: metrics }));
+    }
+  }
+
+  /**
+   * Get current AI Usage and Limit metrics
+   */
+  static getUsageMetrics(): AIUsageMetrics {
+    const todayStr = new Date().toISOString().split('T')[0];
+    let metrics: AIUsageMetrics = { ...DEFAULT_AI_USAGE_METRICS, date: todayStr };
+
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(AI_USAGE_CACHE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.date === todayStr) {
+              metrics = { ...metrics, ...parsed };
+            } else {
+              // New day: retain all-time total, tier, limits, but reset daily count
+              metrics = {
+                ...metrics,
+                tier: parsed.tier || 'free',
+                dailyLimit: parsed.dailyLimit || 1500,
+                rpmLimit: parsed.rpmLimit || 15,
+                tpmLimit: parsed.tpmLimit || 1000000,
+                totalAllTimeRequests: parsed.totalAllTimeRequests || 0,
+                dailyRequestsCount: 0,
+                recentTimestamps: [],
+                date: todayStr
+              };
+              localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(metrics));
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Clean timestamps older than 60 seconds
+    const now = Date.now();
+    metrics.recentTimestamps = (metrics.recentTimestamps || []).filter(t => now - t < 60000);
+    return metrics;
+  }
+
+  /**
+   * Record a new AI Request and update the rolling RPM/RPD quota
+   */
+  static recordUsage(): AIUsageMetrics {
+    const current = this.getUsageMetrics();
+    const now = Date.now();
+    const updatedTimestamps = [...(current.recentTimestamps || []).filter(t => now - t < 60000), now];
+
+    const updated: AIUsageMetrics = {
+      ...current,
+      dailyRequestsCount: current.dailyRequestsCount + 1,
+      totalAllTimeRequests: (current.totalAllTimeRequests || 0) + 1,
+      recentTimestamps: updatedTimestamps,
+      lastRequestAt: new Date().toISOString()
+    };
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
+      } catch {}
+    }
+
+    this.notifyUsageListeners(updated);
+    return updated;
+  }
+
+  /**
+   * Reset today's usage counter manually
+   */
+  static resetDailyUsage(): AIUsageMetrics {
+    const current = this.getUsageMetrics();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updated: AIUsageMetrics = {
+      ...current,
+      dailyRequestsCount: 0,
+      recentTimestamps: [],
+      date: todayStr
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
+      } catch {}
+    }
+    this.notifyUsageListeners(updated);
+    return updated;
+  }
+
+  /**
+   * Update AI Tier and Limit
+   */
+  static setTierOrLimit(tier: 'free' | 'pay_as_you_go' | 'custom', customLimit?: number): AIUsageMetrics {
+    const current = this.getUsageMetrics();
+    let dailyLimit = 1500;
+    let rpmLimit = 15;
+    let tpmLimit = 1000000;
+
+    if (tier === 'pay_as_you_go') {
+      dailyLimit = 50000;
+      rpmLimit = 1000;
+      tpmLimit = 4000000;
+    } else if (tier === 'custom' && customLimit && customLimit > 0) {
+      dailyLimit = customLimit;
+      rpmLimit = Math.max(15, Math.round(customLimit / 100));
+    }
+
+    const updated: AIUsageMetrics = {
+      ...current,
+      tier,
+      dailyLimit,
+      rpmLimit,
+      tpmLimit
+    };
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
+      } catch {}
+    }
+    this.notifyUsageListeners(updated);
+    return updated;
   }
 
   /**
@@ -80,7 +230,6 @@ export class OmranAIService {
 
     // 2. Fetch from Firestore settings collection in active database if available
     try {
-      // Dynamic import to prevent circular dependency
       const { safeGetDoc, OmranDataService } = await import('./firebase');
       const activeDb = OmranDataService.getActiveDb() || OmranDataService.getCentralDb();
       const snap = await safeGetDoc(doc(activeDb, 'settings', 'ai_config'));
@@ -98,7 +247,6 @@ export class OmranAIService {
               ? cloudData.groupAllocations
               : config.groupAllocations
           };
-          // Sync back to local storage
           if (typeof window !== 'undefined') {
             localStorage.setItem(AI_CONFIG_CACHE_KEY, JSON.stringify(config));
             if (config.masterApiKey) {
@@ -111,6 +259,7 @@ export class OmranAIService {
       // Non-blocking cloud fetch
     }
 
+    config.usageMetrics = this.getUsageMetrics();
     this.cachedConfig = config;
     return config;
   }
@@ -127,11 +276,19 @@ export class OmranAIService {
       if (updated.masterApiKey) {
         localStorage.setItem(MASTER_KEY_LOCAL_KEY, updated.masterApiKey);
       }
-      // Broadcast to other tabs & components
       window.dispatchEvent(new CustomEvent('omran:ai-config-updated', { detail: updated }));
     }
 
     this.notifyListeners(updated);
+
+    // Sync to backend Express server if available
+    try {
+      fetch(ApiConfig.getEndpoint('/api/gemini/sync-config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: updated.masterApiKey, model: updated.masterModel })
+      }).catch(() => {});
+    } catch {}
 
     // 2. Persist to Firestore settings collection in active database and central database
     try {
@@ -253,6 +410,8 @@ export class OmranAIService {
       const text =
         data?.candidates?.[0]?.content?.parts?.[0]?.text ||
         'تم الاتصال بنجاح بمنظومة عمران القرآنية';
+
+      this.recordUsage();
 
       return {
         success: true,
@@ -432,6 +591,7 @@ export class OmranAIService {
         if (res.ok) {
           const data = await res.json();
           const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          this.recordUsage();
           return {
             text: generatedText,
             success: true,
@@ -469,6 +629,7 @@ export class OmranAIService {
 
       if (serverRes.ok) {
         const sData = await serverRes.json();
+        this.recordUsage();
         return {
           text: sData.text || sData.response || '',
           success: true,
