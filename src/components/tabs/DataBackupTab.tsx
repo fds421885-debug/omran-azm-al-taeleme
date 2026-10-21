@@ -191,7 +191,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   // =========================================================================
   const [aiConfig, setAiConfig] = useState<PlatformAIConfig>(DEFAULT_AI_CONFIG);
   const [masterKeyInput, setMasterKeyInput] = useState<string>('');
-  const [masterModelInput, setMasterModelInput] = useState<string>('gemini-2.5-flash');
+  const [masterModelInput, setMasterModelInput] = useState<string>('gemini-3.8-flash');
   const [isMasterEnabledInput, setIsMasterEnabledInput] = useState<boolean>(true);
   const [showMasterKey, setShowMasterKey] = useState<boolean>(false);
   const [isTestingMasterKey, setIsTestingMasterKey] = useState<boolean>(false);
@@ -210,7 +210,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [allocName, setAllocName] = useState<string>('');
   const [allocTargetRole, setAllocTargetRole] = useState<'supervisors' | 'teachers' | 'public_placement' | 'assistant' | 'custom_group'>('teachers');
   const [allocKey, setAllocKey] = useState<string>('');
-  const [allocModel, setAllocModel] = useState<string>('gemini-2.5-flash');
+  const [allocModel, setAllocModel] = useState<string>('gemini-3.8-flash');
   const [allocIsEnabled, setAllocIsEnabled] = useState<boolean>(true);
   const [allocSelectedTeacherIds, setAllocSelectedTeacherIds] = useState<string[]>([]);
   const [allocSelectedComplexId, setAllocSelectedComplexId] = useState<string>('');
@@ -236,7 +236,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       if (mounted && cfg) {
         setAiConfig(cfg);
         setMasterKeyInput(cfg.masterApiKey || '');
-        setMasterModelInput(cfg.masterModel || 'gemini-2.5-flash');
+        setMasterModelInput(cfg.masterModel || 'gemini-3.8-flash');
         setIsMasterEnabledInput(cfg.isMasterEnabled !== false);
         if (cfg.usageMetrics) {
           setUsageMetrics(cfg.usageMetrics);
@@ -248,7 +248,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       if (mounted && updated) {
         setAiConfig(updated);
         setMasterKeyInput(prev => (prev.trim() !== (updated.masterApiKey || '').trim() ? (updated.masterApiKey || '') : prev));
-        setMasterModelInput(updated.masterModel || 'gemini-2.5-flash');
+        setMasterModelInput(updated.masterModel || 'gemini-3.8-flash');
         setIsMasterEnabledInput(updated.isMasterEnabled !== false);
       }
     });
@@ -274,7 +274,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setIsLiveTestingUsage(true);
     try {
       const activeKey = masterKeyInput.trim() || aiConfig.masterApiKey;
-      const model = masterModelInput || 'gemini-2.5-flash';
+      const model = masterModelInput || 'gemini-3.8-flash';
       if (!activeKey) {
         alert('يرجى إدخال مفتاح Gemini API في الحقل أدناه أولاً لإجراء الطلب التجريبي.');
         return;

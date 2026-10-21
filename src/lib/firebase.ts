@@ -2117,6 +2117,28 @@ export class OmranDataService {
       }
     }
 
+    // Multi-Complex Teacher Sync: If using a dedicated database, ensure any teacher linked to this complex from centralDb is synced
+    if (this.getActiveDb() !== this.getCentralDb() && this.activeComplexId) {
+      try {
+        const centralSnap = await safeGetDocs(collection(this.getCentralDb(), 'teachers'));
+        for (const d of centralSnap.docs) {
+          const ct = d.data() as TeacherAccount;
+          if (ct?.id && !deletedTeacherIds.has(ct.id)) {
+            const isAssigned =
+              ct.complexId === this.activeComplexId ||
+              (Array.isArray(ct.complexIds) && ct.complexIds.includes(this.activeComplexId));
+            if (isAssigned && !mergedMap.has(ct.id)) {
+              mergedMap.set(ct.id, ct);
+              // Mirror into the active dedicated database so it stays permanently connected
+              setDoc(doc(this.getActiveDb(), 'teachers', ct.id), cleanFirestoreData(ct), { merge: true }).catch(() => {});
+            }
+          }
+        }
+      } catch (centralErr) {
+        console.warn('[OmranDataService] Error syncing multi-complex teachers from central:', centralErr);
+      }
+    }
+
     const list: TeacherAccount[] = [];
     mergedMap.forEach(raw => {
       const cleanUser = (raw.username || '').trim().toLowerCase();
@@ -2186,6 +2208,29 @@ export class OmranDataService {
         try {
           await setDoc(doc(this.getCentralDb(), 'teachers', teacher.id), clean, { merge: true });
         } catch {}
+      }
+
+      // Multi-Complex Teacher Sync: Ensure teacher document is written to the database of EVERY linked complex
+      const allLinkedComplexIds = Array.from(new Set([
+        teacher.complexId,
+        ...(Array.isArray(teacher.complexIds) ? teacher.complexIds : [])
+      ])).filter(Boolean) as string[];
+
+      if (allLinkedComplexIds.length > 0) {
+        try {
+          const complexes = await this.loadComplexes();
+          for (const cId of allLinkedComplexIds) {
+            const comp = complexes.find(c => c.id === cId);
+            if (comp && comp.databaseConfig?.isCustom) {
+              const compDb = this.getFirestoreInstanceForComplex(comp);
+              if (compDb && compDb !== this.getActiveDb() && compDb !== this.getCentralDb()) {
+                await setDoc(doc(compDb, 'teachers', teacher.id), clean, { merge: true }).catch(() => {});
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn('[OmranDataService] Teacher multi-complex sync notice:', syncErr);
+        }
       }
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `teachers/${teacher.id}`);
@@ -2268,6 +2313,16 @@ export class OmranDataService {
         try {
           await deleteDoc(doc(this.getCentralDb(), 'teachers', teacherId));
         } catch {}
+      }
+      // Also delete from any dedicated complex databases where this teacher existed
+      const complexes = await this.loadComplexes().catch(() => []);
+      for (const comp of complexes) {
+        if (comp.databaseConfig?.isCustom) {
+          const compDb = this.getFirestoreInstanceForComplex(comp);
+          if (compDb && compDb !== this.getActiveDb() && compDb !== this.getCentralDb()) {
+            await deleteDoc(doc(compDb, 'teachers', teacherId)).catch(() => {});
+          }
+        }
       }
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `teachers/${teacherId}`);
@@ -3449,7 +3504,66 @@ export class OmranDataService {
       }
     } catch {}
 
-    addLog(`✅ تم نقل كافة التقييمات، الاختبارات، الشهادات، والملاحظات السلوكية بنجاح.`);
+    // Migrate Surah Recordings
+    try {
+      const recordings = await this.loadRecordings();
+      const compRecordings = recordings.filter(r => (r as any).complexId === complex.id || !(r as any).complexId);
+      for (const rec of compRecordings) {
+        await setDoc(doc(targetDb, 'surah_recordings', rec.id), cleanFirestoreData(rec));
+      }
+      if (compRecordings.length > 0) addLog(`✅ تم نقل (${compRecordings.length}) تسجيلاً صوتياً للقرآن إلى surah_recordings.`);
+    } catch (recErr) {
+      console.warn('Recordings migration notice:', recErr);
+    }
+
+    // Migrate Library Documents
+    try {
+      const libraryDocs = await this.loadLibraryDocuments();
+      const compDocs = libraryDocs.filter(d => (d as any).complexId === complex.id || !(d as any).complexId);
+      for (const ld of compDocs) {
+        await setDoc(doc(targetDb, 'library_docs', ld.id), cleanFirestoreData(ld));
+      }
+      if (compDocs.length > 0) addLog(`✅ تم نقل (${compDocs.length}) مستنداً ومراجع من مكتبة المجمع إلى library_docs.`);
+    } catch (libErr) {
+      console.warn('Library docs migration notice:', libErr);
+    }
+
+    // Migrate Registration Applications
+    try {
+      const applications = await this.loadRegistrationApplications();
+      const compApps = applications.filter(a => a.complexId === complex.id || (a.preferredHalaqahId && halaqahIds.has(a.preferredHalaqahId)) || (a.assignedHalaqahId && halaqahIds.has(a.assignedHalaqahId)) || !a.complexId);
+      for (const appItem of compApps) {
+        await setDoc(doc(targetDb, 'registration_applications', appItem.id), cleanFirestoreData(appItem));
+      }
+      if (compApps.length > 0) addLog(`✅ تم نقل (${compApps.length}) طلب تسجيل جديد إلى registration_applications.`);
+    } catch (appErr) {
+      console.warn('Registration apps migration notice:', appErr);
+    }
+
+    // Migrate Platform Chats
+    try {
+      const chats = await this.loadChats();
+      for (const c of chats) {
+        await setDoc(doc(targetDb, 'chats', c.id), cleanFirestoreData(c));
+      }
+      if (chats.length > 0) addLog(`✅ تم نقل (${chats.length}) رسالة محادثة إلى chats.`);
+    } catch (chatErr) {
+      console.warn('Chats migration notice:', chatErr);
+    }
+
+    // Migrate Quranic Listening Logs
+    try {
+      const listeningLogs = await this.loadListeningLogs();
+      const compListening = listeningLogs.filter(l => studentIds.has(l.studentId) || (l as any).complexId === complex.id);
+      for (const l of compListening) {
+        await setDoc(doc(targetDb, 'listening_logs', l.id), cleanFirestoreData(l));
+      }
+      if (compListening.length > 0) addLog(`✅ تم نقل (${compListening.length}) سجل استماع قرآني إلى listening_logs.`);
+    } catch (logErr) {
+      console.warn('Listening logs migration notice:', logErr);
+    }
+
+    addLog(`✅ تم نقل كافة التقييمات، الاختبارات، الشهادات، المكتبة، والملاحظات السلوكية بنجاح.`);
 
     // Write Settings and metadata to targetDb
     const curSettings = await this.loadSettings();
@@ -3458,6 +3572,61 @@ export class OmranDataService {
     for (const cr of curCriteria) {
       await setDoc(doc(targetDb, 'criteria', cr.id), cleanFirestoreData(cr));
     }
+
+    // Migrate All Configuration Settings Documents (AI Config, Leaderboard, OAuth, Schedules)
+    try {
+      // 1. AI Configuration (Developer Master API Key, Model, Policies, Allocations)
+      const aiConfigSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'ai_config'));
+      if (aiConfigSnap && aiConfigSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'ai_config'), aiConfigSnap.data());
+        addLog(`✅ تم نقل إعدادات ومفتاح الذكاء الاصطناعي (Master Gemini Key) والموديل إلى settings/ai_config.`);
+      }
+
+      // 2. Leaderboard Settings
+      const lbSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'leaderboard'));
+      if (lbSnap && lbSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'leaderboard'), lbSnap.data());
+      }
+
+      // 3. Google OAuth Settings
+      const oauthSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'));
+      if (oauthSnap && oauthSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'google_oauth'), oauthSnap.data());
+      }
+
+      // 4. Recordings Config
+      const recCfgSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'recordings_config'));
+      if (recCfgSnap && recCfgSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'recordings_config'), recCfgSnap.data());
+      }
+
+      // 5. Plan Scheduling Configurations
+      const planCfgSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', `plan_schedule_${complex.id}`));
+      if (planCfgSnap && planCfgSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', `plan_schedule_${complex.id}`), planCfgSnap.data());
+      }
+      const planDefSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'plan_schedule_default'));
+      if (planDefSnap && planDefSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'plan_schedule_default'), planDefSnap.data());
+      }
+
+      // 6. Deleted Records / Tombstones
+      const delSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'deleted_records'));
+      if (delSnap && delSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'deleted_records'), delSnap.data());
+      }
+
+      // 7. Registration Applications Settings Container
+      const regDocSnap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'registration_applications'));
+      if (regDocSnap && regDocSnap.exists()) {
+        await setDoc(doc(targetDb, 'settings', 'registration_applications'), regDocSnap.data());
+      }
+
+      addLog(`✅ تم نقل كافة إعدادات المنظومة وتكوينات الذكاء الاصطناعي والخطط بدقة تامة.`);
+    } catch (settErr) {
+      console.warn('Settings documents migration notice:', settErr);
+    }
+
     await setDoc(doc(targetDb, 'settings', 'omran_migration_receipt'), {
       migratedAt: new Date().toISOString(),
       complexId: complex.id,

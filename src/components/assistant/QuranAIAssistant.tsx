@@ -1326,12 +1326,25 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         },
       };
 
-      const clientApiKey = (
+      let clientApiKey = (
         (import.meta as any).env?.VITE_GEMINI_API_KEY ||
         (import.meta as any).env?.GEMINI_API_KEY ||
         (typeof window !== 'undefined' ? (localStorage.getItem('omran_gemini_api_key') || localStorage.getItem('gemini_api_key') || '') : '') ||
         ''
       ).trim();
+
+      let clientModel = 'gemini-3.8-flash';
+      try {
+        const aiCfg = await OmranAIService.loadConfig();
+        if (aiCfg) {
+          if (!clientApiKey && aiCfg.masterApiKey) {
+            clientApiKey = aiCfg.masterApiKey.trim();
+          }
+          if (aiCfg.masterModel) {
+            clientModel = aiCfg.masterModel;
+          }
+        }
+      } catch {}
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -1346,6 +1359,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         body: JSON.stringify({
           ...payload,
           apiKey: clientApiKey || undefined,
+          model: clientModel,
         }),
       });
 

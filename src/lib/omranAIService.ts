@@ -13,6 +13,26 @@ const AI_CONFIG_CACHE_KEY = 'omran_platform_ai_config';
 const MASTER_KEY_LOCAL_KEY = 'omran_gemini_api_key';
 const AI_USAGE_CACHE_KEY = 'omran_ai_usage_metrics';
 
+export function sanitizeGeminiModelName(modelName?: string): string {
+  if (!modelName) return 'gemini-3.8-flash';
+  const m = modelName.trim().toLowerCase();
+  if (
+    m === 'gemini-2.5-flash' ||
+    m === 'gemini-1.5-flash' ||
+    m === 'gemini-2.0-flash' ||
+    m === 'gemini-flash' ||
+    m === 'gemini-2.5-pro' ||
+    m === 'gemini-1.5-pro' ||
+    m === 'gemini-2.0-pro'
+  ) {
+    return 'gemini-3.8-flash';
+  }
+  if (m === 'gemini-2.0-flash-lite' || m === 'gemini-flash-lite' || m === 'gemini-lite') {
+    return 'gemini-3.1-flash-lite';
+  }
+  return modelName.trim();
+}
+
 export interface GenerateContentOptions {
   prompt: string;
   systemInstruction?: string;
@@ -259,6 +279,7 @@ export class OmranAIService {
       // Non-blocking cloud fetch
     }
 
+    config.masterModel = sanitizeGeminiModelName(config.masterModel);
     config.usageMetrics = this.getUsageMetrics();
     this.cachedConfig = config;
     return config;
@@ -302,12 +323,12 @@ export class OmranAIService {
 
       const payload = {
         masterApiKey: updated.masterApiKey || '',
-        masterModel: updated.masterModel || 'gemini-2.5-flash',
+        masterModel: sanitizeGeminiModelName(updated.masterModel),
         isMasterEnabled: updated.isMasterEnabled !== false,
         lastVerifiedAt: updated.lastVerifiedAt || new Date().toISOString(),
         lastVerifiedLatencyMs: updated.lastVerifiedLatencyMs || 0,
         lastVerifiedMessage: updated.lastVerifiedMessage || '',
-        lastVerifiedModel: updated.lastVerifiedModel || updated.masterModel,
+        lastVerifiedModel: sanitizeGeminiModelName(updated.lastVerifiedModel || updated.masterModel),
         groupAllocations: (updated.groupAllocations || []).map(cleanFirestoreData),
         rolePolicies: updated.rolePolicies || DEFAULT_AI_CONFIG.rolePolicies,
         updatedAt: new Date().toISOString()
@@ -328,7 +349,7 @@ export class OmranAIService {
   }
 
   /**
-   * Test an API Key and Model directly with Google's Gemini Endpoint
+   * Test an API Key and Model directly or via server endpoint
    * Returns latency, response text, and verifies connectivity.
    */
   static async testApiKeyAndModel(
@@ -341,7 +362,7 @@ export class OmranAIService {
     error?: string;
   }> {
     const cleanKey = (apiKey || '').trim();
-    const cleanModel = (modelName || 'gemini-2.5-flash').trim();
+    const cleanModel = sanitizeGeminiModelName(modelName);
 
     if (!cleanKey) {
       return {
@@ -355,6 +376,36 @@ export class OmranAIService {
     const startTime = performance.now();
     const testPrompt = 'اختبار اتصال: أجب بعبارة قصيرة واحدة باللغة العربية تبدأ بـ "تم الاتصال بنجاح بمنظومة عمران القرآنية".';
 
+    // 1. Try server proxy endpoint first for maximum compatibility
+    try {
+      const serverRes = await fetch(ApiConfig.getEndpoint('/api/gemini/test-key'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: cleanKey, model: cleanModel })
+      });
+      if (serverRes.ok) {
+        const sData = await serverRes.json();
+        if (sData?.success) {
+          this.recordUsage();
+          return {
+            success: true,
+            latencyMs: sData.latencyMs || Math.round(performance.now() - startTime),
+            responseText: sData.responseText || 'تم الاتصال بنجاح بمنظومة عمران القرآنية'
+          };
+        } else if (sData?.error) {
+          return {
+            success: false,
+            latencyMs: Math.round(performance.now() - startTime),
+            responseText: '',
+            error: sData.error
+          };
+        }
+      }
+    } catch (serverErr) {
+      // Fallback to direct client fetch
+    }
+
+    // 2. Direct client fetch fallback
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
@@ -391,7 +442,7 @@ export class OmranAIService {
             } else if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('Quota exceeded')) {
               errorMsg = 'تم استنفاد الحصة المجانية الحالية لهذا المفتاح، يرجى فحص الحصص أو استخدام مفتاح آخر.';
             } else if (raw.includes('models/') && raw.includes('is not found')) {
-              errorMsg = `النموذج المحدد (${cleanModel}) غير مدعوم على هذا المفتاح، يرجى اختيار نموذج آخر مثل gemini-2.5-flash.`;
+              errorMsg = `النموذج المحدد (${cleanModel}) غير مدعوم على هذا المفتاح، يرجى اختيار نموذج آخر مثل gemini-3.8-flash.`;
             } else {
               errorMsg = `تنبيه من Google Gemini: ${raw}`;
             }
@@ -451,7 +502,7 @@ export class OmranAIService {
     if (role === 'developer') {
       return {
         apiKey: config.masterApiKey,
-        model: options.requestedModel || config.masterModel || 'gemini-2.5-flash',
+        model: options.requestedModel || config.masterModel || 'gemini-3.8-flash',
         source: 'master',
         isAllowed: true
       };
@@ -472,7 +523,7 @@ export class OmranAIService {
     if (policy === 'disabled') {
       return {
         apiKey: '',
-        model: config.masterModel || 'gemini-2.5-flash',
+        model: config.masterModel || 'gemini-3.8-flash',
         source: 'none',
         isAllowed: false,
         failureReason: 'تم تعطيل صلاحية استخدام الذكاء الاصطناعي لهذه الفئة من قبل مبرمج المنظومة.'
@@ -526,7 +577,7 @@ export class OmranAIService {
 
     return {
       apiKey: config.masterApiKey || '',
-      model: options.requestedModel || config.masterModel || 'gemini-2.5-flash',
+      model: options.requestedModel || config.masterModel || 'gemini-3.8-flash',
       source: 'master',
       isAllowed: true
     };

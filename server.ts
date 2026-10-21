@@ -532,7 +532,27 @@ app.get("/api/maps/geocode", async (req, res) => {
 
 // Initialize Google GenAI with dynamic key support from Developer Settings
 let dynamicMasterApiKey = "";
-let dynamicMasterModel = "gemini-2.5-flash";
+let dynamicMasterModel = "gemini-3.8-flash";
+
+export function sanitizeGeminiModelName(modelName?: string): string {
+  if (!modelName) return "gemini-3.8-flash";
+  const m = modelName.trim().toLowerCase();
+  if (
+    m === "gemini-2.5-flash" ||
+    m === "gemini-1.5-flash" ||
+    m === "gemini-2.0-flash" ||
+    m === "gemini-flash" ||
+    m === "gemini-2.5-pro" ||
+    m === "gemini-1.5-pro" ||
+    m === "gemini-2.0-pro"
+  ) {
+    return "gemini-3.8-flash";
+  }
+  if (m === "gemini-2.0-flash-lite" || m === "gemini-flash-lite" || m === "gemini-lite") {
+    return "gemini-3.1-flash-lite";
+  }
+  return modelName.trim();
+}
 
 function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
   const effectiveKey = (
@@ -569,7 +589,7 @@ app.post("/api/gemini/sync-config", (req, res) => {
       dynamicMasterApiKey = apiKey.trim();
     }
     if (model && typeof model === 'string') {
-      dynamicMasterModel = model.trim();
+      dynamicMasterModel = sanitizeGeminiModelName(model);
     }
     const hasActiveKey = hasServerGeminiKey();
     return res.json({ success: true, hasActiveKey, model: dynamicMasterModel });
@@ -578,10 +598,67 @@ app.post("/api/gemini/sync-config", (req, res) => {
   }
 });
 
+// Endpoint to test developer's Gemini API key & model with live response
+app.post("/api/gemini/test-key", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { apiKey, model } = req.body;
+    const cleanKey = (apiKey || "").trim();
+    const cleanModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
+
+    if (!cleanKey) {
+      return res.status(400).json({
+        success: false,
+        error: "يرجى إدخال مفتاح Gemini API",
+        latencyMs: 0
+      });
+    }
+
+    const testAi = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const response = await Promise.race([
+      testAi.models.generateContent({
+        model: cleanModel,
+        contents: "اختبار اتصال: أجب بعبارة قصيرة واحدة باللغة العربية تبدأ بـ \"تم الاتصال بنجاح بمنظومة عمران القرآنية\".",
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("انتهت مهلة الاتصال بخوادم Google (Timeout)")), 15000))
+    ]);
+
+    const latencyMs = Date.now() - startTime;
+    const responseText = response?.text?.trim() || "تم الاتصال بنجاح بمنظومة عمران القرآنية";
+
+    // Auto-sync dynamic master key and model on successful test
+    dynamicMasterApiKey = cleanKey;
+    dynamicMasterModel = cleanModel;
+
+    return res.json({
+      success: true,
+      latencyMs,
+      responseText,
+      model: cleanModel
+    });
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    console.warn("[Gemini Test-Key Error]:", err?.message || err);
+    return res.status(200).json({
+      success: false,
+      error: err?.message || "فشل الاتصال بخدمة Google Gemini",
+      latencyMs
+    });
+  }
+});
+
 // Helper to call Gemini with robust multi-model fallback cascade
 async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI | null, contents: any, config?: any): Promise<string> {
   const activeAi = aiInstance || getEffectiveGenAI();
-  const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+  const models = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-4-argon"];
   for (const model of models) {
     try {
       const resp = await Promise.race([
@@ -3114,6 +3191,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       activeStudent = null,
       dataContext = {},
       apiKey = "",
+      model = "",
     } = req.body;
 
     const cleanCurrentMessage = (message || "").trim();
@@ -4721,6 +4799,50 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("عدد الطلاب") ||
       normUserMessage.includes("مجموع الطلاب"));
 
+    // 2.12.5.5b Halaqah Count Intent (كم حلقة، كم عدد الحلقات، عدد الحلقات)
+    const hasHalaqahCountIntent =
+      normUserMessage.includes("كم حلقة") ||
+      normUserMessage.includes("كم عدد الحلقات") ||
+      normUserMessage.includes("عدد الحلقات") ||
+      normUserMessage.includes("كم الحلقات") ||
+      normUserMessage.includes("الحلقات كم") ||
+      normUserMessage.includes("اسماء الحلقات") ||
+      normUserMessage.includes("أسماء الحلقات") ||
+      normUserMessage.includes("حلقات المجمع");
+
+    // 2.12.5.5c Top Reciters Intent (أكثر الطلاب تسميعاً للأوجه، أعلى الطلاب تسميعاً)
+    const hasTopRecitersIntent =
+      normUserMessage.includes("اكثر الطلاب تسميع") ||
+      normUserMessage.includes("أكثر الطلاب تسميع") ||
+      normUserMessage.includes("اكثر طالب سمع") ||
+      normUserMessage.includes("أكثر طالب سمع") ||
+      normUserMessage.includes("اعلى الطلاب تسميع") ||
+      normUserMessage.includes("أعلى الطلاب تسميع") ||
+      normUserMessage.includes("اكثر الاوجه") ||
+      normUserMessage.includes("أكثر الأوجه") ||
+      normUserMessage.includes("اكثر اوجه") ||
+      normUserMessage.includes("أكثر أوجه") ||
+      normUserMessage.includes("المتصدرين في التسميع") ||
+      normUserMessage.includes("اوائل التسميع") ||
+      normUserMessage.includes("أوائل التسميع") ||
+      normUserMessage.includes("متصدري الحفظ");
+
+    // 2.12.5.5d Colloquial / Frustrated User Intent (خربان، معلق، تكرر نفس الكلام، تستهبل، وش فيك، ايش فيك)
+    const isColloquialOrFrustratedIntent =
+      normUserMessage.includes("خربان") ||
+      normUserMessage.includes("معلق") ||
+      normUserMessage.includes("تكرر") ||
+      normUserMessage.includes("تستهبل") ||
+      normUserMessage.includes("وش فيك") ||
+      normUserMessage.includes("ايش فيك") ||
+      normUserMessage.includes("ايش بك") ||
+      normUserMessage.includes("مالك") ||
+      normUserMessage.includes("نفس الرد") ||
+      normUserMessage.includes("ما تفهم") ||
+      normUserMessage.includes("ركز معي") ||
+      normUserMessage.includes("صلح نفسك") ||
+      normUserMessage.includes("يا ولد");
+
     // 2.12.5.6 Puzzled / Repeating user intent (e.g. "؟؟" or "رد علي" or "وينك" or "ما جاوبتني")
     const isPuzzledOrRepeatIntent =
       normUserMessage === "؟" ||
@@ -5751,12 +5873,13 @@ ${coachingStudentProfile}
       });
 
       // Prioritize developer's configured model, then high-availability models
+      const effectiveReqModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
       const candidateModels = Array.from(new Set([
-        dynamicMasterModel || "gemini-2.5-flash",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-pro",
-        "gemini-flash-latest"
+        effectiveReqModel,
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+        "gemini-4-argon"
       ]));
 
       for (const modelName of candidateModels) {
@@ -5986,6 +6109,21 @@ ${coachingStudentProfile}
         }).join('\n');
 
         geminiReply = `أهلاً بك يا أخي ${firstName} 📊✨\n\nيبلغ **إجمالي عدد الطلاب المقيدين في المنظومة** حالياً **${totalSt} طالباً**${effectiveMatchedComplex ? ` في ${effectiveMatchedComplex.name}` : ''}.\n\n📋 **توزيع الطلاب على الحلقات:**\n${halaqahBreakdown || 'لا توجد حلقات مقسمة بعد'}\n\n• الحاضرون اليوم: ${metrics.presentCount} طالب\n• الغائبون اليوم: ${metrics.absentCount} طالب\n\nتفضل بالاطلاع على كشف الطلاب الموضح أدناه:`;
+      } else if (hasHalaqahCountIntent) {
+        const count = activeComplexHalaqahs.length;
+        const listText = activeComplexHalaqahs.map((h: any, idx: number) => {
+          const stCount = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+          return `${idx + 1}. حلقة **${h.name}** (المعلم: ${h.primaryTeacherName || 'معلم الحلقة'} • عدد الطلاب: ${stCount} طالباً)`;
+        }).join('\n');
+        geminiReply = `أهلاً بك يا أخي ${firstName} 🕌✨\n\nيبلغ **إجمالي عدد الحلقات القرآنية المقيدة بالمنظومة** حالياً **${count} حلقات**${effectiveMatchedComplex ? ` في ${effectiveMatchedComplex.name}` : ''}:\n\n${listText || 'لا توجد حلقات مسجلة بعد'}\n\n• إجمالي الطلاب المقيدين في كافة الحلقات: **${studentsList.length} طالباً**\n• متوسط عدد الطلاب في الحلقة الواحدة: ${count > 0 ? Math.round(studentsList.length / count) : 0} طلاب.\n\nتفضل بمراجعة تفاصيل الحلقات أو إدارة الطلاب عبر الواجهة أدناه:`;
+      } else if (hasTopRecitersIntent && studentRecitationTotals.length > 0) {
+        const top5 = studentRecitationTotals.slice(0, 5);
+        const topText = top5.map((s: any, idx: number) =>
+          `${idx + 1}. 🌟 **${s.name}** (${s.halaqahName} - ${s.level}):\n   • **إجمالي الأوجه المسمعة:** **${s.totalPages} وجهاً** (حفظ جديد: ${s.newPages} وجه، مراجعة وتثبيت: ${s.reviewPages} وجه)\n   • رصيد النقاط: ${s.points} نقطة`
+        ).join('\n\n');
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🏆📖\n\nإليك **ترتيب أوائل الطلاب الأكثر تسميعاً للأوجه القرآنية** (المتصدرون في التسميع والحفظ) في ${complexName}:\n\n${topText}\n\nوقد أعددتُ لك بالأسفل بطاقة الصدارة القرآنية ولوحة الشرف للاطلاع على كامل الترتيب وتكريم المتميزين:`;
+      } else if (isColloquialOrFrustratedIntent) {
+        geminiReply = `حقك علي يا أخي ${firstName} وأعتذر منك أشد الاعتذار عن أي تأخر أو تكرار غير مقصود 🌿\n\nأنا معك الآن بكامل التركيز والانتباه، ومحرك الذكاء الاصطناعي موصول بالمفتاح المعتمد بالمنظومة بنجاح.\n\nبيانات مجمعك الحالية بين يدي:\n• إجمالي الطلاب: **${studentsList.length} طالباً**\n• الحلقات القرآنية: **${activeComplexHalaqahs.length} حلقات**\n• الحضور اليوم: **${metrics.presentCount} حاضر**\n\nتفضل بالسؤال عما ترغب فيه (إحصائيات الطلاب، التسميع، خطط الختم، الحضور، أو أي مشورة تربوية) وسأجيبك فوراً وبكل وضوح!`;
       } else if (isPuzzledOrRepeatIntent && (previousUserNorm || previousUserText)) {
         if (candidateLatestStudent && (previousUserNorm.includes("اخر") || previousUserNorm.includes("آخر") || previousUserNorm.includes("انضم") || previousUserNorm.includes("جديد"))) {
           geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر، وأنا معك بكامل تركيزي واهتمامي!\n\nإجابةً لسؤالك: **آخر طالب انضم إلينا** هو الطالب المبارك **${candidateLatestStudent.name}** في حلقة **${candidateLatestStudent.halaqahName || 'الحلقة'}** (مستواه: ${candidateLatestStudent.level || 'متوسط'}، وموضعه بسورة ${candidateLatestStudent.currentSurahName || 'الفاتحة'}).\n\nوقد أرفقت لك بالأسفل كشف أحدث الطلاب المنضمين للمنظومة تفضل بمراجعته فوراً.`;
@@ -5995,8 +6133,7 @@ ${coachingStudentProfile}
           geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر؛ أنا معك ومتابع لكل كلمة تقولها بكامل الاهتمام. تفضل بطرح ما ترغب في معرفته أو تنفيذه وسأجيبك فوراً وبأدق الأرقام من واقع سجلات المجمع الحية.`;
         }
       } else if (chatHistoryParts.length > 2) {
-        // Multi-turn context fallback: Provide an intelligent, context-aware prompt rather than robotic text
-        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لسياق حديثنا بكل اهتمام. هل تود أن أستعرض لك كشف تسميع وحفظ الطلاب، أو نسب الحضور والغياب، أو إعداد تقرير إحصائي أو رسم بياني للمجمع؟ تفضل بما ترغب وسأنفذه لك فوراً.`;
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لاستفسارك حول "${cleanCurrentMessage || 'بيانات المجمع'}".\n\nإليك ملخص سريع لحالة المجمع الآن:\n• إجمالي الطلاب المقيدين: **${studentsList.length} طالباً** موزعين على **${activeComplexHalaqahs.length} حلقات**.\n• الحضور اليوم: **${metrics.presentCount} حاضر** (نسبة ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%).\n• الأوجه المسمعة اليوم: **${metrics.totalRecitedPagesToday} وجه**.\n\nهل ترغب في استعراض كشف التسميع التفصيلي، كشف الحضور والغياب، أو إحصائية مخصصة لطالب أو حلقة معينة؟ تفضل بتوجيهي وسأنفذه فوراً.`;
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
