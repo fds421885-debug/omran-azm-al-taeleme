@@ -425,8 +425,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
   const isOnlineHalaqahActive = (h?: Halaqah | null): boolean => {
     if (!h) return false;
-    const start = h.onlineStartTime || h.startTime || '00:00';
-    const end = h.onlineEndTime || h.endTime || '23:59';
+    const start = h.onlineStartTime || h.startTime || '16:00';
+    const end = h.onlineEndTime || h.endTime || '20:00';
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -435,11 +435,24 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     const startMinutes = (startH || 0) * 60 + (startM || 0);
     const endMinutes = (endH || 0) * 60 + (endM || 0);
 
+    let isTimeActive = false;
     if (startMinutes <= endMinutes) {
-      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      isTimeActive = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     } else {
-      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+      isTimeActive = currentMinutes >= startMinutes || currentMinutes <= endMinutes;
     }
+
+    if (h.scheduleDays && h.scheduleDays.length > 0) {
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const currentDay = dayNames[now.getDay()];
+      const isDayActive = h.scheduleDays.some(d => {
+        const norm = (d || '').toLowerCase().trim();
+        return norm === currentDay || norm === String(now.getDay());
+      });
+      return isTimeActive && isDayActive;
+    }
+
+    return isTimeActive;
   };
 
   // Audio Recording & Ayah Listening for Students
@@ -825,49 +838,86 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         </div>
 
         {/* ONLINE HALAQAH BANNER FOR STUDENT */}
-        {studentHalaqahObj && studentHalaqahObj.isOnline && studentHalaqahObj.meetingUri && (
-          <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-2 border-[#fbbf24] p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="p-2 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40">
-                    <Video className="w-5 h-5 animate-pulse" />
-                  </span>
-                  <h3 className="text-base sm:text-lg font-black font-heading text-white">
-                    حلقة التسميع عن بُعد (Google Meet)
-                  </h3>
-                  {isOnlineHalaqahActive(studentHalaqahObj) ? (
-                    <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/50 flex items-center gap-1.5 animate-pulse shadow-md">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span>الحلقة نشطة الآن</span>
+        {studentHalaqahObj && studentHalaqahObj.isOnline && studentHalaqahObj.meetingUri && (() => {
+          const isActive = isOnlineHalaqahActive(studentHalaqahObj);
+          const startStr = studentHalaqahObj.onlineStartTime || studentHalaqahObj.startTime || '16:00';
+          const endStr = studentHalaqahObj.onlineEndTime || studentHalaqahObj.endTime || '20:00';
+
+          return (
+            <div
+              className={`relative overflow-hidden rounded-[32px] border-2 p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-4 transition-all ${
+                isActive
+                  ? 'bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-[#fbbf24] ring-2 ring-emerald-400/50'
+                  : 'bg-slate-900/80 border-slate-700 opacity-80'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`p-2 rounded-2xl border ${
+                        isActive
+                          ? 'bg-[#fbbf24]/20 text-[#fbbf24] border-[#fbbf24]/40 animate-pulse'
+                          : 'bg-slate-800 text-slate-500 border-slate-700'
+                      }`}
+                    >
+                      <Video className="w-5 h-5" />
                     </span>
-                  ) : (
-                    <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-400 text-xs font-bold border border-slate-700">
-                      خارج موعد الحلقة
-                    </span>
+                    <h3 className="text-base sm:text-lg font-black font-heading text-white">
+                      حلقة التسميع عن بُعد (Google Meet)
+                    </h3>
+                    {isActive ? (
+                      <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/50 flex items-center gap-1.5 animate-pulse shadow-md">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>الحلقة نشطة الآن (في موعدها)</span>
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-slate-500" />
+                        <span>زر الدخول مغلق (خارج وقت الحلقة)</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-200">
+                    حلقة: <strong className="text-[#fbbf24]">{studentHalaqahObj.name}</strong> • الموعد: {startStr} إلى {endStr}
+                  </p>
+                  {!isActive && (
+                    <p className="text-[11px] text-amber-300 font-bold">
+                      ⚠️ الدخول مغلق حالياً • يُسمح للطلاب بالانضمام حصرياً خلال فترة موعد الحلقة ({startStr} - {endStr}).
+                    </p>
                   )}
                 </div>
-                <p className="text-xs text-slate-200">
-                  حلقة: <strong className="text-[#fbbf24]">{studentHalaqahObj.name}</strong> • الموعد: {studentHalaqahObj.onlineStartTime || studentHalaqahObj.startTime || '16:00'} إلى {studentHalaqahObj.onlineEndTime || studentHalaqahObj.endTime || '20:00'}
-                </p>
-              </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.open(studentHalaqahObj.meetingUri, '_blank', 'noopener,noreferrer');
-                  }}
-                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#d97706] text-[#064e3b] font-black text-xs flex items-center gap-2 shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>دخول حلقة Google Meet الآن</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {isActive ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isOnlineHalaqahActive(studentHalaqahObj)) return;
+                        window.open(studentHalaqahObj.meetingUri, '_blank', 'noopener,noreferrer');
+                      }}
+                      className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#d97706] text-[#064e3b] font-black text-xs flex items-center gap-2 shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>دخول حلقة Google Meet الآن 🚀</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="px-6 py-3 rounded-2xl bg-slate-800/90 border border-slate-700 text-slate-500 font-bold text-xs flex items-center gap-2 cursor-not-allowed opacity-50 shadow-none"
+                      title="زر الدخول لا يعمل حالياً لعدم تواجده في وقت الحلقة المجدول"
+                    >
+                      <Video className="w-4 h-4 opacity-40" />
+                      <span>زر الدخول مغلق (خارج وقت الحلقة)</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* QURAN EXAMS & QUIZZES SECTION FOR STUDENTS */}
         <div className="bg-[#064e3b]/60 border border-[#fbbf24]/40 rounded-[32px] p-6 sm:p-8 space-y-4 shadow-xl backdrop-blur-md">

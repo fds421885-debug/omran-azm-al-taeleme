@@ -82,8 +82,8 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
 
   // Check if current time falls within halaqah scheduled start and end times
   const isHalaqahTimeActive = (h: Halaqah): boolean => {
-    const start = h.onlineStartTime || h.startTime || '00:00';
-    const end = h.onlineEndTime || h.endTime || '23:59';
+    const start = h.onlineStartTime || h.startTime || '16:00';
+    const end = h.onlineEndTime || h.endTime || '20:00';
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -92,11 +92,24 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
     const startMinutes = (startH || 0) * 60 + (startM || 0);
     const endMinutes = (endH || 0) * 60 + (endM || 0);
 
+    let isTimeActive = false;
     if (startMinutes <= endMinutes) {
-      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+      isTimeActive = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     } else {
-      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+      isTimeActive = currentMinutes >= startMinutes || currentMinutes <= endMinutes;
     }
+
+    if (h.scheduleDays && h.scheduleDays.length > 0) {
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const currentDay = dayNames[now.getDay()];
+      const isDayActive = h.scheduleDays.some(d => {
+        const norm = (d || '').toLowerCase().trim();
+        return norm === currentDay || norm === String(now.getDay());
+      });
+      return isTimeActive && isDayActive;
+    }
+
+    return isTimeActive;
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -376,6 +389,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                           <button
                             type="button"
                             onClick={() => {
+                              if (!isHalaqahTimeActive(h)) return;
                               window.open(h.meetingUri, '_blank', 'noopener,noreferrer');
                             }}
                             className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px] cursor-pointer"
