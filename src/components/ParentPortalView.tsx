@@ -31,6 +31,7 @@ import {
   Printer,
   Download,
   Search,
+  Video,
   X
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
@@ -420,6 +421,32 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const studentHalaqahObj = halaqahs?.find(h => h.id === student.halaqahId);
   const currentHalaqahTitle = student.halaqahName || studentHalaqahObj?.name || 'حلقتك القرآنية';
 
+  // Online Halaqah Meeting Join Flow for Student
+  const [onlineJoinModal, setOnlineJoinModal] = useState<{
+    halaqah: Halaqah;
+    displayName: string;
+  } | null>(null);
+  const [copiedStudentName, setCopiedStudentName] = useState(false);
+
+  const isOnlineHalaqahActive = (h?: Halaqah | null): boolean => {
+    if (!h) return false;
+    const start = h.onlineStartTime || h.startTime || '00:00';
+    const end = h.onlineEndTime || h.endTime || '23:59';
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    const startMinutes = (startH || 0) * 60 + (startM || 0);
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  };
+
   // Audio Recording & Ayah Listening for Students
   const [selectedRecordingId, setSelectedRecordingId] = useState<string>('');
   const [activePortalAyah, setActivePortalAyah] = useState<SurahRecordingSegment | null>(null);
@@ -801,6 +828,82 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* ONLINE HALAQAH BANNER FOR STUDENT */}
+        {studentHalaqahObj && studentHalaqahObj.isOnline && studentHalaqahObj.meetingUri && (
+          <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-2 border-[#fbbf24] p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="p-2 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40">
+                    <Video className="w-5 h-5 animate-pulse" />
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black font-heading text-white">
+                    حلقة التسميع عن بُعد (Google Meet)
+                  </h3>
+                  {isOnlineHalaqahActive(studentHalaqahObj) ? (
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/50 flex items-center gap-1.5 animate-pulse shadow-md">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span>الحلقة نشطة الآن</span>
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-400 text-xs font-bold border border-slate-700">
+                      خارج موعد الحلقة
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-200">
+                  حلقة: <strong className="text-[#fbbf24]">{studentHalaqahObj.name}</strong> • الموعد: {studentHalaqahObj.onlineStartTime || studentHalaqahObj.startTime || '16:00'} إلى {studentHalaqahObj.onlineEndTime || studentHalaqahObj.endTime || '20:00'}
+                </p>
+                <div className="flex items-center gap-2 text-xs text-[#86efac]">
+                  <span>اسمك المعتمد للدخول:</span>
+                  <strong className="text-white bg-black/30 px-2.5 py-0.5 rounded-lg border border-white/10 font-bold">{currentStudent.name}</strong>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentStudent.name).catch(() => {});
+                      setCopiedStudentName(true);
+                      setTimeout(() => setCopiedStudentName(false), 2500);
+                    }}
+                    className="p-1 px-2 rounded-lg bg-white/10 hover:bg-white/20 text-[#fbbf24] text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                    title="نسخ اسمك المعتمد في المنصة للحافظة"
+                  >
+                    {copiedStudentName ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">تم النسخ ✓</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>نسخ الاسم</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const formatted = `الطالب: ${currentStudent.name}`;
+                    navigator.clipboard.writeText(formatted).catch(() => {});
+                    setOnlineJoinModal({
+                      halaqah: studentHalaqahObj,
+                      displayName: formatted
+                    });
+                  }}
+                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#d97706] text-[#064e3b] font-black text-xs flex items-center gap-2 shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>الانضمام بالاسم المعتمد في Google Meet</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* QURAN EXAMS & QUIZZES SECTION FOR STUDENTS */}
         <div className="bg-[#064e3b]/60 border border-[#fbbf24]/40 rounded-[32px] p-6 sm:p-8 space-y-4 shadow-xl backdrop-blur-md">
@@ -2245,6 +2348,134 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   className="px-4 py-2 rounded-xl bg-[#064e3b] text-emerald-200 font-bold text-xs hover:text-white cursor-pointer"
                 >
                   إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Student Online Halaqah Join Modal */}
+        {onlineJoinModal && (
+          <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto" dir="rtl">
+            <div className="w-full max-w-lg p-6 sm:p-7 rounded-[32px] bg-[#022c22] border-2 border-[#fbbf24] shadow-2xl space-y-5 relative">
+              <div className="flex items-start justify-between pb-3 border-b border-[#065f46]">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40">
+                      <Video className="w-5 h-5" />
+                    </span>
+                    <h3 className="text-lg font-black text-white font-heading">
+                      الانضمام إلى Google Meet بالاسم المعتمد
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-300 font-bold">
+                    حلقة: <span className="text-[#fbbf24]">{onlineJoinModal.halaqah.name}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setOnlineJoinModal(null)}
+                  className="p-2 rounded-xl bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <p className="font-black">تم نسخ اسمك المعتمد تلقائياً للحافظة (Clipboard) ✓</p>
+                  <p className="text-[11px] text-emerald-200/90 font-normal mt-0.5">
+                    الصقه في Google Meet ليتمكن الشيخ والمعلم من التعرف عليك وتوثيق حضورك.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-200">
+                  اسم الطالب الذي سيظهر في Google Meet:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={onlineJoinModal.displayName}
+                    onChange={e => setOnlineJoinModal({ ...onlineJoinModal, displayName: e.target.value })}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-black/40 border-2 border-[#fbbf24]/60 text-[#fbbf24] text-sm font-black focus:outline-none focus:border-[#fbbf24] text-right"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(onlineJoinModal.displayName).catch(() => {});
+                      setCopiedStudentName(true);
+                      setTimeout(() => setCopiedStudentName(false), 2500);
+                    }}
+                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-white/10 hover:bg-white/20 text-white flex items-center gap-1.5 cursor-pointer shrink-0 border border-white/20 transition-all"
+                  >
+                    <Copy className="w-4 h-4 text-[#fbbf24]" />
+                    <span>{copiedStudentName ? 'تم النسخ ✓' : 'نسخ مجدداً'}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 flex-wrap text-[11px]">
+                  <span className="text-slate-400 font-bold">تنسيق:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOnlineJoinModal({ ...onlineJoinModal, displayName: currentStudent.name });
+                      navigator.clipboard.writeText(currentStudent.name).catch(() => {});
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 text-slate-300 border border-white/10 cursor-pointer font-bold"
+                  >
+                    الاسم فقط
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fmt = `الطالب: ${currentStudent.name}`;
+                      setOnlineJoinModal({ ...onlineJoinModal, displayName: fmt });
+                      navigator.clipboard.writeText(fmt).catch(() => {});
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 text-slate-300 border border-white/10 cursor-pointer font-bold"
+                  >
+                    الطالب: {currentStudent.name}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-black/30 border border-white/10 space-y-2 text-xs text-slate-300">
+                <div className="flex items-center gap-2 text-[#fbbf24] font-black">
+                  <Sparkles className="w-4 h-4" />
+                  <span>كيف تضبط اسمك داخل Google Meet؟</span>
+                </div>
+                <ul className="space-y-1.5 list-disc list-inside text-[11px] leading-relaxed text-slate-300">
+                  <li>
+                    <strong className="text-white">إذا دخلت من متصفح كضيف:</strong> سيطلب منك كتابة اسمك؛ اضغط <span className="text-emerald-300 font-bold">لصق (Paste / Ctrl+V)</span>.
+                  </li>
+                  <li>
+                    <strong className="text-white">إذا دخلت بحساب Google مسجل:</strong> اضغط على اسمك في شاشة الانتظار أو الصق اسمك في دردشة الاجتماع فور الدخول ليعرفك الشيخ.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#065f46]">
+                <button
+                  type="button"
+                  onClick={() => setOnlineJoinModal(null)}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 text-slate-300 font-bold text-xs hover:bg-white/20 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(onlineJoinModal.displayName).catch(() => {});
+                    window.open(onlineJoinModal.halaqah.meetingUri, '_blank', 'noopener,noreferrer');
+                    setOnlineJoinModal(null);
+                  }}
+                  className="flex-1 py-3 px-5 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#d97706] text-[#064e3b] font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 hover:brightness-110 active:translate-y-[2px] transition-all"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>فتح Google Meet بالاسم المنسوخ الآن 🚀</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

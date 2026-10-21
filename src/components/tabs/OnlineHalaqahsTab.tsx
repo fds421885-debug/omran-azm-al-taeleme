@@ -13,7 +13,10 @@ import {
   Layers,
   Building2,
   ShieldAlert,
-  X
+  X,
+  Copy,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { Halaqah, TeacherAccount, QuranComplex, Student } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
@@ -48,6 +51,12 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
   const [editingHalaqah, setEditingHalaqah] = useState<Halaqah | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [joiningHalaqah, setJoiningHalaqah] = useState<{
+    halaqah: Halaqah;
+    name: string;
+    copied: boolean;
+  } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
   const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
@@ -275,17 +284,23 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
 
                       <div className="flex items-center gap-2">
                         {isActiveTime ? (
-                          <a
-                            href={h.meetingUri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => {
-                              const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
-                              navigator.clipboard.writeText(userName).catch(() => {});
-                              setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة.`);
-                              setTimeout(() => setSuccessMessage(null), 4000);
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rawName = currentUser?.name || currentTeacher?.name || currentUser?.username || 'مستخدم المنصة';
+                              const rolePrefix = isDeveloper ? 'المطور' : isSupervisor ? 'المشرف' : currentTeacher ? 'المعلم' : '';
+                              const suggestedName = rolePrefix ? `${rolePrefix}: ${rawName}` : rawName;
+
+                              // Automatically copy name to clipboard immediately
+                              navigator.clipboard.writeText(suggestedName).catch(() => {});
+
+                              setJoiningHalaqah({
+                                halaqah: h,
+                                name: suggestedName,
+                                copied: true
+                              });
                             }}
-                            className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
+                            className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px] cursor-pointer"
                             style={{
                               backgroundColor: themeAccent,
                               color: themePrimary,
@@ -294,9 +309,9 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                             }}
                           >
                             <Video className="w-4 h-4" />
-                            <span>الانضمام للحلقة (رابط الاجتماع المعتمد)</span>
+                            <span>الانضمام بالاسم المعتمد في Google Meet</span>
                             <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
+                          </button>
                         ) : (
                           <button
                             type="button"
@@ -311,9 +326,38 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between pt-1">
-                        <span className="text-[11px] text-slate-300 font-bold">
-                          اسم الدخول: <span className="text-amber-300">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
-                        </span>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-300 font-bold">
+                          <span>اسم الدخول:</span>
+                          <span className="text-amber-300 font-black">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
+                              navigator.clipboard.writeText(userName).catch(() => {});
+                              setCopiedId(h.id);
+                              setSuccessMessage(`تم نسخ اسمك المعتمد ("${userName}") للحافظة.`);
+                              setTimeout(() => {
+                                setCopiedId(null);
+                                setSuccessMessage(null);
+                              }, 3000);
+                            }}
+                            className="p-1 px-2 rounded-lg bg-white/10 hover:bg-white/20 text-amber-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                            title="نسخ اسمك المعتمد في المنصة للحافظة"
+                          >
+                            {copiedId === h.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                <span className="text-emerald-400">تم النسخ ✓</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>نسخ الاسم</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -341,6 +385,170 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Joining Halaqah Modal - Guarantees User Platform Name inside Google Meet */}
+      {joiningHalaqah && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="w-full max-w-lg p-6 sm:p-7 rounded-3xl border-2 border-b-4 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto"
+            style={{
+              backgroundColor: themeSecondary,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-white/10">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                    <Video className="w-5 h-5" />
+                  </span>
+                  <h3 className="text-lg font-black text-white font-heading">
+                    الانضمام إلى Google Meet بالاسم المعتمد
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-300 font-bold">
+                  حلقة: <span className="text-amber-300">{joiningHalaqah.halaqah.name}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setJoiningHalaqah(null)}
+                className="p-2 rounded-xl bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Success alert: copied to clipboard */}
+            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div>
+                <p className="font-black">تم نسخ اسمك المعتمد تلقائياً إلى الحافظة (Clipboard) ✓</p>
+                <p className="text-[11px] text-emerald-200/90 font-normal mt-0.5">
+                  الصقه مباشرة في Google Meet ليظهر اسمك المعتمد في المنصة.
+                </p>
+              </div>
+            </div>
+
+            {/* Name Input & Copy Field */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-200">
+                اسمك الذي سيظهر داخل الاجتماع:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={joiningHalaqah.name}
+                  onChange={e => setJoiningHalaqah({ ...joiningHalaqah, name: e.target.value })}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-black/40 border-2 border-amber-400/60 text-amber-200 text-sm font-black focus:outline-none focus:border-amber-400 text-right"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(joiningHalaqah.name).catch(() => {});
+                    setJoiningHalaqah({ ...joiningHalaqah, copied: true });
+                    setSuccessMessage(`تم نسخ "${joiningHalaqah.name}" للحافظة ✓`);
+                    setTimeout(() => setSuccessMessage(null), 3000);
+                  }}
+                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-white/10 hover:bg-white/20 text-white flex items-center gap-1.5 cursor-pointer shrink-0 border border-white/20 transition-all"
+                >
+                  <Copy className="w-4 h-4 text-amber-300" />
+                  <span>نسخ مجدداً</span>
+                </button>
+              </div>
+
+              {/* Quick Format Pills */}
+              <div className="flex items-center gap-2 pt-1 flex-wrap text-[11px]">
+                <span className="text-slate-400 font-bold">تنسيق سريع:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = currentUser?.name || currentTeacher?.name || currentUser?.username || 'المستخدم';
+                    setJoiningHalaqah({ ...joiningHalaqah, name: raw });
+                    navigator.clipboard.writeText(raw).catch(() => {});
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 text-slate-300 border border-white/10 cursor-pointer font-bold"
+                >
+                  الاسم فقط
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = currentUser?.name || currentTeacher?.name || currentUser?.username || 'المستخدم';
+                    const formatted = `المعلم: ${raw}`;
+                    setJoiningHalaqah({ ...joiningHalaqah, name: formatted });
+                    navigator.clipboard.writeText(formatted).catch(() => {});
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 text-slate-300 border border-white/10 cursor-pointer font-bold"
+                >
+                  المعلم: ...
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = currentUser?.name || currentTeacher?.name || currentUser?.username || 'المستخدم';
+                    const formatted = `المشرف: ${raw}`;
+                    setJoiningHalaqah({ ...joiningHalaqah, name: formatted });
+                    navigator.clipboard.writeText(formatted).catch(() => {});
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 text-slate-300 border border-white/10 cursor-pointer font-bold"
+                >
+                  المشرف: ...
+                </button>
+              </div>
+            </div>
+
+            {/* Google Meet Display Guide */}
+            <div className="p-4 rounded-2xl bg-black/30 border border-white/10 space-y-2.5 text-xs text-slate-300">
+              <div className="flex items-center gap-2 text-amber-400 font-black">
+                <Sparkles className="w-4 h-4" />
+                <span>كيف تضمن ظهور اسمك المعتمد داخل Google Meet؟</span>
+              </div>
+              <ul className="space-y-2 list-disc list-inside text-[11px] leading-relaxed text-slate-300">
+                <li>
+                  <strong className="text-white">عند الدخول كـ ضيف أو نافذة خاصة:</strong> يطلب منك Google Meet مباشرة <span className="text-amber-300">"ما هو اسمك؟"</span>؛ فقط قم بعمل <span className="text-emerald-300 font-bold">لصق (Paste / Ctrl+V)</span>.
+                </li>
+                <li>
+                  <strong className="text-white">عند الدخول بحساب Google الشخصي:</strong> في شاشة الاستعداد قبل الضغط على "طلب الانضمام"، اضغط على اسمك لتعديله، أو الصق اسمك المعتمد في محادثة الاجتماع (Chat) فور دخولك لتوثيق حضورك في المنظومة.
+                </li>
+              </ul>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setJoiningHalaqah(null)}
+                className="px-4 py-2.5 rounded-xl bg-white/10 text-slate-300 font-bold text-xs hover:bg-white/20 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(joiningHalaqah.name).catch(() => {});
+                  window.open(joiningHalaqah.halaqah.meetingUri, '_blank', 'noopener,noreferrer');
+                  setJoiningHalaqah(null);
+                  setSuccessMessage(`تم نسخ اسمك المعتمد ("${joiningHalaqah.name}") وفتح Google Meet الآن ✓`);
+                  setTimeout(() => setSuccessMessage(null), 5000);
+                }}
+                className="flex-1 py-3 px-5 rounded-xl font-black text-xs cursor-pointer shadow-xl flex items-center justify-center gap-2 hover:brightness-110 active:translate-y-[2px] transition-all"
+                style={{
+                  backgroundColor: themeAccent,
+                  color: themePrimary,
+                  border: `2px solid ${themeAccent}`,
+                  borderBottom: `4px solid ${themeAccentShadow}`
+                }}
+              >
+                <Video className="w-4 h-4" />
+                <span>فتح Google Meet بالاسم المنسوخ الآن 🚀</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
