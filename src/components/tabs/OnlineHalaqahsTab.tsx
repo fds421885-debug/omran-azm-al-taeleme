@@ -51,6 +51,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
   const [editingHalaqah, setEditingHalaqah] = useState<Halaqah | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isWaitingForDirectMeet, setIsWaitingForDirectMeet] = useState<boolean>(false);
   const [joiningHalaqah, setJoiningHalaqah] = useState<{
     halaqah: Halaqah;
     name: string;
@@ -115,6 +116,99 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
       setErrorMessage(err?.message || 'حدث خطأ أثناء حفظ التعديلات سحابياً.');
     }
   };
+
+  const extractMeetUrlAndCode = (rawText: string): { url: string; code: string } | null => {
+    if (!rawText) return null;
+    const clean = rawText.trim();
+    // Match meet.google.com/xxx-yyyy-zzz
+    const meetMatch = clean.match(/(?:https?:\/\/)?meet\.google\.com\/([a-z0-9-]+)/i);
+    if (meetMatch && meetMatch[1]) {
+      const code = meetMatch[1].split('?')[0].trim();
+      return { url: `https://meet.google.com/${code}`, code };
+    }
+    // Match xxx-yyyy-zzz raw code
+    const codeMatch = clean.match(/^([a-z]{3}-[a-z]{4}-[a-z]{3})$/i);
+    if (codeMatch && codeMatch[1]) {
+      const code = codeMatch[1].trim();
+      return { url: `https://meet.google.com/${code}`, code };
+    }
+    // Generic URL (Zoom / Teams / etc.)
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      return { url: clean, code: clean.split('/').pop()?.split('?')[0] || '' };
+    }
+    return null;
+  };
+
+  const applyRealMeetUrl = async (rawUrl: string) => {
+    if (!editingHalaqah) return;
+    const extracted = extractMeetUrlAndCode(rawUrl);
+    if (!extracted) {
+      setErrorMessage('الرابط الملتقط غير صالح. يرجى التأكد من نسخ رابط Google Meet الحقيقي (مثال: meet.google.com/abc-defg-hij).');
+      return;
+    }
+
+    try {
+      const updatedHalaqahObj: Halaqah = {
+        ...editingHalaqah,
+        isOnline: true,
+        meetingUri: extracted.url,
+        meetingCode: extracted.code,
+        meetingCreatedAt: new Date().toISOString(),
+        meetingCreatedBy: currentUser?.email || currentTeacher?.name || 'المشرف/المعلم',
+        updatedAt: new Date().toISOString()
+      };
+
+      setEditingHalaqah(updatedHalaqahObj);
+      await onUpdateHalaqah(updatedHalaqahObj);
+      setIsWaitingForDirectMeet(false);
+      setErrorMessage(null);
+      setSuccessMessage(`✓ تم بنجاح التقاط رابط Google Meet الأصلي والحقيقي وحفظه سحابياً: ${extracted.url}`);
+      setTimeout(() => setSuccessMessage(null), 6000);
+    } catch (err: any) {
+      console.error('Error applying real meet url:', err);
+      setErrorMessage(err?.message || 'تعذر حفظ الرابط سحابياً.');
+    }
+  };
+
+  const handleCaptureFromClipboard = async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        const manual = window.prompt('الصق رابط Google Meet المنسوخ هنا:');
+        if (manual) await applyRealMeetUrl(manual);
+        return;
+      }
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        setErrorMessage('الحافظة فارغة حالياً. قم بنسخ رابط الاجتماع من Google Meet أولاً ثم اضغط التقاط.');
+        return;
+      }
+      await applyRealMeetUrl(text.trim());
+    } catch (e: any) {
+      const manual = window.prompt('يرجى لصق رابط Google Meet المنسوخ هنا:');
+      if (manual) await applyRealMeetUrl(manual);
+    }
+  };
+
+  // Auto-listen for window focus to capture copied Google Meet link upon returning from meet.google.com/new
+  React.useEffect(() => {
+    if (!isWaitingForDirectMeet || !editingHalaqah) return;
+
+    const onFocus = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText();
+          if (text && (text.includes('meet.google.com/') || /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i.test(text.trim()))) {
+            await applyRealMeetUrl(text);
+          }
+        }
+      } catch (e) {
+        // clipboard read may require user gesture in some browsers, covered by manual capture button
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isWaitingForDirectMeet, editingHalaqah]);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -606,10 +700,12 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                 </div>
               </div>
 
-               <div>
-                <label className="block text-xs font-black text-slate-300 mb-1">رابط الاجتماع (Google Meet / Zoom / Microsoft Teams)</label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
+              <div>
+                <label className="block text-xs font-black text-slate-300 mb-1">
+                  رابط الاجتماع (Google Meet الأصلي المعتمد)
+                </label>
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="url"
                       value={editingHalaqah.meetingUri || ''}
@@ -617,117 +713,138 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       placeholder="https://meet.google.com/abc-defg-hij"
                       className="flex-1 px-4 py-2.5 rounded-xl bg-black/30 border border-white/20 text-white text-xs font-bold focus:outline-none focus:border-amber-400 ltr text-left"
                     />
+
+                    {/* Direct Real Google Meet Button */}
                     <button
                       type="button"
-                      disabled={(editingHalaqah as any).isGeneratingMeetingLink}
-                      onClick={async () => {
-                        setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: true }) : null);
+                      onClick={() => {
+                        setIsWaitingForDirectMeet(true);
                         setErrorMessage(null);
-                        setSuccessMessage('جاري فتح نافذة حساب Google لاختيار الحساب ومنح الصلاحيات...');
-
-                        let accessToken: string | undefined = undefined;
-                        let accountEmail: string | undefined = undefined;
-
-                        try {
-                          const tokenResult = await getGoogleMeetAccessToken();
-                          accessToken = typeof tokenResult === 'string' ? tokenResult : (tokenResult as any)?.accessToken;
-                          accountEmail = typeof tokenResult === 'object' ? (tokenResult as any)?.email : undefined;
-                        } catch (err: any) {
-                          console.warn('GIS sign in notice (continuing with guaranteed room generator):', err);
-                        }
-
-                        setSuccessMessage('✓ جاري تجهيز واعتماد رابط Google Meet وتعبئته وحفظه سحابياً في Firestore... ⏳');
-
-                        try {
-                          // Call OmranDataService.createHalaqahMeeting
-                          const result = await OmranDataService.createHalaqahMeeting(editingHalaqah.id, {
-                            accessToken,
-                            halaqahName: editingHalaqah.name,
-                            accountEmail: accountEmail || currentUser?.email || currentTeacher?.name
-                          });
-
-                          // Guaranteed: result.meetingUri is ALWAYS populated!
-                          const finalUri = result.meetingUri || (result.halaqah && result.halaqah.meetingUri);
-                          const finalCode = result.meetingCode || (result.halaqah && result.halaqah.meetingCode);
-
-                          if (finalUri) {
-                            const updatedHalaqahObj: Halaqah = {
-                              ...editingHalaqah,
-                              ...(result.halaqah || {}),
-                              isOnline: true,
-                              meetingUri: finalUri,
-                              meetingCode: finalCode,
-                              updatedAt: new Date().toISOString()
-                            };
-
-                            // 1. Immediately update modal state so the input field displays the link!
-                            setEditingHalaqah({
-                              ...updatedHalaqahObj,
-                              isGeneratingMeetingLink: false
-                            } as any);
-
-                            // 2. Propagate to parent state in App.tsx and Firestore
-                            await onUpdateHalaqah(updatedHalaqahObj);
-
-                            setSuccessMessage(`تم إنشاء رابط Google Meet وتعبئته في الحقل بنجاح: ${finalUri} ✓`);
-                            setTimeout(() => setSuccessMessage(null), 6000);
-                          } else {
-                            setErrorMessage('حدث تعذر أثناء تجهيز الرابط. يرجى المحاولة مرة أخرى.');
-                            setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: false }) : null);
-                          }
-                        } catch (err: any) {
-                          console.error('Error generating meeting:', err);
-                          setErrorMessage(err?.message || 'حدث خطأ أثناء حفظ رابط الاجتماع.');
-                          setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: false }) : null);
-                        }
+                        setSuccessMessage('تم فتح نافذة Google Meet لإنشاء اجتماع حقيقي بحسابك... انسخ الرابط من هناك وسنلتقطه فوراً!');
+                        window.open('https://meet.google.com/new', '_blank');
                       }}
-                      className="px-4 py-2.5 rounded-xl font-black text-xs bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-[#064e3b] shadow-md flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
+                      className="px-4 py-2.5 rounded-xl font-black text-xs bg-amber-400 hover:bg-amber-300 text-[#064e3b] shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      title="فتح صفحة إنشاء اجتماع حقيقي ومسجل على خوادم Google Meet فوراً"
                     >
-                      {(editingHalaqah as any).isGeneratingMeetingLink ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin text-[#064e3b]" />
-                          <span>جارٍ الإنشاء والتعبئة في الحقل... ⏳</span>
-                        </>
-                      ) : (
-                        <>
-                          <Video className="w-4 h-4" />
-                          <span>تسجيل الدخول وإنشاء اجتماع تلقائي</span>
-                        </>
-                      )}
+                      <Video className="w-4 h-4" />
+                      <span>إنشاء اجتماع حقيقي (Google Meet المباشر) 🚀</span>
                     </button>
                   </div>
 
-                  {/* Quick Helper Actions */}
+                  {/* Active Waiting & Smart Clipboard Capture Card */}
+                  {isWaitingForDirectMeet && (
+                    <div className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-400 shadow-xl space-y-3 animate-pulse">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-amber-300 font-black text-xs">
+                          <RefreshCw className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+                          <span>بانتظار رابط الاجتماع الحقيقي من Google Meet...</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsWaitingForDirectMeet(false)}
+                          className="text-[10px] text-slate-400 hover:text-white px-2 py-0.5 rounded bg-black/40"
+                        >
+                          إلغاء الانتظار
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed font-bold">
+                        فتحنا لك صفحة Google Meet الأصلية في نافذة أخرى؛ اضغط زر <strong>"نسخ الرابط"</strong> داخل صفحة Google Meet، وبمجرد رجوعك هنا سيتم التقاط الرابط وتعبئته وحفظه سحابياً تلقائياً!
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCaptureFromClipboard}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow cursor-pointer transition-all active:scale-95"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>📋 اضغط لالتقاط الرابط من الحافظة وحفظه سحابياً الآن</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = window.prompt('الصق رابط Google Meet هنا:');
+                            if (link) applyRealMeetUrl(link);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-black/40 hover:bg-black/60 border border-white/20 text-slate-200 font-bold text-xs cursor-pointer"
+                        >
+                          لصق يدوي للرابط
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick Helper Actions & Verification */}
                   <div className="flex items-center justify-between gap-2 pt-1 flex-wrap text-[11px]">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleCaptureFromClipboard}
+                        className="text-amber-300 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                        title="التقاط الرابط المنسوخ من الحافظة"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>التقاط من الحافظة (Clipboard)</span>
+                      </button>
+
+                      <span className="text-slate-600">•</span>
+
                       <a
                         href="https://meet.google.com/new"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-amber-300 hover:underline flex items-center gap-1 font-bold"
-                        title="فتح Google Meet لإنشاء غرفة جديدة بحسابك ونسخ رابطها"
+                        className="text-slate-300 hover:underline flex items-center gap-1 font-bold"
+                        title="فتح Google Meet مباشرة لإنشاء غرفة بحسابك"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>فتح صفحة إنشاء اجتماع في Google Meet مباشرة</span>
+                        <span>فتح صفحة إنشاء اجتماع في Google Meet</span>
                       </a>
                     </div>
+
                     {editingHalaqah.meetingUri && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(editingHalaqah.meetingUri || '').catch(() => {});
-                          setSuccessMessage('تم نسخ رابط الاجتماع للحافظة ✓');
-                          setTimeout(() => setSuccessMessage(null), 2500);
-                        }}
-                        className="text-emerald-300 hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>نسخ الرابط الحالي</span>
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <a
+                          href={editingHalaqah.meetingUri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-400 hover:underline flex items-center gap-1 font-black cursor-pointer"
+                          title="اختبار الرابط والتأكد من عمله 100%"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>اختبار الرابط الآن ✓</span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(editingHalaqah.meetingUri || '').catch(() => {});
+                            setSuccessMessage('تم نسخ رابط الاجتماع للحافظة ✓');
+                            setTimeout(() => setSuccessMessage(null), 2500);
+                          }}
+                          className="text-amber-300 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>نسخ الرابط</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingHalaqah({ ...editingHalaqah, meetingUri: '', meetingCode: '' });
+                          }}
+                          className="text-red-400 hover:underline text-[10px] font-bold cursor-pointer"
+                          title="مسح الرابط لإنشاء رابط جديد"
+                        >
+                          مسح
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-400">
-                    عند الضغط على "تسجيل الدخول وإنشاء اجتماع تلقائي"، ستظهر لك نافذة اختيار حساب Google؛ وبعد إتمامها يظهر الرابط فوراً وبشكل تلقائي داخل خانة الرابط أعلاه ويتم حفظه سحابياً.
+
+                  <p className="text-[10px] text-slate-400 leading-normal">
+                    💡 <strong>طريقة العمل الأصلية:</strong> بالضغط على الزر، يُفتح لك Google Meet بحسابك الحقيقي لإنشاء غرفة معتمدة على خوادم Google، وعند نسخك للرابط ورجوعك يتم التقاطه تلقائياً وتعبئته في الحقل وحفظه في السحابة.
                   </p>
                 </div>
               </div>

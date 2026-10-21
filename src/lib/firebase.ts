@@ -3787,18 +3787,12 @@ export class OmranDataService {
         }
       }
 
-      // Fallback: If Google Cloud API is restricted or disabled, generate a 100% compliant Google Meet code [a-z]{3}-[a-z]{4}-[a-z]{3}
+      // Require genuine meeting URI: do NOT generate fake synthetic codes
       if (!realUri) {
-        const alphabet = 'abcdefghijklmnopqrstuvwxyz';
-        const getLetters = (len: number) => {
-          let s = '';
-          for (let i = 0; i < len; i++) {
-            s += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
-          }
-          return s;
+        return {
+          success: false,
+          message: 'تعذر إنشاء الاجتماع عبر واجهة برمجة Google مباشرة. يرجى استخدام زر إنشاء اجتماع Google Meet المباشر (meet.google.com/new) لضمان تسجيل الغرفة على خوادم Google الحقيقية.'
         };
-        realCode = `${getLetters(3)}-${getLetters(4)}-${getLetters(3)}`;
-        realUri = `https://meet.google.com/${realCode}`;
       }
 
       if (!realCode && realUri.includes('meet.google.com/')) {

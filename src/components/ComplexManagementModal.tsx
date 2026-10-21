@@ -1338,7 +1338,18 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] text-emerald-200 font-bold mb-1">رابط Google Meet المباشر:</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] text-emerald-200 font-bold">رابط Google Meet المباشر:</label>
+                        <a
+                          href="https://meet.google.com/new"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-amber-300 hover:underline font-bold flex items-center gap-1"
+                          title="فتح صفحة إنشاء اجتماع في Google Meet مباشرة"
+                        >
+                          إنشاء في Google Meet مباشرة ↗
+                        </a>
+                      </div>
                       <input
                         type="url"
                         placeholder="https://meet.google.com/abc-defg-hij"

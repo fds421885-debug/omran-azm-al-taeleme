@@ -132,24 +132,11 @@ export async function createRealGoogleMeetMeeting(
       console.warn('Calendar Conference API returned error, applying guaranteed Google Meet fallback:', calRes.status, errText);
     }
   } catch (err) {
-    console.warn('Google Calendar API fetch error, applying guaranteed Google Meet fallback:', err);
+    console.warn('Google Calendar API fetch error:', err);
   }
 
-  // Guaranteed Fallback: 10 strictly alphabetic lowercase letters matching Google Meet standard syntax [a-z]{3}-[a-z]{4}-[a-z]{3}
-  const letters = 'abcdefghijklmnopqrstuvwxyz';
-  const getRand = (len: number) => {
-    let s = '';
-    for (let i = 0; i < len; i++) {
-      s += letters.charAt(Math.floor(Math.random() * letters.length));
-    }
-    return s;
-  };
-  const code = `${getRand(3)}-${getRand(4)}-${getRand(3)}`;
-  return {
-    meetingUri: `https://meet.google.com/${code}`,
-    meetingCode: code,
-    spaceName: 'omran-meeting'
-  };
+  // If Google REST APIs are restricted on the project, return null so UI uses the direct Google Meet creator (meet.google.com/new)
+  return null;
 }
 
 export async function createGoogleMeetSpace(accessToken: string, halaqahName?: string): Promise<{ meetingUri: string; meetingCode: string; spaceName: string } | null> {
