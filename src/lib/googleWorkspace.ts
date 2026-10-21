@@ -19,10 +19,33 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/meetings.space.created',
   'https://www.googleapis.com/auth/meetings.space.readonly',
-  'https://www.googleapis.com/auth/meetings.space.settings'
+  'https://www.googleapis.com/auth/meetings.space.settings',
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events'
 ];
 
-export async function createGoogleMeetSpace(accessToken: string): Promise<{ meetingUri: string; meetingCode: string; spaceName: string } | null> {
+export const GOOGLE_MEET_SCOPES = [
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/meetings.space.created',
+  'https://www.googleapis.com/auth/meetings.space.readonly',
+  'https://www.googleapis.com/auth/meetings.space.settings',
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events'
+];
+
+/**
+ * Creates an authentic, active Google Meet room registered on Google infrastructure.
+ * Uses Google Meet REST API v2 as primary and Google Calendar Events Conference API as guaranteed fallback.
+ * Guaranteed to never return fake random strings.
+ */
+export async function createRealGoogleMeetMeeting(
+  accessToken: string,
+  halaqahName: string = 'حلقة قرآنية'
+): Promise<{ meetingUri: string; meetingCode: string; spaceName?: string } | null> {
+  if (!accessToken) return null;
+
+  // Strategy 1: Google Meet Spaces REST API v2
   try {
     const res = await fetch('https://meet.googleapis.com/v2/spaces', {
       method: 'POST',
@@ -30,35 +53,108 @@ export async function createGoogleMeetSpace(accessToken: string): Promise<{ meet
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        config: {
+          accessType: 'OPEN'
+        }
+      })
     });
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('Meet API error:', errText);
-      return null;
-    }
-    const data = await res.json();
-    if (data && (data.meetingUri || data.uri)) {
+    if (res.ok) {
+      const data = await res.json();
       const uri = data.meetingUri || data.uri;
-      const code = data.meetingCode || uri.split('/').pop() || '';
-      return {
-        meetingUri: uri,
-        meetingCode: code,
-        spaceName: data.name || ''
-      };
+      if (uri && typeof uri === 'string') {
+        const code = data.meetingCode || uri.split('/').pop() || '';
+        return {
+          meetingUri: uri,
+          meetingCode: code,
+          spaceName: data.name || ''
+        };
+      }
+    } else {
+      const errText = await res.text();
+      console.warn('Google Meet API v2 returned non-ok status, trying Calendar API fallback:', res.status, errText);
     }
-    return null;
   } catch (err) {
-    console.error('Failed to create Google Meet space:', err);
-    return null;
+    console.warn('Google Meet API v2 fetch error, falling back to Calendar Conference API:', err);
   }
+
+  // Strategy 2: Google Calendar Events API with Conference Data (hangoutsMeet)
+  // Universally supported for both personal Google accounts and Workspace accounts.
+  // Produces an authentic, registered meet.google.com room link.
+  try {
+    const now = new Date();
+    const oneYearLater = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+    const requestId = `omran-meet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const eventPayload = {
+      summary: `حلقة قرآنية: ${halaqahName}`,
+      description: `غرفة اجتماع Google Meet معتمدة لحلقة (${halaqahName}) عبر منصة عمران لتعليم القرآن الكريم. الرابط مفتوح للجميع ومتاح للانضمام.`,
+      start: {
+        dateTime: now.toISOString(),
+        timeZone: 'Asia/Riyadh'
+      },
+      end: {
+        dateTime: oneYearLater.toISOString(),
+        timeZone: 'Asia/Riyadh'
+      },
+      conferenceData: {
+        createRequest: {
+          requestId: requestId,
+          conferenceSolutionKey: {
+            type: 'hangoutsMeet'
+          }
+        }
+      }
+    };
+
+    const calRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(eventPayload)
+    });
+
+    if (calRes.ok) {
+      const calData = await calRes.json();
+      const hangoutLink = calData.hangoutLink || calData.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === 'video')?.uri;
+      if (hangoutLink && typeof hangoutLink === 'string') {
+        const code = hangoutLink.split('/').pop() || '';
+        return {
+          meetingUri: hangoutLink,
+          meetingCode: code,
+          spaceName: calData.id || ''
+        };
+      }
+    } else {
+      const errText = await calRes.text();
+      console.error('Calendar Conference API returned error:', calRes.status, errText);
+    }
+  } catch (err) {
+    console.error('Google Calendar API fetch error:', err);
+  }
+
+  return null;
 }
 
-export async function getGoogleMeetAccessToken(): Promise<string> {
+export async function createGoogleMeetSpace(accessToken: string, halaqahName?: string): Promise<{ meetingUri: string; meetingCode: string; spaceName: string } | null> {
+  const result = await createRealGoogleMeetMeeting(accessToken, halaqahName);
+  if (result) {
+    return {
+      meetingUri: result.meetingUri,
+      meetingCode: result.meetingCode,
+      spaceName: result.spaceName || ''
+    };
+  }
+  return null;
+}
+
+export async function getGoogleMeetAccessToken(): Promise<{ email: string; displayName?: string; photoURL?: string | null; accessToken: string }> {
   const clientId = (firebaseConfig as any).oAuthClientId || '576155598063-9sigjmhkijl03raan3lj117q6sjbcnb6.apps.googleusercontent.com';
   await loadGoogleGISScript();
-  const res = await requestAccessTokenViaGIS(clientId, GOOGLE_SCOPES);
-  return res.accessToken;
+  const res = await requestAccessTokenViaGIS(clientId, GOOGLE_MEET_SCOPES);
+  return res;
 }
 
 declare global {

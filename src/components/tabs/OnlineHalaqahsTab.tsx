@@ -414,41 +414,49 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       disabled={(editingHalaqah as any).isGeneratingMeetingLink}
                       onClick={async () => {
                         setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: true }) : null);
-                        setSuccessMessage('جاري فتح نافذة حساب جوجل لاختيار الحساب ومنح الصلاحيات...');
+                        setErrorMessage(null);
+                        setSuccessMessage('جاري فتح نافذة حساب Google لاختيار الحساب ومنح الصلاحيات...');
                         try {
                           const tokenResult = await getGoogleMeetAccessToken();
                           const accessToken = typeof tokenResult === 'string' ? tokenResult : (tokenResult as any)?.accessToken;
-                          
+                          const accountEmail = typeof tokenResult === 'object' ? (tokenResult as any)?.email : undefined;
+
                           if (!accessToken) {
-                            setErrorMessage('تعذر الحصول على رمز الوصول من حساب جوجل. يرجى المحاولة مرة أخرى.');
+                            setErrorMessage('تعذر الحصول على رمز الوصول من حساب Google. يرجى المحاولة مرة أخرى.');
                             setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: false }) : null);
                             return;
                           }
 
-                          setSuccessMessage('✓ تم تسجيل الدخول وربط الحساب بنجاح. جاري إنشاء وتفعيل رابط Google Meet الحقيقي...');
-                          const space = await createGoogleMeetSpace(accessToken);
-                          const letters1 = Math.random().toString(36).substring(2, 5);
-                          const letters2 = Math.random().toString(36).substring(2, 6);
-                          const letters3 = Math.random().toString(36).substring(2, 5);
-                          const guaranteedUri = `https://meet.google.com/${letters1}-${letters2}-${letters3}`;
-                          const guaranteedCode = `${letters1}-${letters2}-${letters3}`;
+                          setSuccessMessage('✓ تم تسجيل الدخول بحساب Google. جاري إنشاء الاجتماع الحقيقي وتوثيقه وحفظه سحابياً في Firestore... ⏳');
 
-                          const finalUri = (space && space.meetingUri) ? space.meetingUri : guaranteedUri;
-                          const finalCode = (space && space.meetingCode) ? space.meetingCode : guaranteedCode;
+                          // Call OmranDataService.createHalaqahMeeting directly for authentic meeting generation & cloud persistence
+                          const result = await OmranDataService.createHalaqahMeeting(editingHalaqah.id, {
+                            accessToken,
+                            halaqahName: editingHalaqah.name,
+                            accountEmail: accountEmail || currentUser?.email || currentTeacher?.name
+                          });
 
-                          setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: finalUri, meetingCode: finalCode, isGeneratingMeetingLink: false }) : null);
-                          setSuccessMessage('تم إنشاء وتفعيل رابط Google Meet الحقيقي النشط بنجاح ✓');
-                          setTimeout(() => setSuccessMessage(null), 4000);
+                          if (!result.success || !result.meetingUri || !result.halaqah) {
+                            setErrorMessage(result.message || 'تعذر إنشاء الاجتماع الحقيقي على خوادم Google. يرجى التأكد من اتصال الإنترنت وصلاحيات الحساب.');
+                            setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: false }) : null);
+                            return;
+                          }
+
+                          // Immediately update modal state and propagate to parent halaqahs list and Firestore!
+                          setEditingHalaqah(prev => prev ? ({
+                            ...result.halaqah!,
+                            isGeneratingMeetingLink: false
+                          }) : null);
+
+                          await onUpdateHalaqah(result.halaqah);
+
+                          setSuccessMessage(`تم إنشاء رابط Google Meet الحقيقي المعتمد بنجاح وحفظه سحابياً: ${result.meetingUri} ✓`);
+                          setTimeout(() => setSuccessMessage(null), 6000);
                         } catch (err: any) {
-                          // Handle errors gracefully without cluttering console output
                           if (err?.isPopupClosed) {
-                            setErrorMessage('تم إغلاق نافذة تسجيل الدخول. يرجى إعادة المحاولة واختيار الحساب لاستكمال إنشاء الاجتماع.');
+                            setErrorMessage('تم إغلاق نافذة تسجيل الدخول من Google قبل اختيار الحساب. يرجى إعادة المحاولة لاستكمال إنشاء الاجتماع.');
                           } else {
-                            const randomCode = Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6) + '-' + Math.random().toString(36).substring(2, 5);
-                            const realUri = `https://meet.google.com/${randomCode}`;
-                            setEditingHalaqah(prev => prev ? ({ ...prev, meetingUri: realUri, meetingCode: randomCode, isGeneratingMeetingLink: false }) : null);
-                            setSuccessMessage('تم ربط حسابك بنجاح وإنشاء رابط Google Meet الحقيقي النشط ✓');
-                            setTimeout(() => setSuccessMessage(null), 4000);
+                            setErrorMessage(err?.message || 'حدث خطأ أثناء الاتصال بحساب Google لإنشاء الاجتماع.');
                           }
                           setEditingHalaqah(prev => prev ? ({ ...prev, isGeneratingMeetingLink: false }) : null);
                         }
@@ -458,7 +466,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       {(editingHalaqah as any).isGeneratingMeetingLink ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin text-[#064e3b]" />
-                          <span>جارٍ الإنشاء وتوثيق الحساب... ⏳</span>
+                          <span>جارٍ الإنشاء وتوثيق الحساب سحابياً... ⏳</span>
                         </>
                       ) : (
                         <>

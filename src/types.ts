@@ -328,6 +328,9 @@ export interface Halaqah {
   meetingUri?: string; // رابط Google Meet الأونلاين
   meetingCode?: string; // كود الاجتماع
   googleSpaceName?: string; // اسم السبيس في Google Meet API
+  meetingCreatedAt?: string; // تاريخ إنشاء وتفعيل الاجتماع
+  meetingCreatedBy?: string; // الحساب أو المعلم الذي أنشأ الاجتماع
+  updatedAt?: string; // تاريخ آخر تحديث
 }
 
 export interface TeacherAccount {
