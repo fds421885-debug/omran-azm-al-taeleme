@@ -7,7 +7,6 @@ import {
   Users,
   ExternalLink,
   Plus,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -16,10 +15,8 @@ import {
   ShieldAlert,
   X
 } from 'lucide-react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Halaqah, TeacherAccount, QuranComplex, Student } from '../../types';
-import { OmranDataService, auth } from '../../lib/firebase';
-import { GoogleWorkspaceService, createGoogleMeetSpace } from '../../lib/googleWorkspace';
+import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface OnlineHalaqahsTabProps {
@@ -101,46 +98,11 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
     if (!editingHalaqah) return;
     try {
       await onUpdateHalaqah(editingHalaqah);
-      setSuccessMessage('تم تحديث وحفظ إعدادات ورابط الحلقة الأونلاين في السحابة بنجاح.');
+      setSuccessMessage('تم حفظ تحديث رابط ومواعيد الحلقة أونلاين سحابياً بنجاح.');
       setEditingHalaqah(null);
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err?.message || 'حدث خطأ أثناء حفظ التعديلات سحابياً.');
-    }
-  };
-
-  const handleGenerateAutoMeet = async () => {
-    if (!editingHalaqah) return;
-    try {
-      setSuccessMessage('جاري التحقق من ربط حساب Google الخاص بك...');
-      let token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        setSuccessMessage('الرجاء ربط حساب Google الخاص بك أولاً لمنح الأذونات...');
-        const authRes = await GoogleWorkspaceService.linkGoogleAccount();
-        token = authRes.accessToken;
-        if (!token) {
-          throw new Error('لم يتم إتمام ربط حساب Google بنجاح.');
-        }
-      }
-
-      setSuccessMessage('جاري إنشاء اجتماع Google Meet حقيقي من حسابك المربوط...');
-      const meetData = await createGoogleMeetSpace(token);
-      if (!meetData || !meetData.meetingUri) {
-        throw new Error('فشل إنشاء مساحة Google Meet من حساب Google الخاص بك.');
-      }
-
-      setEditingHalaqah({
-        ...editingHalaqah,
-        meetingUri: meetData.meetingUri,
-        meetingCode: meetData.meetingCode,
-        isOnline: true
-      });
-      setSuccessMessage('🎉 تم ربط حسابك وإنشاء اجتماع Google Meet الحقيقي من حسابك بنجاح تام وجاهز للحفظ!');
-      setTimeout(() => setSuccessMessage(null), 5000);
-    } catch (err: any) {
-      console.error('Error generating Google Meet space from linked account:', err);
-      setErrorMessage(err?.message || 'تعذر إنشاء الرابط. يرجى ربط حساب Google الخاص بك أولاً.');
-      setTimeout(() => setErrorMessage(null), 7000);
     }
   };
 
@@ -169,11 +131,11 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
               <Radio className="w-6 h-6 animate-pulse" />
             </span>
             <h2 className="text-xl sm:text-2xl font-black font-heading text-white">
-              إدارة الحلقات القرآنية الأونلاين (Google Meet)
+              إدارة الحلقات القرآنية الأونلاين (رابط يدوي محفوظ سحابياً)
             </h2>
           </div>
           <p className="text-xs sm:text-sm font-bold text-slate-300">
-            متابعة الحلقات المرئية عن بُعد، الإنشاء التلقائي عبر حساب Google، والدخول في الوقت المحدد بالاسم المعتمد في المنصة.
+            متابعة الحلقات المرئية عن بُعد. يقوم المشرف أو المعلم بإدخال وحفظ رابط الاجتماع يدوياً، ويظهر مفعلًا ومتوهجاً في وقت الحلقة المحدد فقط وعند الانتهاء يتم الإغلاق تلقائياً.
           </p>
         </div>
 
@@ -222,7 +184,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
           <h3 className="text-lg font-black text-white">لا توجد حلقات أونلاين مسجلة حالياً</h3>
           <p className="text-xs text-slate-300 font-bold max-w-md mx-auto">
             {isSupervisor || isDeveloper
-              ? 'يمكنك ضبط أي حلقة وتعيينها كحلقة أونلاين وعمل إنشاء تلقائي للرابط عبر حساب Google من إعدادات الحلقات.'
+              ? 'يمكنك ضبط أي حلقة وتعيينها كحلقة أونلاين وإدخال رابط الاجتماع يدوياً وحفظه سحابياً.'
               : 'لم يتم تعيينك في أي حلقة أونلاين حتى الآن. يرجى مراجعة المشرف العام.'}
           </p>
         </div>
@@ -242,7 +204,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
               <div
                 key={h.id}
                 className={`p-6 rounded-3xl border-2 border-b-4 shadow-xl space-y-4 relative overflow-hidden flex flex-col justify-between transition-all ${
-                  isActiveTime ? 'opacity-100' : 'opacity-75'
+                  isActiveTime ? 'opacity-100 ring-2 ring-amber-400/50' : 'opacity-70'
                 }`}
                 style={{
                   backgroundColor: themeCard,
@@ -259,14 +221,14 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                       <h3 className="text-lg font-black text-white font-heading">{h.name}</h3>
                     </div>
                     {isActiveTime ? (
-                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-black shrink-0 shadow-lg">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-black shrink-0 shadow-lg animate-pulse">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                         <span>نشطة الآن (في موعدها)</span>
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-slate-700/40 border border-slate-600 text-slate-400 text-xs font-bold shrink-0">
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-slate-800/60 border border-slate-700 text-slate-400 text-xs font-bold shrink-0">
                         <span className="w-2 h-2 rounded-full bg-slate-500" />
-                        <span>غير نشطة (خارج وقت الحلقة)</span>
+                        <span>غير نشطة (خارج وقت الحلقة - نورها مطفي)</span>
                       </span>
                     )}
                   </div>
@@ -278,7 +240,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                   <div className="grid grid-cols-2 gap-3 pt-2 text-xs font-bold text-slate-300">
                     <div className="flex items-center gap-2 p-2 rounded-xl bg-black/20 border border-white/5">
                       <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>{h.onlineStartTime || h.startTime || '16:00'} - {h.onlineEndTime || h.endTime || '18:00'}</span>
+                      <span>{h.onlineStartTime || h.startTime || '16:00'} - {h.onlineEndTime || h.endTime || '20:00'}</span>
                     </div>
                     <div className="flex items-center gap-2 p-2 rounded-xl bg-black/20 border border-white/5">
                       <Users className="w-4 h-4 text-blue-400 shrink-0" />
@@ -302,18 +264,11 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                             href={h.meetingUri}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={async (e) => {
-                              const check = await OmranDataService.verifyGoogleMeetMeeting(h.meetingUri);
-                              if (!check.exists) {
-                                e.preventDefault();
-                                setErrorMessage(check.message);
-                                setTimeout(() => setErrorMessage(null), 5000);
-                                return;
-                              }
+                            onClick={(e) => {
                               const userName = currentUser?.name || currentTeacher?.name || 'مستخدم المنصة';
                               navigator.clipboard.writeText(userName).catch(() => {});
-                              setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة لضمان الدخول به في Google Meet.`);
-                              setTimeout(() => setSuccessMessage(null), 6000);
+                              setSuccessMessage(`تم نسخ اسمك المعتمد في المنصة ("${userName}") للحافظة.`);
+                              setTimeout(() => setSuccessMessage(null), 4000);
                             }}
                             className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center flex items-center justify-center gap-2 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px]"
                             style={{
@@ -324,41 +279,42 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                             }}
                           >
                             <Video className="w-4 h-4" />
-                            <span>الانضمام للحلقة (Google Meet)</span>
+                            <span>الانضمام للحلقة (رابط الاجتماع المعتمد)</span>
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         ) : (
                           <button
                             type="button"
                             disabled
-                            className="flex-1 py-3 px-4 rounded-2xl font-bold text-xs text-center flex items-center justify-center gap-2 bg-slate-800/80 border border-slate-700 text-slate-400 opacity-50 cursor-not-allowed"
+                            className="flex-1 py-3 px-4 rounded-2xl font-bold text-xs text-center flex items-center justify-center gap-2 bg-slate-900/90 border border-slate-800 text-slate-500 opacity-40 cursor-not-allowed"
+                            title="زر الدخول لا يعمل لعدم تواجده في وقت الحلقة المجدول"
                           >
-                            <Video className="w-4 h-4 opacity-40" />
+                            <Video className="w-4 h-4 opacity-30" />
                             <span>زر الدخول مغلق (خارج وقت الحلقة المجدول)</span>
                           </button>
                         )}
                       </div>
                       <p className="text-[11px] text-slate-300 font-bold text-center">
-                        اسم الدخول المعتمد في الاجتماع: <span className="text-amber-300">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
+                        اسم الدخول المعتمد: <span className="text-amber-300">{currentUser?.name || currentTeacher?.name || 'مستخدم المنصة'}</span>
                       </p>
                     </div>
                   ) : (
                     <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold text-center space-y-1">
-                      <p>لم يتم إدخال رابط Google Meet لهذه الحلقة بعد.</p>
-                      <p className="text-[11px] text-slate-300">يمكن للمشرف أو المعلم استخدام زر «إنشاء الرابط تلقائياً عبر Google» أو إدخاله يدوياً.</p>
+                      <p>لم يتم إدخال رابط الاجتماع لهذه الحلقة بعد.</p>
+                      <p className="text-[11px] text-slate-300">يمكن للمشرف أو المعلم إدخال الرابط يدوياً وحفظه سحابياً.</p>
                     </div>
                   )}
 
                   {(isSupervisor || isDeveloper || isAssignedTeacher) && (
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] text-slate-400 font-bold">
-                        {h.meetingUri ? 'رابط الاجتماع متاح ومحفوظ سحابياً' : 'أدخل رابط الاجتماع أو أنشئه عبر Google'}
+                        {h.meetingUri ? '✓ الرابط محفوظ سحابياً' : 'أدخل رابط الاجتماع يدوياً'}
                       </span>
                       <button
                         onClick={() => setEditingHalaqah(h)}
                         className="text-xs font-bold text-amber-300 hover:underline cursor-pointer"
                       >
-                        إدخال أو تعديل رابط الاجتماع والمواعيد
+                        {h.meetingUri ? 'تعديل الرابط والمواعيد' : 'إدخال رابط الاجتماع يدوياً'}
                       </button>
                     </div>
                   )}
@@ -369,7 +325,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
         </div>
       )}
 
-      {/* Edit Halaqah Modal */}
+      {/* Edit Halaqah Modal (Manual Link Entry & Cloud Save) */}
       {editingHalaqah && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
           <div
@@ -381,7 +337,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
             }}
           >
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="text-lg font-black text-white font-heading">تعديل إعدادات الحلقة الأونلاين</h3>
+              <h3 className="text-lg font-black text-white font-heading">إدخال/تعديل رابط الحلقة الأونلاين يدوياً</h3>
               <button
                 onClick={() => setEditingHalaqah(null)}
                 className="p-2 rounded-xl bg-white/10 text-slate-300 hover:text-white cursor-pointer"
@@ -416,46 +372,26 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                   <label className="block text-xs font-black text-slate-300 mb-1">وقت النهاية</label>
                   <input
                     type="time"
-                    value={editingHalaqah.onlineEndTime || editingHalaqah.endTime || '18:00'}
+                    value={editingHalaqah.onlineEndTime || editingHalaqah.endTime || '20:00'}
                     onChange={e => setEditingHalaqah({ ...editingHalaqah, onlineEndTime: e.target.value })}
                     className="w-full px-4 py-2.5 rounded-xl bg-black/30 border border-white/20 text-white text-xs font-bold focus:outline-none focus:border-amber-400"
                   />
                 </div>
               </div>
 
-              {/* Automatic Google Meet Space Creation Button */}
-              <div className="space-y-2 p-4 rounded-2xl bg-black/30 border border-white/10">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-white">تسجيل الدخول وإنشاء رابط Google Meet تلقائياً</span>
-                  <span className="text-[10px] text-amber-300 font-bold">عبر حساب Google</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleGenerateAutoMeet}
-                  className="w-full py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 border shadow-md transition-all cursor-pointer hover:brightness-110 active:translate-y-[1px]"
-                  style={{
-                    backgroundColor: themeAccent,
-                    borderColor: themeAccent,
-                    color: themePrimary
-                  }}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>تسجيل الدخول واختيار حساب Google وإنشاء الرابط</span>
-                </button>
-                <p className="text-[10px] text-slate-300 text-center leading-relaxed">
-                  يفتح نافذة اختيار حساب Google، يطلب أذونات الوصول والتعديل وإنشاء الاجتماعات، وينشئ رابط Google Meet المفتوح للجميع ويحفظه فوراً في الحقل والسحابة.
-                </p>
-              </div>
-
               <div>
-                <label className="block text-xs font-black text-slate-300 mb-1">رابط Google Meet المباشر (أو الرابط المنشأ من حسابك)</label>
+                <label className="block text-xs font-black text-slate-300 mb-1">رابط الاجتماع (Google Meet / Zoom / Microsoft Teams)</label>
                 <input
                   type="url"
                   value={editingHalaqah.meetingUri || ''}
                   onChange={e => setEditingHalaqah({ ...editingHalaqah, meetingUri: e.target.value })}
                   placeholder="https://meet.google.com/abc-defg-hij"
                   className="w-full px-4 py-2.5 rounded-xl bg-black/30 border border-white/20 text-white text-xs font-bold focus:outline-none focus:border-amber-400 ltr text-left"
+                  required
                 />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  قم بلصق رابط الاجتماع هنا. سيتم حفظه سحابياً فوراً ليظهر لدى المعلم والمشرف وتعمل شروط الوقت بدقة.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
@@ -474,7 +410,7 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
                     color: themePrimary
                   }}
                 >
-                  حفظ التعديلات في السحابة
+                  حفظ الرابط في السحابة
                 </button>
               </div>
             </form>
