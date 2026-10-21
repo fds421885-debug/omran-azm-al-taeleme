@@ -111,53 +111,27 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
   const handleGenerateAutoMeet = async () => {
     if (!editingHalaqah) return;
     try {
-      setSuccessMessage('جاري إنشاء وتوليد رابط Google Meet المباشر...');
-      let meetingUri = '';
-      let meetingCode = '';
-
-      try {
-        const token = await getGoogleMeetAccessToken();
-        if (token) {
-          const meetData = await createGoogleMeetSpace(token);
-          if (meetData && meetData.meetingUri) {
-            meetingUri = meetData.meetingUri;
-            meetingCode = meetData.meetingCode;
-          }
-        }
-      } catch (apiErr) {
-        console.warn('Meet API token notice, using instant Meet generator:', apiErr);
+      setSuccessMessage('جاري فتح نافذة تسجيل الدخول إلى Google وطلب أذونات الوصول والتعديل وإنشاء اجتماعات Google Meet...');
+      const token = await getGoogleMeetAccessToken();
+      if (!token) {
+        throw new Error('لم يتم منح إذن الوصول أو الحصول على رمز المصادقة من Google.');
       }
-
-      if (!meetingUri) {
-        const p1 = Math.random().toString(36).substring(2, 5);
-        const p2 = Math.random().toString(36).substring(2, 6);
-        const p3 = Math.random().toString(36).substring(2, 5);
-        meetingCode = `${p1}-${p2}-${p3}`;
-        meetingUri = `https://meet.google.com/${meetingCode}`;
+      const meetData = await createGoogleMeetSpace(token);
+      if (!meetData || !meetData.meetingUri) {
+        throw new Error('فشل إنشاء اجتماع Google Meet من خلال حساب Google المصرح.');
       }
-
       setEditingHalaqah({
         ...editingHalaqah,
-        meetingUri,
-        meetingCode,
+        meetingUri: meetData.meetingUri,
+        meetingCode: meetData.meetingCode,
         isOnline: true
       });
-      setSuccessMessage('🎉 تم إنشاء رابط Google Meet تلقائياً بنجاح وجاهز للحفظ في السحابة!');
+      setSuccessMessage('🎉 تم تسجيل الدخول ومنح الأذونات وإنشاء اجتماع Google Meet الحقيقي بنجاح!');
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
-      const p1 = Math.random().toString(36).substring(2, 5);
-      const p2 = Math.random().toString(36).substring(2, 6);
-      const p3 = Math.random().toString(36).substring(2, 5);
-      const meetingCode = `${p1}-${p2}-${p3}`;
-      const meetingUri = `https://meet.google.com/${meetingCode}`;
-      setEditingHalaqah({
-        ...editingHalaqah,
-        meetingUri,
-        meetingCode,
-        isOnline: true
-      });
-      setSuccessMessage('🎉 تم إنشاء رابط Google Meet تلقائياً بنجاح!');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      console.error('Error generating Google Meet space:', err);
+      setErrorMessage(err?.message || 'تعذر إتمام المصادقة أو إنشاء الاجتماع. تأكد من السماح بالنوافذ المنبثقة وصلاحيات حساب Google.');
+      setTimeout(() => setErrorMessage(null), 8000);
     }
   };
 
