@@ -62,6 +62,7 @@ import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import {
   buildApplicationAcceptedEmail,
+  buildApplicationRejectedEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
@@ -616,16 +617,29 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
     if (!appToReject) return;
     setIsProcessingApp(true);
     try {
+      const finalReason = rejectionReason.trim() || 'نعتذر، اكتملت المقاعد المتاحة في هذه الفترة.';
       const updatedApp: StudentRegistrationApplication = {
         ...appToReject,
         status: 'rejected',
-        rejectionReason: rejectionReason.trim() || 'نعتذر، اكتملت المقاعد المتاحة في هذه الفترة.',
+        rejectionReason: finalReason,
         reviewedAt: new Date().toISOString(),
         reviewedByName: complex.supervisorTeacherName || 'مشرف المجمع'
       };
 
       await OmranDataService.saveRegistrationApplication(updatedApp);
       setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+
+      // Dispatch real polite rejection email to student's inbox if email exists
+      if (updatedApp.email) {
+        const rejectedEmail = buildApplicationRejectedEmail(
+          complex,
+          updatedApp,
+          finalReason,
+          portalUrl
+        );
+        sendRealPortalEmail(rejectedEmail).catch(err => console.warn('Could not send rejection email:', err));
+      }
+
       setAppToReject(null);
     } catch (e) {
       console.error('Error rejecting application:', e);
@@ -830,16 +844,27 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         const app = targetApps[i];
         setBulkProgressText(`جارٍ تحديث وإرسال إشعار الاعتذار للطلب (${i + 1} من ${total})...`);
 
+        const reason = 'نعتذر عن عدم توفر شاغر في الفترة الحالية لاكتمال السعة الاستيعابية.';
         const updatedApp: StudentRegistrationApplication = {
           ...app,
           status: 'rejected',
-          rejectionReason: 'نعتذر عن عدم توفر شاغر في الفترة الحالية لاكتمال السعة الاستيعابية.',
+          rejectionReason: reason,
           reviewedAt: new Date().toISOString(),
           reviewedByName: complex.supervisorTeacherName || 'مشرف المجمع'
         };
 
         await OmranDataService.saveRegistrationApplication(updatedApp);
         setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+
+        if (updatedApp.email) {
+          const rejectedEmail = buildApplicationRejectedEmail(
+            complex,
+            updatedApp,
+            reason,
+            portalUrl
+          );
+          sendRealPortalEmail(rejectedEmail).catch(() => {});
+        }
       }
 
       setSelectedAppIds([]);

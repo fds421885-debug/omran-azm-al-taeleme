@@ -9,7 +9,6 @@
 
 import { QuranComplex, StudentRegistrationApplication } from '../types';
 import { darkenHex, lightenHex } from './themeUtils';
-import { GoogleWorkspaceService } from './googleWorkspace';
 import { ApiConfig } from './apiConfig';
 
 // Comprehensive list of known disposable / throwaway / temporary email domains
@@ -263,7 +262,11 @@ export function verifyEmailOtp(email: string, enteredCode: string): {
 
 export interface BrandedEmailPayload {
   toEmail: string;
-  fromEmail: string;
+  fromEmail?: string;
+  mailConfig?: {
+    user: string;
+    pass: string;
+  };
   subject: string;
   title: string;
   greeting: string;
@@ -322,9 +325,12 @@ export function buildOtpVerificationEmail(
     ? ensureAbsolutePortalUrl(portalUrl)
     : ensureAbsolutePortalUrl(`/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`, complex.id);
 
+  const senderEmail = complex.mailConfig?.fromEmail || complex.mailConfig?.user || 'qdrat2626@gmail.com';
+
   return {
     toEmail,
-    fromEmail: 'qdrat2626@gmail.com',
+    fromEmail: senderEmail,
+    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
     subject: `رمز التحقق لتسجيل حسابك في ${complex.name} [${otpCode}]`,
     title: `توثيق البريد الإلكتروني • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته،`,
@@ -359,6 +365,7 @@ export function buildApplicationReceivedEmail(
   const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
   const sep = fullPortalUrl.includes('?') ? '&' : '?';
   const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`;
+  const senderEmail = complex.mailConfig?.fromEmail || complex.mailConfig?.user || 'qdrat2626@gmail.com';
 
   const detailsTable: Array<{ label: string; value: string }> = [
     { label: 'رقم التذكرة والمتابعة', value: application.trackingCode },
@@ -385,7 +392,8 @@ export function buildApplicationReceivedEmail(
 
   return {
     toEmail: application.email || '',
-    fromEmail: 'qdrat2626@gmail.com',
+    fromEmail: senderEmail,
+    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
     subject: `تم استلام طلب انضمامك في ${complex.name} • رقم التذكرة [${application.trackingCode}]`,
     title: `تأكيد استلام طلب الانضمام • ${complex.name}`,
     greeting: `حياك الله وبياك أخي ولي أمر الطالب / ${application.studentName} حفظه الله ورعاه..`,
@@ -425,6 +433,7 @@ export function buildApplicationAcceptedEmail(
   const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
   const sep = fullPortalUrl.includes('?') ? '&' : '?';
   const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}`;
+  const senderEmail = complex.mailConfig?.fromEmail || complex.mailConfig?.user || 'qdrat2626@gmail.com';
 
   const detailsTable: Array<{ label: string; value: string }> = [
     { label: 'رقم التذكرة', value: application.trackingCode },
@@ -436,7 +445,8 @@ export function buildApplicationAcceptedEmail(
 
   return {
     toEmail: application.email || '',
-    fromEmail: 'qdrat2626@gmail.com',
+    fromEmail: senderEmail,
+    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
     subject: `🎉 بشرى سارة: تم قبول الطالب ${application.studentName} في ${complex.name}! [${application.trackingCode}]`,
     title: `بشرى القبول والاعتماد • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته 🌿`,
@@ -480,10 +490,12 @@ export function buildWaitingListEmail(
   const fullPortalUrl = ensureAbsolutePortalUrl(portalUrl);
   const sep = fullPortalUrl.includes('?') ? '&' : '?';
   const directTrackingUrl = `${fullPortalUrl}${sep}track=${encodeURIComponent(trackingCode)}`;
+  const senderEmail = complex.mailConfig?.fromEmail || complex.mailConfig?.user || 'qdrat2626@gmail.com';
 
   return {
     toEmail,
-    fromEmail: 'qdrat2626@gmail.com',
+    fromEmail: senderEmail,
+    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
     subject: `إشعار إدراج في قائمة الانتظار • مجمع ${complex.name} [${trackingCode}]`,
     title: `قائمة الانتظار الرسمية • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته، مرحباً بك يا ${studentName}..`,
@@ -511,6 +523,64 @@ export function buildWaitingListEmail(
       url: directTrackingUrl
     },
     footerNote: `مجمع ${complex.name} • منظومة عُمْرَان.`,
+    sentAt: new Date().toISOString(),
+    complexName: complex.name,
+    complexTheme: complex.theme
+  };
+}
+
+/**
+ * Builds the Rejection / Polite Apology Notification Email for Student / Parent
+ */
+export function buildApplicationRejectedEmail(
+  complex: QuranComplex,
+  application: StudentRegistrationApplication,
+  reason: string,
+  portalUrl?: string
+): BrandedEmailPayload {
+  const fullPortalUrl = portalUrl ? ensureAbsolutePortalUrl(portalUrl) : '';
+  const sep = fullPortalUrl.includes('?') ? '&' : '?';
+  const directTrackingUrl = fullPortalUrl ? `${fullPortalUrl}${sep}track=${encodeURIComponent(application.trackingCode)}` : undefined;
+
+  const senderEmail = complex.mailConfig?.fromEmail || complex.mailConfig?.user || 'qdrat2626@gmail.com';
+  const cleanReason = (reason || '').trim() || 'نعتذر عن عدم إمكانية القبول في الوقت الحالي لاكتمال المقاعد المتاحة.';
+
+  const detailsTable: Array<{ label: string; value: string }> = [
+    { label: 'رقم التذكرة', value: application.trackingCode },
+    { label: 'اسم الطالب', value: application.studentName },
+    { label: 'العمر', value: `${application.age} سنة` },
+    { label: 'حالة الطلب', value: 'تم الاعتذار عن القبول في هذه الفترة' },
+    { label: 'سبب الاعتذار', value: cleanReason },
+    { label: 'تاريخ المراجعة', value: new Date().toLocaleString('ar-SA') }
+  ];
+
+  return {
+    toEmail: application.email || '',
+    fromEmail: senderEmail,
+    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
+    subject: `إشعار بشأن طلب الانضمام إلى ${complex.name} • [${application.trackingCode}]`,
+    title: `إشعار بخصوص طلب الانضمام • ${complex.name}`,
+    greeting: `السلام عليكم ورحمة الله وبركاته، مرحباً بك أخي ولي أمر الطالب / ${application.studentName} حفظه الله..`,
+    bodyParagraphs: [
+      `نشكر لكم اهتمامكم الكريم وثقتكم الغالية بمجمع ${complex.name} لتعليم القرآن الكريم، وحرصكم المبارك على تسجيل ابننا الفاضل في رحاب القرآن الكريم.`,
+      `نود إفادتكم بأنه بعد دراسة ومراجعة طلبات الانضمام بعناية لدى المشرف التعليمي، نعتذر بكل أسف عن قبول الطلب في هذه الفترة نظراً لما يلي:`,
+      `« ${cleanReason} »`,
+      `نسأل الله العلي القدير أن يبارك في ابنكم وأن يجعله من أهل القرآن وخاصته، ونرحب بتقديمكم مجدداً في الفترات والدورات القادمة بإذن الله تعالى.`
+    ],
+    ticketNumber: application.trackingCode,
+    verificationUrl: directTrackingUrl,
+    detailsTable,
+    highlightBox: {
+      label: 'سبب الاعتذار المعتمد من المشرف:',
+      value: cleanReason,
+      sublabel: `تذكرة رقم: ${application.trackingCode} • نسأل الله لكم التوفيق والتيسير`
+    },
+    badgeText: 'إشعار مراجعة الطلب',
+    actionButton: directTrackingUrl ? {
+      text: 'متابعة تفاصيل الطلب عبر البوابة',
+      url: directTrackingUrl
+    } : undefined,
+    footerNote: `مع تمنيات إدارة ومشرفي مجمع ${complex.name} لكم بالتوفيق والنجاح • منظومة عُمْرَان.`,
     sentAt: new Date().toISOString(),
     complexName: complex.name,
     complexTheme: complex.theme
@@ -650,7 +720,9 @@ export function renderBrandedEmailHtml(payload: BrandedEmailPayload): string {
 }
 
 /**
- * Sends a real email to the recipient's personal inbox via Gmail API / SMTP
+ * Sends a real email to the recipient's personal inbox directly via the server SMTP endpoint.
+ * Completely decoupled from client-side Google popup / Google Identity Services (GIS).
+ * Works seamlessly for ANY email provider (Gmail, Outlook, Yahoo, Hotmail, iCloud, custom domains, etc.).
  */
 export async function sendRealPortalEmail(
   payload: BrandedEmailPayload
@@ -662,48 +734,42 @@ export async function sendRealPortalEmail(
   try {
     const html = renderBrandedEmailHtml(payload);
 
-    // If it's a registration application email with a ticket, try dedicated registration dispatcher
-    if (payload.ticketNumber) {
-      try {
-        const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-registration'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: payload.toEmail,
-            subject: payload.subject,
-            html,
-            fromName: payload.complexName || 'منظومة عُمْرَان',
-            fromEmail: payload.fromEmail || 'qdrat2626@gmail.com',
-            trackingCode: payload.ticketNumber,
-            verificationUrl: payload.verificationUrl
-          })
-        });
+    // Call server backend SMTP endpoint directly. NEVER invoke client GIS/Google popup!
+    const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-gmail'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: payload.toEmail,
+        subject: payload.subject,
+        html,
+        fromName: payload.complexName || 'منظومة عُمْرَان لإدارة المجمعات القرآنية',
+        fromEmail: payload.fromEmail || 'qdrat2626@gmail.com',
+        gmailUser: payload.mailConfig?.user,
+        gmailAppPassword: payload.mailConfig?.pass
+      })
+    });
 
-        if (srvRes.ok) {
-          const srvData = await srvRes.json();
-          if (srvData?.success) {
-            return { success: true, messageId: srvData.messageId };
-          }
-        }
-      } catch (endpointErr) {
-        console.warn('Dedicated send-registration endpoint fallback to GoogleWorkspaceService:', endpointErr);
+    if (srvRes.ok) {
+      const srvData = await srvRes.json();
+      if (srvData?.success) {
+        return { success: true, messageId: srvData.messageId };
       }
+      return {
+        success: false,
+        error: srvData?.error || 'تعذر إرسال البريد عبر الخادم.'
+      };
     }
 
-    // Standard fallback via GoogleWorkspaceService
-    const result = await GoogleWorkspaceService.sendGmailMessage(
-      payload.toEmail,
-      payload.subject,
-      html,
-      payload.fromEmail || 'qdrat2626@gmail.com',
-      payload.complexName || 'منظومة عُمْرَان'
-    );
-    return result;
-  } catch (err: any) {
-    console.warn('Real Gmail sending attempt notice:', err);
+    const errData = await srvRes.json().catch(() => ({}));
     return {
       success: false,
-      error: err?.message || 'تعذر إرسال البريد عبر Gmail'
+      error: errData?.error || `فشل إرسال البريد الإلكتروني (رمز ${srvRes.status})`
+    };
+  } catch (err: any) {
+    console.warn('Real email dispatch error:', err);
+    return {
+      success: false,
+      error: err?.message || 'تعذر الاتصال بخادم البريد الإلكتروني'
     };
   }
 }
