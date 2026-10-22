@@ -852,18 +852,31 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onExitPortal}
-            className="px-3.5 py-2 rounded-xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
-            style={{
-              backgroundColor: themeCard,
-              borderColor: themeCardBorder
-            }}
-          >
-            <span>الرئيسية العامة</span>
-            <ArrowRight className="w-4 h-4 rotate-180" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsQuickMailSetupOpen(true)}
+              className="px-3 py-2 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:translate-y-0.5"
+              title="إعدادات البريد والمفتاح (حفظ دائم في قاعدة البيانات)"
+            >
+              <Mail className="w-4 h-4 text-amber-300" />
+              <span className="hidden sm:inline">إعدادات البريد والمفتاح</span>
+              <span className="sm:hidden">البريد</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onExitPortal}
+              className="px-3.5 py-2 rounded-xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: themeCardBorder
+              }}
+            >
+              <span>الرئيسية العامة</span>
+              <ArrowRight className="w-4 h-4 rotate-180" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1121,8 +1134,21 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
               </button>
             </form>
 
+            {/* Supervisor Email & Key Settings Link */}
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] text-slate-300 font-bold">خدمة البريد والمفتاح (SMTP):</span>
+              <button
+                type="button"
+                onClick={() => setIsQuickMailSetupOpen(true)}
+                className="text-xs text-amber-300 hover:text-amber-200 font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl border border-amber-400/30"
+              >
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span>إعدادات بريد المجمع والمفتاح (حفظ دائم)</span>
+              </button>
+            </div>
+
             {showRegister && (
-              <div className="pt-4 border-t border-white/10 text-center">
+              <div className="pt-3 border-t border-white/10 text-center">
                 <p className="text-xs text-slate-300 font-bold">
                   طالب جديد ترغب في الالتحاق بالحلقات؟{' '}
                   <button
@@ -2448,10 +2474,13 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       <QuickMailSetupModal
         isOpen={isQuickMailSetupOpen}
         onClose={() => setIsQuickMailSetupOpen(false)}
-        initialEmail={studentEmail}
+        complex={complex}
+        complexId={complex.id}
+        complexName={complex.name}
+        initialEmail={complex.mailConfig?.user || studentEmail}
         onConfigSaved={() => {
           setIsQuickMailSetupOpen(false);
-          setEmailSuccessNotice('تم تفعيل وحفظ خدمة البريد بنجاح! يمكنك الآن الضغط على "إعادة إرسال الرمز" ليصلك مباشرة في صندوق بريدك.');
+          setEmailSuccessNotice('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
           setEmailError(null);
         }}
       />

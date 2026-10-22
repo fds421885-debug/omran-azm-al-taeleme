@@ -66,6 +66,7 @@ import {
 } from '../../types';
 import { OmranAIService } from '../../lib/omranAIService';
 import { ComplexDatabaseTransferModal } from '../ComplexDatabaseTransferModal';
+import { QuickMailSetupModal } from '../portal/QuickMailSetupModal';
 
 interface DataBackupTabProps {
   onRefreshAllData: () => Promise<void>;
@@ -100,6 +101,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [pendingRestore, setPendingRestore] = useState<FullBackupData | null>(null);
   const [driveExportResult, setDriveExportResult] = useState<{ fileName: string; folderName: string; webViewLink: string } | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string; linkUrl?: string; linkText?: string } | null>(null);
+  const [isMailSetupModalOpen, setIsMailSetupModalOpen] = useState(false);
 
   // Complex-specific state
   const [selectedComplexId, setSelectedComplexId] = useState<string>(complexes[0]?.id || '');
@@ -1006,15 +1008,27 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => startAutomatedDatabaseLinking()}
-          className="w-full md:w-auto px-6 py-3.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs sm:text-sm font-black shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2.5 shrink-0 relative z-10"
-          title="تسجيل الدخول وربط قاعدة البيانات تلقائياً دون إدخال أي كود أو مفاتيح"
-        >
-          <Sparkles className="w-4 h-4 text-[#064e3b]" />
-          <span>تسجيل الدخول والربط السحابي التلقائي</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto relative z-10">
+          <button
+            type="button"
+            onClick={() => setIsMailSetupModalOpen(true)}
+            className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border-2 border-amber-400/50 text-amber-300 text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+            title="تهيئة وتعديل بريد المجمع والمفتاح في قاعدة البيانات للأبد"
+          >
+            <Mail className="w-4 h-4 text-amber-300" />
+            <span>إعدادات البريد والمفتاح (SMTP)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => startAutomatedDatabaseLinking()}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs sm:text-sm font-black shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2.5 shrink-0"
+            title="تسجيل الدخول وربط قاعدة البيانات تلقائياً دون إدخال أي كود أو مفاتيح"
+          >
+            <Sparkles className="w-4 h-4 text-[#064e3b]" />
+            <span>تسجيل الدخول والربط السحابي التلقائي</span>
+          </button>
+        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -1308,6 +1322,33 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   <span>نسخ البريد (fds421885@gmail.com)</span>
                 </>
               )}
+            </button>
+          </div>
+
+          {/* Box 6: Mail & App Password Configuration (Persistent in Firestore Forever) */}
+          <div className="bg-[#022c22] border-2 border-emerald-400/60 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs sm:text-sm font-black text-white">
+                  إعدادات خدمة البريد والمفتاح الدائم (SMTP & App Password):
+                </span>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                  محفوظ للأبد في قاعدة البيانات
+                </span>
+              </div>
+              <p className="text-[11px] text-[#86efac]/90 leading-relaxed">
+                ربط وحفظ عنوان البريد وكلمة مرور التطبيقات (المفتاح) سحابياً في Firestore لإرسال رموز OTP وتذاكر التسجيل، مع إمكانية التعديل في أي وقت.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsMailSetupModalOpen(true)}
+              className="py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#022c22] font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 active:scale-95"
+            >
+              <Key className="w-4 h-4 text-[#022c22]" />
+              <span>إعدادات البريد والمفتاح (فتح للتعديل)</span>
             </button>
           </div>
         </div>
@@ -3453,6 +3494,23 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Quick Mail & App Password Key Setup Modal */}
+      <QuickMailSetupModal
+        isOpen={isMailSetupModalOpen}
+        onClose={() => setIsMailSetupModalOpen(false)}
+        complex={activeComplex}
+        complexId={activeComplex?.id}
+        complexName={activeComplex?.name}
+        onSaveComplex={onSaveComplex}
+        onConfigSaved={() => {
+          setIsMailSetupModalOpen(false);
+          setStatusMsg({
+            type: 'success',
+            text: 'تم حفظ وتحديث إعدادات البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅'
+          });
+        }}
+      />
 
     </div>
   );

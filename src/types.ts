@@ -66,6 +66,15 @@ export interface QuranComplex {
 
   // ضبط الخطة ومواعيد الختم والتثبيت بالذكاء الاصطناعي
   planScheduleConfig?: ComplexPlanScheduleConfig;
+
+  // إعدادات البريد الإلكتروني الفعلي والمفتاح (SMTP / Gmail App Password) المحفوظة للمجمع في قاعدة البيانات
+  mailConfig?: {
+    user: string;
+    pass: string;
+    fromName?: string;
+    fromEmail?: string;
+    updatedAt?: string;
+  };
 }
 
 export interface ComplexPlanScheduleConfig {

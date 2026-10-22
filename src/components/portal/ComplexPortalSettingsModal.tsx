@@ -3159,6 +3159,14 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         <QuickMailSetupModal
           isOpen={isMailModalOpen}
           onClose={() => setIsMailModalOpen(false)}
+          complex={complex}
+          complexId={complex.id}
+          complexName={complex.name}
+          onSaveComplex={onUpdateComplex}
+          onConfigSaved={() => {
+            setIsMailModalOpen(false);
+            setSaveSuccessMsg('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
+          }}
         />
       </div>
     </div>

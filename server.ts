@@ -165,6 +165,7 @@ app.get("/api/mail/config", async (req, res) => {
     isConfigured: Boolean(user && hasPass),
     hasEnvCredentials: Boolean(envUser && envPass),
     user: user || "",
+    pass: stored.pass || envPass || "",
     fromName: stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية",
     fromEmail: stored.fromEmail || user || "qdrat2626@gmail.com",
     provider: (stored.smtpHost || process.env.SMTP_HOST) ? "custom_smtp" : "gmail_smtp"
