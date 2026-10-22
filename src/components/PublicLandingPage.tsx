@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   BookOpen,
   Sparkles,
@@ -35,7 +35,18 @@ import {
   ShieldAlert,
   Building2,
   Headphones,
-  Check
+  Check,
+  Palette,
+  Video,
+  UserPlus,
+  BarChart3,
+  Search,
+  MapPin,
+  QrCode,
+  Clock,
+  Zap,
+  LayoutGrid,
+  ListFilter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,6 +55,25 @@ interface PublicLandingPageProps {
   onOpenPrivacyPolicy: () => void;
   onOpenParentPortal?: () => void;
   appName?: string;
+}
+
+interface LandingFeature {
+  id: string;
+  category: 'core' | 'teaching' | 'eval' | 'ai_meet' | 'admin' | 'family';
+  title: string;
+  icon: React.ElementType;
+  tag: string;
+  color: string;
+  badge: string;
+  headline: string;
+  description: string;
+  highlights: string[];
+  previewSnippet?: {
+    badgeText: string;
+    subText: string;
+    stat1: { label: string; val: string };
+    stat2: { label: string; val: string };
+  };
 }
 
 export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
@@ -55,12 +85,39 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
   const [showEnglishOverview, setShowEnglishOverview] = useState(false);
   const [activeFeatureTab, setActiveFeatureTab] = useState<number>(0);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+  const [featureSearch, setFeatureSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'tabs' | 'grid'>('tabs');
 
-  // Interactive Feature Tabs Navigator
-  const featureTabs = [
+  // Complete 17-Pillar Features Directory
+  const featureTabs: LandingFeature[] = [
+    {
+      id: 'theme',
+      category: 'admin',
+      title: 'تخصيص الثيم والهوية البصرية',
+      icon: Palette,
+      tag: 'ألوان وهوية لكل مجمع',
+      color: 'from-amber-400 to-amber-600',
+      badge: 'تخصيص كامل 100%',
+      headline: 'تخصيص متقدم للثيم والألوان والشعار والوضع الليلي لكل مجمع قرآني',
+      description: 'تمنح المنظومة كل مجمع قرآني استقلالية بصرية كاملة عبر محرك ألوان ديناميكي يتيح اختيار اللون الأساسي، الثانوي، لون التمييز (Accent)، ولون البطاقات مع نمط داكن (Dark Theme) فائق الفخامة والراحة للعين أثناء الحلقات القرآنية في المساجد.',
+      highlights: [
+        'تخصيص فوري لألوان المنظومة الأربعة مع معاينة حية ومباشرة بدون الحاجة لإعادة تحميل الصفحة.',
+        'وضع داكن فخم (Dark Theme) مصمم بعناية فائقة لراحة العين في إضاءة المساجد والحلقات القرآنية.',
+        'إدراج وتخصيص شعار المجمع واسم الشيخ والمشرف ليظهر في كشوفات الحضور الرسمية والشهادات.',
+        'مزامنة سحابية فورية للثيم بحيث يظهر موحداً لدى كافة معلمي وطلاب المجمع تلقائياً بمجرد اعتماده.'
+      ],
+      previewSnippet: {
+        badgeText: 'هوية مجمع الفرقان لتحفيظ القرآن',
+        subText: 'اللون التميزي: ذهبي إسلامي • نمط ليلي هادئ',
+        stat1: { label: 'تخصيص الواجهة', val: 'شامل بالكامل' },
+        stat2: { label: 'المزامنة السحابية', val: 'متزامنة لحظياً' }
+      }
+    },
     {
       id: 'complexes',
-      title: 'إدارة المجمعات والحلقات',
+      category: 'admin',
+      title: 'إدارة المجمعات والفصل السحابي',
       icon: Building2,
       tag: 'الهيكل التنظيمي والصلاحيات',
       color: 'from-amber-500 to-amber-600',
@@ -68,26 +125,125 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
       headline: 'إدارة مركزية مستقلة لكل مجمع قرآني مع صلاحيات متدرجة ودقيقة',
       description: 'توفر المنظومة بيئة تشغيل سحابية مرنة تعزل قواعد بيانات كل مجمع قرآني وتتيح إدارة الحلقات، توزيع الطلاب، وتعيين المعلمين والمشرفين بمرونة كاملة.',
       highlights: [
-        'عزل أو دمج بيانات المجمعات القرآنية مع التبديل الفوري بنقرة واحدة.',
+        'عزل أو دمج بيانات المجمعات القرآنية مع التبديل الفوري بنقرة واحدة للمشرف العام.',
+        'ميزة الفصل السحابي لقواعد البيانات (Database Isolation) لربط كل مجمع بقاعدة بيانات Firebase مستقلة.',
         'مستويات صلاحيات دقيقة: المشرف العام، مشرف المجمع، معلم الحلقة، المعلم المساعد، ولي الأمر، والطالب.',
-        'إدارة الحلقات القرآنية ونقل الطلاب وتوزيعهم حسب المستويات ومتابعة الشواغر.',
-        'سجل شامل للمشرفين والمعلمين مع إمكانية ربط كل معلم بعدة مجمعات وحلقات.'
-      ]
+        'سجل شامل للمشرفين والمعلمين مع إمكانية ربط كل معلم بعدة مجمعات وحلقات بسهولة.'
+      ],
+      previewSnippet: {
+        badgeText: 'نظام المجمعات المتعددة',
+        subText: '٥ مجمعات نشطة • إدارة سحابية مركزية موحدة',
+        stat1: { label: 'عزل قواعد البيانات', val: 'Firebase Independent' },
+        stat2: { label: 'التبديل بين المجمعات', val: 'فوري بنقرة واحدة' }
+      }
+    },
+    {
+      id: 'online_halaqahs',
+      category: 'ai_meet',
+      title: 'الحلقات أونلاين عبر Google Meet',
+      icon: Video,
+      tag: 'فصول افتراضية وبث مباشر',
+      color: 'from-blue-500 to-indigo-600',
+      badge: 'Google Meet رسمي',
+      headline: 'حلقات تحفيظ افتراضية متزامنة سحابياً مع Google Meet ومواعيد يومية محددة',
+      description: 'منظومة فصول وقاعات افتراضية متزامنة في الوقت الحقيقي بين المشرف والمعلم والطلاب، تتيح الانضمام للاجتماع بنقرة زر وفق جدول مواعيد منظم وبث مباشر لحظي دون الحاجة لتحديث الصفحة.',
+      highlights: [
+        'مزامنة حية لروابط Google Meet المعتمدة وتحديثها في Firestore لجميع الأطراف فورياً.',
+        'تحديد مواعيد الحلقات اليومية بوقت البداية والانتهاء وتحديد أيام الأسبوع النشطة بدقة.',
+        'مؤشر البث المباشر (LIVE الآن) وعداد تنازلي يوضح الوقت المتبقي على بدء الحلقة للطلاب والمعلمين.',
+        'صلاحية إنشاء وتعديل الحلقات متاحة للمشرف والمعلم والمبرمج مع حفظ الرابط المتزامن تلقائياً.'
+      ],
+      previewSnippet: {
+        badgeText: 'حلقة الإتقان المسائية - Google Meet',
+        subText: 'الموعد: ٥:٠٠ م - ٦:٣٠ م • رابط مباشر متزامن',
+        stat1: { label: 'حالة البث', val: 'مباشر الآن (LIVE)' },
+        stat2: { label: 'الحضور المتزامن', val: '١٨ طالباً' }
+      }
+    },
+    {
+      id: 'ai_assistant',
+      category: 'ai_meet',
+      title: 'المساعد القرآني والذكاء الاصطناعي',
+      icon: Sparkles,
+      tag: 'محرك Gemini 3.8 Flash',
+      color: 'from-purple-500 to-pink-600',
+      badge: 'ذكاء اصطناعي قرآني',
+      headline: 'مساعد صوتي ونصي متطور يفهم العربية ويستخرج المتشابهات والتفاسير',
+      description: 'أقوى نموذج ذكاء اصطناعي قرآني تفاعلي مسخر لخدمة كتاب الله وإدارة الحلقات بالصوت والنص وتقديم استعلامات ذكية فورية عن أي طالب وتوليد أسئلة وخطط علاجية.',
+      highlights: [
+        'استعلام ذكي فوري عن سجلات أي طالب وحضوره ودرجاته ونقاطه بالمحادثة الطبيعية باللغة العربية.',
+        'استخراج دقيق لمتشابهات الآيات القرآنية ومواضعها والفروق اللفظية الدقيقة بين السور.',
+        'تفسير الآيات، معاني غريب القرآن، وأسباب النزول الموثوقة لتغذية الطالب معرفياً أثناء الحلقة.',
+        'توليد خطط دراسية وعلاجية مخصصة للطلاب المتعثرين وتوليد أسئلة اختبارات ذكية بنقرة زر.'
+      ],
+      previewSnippet: {
+        badgeText: 'المساعد القرآني الذكي',
+        subText: 'استعلام: كم عدد أوجه الحفظ للطالب عمر هذا الشهر؟',
+        stat1: { label: 'زمن الاستجابة', val: '٠.٣ ثانية' },
+        stat2: { label: 'الدقة اللغوية', val: 'فصحى متقنة' }
+      }
+    },
+    {
+      id: 'students',
+      category: 'core',
+      title: 'إدارة الطلاب وخطط الختم وQR',
+      icon: Users,
+      tag: 'شامل للطلاب والملفات',
+      color: 'from-emerald-500 to-teal-600',
+      badge: 'إدارة متكاملة',
+      headline: 'ملفات تفاعلية للطلاب، استيراد إكسل جماعي، وخطط ختم قرآنية دقيقة',
+      description: 'منظومة متقدمة لإدارة سجلات الطلاب، تصنيفهم حسب المستويات، وإصدار بطاقات باركود QR ذكية تحسب تاريخ الختم المستهدف تلقائياً وتوزيعهم بين الحلقات.',
+      highlights: [
+        'استيراد جماعي سريع (Bulk Import) للطلاب من ملفات Excel بضغطة زر واحدة وتوزيعهم على الحلقات.',
+        'بطاقة رقمية تفاعلية لكل طالب تحتوي على رمز QR لمسحه واستعراض ملفه فوراً ومشاركة رابطه.',
+        'تصنيف الطلاب لثلاثة مستويات علمية (قوي، متوسط، ضعيف) لمراعاة الفروق الفردية في المنهج.',
+        'خطة ختم مخصصة تحسب تلقائياً موعد الختم المتوقع بناءً على معدل الحفظ اليومي ومتابعة الأوجه.'
+      ],
+      previewSnippet: {
+        badgeText: 'ملف الطالب: عبد الرحمن السعيد',
+        subText: 'المستوى: متقدم • الخطة: ختم القرآن خلال ١٤ شهراً',
+        stat1: { label: 'الأوجه المنجزة', val: '٣٤٠ وجهاً' },
+        stat2: { label: 'موعد الختم المتوقع', val: '١٥ رمضان القادم' }
+      }
+    },
+    {
+      id: 'attendance',
+      category: 'teaching',
+      title: 'التحضير الذكي والسياج الجغرافي (GPS)',
+      icon: CheckCircle2,
+      tag: 'باركود • GPS • Streaks',
+      color: 'from-green-500 to-emerald-600',
+      badge: 'انضباط فائق',
+      headline: 'تسجيل حضور فوري، تحضير بالكاميرا، وسياج جغرافي للمسجد بنظام النقاط',
+      description: 'أحدث نظام تحضير ذكي يدمج بين التحضير بضغطة زر، المسح السريع لرموز QR، وتقييد التحضير جغرافياً داخل حدود المسجد مع شعلات المواظبة ونقاط XP.',
+      highlights: [
+        'تسجيل الحضور لأربع حالات (حاضر، غائب، متأخر، معتذر) مع رصد وقت التسجيل الدقيق بالثواني.',
+        'التحضير الذاتي بمسح رمز QR الخاص بالطالب عبر كاميرا الجوال في ثانية واحدة بدون لمس الشاشة.',
+        'التحضير الجغرافي المقيد (Geofencing GPS) لمنع التحضير إلا من داخل حدود ونطاق المسجد المحدد.',
+        'شعلات المواظبة اليومية (Daily Streaks) ونقاط XP لمكافأة الطلاب المنتظمين ورفع حماسهم.'
+      ],
+      previewSnippet: {
+        badgeText: 'دفتر التحضير الذكي اليومي',
+        subText: 'نسبة الحضور: ٩٨٪ • تم التحقق عبر نطاق GPS للمسجد',
+        stat1: { label: 'طريقة التحضير', val: 'مسح QR بالكاميرا' },
+        stat2: { label: 'أعلى شعلة مواظبة', val: '🔥 ٤٥ يوماً متواصلاً' }
+      }
     },
     {
       id: 'recitation',
+      category: 'teaching',
       title: 'سجل التسميع ومعايير التجويد',
       icon: BookOpen,
       tag: 'الحفظ والمراجعة وخطة الغد',
-      color: 'from-emerald-500 to-emerald-600',
-      badge: 'تقييم تجويدي ذكي',
-      headline: 'رصد دقيق لمقدار الحفظ ومعايير الأداء التجويدي واقتراح خطة الغد الذكية',
-      description: 'نظام متكامل لتسميع القرآن الكريم يقسم الورد اليومي إلى حفظ جديد، مراجعة صغرى (أحدث ٥ أجزاء)، ومراجعة كبرى، مع تقييم بنود الأداء واحتساب النقاط تلقائياً.',
+      color: 'from-amber-500 to-yellow-600',
+      badge: 'تقييم ثلاثي معتمد',
+      headline: 'رصد دقيق للحفظ الجديد والمراجعة الصغرى والكبرى مع أحكام التجويد',
+      description: 'المنهجية القرآنية المعتمدة لترسيخ القرآن الكريم عبر تقسيم التسميع إلى حفظ جديد، مراجعة صغرى (أحدث ٥ أجزاء)، ومراجعة كبرى للمحفوظ القديم لمنع التفلت.',
       highlights: [
         'معايير تجويد دقيقة: مخارج الحروف، الغنة، أحكام المدود، الطلاقة والانطلاق، وإعراب الحركات.',
-        'احتساب نقاط التسميع ونقاط الأوجه والصفحات المنجزة تلقائياً وإضافتها لرصيد الطالب في لوحة الشرف.',
+        'رصد أخطاء التشكيل والتردد والتنبيهات وحساب النسبة المئوية آلياً مع التقييم الوصفي.',
         'اقتراح خطة الغد ومقرر الحفظ التالي آلياً بحسب إنجاز الطالب ومستواه التعليمي.',
-        'شارة فحص الجاهزية: التحقق المسبق من استماع الطالب للمقطع وتكراره قبل التسميع.'
+        'أرشيف تراكمي متكامل لمسيرة تسميع كل طالب منذ اليوم الأول لالتحاقه لمتابعة التطور.'
       ],
       previewSnippet: {
         badgeText: 'سجل التسميع اليومي',
@@ -98,18 +254,19 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
     },
     {
       id: 'listening',
+      category: 'teaching',
       title: 'مشغل الآيات والتكرار الصوتي',
       icon: Headphones,
       tag: 'بالرسم العثماني لمجمع الملك فهد',
-      color: 'from-amber-400 to-amber-500',
-      badge: 'استماع آية بآية',
+      color: 'from-sky-400 to-blue-500',
+      badge: 'المصحف المعلم',
       headline: 'استماع تفاعلي بالرسم العثماني المعتمد مع عداد تكرار منزلي آلي',
       description: 'نظام استماع صوتي متطور يعرض الآيات القرآنية آية بآية بالخط العثماني لمجمع الملك فهد متزامنة مع تلاوات خاشعة لنخبة من كبار مشايخ العالم الإسلامي.',
       highlights: [
-        'تحديد المقطع القرآني بدقة من الآية (أ) إلى الآية (ب) من قبل المعلم دون إمكانية تجاوزها أو التلاعب.',
-        'تحديد عدد مرات التكرار المطلوبة (من ١ إلى ٢٠ تكرار) من قبل المحفظ للمتابعة المنزلية.',
-        'احتساب ذكي وآلي لمرات السماع والتكرار بدون تدخل الطالب، وإيداع نقاط التميز فور إتمام المقرر.',
-        'نخبة من كبار المشايخ المتقنين: الشيخ الحصري، المنشاوي، عبد الباسط، العفاسي، علي جابر، المعيقلي، الشاطري.'
+        'تحديد المقطع القرآني بدقة من الآية (أ) إلى الآية (ب) من قبل المعلم دون إمكانية تجاوزه.',
+        'تحديد عدد مرات التكرار المطلوبة (من ١ إلى ٢٠ تكرار) واحتساب مرات الاستماع آلياً.',
+        'إيداع نقاط التميز تلقائياً في حساب الطالب ولوحة الشرف عند إتمام المقرر كاملاً.',
+        'أصوات كبار المشايخ: الحصري، المنشاوي، عبد الباسط، العفاسي، علي جابر، الشاطري.'
       ],
       previewSnippet: {
         badgeText: 'سورة الشعراء - الآيات [٩ - ١٢]',
@@ -120,18 +277,19 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
     },
     {
       id: 'exams',
-      title: 'بنك الاختبارات وGoogle Forms',
+      category: 'eval',
+      title: 'بنك الاختبارات ونماذج Google Forms',
       icon: FileText,
       tag: 'تصحيح آلي وتكامل سحابي',
-      color: 'from-blue-500 to-blue-600',
-      badge: 'تكامل Google Forms',
-      headline: 'إنشاء اختبارات قرآنية متقدمة وربطها بنماذج Google Forms وسحب النتائج لحظياً',
-      description: 'بنك متكامل لاختبارات الحفظ والتجويد يتيح إنشاء أسئلة إلكترونية متعددة الأنواع، والربط الذكي بنماذج Google Forms مع تعبئة بيانات الطالب تلقائياً ورصد الدرجات.',
+      color: 'from-rose-500 to-red-600',
+      badge: 'Google Forms API',
+      headline: 'إنشاء اختبارات قرآنية متقدمة وتوليد نماذج Google Forms وسحب الدرجات',
+      description: 'بنك متكامل لاختبارات الحفظ والتجويد والمتشابهات مع تكامل مباشر مع Google Forms لإنشاء النماذج وتصحيحها وسحب نتائج الطلاب لحظياً دون تدخل يدوي.',
       highlights: [
-        'أنواع أسئلة شاملة: اختيار من متعدد، إكمال آيات، أحكام التجويد، وأسئلة مقالية للمراجعة.',
-        'تكامل مباشر مع Google Forms: إنشاء النماذج تلقائياً وسحب إجابات الطلاب دون تدخل يدوي.',
-        'تعبئة اسم الطالب ورقم الجلوس تلقائياً في رابط الاختبار لمنع الالتباس والأخطاء.',
-        'إمكانية مراجعة الإجابات ونسب النجاح، واحتساب درجات الاختبار في لوحة الشرف فورياً.'
+        'بنك أسئلة قرآني ضخم ومتنوع: اختيار من متعدد، إكمال آيات، أحكام التجويد، وأسئلة شفهية.',
+        'توليد نماذج Google Forms تلقائياً بنقرة واحدة ورفعها على حساب Google الخاص بالمعلم/المجمع.',
+        'تعبئة اسم الطالب ومعرفه تلقائياً في رابط الاختبار لمنع التكرار والأخطاء والالتباس.',
+        'رصد فوري لدرجات الاختبار وربطها بسجل الطالب ولوحة الصدارة وإصدار كشوفات الدرجات.'
       ],
       previewSnippet: {
         badgeText: 'اختبار تجويد جزء عمّ',
@@ -142,40 +300,42 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
     },
     {
       id: 'certificates',
-      title: 'الشهادات الرقمية والأرشيف',
+      category: 'eval',
+      title: 'الشهادات الرقمية وقوالب التكريم',
       icon: Award,
-      tag: 'طباعة فورية A4 وجودة فائقة',
-      color: 'from-teal-500 to-teal-600',
-      badge: 'أرشيف معتمد',
-      headline: 'إصدار شهادات تقدير وتفوق قرآني احترافية جاهزة للطباعة والتنزيل وحفظها في أرشيف دائم',
-      description: 'منظومة إصدار شهادات إتقان فاخرة بختم المجمع وتوقيع المعلم والمشرف، محفوظة بصفة دائمة في ملف الطالب وبوابة ولي الأمر للرجوع إليها وطباعتها في أي وقت.',
+      tag: 'طباعة فورية A4 وPDF',
+      color: 'from-amber-400 to-yellow-500',
+      badge: 'مصمم تفاعلي',
+      headline: 'مصمم شهادات متطور بالسحب والإفلات وقوالب إسلامية مزخرفة فاخرة',
+      description: 'أداة تصميم وطباعة شهادات التكريم القرآنية التي تليق بأهل القرآن مع إمكانية إصدار جماعي وتصدير PDF عالي الدقة جاهز للمطابع بختم المجمع وتوقيع المعلم.',
       highlights: [
-        'تصميمات إسلامية راقية متوافقة تماماً مع معايير الطباعة الورقية A4 وPDF بجودة فائقة.',
-        'أرشفة سحابية كاملة لكل شهادة صادرة برقم اعتماد وتاريخ رسمي وتفاصيل التكريم.',
-        'إمكانية وصول الطالب وولي الأمر لشهاداته الصادرة من خلال بوابته الخاصة في أي وقت.',
-        'إصدار جماعي بنقرة زر لجميع طلاب الحلقة المجتازين للاختبارات القرآنية.'
+        'محرر تفاعلي لتعديل الخطوط والمسافات وإضافة الأختام وشعار المجمع بدقة متناهية.',
+        'تعبئة تلقائية لبيانات الطالب، اسم الحلقة، الدرجة، والتاريخ بتوقيع المشرف والمعلم.',
+        'تصدير الشهادات بصيغة PDF عالية الدقة (High DPI) وصور PNG للمشاركة عبر الشبكات.',
+        'إصدار جماعي لكافة طلاب الحلقة المجتازين للاختبارات بنقرة زر واحدة في ثوانٍ.'
       ],
       previewSnippet: {
         badgeText: 'شهادة إتقان حفظ جزء تبارك',
         subText: 'معتمدة برقم توثيق رسمي وخاتم المجمع القرآني',
         stat1: { label: 'التقدير العام', val: 'ممتاز مع مرتبة الشرف' },
-        stat2: { label: 'خيارات التصدير', val: 'طباعة A4 / PDF' }
+        stat2: { label: 'خيارات التصدير', val: 'طباعة A4 / PDF عالية الدقة' }
       }
     },
     {
       id: 'leaderboard',
+      category: 'eval',
       title: 'لوحة الشرف وتصنيف المتصدرين',
       icon: Trophy,
       tag: 'تحفيز وتنافس قرآني شريف',
       color: 'from-amber-400 to-amber-600',
-      badge: 'معادلة نقاط موحدة',
-      headline: 'لوحة شرف تفاعلية تجمع كافة محاور التميز مع إمكانية تتبع مصادر النقاط بالتفصيل',
-      description: 'نظام تصنيف وتكريم عادل يجمع نقاط التسميع اليومية ومعايير التجويد، نقاط الاختبارات، نقاط الاستماع والتكرار المنزلي، ونقاط الصفحات المنجزة مع بحث وتفصيل فوري.',
+      badge: 'معادلة نقاط عادلة',
+      headline: 'لوحة شرف تفاعلية تجمع كافة محاور التميز مع تتويج فرسان الحلقات',
+      description: 'نظام تصنيف وتكريم عادل يجمع نقاط التسميع اليومية، نقاط الاختبارات، نقاط الاستماع والتكرار المنزلي، وشعلات المواظبة مع أوسمة وكؤوس للمراكز الأولى.',
       highlights: [
-        'معادلة موحدة ومحدثة لحظياً عند المعلمين والمشرفين والطلاب دون أي تعارض أو تأخير.',
-        'منصة تتويج للمراكز الثلاثة الأولى (كؤوس ذهبية وفضية وبرونزية وأوسمة شرف).',
-        'محرك بحث فوري بالاسم يتيح الضغط على أي طالب لاستعراض أين وكيف جمع نقاطه بالتفصيل.',
-        'إمكانية ضبط نطاق اللوحة: ترتيب على مستوى الحلقة محلياً أو الترتيب العام الموحد للمجمع.'
+        'معادلة نقاط موحدة ومحدثة لحظياً على مستوى الحلقة وعلى مستوى المجمع كاملاً.',
+        'تتويج المراكز الأولى بكؤوس ذهبية وفضية وبرونزية وتأثيرات بصرية احتفالية مشوقة.',
+        'إمكانية الضغط على أي طالب لاستعراض أين وكيف جمع نقاطه بالتفصيل الشفاف.',
+        'تصنيفات متعددة: متصدرو الشهر، أطول شعلة مواظبة (Streaks)، والأعلى درجات.'
       ],
       previewSnippet: {
         badgeText: 'المتصدر الأول: أسامة البشير',
@@ -186,18 +346,19 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
     },
     {
       id: 'whatsapp',
+      category: 'family',
       title: 'تقارير الواتساب وبوابة ولي الأمر',
       icon: MessageCircle,
-      tag: 'تواصل وتربية مستمرة',
-      color: 'from-emerald-400 to-teal-500',
-      badge: 'إشعار فوري بضغطة زر',
-      headline: 'تقارير إنجاز يومية منمقة بالآيات ترسل عبر الواتساب وبوابة إلكترونية لولي الأمر',
-      description: 'تجسير التواصل بين المجمع والمنزل عبر قوالب رسائل واتساب ذكية ترصد الحفظ والغياب وخطة الغد، مع بوابة تفاعلية لولي الأمر لمتابعة مسيرة ابنه لحظة بلحظة.',
+      tag: 'تواصل فوري وشراكة أسرية',
+      color: 'from-emerald-500 to-green-600',
+      badge: 'بوابة إلكترونية وواتساب',
+      headline: 'تقارير إنجاز يومية منمقة بالآيات ترسل بنقرة واحدة عبر الواتساب',
+      description: 'تجسير التواصل بين المجمع والمنزل عبر قوالب رسائل واتساب ذكية ترصد الحفظ والغياب وخطة الغد، مع بوابة مستقلة لولي الأمر لمتابعة مسيرة ابنه لحظة بلحظة.',
       highlights: [
-        'توليد تقارير يومية وأسبوعية وشهرية نصية منمقة بآيات قرآنية جاهزة للإرسال لواتساب بنقرة واحدة.',
-        'بوابة خاصة بولي الأمر للاطلاع على الحضور، سجل التسميع، خطة الغد، والشهادات.',
-        'سجل التوجيه والملاحظات السلوكية والتربوية لمتابعة الانضباط وتدوين توصيات المشايخ.',
-        'إشعارات ذكية تنبه ولي الأمر بالغياب أو التأخر أو استحقاق الاختبار والشهادة.'
+        'بوابة إلكترونية سحابية مخصصة لكل طالب يدخل إليها ولي الأمر للاطلاع على الحضور والتسميع.',
+        'إرسال تقارير الواتساب اليومية بنقرة زر واحدة بنص منسق واحترافي لأرقام أولياء الأمور.',
+        'إشعار فوري لولي الأمر في حال الغياب غير المبرر أو تأخر الطالب عن موعد الحلقة.',
+        'تخصيص نماذج الرسائل المعتمدة لكل مناسبة (تقارير يومية، شكر وتقدير، وتنبيهات).'
       ],
       previewSnippet: {
         badgeText: 'تقرير إنجاز يومي - واتساب',
@@ -205,21 +366,170 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
         stat1: { label: 'حالة الحضور', val: 'حاضر في الموعد' },
         stat2: { label: 'خطة الغد المقررة', val: 'سورة القصص (١ - ١٠)' }
       }
+    },
+    {
+      id: 'behavior',
+      category: 'family',
+      title: 'السجل السلوكي والتوجيه التربوي',
+      icon: ShieldAlert,
+      tag: 'غرس القيم والأخلاق',
+      color: 'from-orange-500 to-amber-600',
+      badge: 'بناء الشخصية القرآنية',
+      headline: 'توثيق السلوكيات الإيجابية ورصد المخالفات مع توجيهات وحلول تربوية',
+      description: 'أداة تربوية متخصصة لبناء شخصية طالب القرآن والجمع بين حفظ الحروف والتخلق بأخلاق القرآن الكريم مع حلول تربوية علاجية متدرجة.',
+      highlights: [
+        'توثيق السلوكيات الأخلاقية الحميدة (الأدب، الإيثار، العناية بالمصحف، البكور) ومنح نقاط تعزيزية.',
+        'رصد المخالفات السلوكية وتصنيفها لمستويات (بسيطة، متوسطة، جسيمة).',
+        'اقتراح توجيهات عملية مستمدة من أساليب التربية النبوية وتجارب المجمعات الرائدة.',
+        'توليد تقارير سلوكية دورية يمكن مشاركتها مع إدارة المجمع وولي الأمر للتقويم المشترك.'
+      ],
+      previewSnippet: {
+        badgeText: 'السجل التربوي للطالب',
+        subText: 'التعزيز: مبادرة في إعانة زملائه وحسن إنصات وتأدب',
+        stat1: { label: 'النقاط الإضافية', val: '+١٥ نقطة تعزيز' },
+        stat2: { label: 'الحالة السلوكية', val: 'ممتاز ومثالي' }
+      }
+    },
+    {
+      id: 'teacher_attendance',
+      category: 'admin',
+      title: 'تحضير المعلمين ومناوبات الإشراف',
+      icon: Clock,
+      tag: 'انضباط الكادر والمناوبات',
+      color: 'from-cyan-500 to-blue-600',
+      badge: 'إشراف إداري محكم',
+      headline: 'سجل حضور وانصراف المعلمين وتوثيق المناوبات الميدانية في المسجد',
+      description: 'نظام إداري مخصص لإدارة المجمع لضبط ومتابعة التزام المعلمين والمشرفين، واحتساب ساعات العمل والمناوبات ومكافأة المنضبطين بدقة.',
+      highlights: [
+        'تسجيل حضور وانصراف المعلمين اليومي بدقة مع رصد وقت الدخول والخروج بالثواني.',
+        'جدولة وتوثيق مناوبات الحلقات والإشراف الميداني على سلامة الطلاب في المسجد.',
+        'إحصائيات دورية وشهرية لنسب التزام المعلمين وساعات التطوع المنجزة.',
+        'تسهيل صرف المكافآت والحوافز التقديرية بناءً على سجلات الحضور المعتمدة رسمياً.'
+      ],
+      previewSnippet: {
+        badgeText: 'سجل حضور الكادر التعليمي',
+        subText: 'المعلم: فضيلة الشيخ / أحمد العتيبي • حلقة الفجر',
+        stat1: { label: 'ساعة الحضور', val: '٠٤:٤٥ ص (مبكر)' },
+        stat2: { label: 'نسبة الانضباط الشهري', val: '١٠٠٪' }
+      }
+    },
+    {
+      id: 'applications',
+      category: 'family',
+      title: 'بوابة القبول والتسجيل الإلكتروني',
+      icon: UserPlus,
+      tag: 'استقبال الطلاب من المنازل',
+      color: 'from-teal-500 to-emerald-600',
+      badge: 'قبول وتسكين فوري',
+      headline: 'رابط تسجيل عام لاستقبال الطلاب من المنازل مع إشعار صوتي فوري وقبول بنقرة زر',
+      description: 'بوابة قبول عصرية تتيح لأولياء الأمور تسجيل أبنائهم في المجمع عن بُعد دون الحاجة لزيارة المسجد ورقياً مع تنبيه لحظي للإدارة.',
+      highlights: [
+        'رابط تسجيل عام ومستقل لكل مجمع يمكن نشره عبر وسائل التواصل الاجتماعي والواتساب.',
+        'نموذج تسجيل إلكتروني يجمع بيانات الطالب، العمر، الجزء المحفوظ، ورقم ولي الأمر.',
+        'إشعار صوتي وتنبيه مباشر للإدارة على المنصة فور وصول أي طلب جديد لحظياً.',
+        'نافذة فحص واعتماد الطلبات: قبول الطالب وتسكينه في الحلقة المحددة بنقرة زر واحدة.'
+      ],
+      previewSnippet: {
+        badgeText: 'طلب انضمام طالب جديد',
+        subText: 'الطالب: يوسف المهدي • الحفظ السابق: ٣ أجزاء',
+        stat1: { label: 'حالة الطلب', val: 'بانتظار الاعتماد' },
+        stat2: { label: 'التسكين المقترح', val: 'حلقة البراعم' }
+      }
+    },
+    {
+      id: 'backup',
+      category: 'admin',
+      title: 'النسخ الاحتياطي والأرشفة وترحيل البيانات',
+      icon: Database,
+      tag: 'أمان وتشفير سحابي دائم',
+      color: 'from-violet-500 to-purple-600',
+      badge: 'حماية كاملة',
+      headline: 'تصدير واستيراد النسخ الاحتياطية (JSON) وترحيل البيانات بين المشاريع السحابية',
+      description: 'درع حماية وتأمين لكافة مخرجات المجمع يضمن بقاء البيانات للأبد واسترجاعها في ثوانٍ معدودة مع أداة متطورة لترحيل البيانات بين المشاريع.',
+      highlights: [
+        'تصدير نسخة احتياطية شاملة لكامل المجمع والطلاب والحلقات والحضور بصيغة JSON آمنة.',
+        'استيراد واسترجاع النسخ الاحتياطية بضغطة زر مع فحص ومعاينة البيانات قبل الاعتماد.',
+        'أداة ترحيل البيانات بين مشاريع وقواعد بيانات Firebase المختلفة بأمان وسرعة.',
+        'حفظ النسخ الاحتياطية في Google Drive في مجلد التطبيق المخصص بأعلى معايير الأمان.'
+      ],
+      previewSnippet: {
+        badgeText: 'أرشيف النسخ الاحتياطية السحابية',
+        subText: 'النسخة الأخيرة: مكتملة بنجاح ومشفرة بالكامل',
+        stat1: { label: 'حجم النسخة', val: '٢.٤ ميجابايت' },
+        stat2: { label: 'السجلات المحفوظة', val: '١,٢٥٠ طالباً وحلقة' }
+      }
+    },
+    {
+      id: 'reports',
+      category: 'admin',
+      title: 'التقارير والإحصائيات والتحليلات والطباعة',
+      icon: BarChart3,
+      tag: 'رسوم بيانية وكشوفات A4',
+      color: 'from-rose-500 to-pink-600',
+      badge: 'مؤشرات أداء شاملة',
+      headline: 'لوحات بيانات تفاعلية، مؤشرات إنجاز، وكشوفات رسمية مجهزة للطباعة وتصدير Excel',
+      description: 'غرفة عمليات بيانية وإحصائية تمكّن الإدارة من قياس منجزات الحلقات بدقة، وتصدير كشوفات حضور وتسميع رسمية مجهزة للمطابع والأرشفة الإدارية.',
+      highlights: [
+        'رسوم بيانية توضح نسب الحضور والغياب اليومية والأسبوعية والشهرية.',
+        'متابعة معدلات إنجاز الحفظ والمراجعة وعدد الأوجه المحفوظة لكل حلقة.',
+        'تصدير كشوفات حضور وتسميع رسمية مجهزة للطباعة (Print Optimized) A4.',
+        'تصدير البيانات بصيغة جداول Excel لمشاركتها مع إدارات الجمعيات والجهات المشرفة.'
+      ],
+      previewSnippet: {
+        badgeText: 'التقرير الإحصائي الشهري للمجمع',
+        subText: 'إجمالي الأوجه المحفوظة هذا الشهر: ١,٤٢٠ وجهاً',
+        stat1: { label: 'نسبة النجاح العام', val: '٩٧.٢٪' },
+        stat2: { label: 'صيغ التصدير', val: 'PDF A4 / Excel' }
+      }
     }
   ];
 
+  const categories = [
+    { id: 'all', name: 'الكل (جميع المميزات الـ 17)' },
+    { id: 'admin', name: 'الهيكل والثيم والسحاب' },
+    { id: 'ai_meet', name: 'حلقات Meet والذكاء الاصطناعي' },
+    { id: 'core', name: 'الطلاب والخطط وQR' },
+    { id: 'teaching', name: 'التحضير والتسميع والمصحف' },
+    { id: 'eval', name: 'الاختبارات والشهادات والشرف' },
+    { id: 'family', name: 'الولي والواتساب والتسجيل' }
+  ];
+
+  const filteredFeatures = useMemo(() => {
+    return featureTabs.filter(item => {
+      const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+      const query = featureSearch.trim().toLowerCase();
+      if (!query) return matchesCategory;
+
+      const matchesSearch =
+        item.title.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query) ||
+        item.headline.toLowerCase().includes(query) ||
+        item.tag.toLowerCase().includes(query) ||
+        item.badge.toLowerCase().includes(query) ||
+        item.highlights.some(h => h.toLowerCase().includes(query));
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [featureSearch, selectedCategory, featureTabs]);
+
+  const currentActiveTabFeature = filteredFeatures[activeFeatureTab] || filteredFeatures[0] || featureTabs[0];
+
   const faqs = [
     {
-      q: 'هل تدعم المنظومة تشغيل عدة مجمعات وحلقات قرآنية مستقلة؟',
-      a: 'نعم، المنظومة مصممة بهيكل متعدد المجمعات (Multi-Complex) يتيح إنشاء وإدارة مجمعات مستقلة تماماً، وتوزيع الحلقات والمعلمين، مع إمكانية التبديل السلس أو مشاركة قواعد البيانات بإشراف المشرف العام وإدارة المجمعات.'
+      q: 'هل تدعم المنظومة تشغيل وتخصيص ثيم وألوان عدة مجمعات وحلقات مستقلة؟',
+      a: 'نعم، المنظومة مصممة بهيكل متعدد المجمعات (Multi-Complex) يتيح إنشاء وإدارة مجمعات مستقلة تماماً، وتخصيص هوية بصرية كاملة لكل مجمع (اللون الأساسي، الثانوي، ولون التمييز، والوضع الداكن)، مع خيار عزل قواعد البيانات السحابية (Firebase Database Isolation).'
     },
     {
-      q: 'كيف يعمل نظام الاستماع وتكرار الآيات الجديد؟ وهل يمنع التلاعب؟',
-      a: 'المعلم يحدد المقطع بدقة من آية محددة إلى آية أخرى مع عدد مرات التكرار المطلوبة (من ١ إلى ٢٠ مرة) وقارئ معتمد بالرسم العثماني لمجمع الملك فهد. لا يستطيع الطالب تجاوز المقطع، ويقوم النظام باحتساب مرات الاستماع آلياً عند إتمام كل تكرار وإيداع نقاط التميز تلقائياً في حسابه ولوحة الشرف.'
+      q: 'كيف تعمل الحلقات القرآنية أونلاين عبر Google Meet؟',
+      a: 'تتيح المنظومة للمشرف والمعلم إنشاء حلقات افتراضية وتحديد جدول مواعيدها اليومية بدقة وربطها برابط Google Meet المعتمد. يتم حفظ ومزامنة الرابط في Firestore فورياً ليظهر للشيخ والطلاب وأولياء الأمور مع مؤشر البث المباشر (LIVE) وزر دخول فوري دون الحاجة لتحديث الصفحة.'
     },
     {
-      q: 'كيف يتم احتساب درجات ونقاط لوحة الشرف للطلاب؟',
-      a: 'تعتمد المنظومة معادلة تفوق شاملة وموحدة تجمع: نقاط معايير التسميع اليومي (المخارج، التجويد، الطلاقة)، نقاط اجتياز الاختبارات ومسابقات Google Forms، نقاط الاستماع والتكرار الصوتي المنزلي، ونقاط الأوجه والصفحات المنجزة. ويمكن لأي طالب أو معلم الضغط على أي اسم لاستعراض تفاصيل ومصادر نقاطه بدقة.'
+      q: 'ما هو دور المساعد القرآني الذكي ومحرك Gemini 3.8 Flash؟',
+      a: 'يوفر المساعد القرآني التفاعلي إمكانية التحدث بالصوت أو الكتابة باللغة العربية للاستعلام عن أي طالب وسجلات حضوره وتقييماته فوراً، إضافة إلى استخراج المتشابهات اللفظية بين الآيات، تفسير غريب القرآن، وصياغة خطط علاجية وتوليد أسئلة اختبارات ذكية.'
+    },
+    {
+      q: 'كيف يعمل نظام التحضير الذكي والسياج الجغرافي للمسجد (GPS)؟',
+      a: 'يستطيع المعلم تحضير الطلاب بنقرة زر أو عبر كاميرا الجوال بمسح رمز QR الفريد لبطاقة الطالب في ثانية واحدة. كما توفر المنظومة خيار التحضير الجغرافي (Geofencing) لمنع رصد الحضور إلا إذا كان المعلم أو الطالب متواجداً فعلياً داخل حرم ونطاق المسجد الجغرافي المحدد بالأمتار.'
     },
     {
       q: 'لماذا تطلب المنظومة أذونات Google Workspace (Sheets, Drive, Forms)؟',
@@ -254,7 +564,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
                   منظومة عُمْرَان
                 </h1>
                 <span className="text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full bg-[#ffc800]/20 text-[#ffc800] font-black border border-[#ffc800]/40 hidden xs:inline shrink-0">
-                  Omran
+                  Omran 17 Modules
                 </span>
               </div>
               <p className="text-[10px] sm:text-[11px] text-[#ffd233] hidden sm:block truncate font-bold">
@@ -344,7 +654,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
                       <strong>Name:</strong> Omran Quran Platform (منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية).
                     </p>
                     <p>
-                      A full-featured educational web application dedicated to managing Quran memorization schools, halaqahs, attendance, and student evaluations.
+                      A full-featured educational web application dedicated to managing Quran memorization schools, halaqahs, attendance, and student evaluations with 17 integrated modules.
                     </p>
                   </div>
 
@@ -428,7 +738,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
               transition={{ duration: 0.6, delay: 0.24 }}
               className="text-sm sm:text-base text-slate-200 max-w-3xl mx-auto leading-relaxed font-medium"
             >
-              بيئة تقنية وتربوية رائدة صُممت خصيصاً لخدمة أهل القرآن الكريم: رصد التسميع اليومي بمعايير التجويد الدقيقة، تشغيل المصحف الشريف بالرسم العثماني مع تكرار الآيات، بنك اختبارات Google Forms، أرشيف الشهادات الرقمية، ولوحة شرف تنافسية تجمع كافة محاور التميز لحظياً.
+              بيئة تقنية وتربوية رائدة متكاملة تضم ١٧ محوراً نوعياً: تخصيص الثيم والهوية البصرية لكل مجمع، حلقات Google Meet أونلاين المتزامنة، المساعد القرآني الذكي، التحضير بـ GPS والباركود، التقييم الثلاثي، بنك الاختبارات، أرشيف الشهادات الفاخرة، وبوابات أولياء الأمور والواتساب.
             </motion.p>
 
             {/* CTA Action Buttons */}
@@ -457,7 +767,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
                 className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#203843] border-2 border-[#2b4550] border-b-4 border-[#16262e] hover:border-[#ffc800] text-white text-sm font-black flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2"
               >
                 <Sparkles className="w-5 h-5 text-[#ffc800]" />
-                <span>استكشاف كافة مميزات المنظومة بالتفصيل</span>
+                <span>استكشاف كافة المميزات الـ ١٧ بالتفصيل الممل</span>
               </button>
             </motion.div>
           </motion.div>
@@ -465,10 +775,10 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
           {/* Quick Metrics / Pillars */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-5 pt-8 text-right">
             {[
-              { title: 'متعدد المجمعات', desc: 'إدارة مركزية مستقلة لكل مجمع وحلقة', color: 'text-[#ffc800]', icon: Building2 },
-              { title: 'تكرار الآيات', desc: 'مشغل قرآني بالرسم العثماني وتكرار آلي', color: 'text-[#1cb0f6]', icon: Headphones },
-              { title: 'بنك الاختبارات', desc: 'تكامل ذكي مع نماذج Google Forms', color: 'text-[#ff9600]', icon: FileText },
-              { title: 'لوحة الشرف', desc: 'معادلة نقاط موحدة وبحث وتفاصيل حية', color: 'text-[#ce82ff]', icon: Trophy }
+              { title: 'تخصيص الثيم', desc: 'ألوان وهوية وشعار لكل مجمع بنمط ليلي', color: 'text-[#ffc800]', icon: Palette },
+              { title: 'Google Meet', desc: 'حلقات أونلاين متزامنة وبث مباشر', color: 'text-[#1cb0f6]', icon: Video },
+              { title: 'الذكاء الاصطناعي', desc: 'محرك Gemini 3.8 Flash صوتياً ونصياً', color: 'text-[#ff9600]', icon: Sparkles },
+              { title: 'التحضير بـ GPS', desc: 'سياج مكاني للمسجد وشعلات تفاعلية', color: 'text-[#ce82ff]', icon: MapPin }
             ].map((pillar, i) => {
               const Icon = pillar.icon;
               return (
@@ -498,103 +808,295 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
           <div className="text-center space-y-3 max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#ffc800]/15 border border-[#ffc800]/40 text-[#ffc800] text-xs font-black">
               <Sparkles className="w-4 h-4 text-[#ffc800]" />
-              <span>دليل المزايا والوظائف الشاملة بالتفصيل</span>
+              <span>موسوعة مميزات منصة عُمْرَان الكاملة (١٧ نظاماً متكاملاً)</span>
             </div>
             <h3 className="text-2xl sm:text-4xl font-black font-heading text-white">
-              كل ما تحتاجه لإدارة الصرح القرآني من الألف إلى الياء
+              كل ما تحتاجه لإدارة الصرح القرآني بالتفصيل الممل
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
-              اضغط على أي ركن من أركان المنظومة لاستكشاف تفاصيل تشغيله ومزاياه العملية
+              تصفح القدرات والإمكانيات العملية والتقنية المتاحة للمشرف والمعلم والطلاب وأولياء الأمور
             </p>
           </div>
 
-          {/* Interactive Feature Tabs Navigator */}
-          <div className="flex items-center gap-2.5 overflow-x-auto pb-2 scrollbar-none justify-start lg:justify-center slider-horizontal">
-            {featureTabs.map((tab, idx) => {
-              const TabIcon = tab.icon;
-              const isActive = activeFeatureTab === idx;
-              return (
+          {/* Search, Categories & View Mode Bar */}
+          <div className="bg-[#1b2e35] border-2 border-b-4 border-[#2b4550] rounded-3xl p-4 sm:p-6 space-y-4 shadow-xl">
+            {/* Search Input & View Switcher */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative w-full sm:max-w-md">
+                <Search className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={featureSearch}
+                  onChange={(e) => {
+                    setFeatureSearch(e.target.value);
+                    setActiveFeatureTab(0);
+                  }}
+                  placeholder="ابحث في المميزات (تخصيص الثيم، جوجل ميت، باركود، واتساب، ذكاء اصطناعي)..."
+                  className="w-full pr-11 pl-8 py-2.5 rounded-xl bg-[#131f24] border-2 border-[#2b4550] text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-[#ffc800] font-medium"
+                />
+                {featureSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFeatureSearch('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400 hover:text-white"
+                  >
+                    مسح
+                  </button>
+                )}
+              </div>
+
+              {/* View Mode Toggle: Interactive Tabs vs All Grid */}
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#131f24] border border-[#2b4550] shrink-0 self-end sm:self-auto">
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveFeatureTab(idx)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer border-2 border-b-4 active:translate-y-0.5 ${
-                    isActive
-                      ? 'bg-[#ffc800] text-[#131f24] border-[#ffc800] border-b-[#e5a500] shadow-[0_4px_16px_rgba(255,200,0,0.3)] scale-[1.02]'
-                      : 'bg-[#203843] hover:bg-[#274452] text-white border-[#2b4550] border-b-[#16262e] hover:border-[#ffc800]'
+                  type="button"
+                  onClick={() => setViewMode('tabs')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                    viewMode === 'tabs' ? 'bg-[#ffc800] text-[#131f24] shadow-sm' : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  <TabIcon className={`w-4 h-4 ${isActive ? 'text-[#131f24]' : 'text-[#ffc800]'}`} />
-                  <span>{tab.title}</span>
+                  <ListFilter className="w-3.5 h-3.5" />
+                  <span>العرض التفاعلي</span>
                 </button>
-              );
-            })}
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                    viewMode === 'grid' ? 'bg-[#ffc800] text-[#131f24] shadow-sm' : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>شبكة البطاقات الكاملة</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {categories.map((cat) => {
+                const isActive = selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory(cat.id);
+                      setActiveFeatureTab(0);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all border border-b-2 active:translate-y-0.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-[#ffc800] text-[#131f24] border-[#ffc800] border-b-[#e5a500] shadow-sm'
+                        : 'bg-[#203843] hover:bg-[#274452] text-slate-200 border-[#2b4550] border-b-[#16262e]'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Active Tab Detailed Showcase Card */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeFeatureTab}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4 }}
-              className="bg-[#1b2e35] border-2 border-b-4 border-[#2b4550] rounded-[32px] p-6 sm:p-10 shadow-2xl relative overflow-hidden"
-            >
-              <div className="space-y-6 text-right">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-[11px] px-3 py-1 rounded-full bg-[#ffc800] text-[#131f24] font-black">
-                    {featureTabs[activeFeatureTab].badge}
-                  </span>
-                  <span className="text-xs text-[#ffc800] font-bold">
-                    {featureTabs[activeFeatureTab].tag}
-                  </span>
-                </div>
-
-                <h4 className="text-xl sm:text-3xl font-black font-heading text-white leading-tight">
-                  {featureTabs[activeFeatureTab].headline}
-                </h4>
-
-                <p className="text-xs sm:text-base text-slate-200 leading-relaxed max-w-4xl font-medium">
-                  {featureTabs[activeFeatureTab].description}
-                </p>
-
-                <div className="space-y-3 pt-2">
-                  <span className="text-xs sm:text-sm font-black text-[#ffc800] block">
-                    أبرز الخصائص والقدرات الفنية:
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {featureTabs[activeFeatureTab].highlights.map((h, hIdx) => (
-                      <div
-                        key={hIdx}
-                        className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#203843] border-2 border-[#2b4550] text-xs sm:text-sm text-slate-200 font-medium"
-                      >
-                        <CheckCircle2 className="w-4 h-4 text-[#ffc800] shrink-0 mt-0.5" />
-                        <span className="leading-relaxed">{h}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={onOpenLogin}
-                    className="px-6 py-3 rounded-2xl bg-[#ffc800] border-2 border-[#ffc800] border-b-4 border-[#e5a500] hover:brightness-105 text-[#131f24] text-xs sm:text-sm font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:translate-y-0.5"
-                  >
-                    <Lock className="w-4 h-4 text-[#131f24]" />
-                    <span>الدخول إلى المنظومة الآن</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onOpenPrivacyPolicy}
-                    className="px-5 py-3 rounded-2xl bg-[#203843] hover:bg-[#274452] text-slate-200 text-xs sm:text-sm font-bold border-2 border-[#2b4550] border-b-4 border-[#16262e] cursor-pointer transition-colors active:translate-y-0.5"
-                  >
-                    الاطلاع على سياسة الأمان والخصوصية
-                  </button>
-                </div>
+          {/* VIEW MODE 1: INTERACTIVE TAB SHOWCASE */}
+          {viewMode === 'tabs' && (
+            <div className="space-y-6">
+              {/* Interactive Horizontal Tabs Slider */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none slider-horizontal">
+                {filteredFeatures.map((tab, idx) => {
+                  const TabIcon = tab.icon;
+                  const isActive = activeFeatureTab === idx;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveFeatureTab(idx)}
+                      className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-black transition-all shrink-0 cursor-pointer border-2 border-b-4 active:translate-y-0.5 ${
+                        isActive
+                          ? 'bg-[#ffc800] text-[#131f24] border-[#ffc800] border-b-[#e5a500] shadow-[0_4px_16px_rgba(255,200,0,0.3)] scale-[1.02]'
+                          : 'bg-[#203843] hover:bg-[#274452] text-white border-[#2b4550] border-b-[#16262e] hover:border-[#ffc800]'
+                      }`}
+                    >
+                      <TabIcon className={`w-4 h-4 ${isActive ? 'text-[#131f24]' : 'text-[#ffc800]'}`} />
+                      <span>{tab.title}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </motion.div>
-          </AnimatePresence>
+
+              {/* Active Tab Detailed Showcase Card */}
+              {currentActiveTabFeature && (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentActiveTabFeature.id}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.35 }}
+                    className="bg-[#1b2e35] border-2 border-b-4 border-[#2b4550] rounded-[32px] p-6 sm:p-10 shadow-2xl relative overflow-hidden"
+                  >
+                    <div className="space-y-6 text-right">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-[11px] px-3.5 py-1 rounded-full bg-[#ffc800] text-[#131f24] font-black">
+                            {currentActiveTabFeature.badge}
+                          </span>
+                          <span className="text-xs text-[#ffc800] font-bold">
+                            {currentActiveTabFeature.tag}
+                          </span>
+                        </div>
+
+                        {currentActiveTabFeature.previewSnippet && (
+                          <div className="px-3 py-1 rounded-xl bg-[#203843] border border-[#2b4550] text-[11px] text-[#ffd233] font-bold">
+                            {currentActiveTabFeature.previewSnippet.badgeText}
+                          </div>
+                        )}
+                      </div>
+
+                      <h4 className="text-xl sm:text-3xl font-black font-heading text-white leading-tight">
+                        {currentActiveTabFeature.headline}
+                      </h4>
+
+                      <p className="text-xs sm:text-base text-slate-200 leading-relaxed max-w-4xl font-medium">
+                        {currentActiveTabFeature.description}
+                      </p>
+
+                      <div className="space-y-3 pt-2">
+                        <span className="text-xs sm:text-sm font-black text-[#ffc800] block">
+                          أبرز الخصائص والقدرات الفنية بالتفصيل الممل:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {currentActiveTabFeature.highlights.map((h, hIdx) => (
+                            <div
+                              key={hIdx}
+                              className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#203843] border-2 border-[#2b4550] text-xs sm:text-sm text-slate-200 font-medium"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-[#ffc800] shrink-0 mt-0.5" />
+                              <span className="leading-relaxed">{h}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Preview Snippet Box if available */}
+                      {currentActiveTabFeature.previewSnippet && (
+                        <div className="p-4 rounded-2xl bg-[#131f24] border border-[#2b4550] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                          <div>
+                            <span className="text-xs text-slate-400 block">معاينة النظام:</span>
+                            <strong className="text-sm text-white font-bold">{currentActiveTabFeature.previewSnippet.subText}</strong>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="px-3 py-1 rounded-xl bg-[#203843] text-xs font-bold text-amber-300 border border-[#2b4550]">
+                              {currentActiveTabFeature.previewSnippet.stat1.label}: {currentActiveTabFeature.previewSnippet.stat1.val}
+                            </span>
+                            <span className="px-3 py-1 rounded-xl bg-[#203843] text-xs font-bold text-emerald-400 border border-[#2b4550]">
+                              {currentActiveTabFeature.previewSnippet.stat2.label}: {currentActiveTabFeature.previewSnippet.stat2.val}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-4 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={onOpenLogin}
+                          className="px-6 py-3 rounded-2xl bg-[#ffc800] border-2 border-[#ffc800] border-b-4 border-[#e5a500] hover:brightness-105 text-[#131f24] text-xs sm:text-sm font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:translate-y-0.5"
+                        >
+                          <Lock className="w-4 h-4 text-[#131f24]" />
+                          <span>الدخول لتجربة الميزة الآن</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={onOpenPrivacyPolicy}
+                          className="px-5 py-3 rounded-2xl bg-[#203843] hover:bg-[#274452] text-slate-200 text-xs sm:text-sm font-bold border-2 border-[#2b4550] border-b-4 border-[#16262e] cursor-pointer transition-colors active:translate-y-0.5"
+                        >
+                          الاطلاع على سياسة الأمان والخصوصية
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              )}
+            </div>
+          )}
+
+          {/* VIEW MODE 2: FULL ALL-FEATURES GRID */}
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredFeatures.map((item) => {
+                const ItemIcon = item.icon;
+                return (
+                  <div
+                    key={item.id}
+                    className="p-6 rounded-[28px] bg-[#1b2e35] border-2 border-b-5 border-[#2b4550] hover:border-[#ffc800] transition-all duration-200 shadow-xl flex flex-col justify-between space-y-5 text-right group"
+                  >
+                    <div className="space-y-4">
+                      {/* Top Row: Icon & Badges */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="w-12 h-12 rounded-2xl bg-[#203843] border-2 border-b-4 border-[#2b4550] flex items-center justify-center text-[#ffc800] shadow-md group-hover:scale-105 transition-transform">
+                          <ItemIcon className="w-6 h-6 text-[#ffc800]" />
+                        </div>
+                        <span className="text-[11px] font-black px-3 py-1 rounded-full bg-[#ffc800]/20 text-[#ffc800] border border-[#ffc800]/40">
+                          {item.badge}
+                        </span>
+                      </div>
+
+                      {/* Title & Tag */}
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-400 block">{item.tag}</span>
+                        <h4 className="text-base sm:text-lg font-black text-white font-heading mt-0.5">
+                          {item.title}
+                        </h4>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                        {item.description}
+                      </p>
+
+                      {/* Highlights */}
+                      <div className="space-y-2 pt-2 border-t border-[#2b4550]/80">
+                        <span className="text-[11px] font-black text-[#ffc800] block">أبرز الوظائف:</span>
+                        <ul className="space-y-1.5 text-xs text-slate-300 font-medium">
+                          {item.highlights.slice(0, 3).map((hl, hlIdx) => (
+                            <li key={hlIdx} className="flex items-start gap-2">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#58cc02] shrink-0 mt-0.5" />
+                              <span className="leading-snug">{hl}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-[#2b4550]">
+                      <button
+                        type="button"
+                        onClick={onOpenLogin}
+                        className="w-full py-2.5 rounded-xl bg-[#203843] hover:bg-[#ffc800] text-slate-200 hover:text-[#131f24] text-xs font-black border-2 border-[#2b4550] hover:border-[#ffc800] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>دخول واستخدام الميزة</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {filteredFeatures.length === 0 && (
+            <div className="p-10 rounded-3xl bg-[#1b2e35] border-2 border-b-4 border-[#2b4550] text-center space-y-3">
+              <Search className="w-8 h-8 mx-auto text-slate-500" />
+              <h4 className="text-base font-black text-white">لم يتم العثور على ميزات مطابقة للبحث</h4>
+              <p className="text-xs text-slate-300">جرب البحث بكلمات مثل: ثيم، جوجل ميت، شهادات، درجات، واتساب.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setFeatureSearch('');
+                  setSelectedCategory('all');
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-[#ffc800] text-[#131f24] cursor-pointer"
+              >
+                إعادة ضبط الفلاتر
+              </button>
+            </div>
+          )}
         </section>
 
         {/* SECTION: TRANSPARENT DATA USAGE & GOOGLE WORKSPACE DISCLOSURE */}
@@ -764,14 +1266,14 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
                   color: 'text-[#ffc800]',
                   border: 'border-[#2b4550]',
                   title: 'المشرف العام وإدارة المجمعات',
-                  desc: 'إدارة المجمعات والحلقات، تعيين المعلمين، ضبط إعدادات الربط السحابي ومراقبة الجودة الشاملة.'
+                  desc: 'إدارة المجمعات والحلقات، تخصيص الثيم، تعيين المعلمين، ضبط إعدادات الربط السحابي ومراقبة الجودة الشاملة.'
                 },
                 {
                   icon: BookOpen,
                   color: 'text-[#ffd233]',
                   border: 'border-[#2b4550]',
                   title: 'معلمو الحلقات',
-                  desc: 'تسجيل الحفظ اليومي، رصد الحضور والتسميع، إصدار تقارير الواتساب، وتصدير الدرجات لجداول Google Sheets.'
+                  desc: 'تسجيل الحفظ اليومي، رصد الحضور والتسميع، عقد حلقات Google Meet، وإصدار تقارير الواتساب.'
                 },
                 {
                   icon: GraduationCap,
@@ -938,4 +1440,3 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
     </div>
   );
 };
-
