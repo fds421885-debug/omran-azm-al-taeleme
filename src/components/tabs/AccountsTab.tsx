@@ -267,8 +267,8 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
               ...matchH,
               primaryTeacherId: foundTeacherByCode.id,
               primaryTeacherName: foundTeacherByCode.name,
-              complexId: targetComplexId || matchH.complexId,
-              complexName: targetComplexName || matchH.complexName
+              complexId: matchH.complexId || targetComplexId,
+              complexName: matchH.complexName || targetComplexName
             };
             await onSaveHalaqah(updatedH).catch(() => {});
           }
@@ -428,8 +428,9 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
               ...matchH,
               primaryTeacherId: teacherId,
               primaryTeacherName: teacherName,
-              complexId: targetPrimaryComplex?.id || matchH.complexId,
-              complexName: targetPrimaryComplex?.name || matchH.complexName,
+              // Strictly PRESERVE halaqah's own complexId to prevent transferring halaqahs from other complexes!
+              complexId: matchH.complexId || targetPrimaryComplex?.id,
+              complexName: matchH.complexName || targetPrimaryComplex?.name,
               teacherIds: Array.from(new Set([...(matchH.teacherIds || []), teacherId])),
               teacherNames: Array.from(new Set([...(matchH.teacherNames || []), teacherName]))
             };
@@ -441,10 +442,16 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
 
             // Sync and bind all students of this halaqah with the complex and halaqah
             const normHName = normalizeArabicText(matchH.name);
-            const halStudents = currentStudents.filter(s =>
-              s.halaqahId === hId ||
-              (s.halaqahName && normalizeArabicText(s.halaqahName) === normHName)
-            );
+            const halStudents = currentStudents.filter(s => {
+              // Strictly never touch or reassign students that already belong to a different complex!
+              if (s.complexId && updatedH.complexId && s.complexId !== updatedH.complexId) {
+                return false;
+              }
+              return (
+                s.halaqahId === hId ||
+                (!s.complexId && s.halaqahName && normalizeArabicText(s.halaqahName) === normHName)
+              );
+            });
             for (const st of halStudents) {
               if (st.complexId !== updatedH.complexId || st.halaqahId !== updatedH.id || st.halaqahName !== updatedH.name) {
                 await OmranDataService.saveStudent({
@@ -482,9 +489,27 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
           }
         }
 
-        // 3. Supervisor Assignment / Cleanup
-        if (isSuper && targetPrimaryComplex) {
-          await OmranDataService.assignSupervisorToComplex(teacherId, targetPrimaryComplex.id);
+        // 3. Supervisor Assignment / Cleanup: Connect supervisor to EVERY selected complex!
+        if (isSuper) {
+          const targetCIds = allCIds.length > 0 ? allCIds : (targetPrimaryComplex ? [targetPrimaryComplex.id] : []);
+          for (const cId of targetCIds) {
+            await OmranDataService.assignSupervisorToComplex(teacherId, cId);
+          }
+          // Clear supervisor assignment from complexes that were unselected
+          for (const c of complexes) {
+            if (c.supervisorTeacherId === teacherId && !targetCIds.includes(c.id)) {
+              const clearedC: QuranComplex = {
+                ...c,
+                supervisorTeacherId: undefined,
+                supervisorTeacherName: ''
+              };
+              if (onSaveComplex) {
+                await onSaveComplex(clearedC).catch(() => {});
+              } else {
+                await OmranDataService.saveComplex(clearedC).catch(() => {});
+              }
+            }
+          }
         } else if (!isSuper) {
           // If role is regular teacher, clear from any complex they might have supervised
           for (const c of complexes) {

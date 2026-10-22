@@ -161,10 +161,12 @@ export function isHalaqahInComplex(
   const cleanTarget = cleanComplexBaseName(targetName);
   const bareTarget = stripArabicDefinite(cleanTarget);
 
-  // 1. Direct ID match
-  if (targetId && targetId !== 'all' && halaqah.complexId && halaqah.complexId === targetId) return true;
+  // 1. Authoritative direct ID match: If halaqah has an explicit complexId, it strictly dictates ownership
+  if (targetId && targetId !== 'all' && halaqah.complexId) {
+    return halaqah.complexId === targetId || normalizeArabicText(halaqah.complexId) === normalizeArabicText(targetId);
+  }
 
-  // 2. Direct name match (exact and root)
+  // 2. Direct name match (exact and root) - ONLY for legacy halaqahs without an explicit complexId
   if (halaqah.complexName && cleanTarget) {
     const cleanH = cleanComplexBaseName(halaqah.complexName);
     const bareH = stripArabicDefinite(cleanH);
@@ -176,8 +178,8 @@ export function isHalaqahInComplex(
     if (bareH.length >= 3 && bareTarget.includes(bareH)) return true;
   }
 
-  // 3. Token match
-  if (cleanTarget) {
+  // 3. Token match - ONLY for legacy halaqahs without an explicit complexId
+  if (cleanTarget && !halaqah.complexId) {
     const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن']);
     const tokens = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
     const bareTokens = tokens.map(t => stripArabicDefinite(t)).filter(w => w.length >= 3);
@@ -210,14 +212,13 @@ export function isStudentInComplex(
   const bareTarget = stripArabicDefinite(cleanTargetName);
   const normTarget = normalizeArabicText(targetName);
 
-  // 1. Direct complexId match (exact or normalized)
-  if (targetId && targetId !== 'all') {
-    if (student.complexId === targetId) return true;
-    if (student.complexId && normalizeArabicText(student.complexId) === normalizeArabicText(targetId)) return true;
+  // 1. Authoritative direct complexId match: If student has an explicit complexId, it strictly dictates ownership
+  if (targetId && targetId !== 'all' && student.complexId) {
+    return student.complexId === targetId || normalizeArabicText(student.complexId) === normalizeArabicText(targetId);
   }
 
-  // 2. Direct student complexName match (exact, root, and bare)
-  if (student.complexName && cleanTargetName) {
+  // 2. Direct student complexName match (exact, root, and bare) - only if no conflicting complexId
+  if (student.complexName && cleanTargetName && !student.complexId) {
     const cleanStudentC = cleanComplexBaseName(student.complexName);
     const bareStudentC = stripArabicDefinite(cleanStudentC);
     const normStudentC = normalizeArabicText(student.complexName);
@@ -235,9 +236,8 @@ export function isStudentInComplex(
     : null;
 
   if (h) {
-    if (targetId && targetId !== 'all') {
-      if (h.complexId === targetId) return true;
-      if (h.complexId && normalizeArabicText(h.complexId) === normalizeArabicText(targetId)) return true;
+    if (targetId && targetId !== 'all' && h.complexId) {
+      return h.complexId === targetId || normalizeArabicText(h.complexId) === normalizeArabicText(targetId);
     }
     if (h.complexName && cleanTargetName) {
       const cleanHC = cleanComplexBaseName(h.complexName);
@@ -245,43 +245,11 @@ export function isStudentInComplex(
       const normHC = normalizeArabicText(h.complexName);
       if (cleanHC === cleanTargetName || normHC === normTarget) return true;
       if (bareTarget && bareHC && bareTarget === bareHC) return true;
-      if (cleanTargetName.length >= 3 && cleanHC.includes(cleanTargetName)) return true;
-      if (cleanHC.length >= 3 && cleanTargetName.includes(cleanHC)) return true;
-      if (bareTarget.length >= 3 && bareHC.includes(bareTarget)) return true;
-      if (bareHC.length >= 3 && bareTarget.includes(bareHC)) return true;
-    }
-
-    // 3.1 Check if halaqah's teacher belongs to this complex
-    if (teachersList && teachersList.length > 0) {
-      const matchedTeacher = teachersList.find(t =>
-        (h.primaryTeacherId && t.id === h.primaryTeacherId) ||
-        (student.teacherId && t.id === student.teacherId) ||
-        (h.primaryTeacherName && normalizeArabicText(t.name) === normalizeArabicText(h.primaryTeacherName)) ||
-        (t.halaqahId && t.halaqahId === h.id) ||
-        (Array.isArray(t.halaqahIds) && t.halaqahIds.includes(h.id))
-      );
-
-      if (matchedTeacher) {
-        if (targetId && targetId !== 'all') {
-          if (matchedTeacher.complexId === targetId) return true;
-          if (Array.isArray(matchedTeacher.complexIds) && matchedTeacher.complexIds.includes(targetId)) return true;
-        }
-        if (matchedTeacher.complexName && cleanTargetName) {
-          const cleanTC = cleanComplexBaseName(matchedTeacher.complexName);
-          const bareTC = stripArabicDefinite(cleanTC);
-          if (cleanTC === cleanTargetName || bareTC === bareTarget) return true;
-        }
-        if (Array.isArray(matchedTeacher.complexNames) && cleanTargetName) {
-          if (matchedTeacher.complexNames.some((cn: string) => cleanComplexBaseName(cn) === cleanTargetName || stripArabicDefinite(cleanComplexBaseName(cn)) === bareTarget)) {
-            return true;
-          }
-        }
-      }
     }
   }
 
-  // 4. Token match for distinctive complex name (e.g. "الحربي", "الفرقان", "النور")
-  if (cleanTargetName) {
+  // 4. Token match ONLY for legacy records with neither student.complexId nor h.complexId
+  if (cleanTargetName && !student.complexId && !h?.complexId) {
     const stopWords = new Set(['مجمع', 'المجمع', 'قراني', 'قرآني', 'القراني', 'القرآني', 'نموذجي', 'النموذجي', 'لتحفيظ', 'القران', 'القرآن', 'الكريم', 'عام', 'العام', 'بن', 'ابن', 'عبد', 'الله']);
     const tokens = cleanTargetName.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
     const bareTokens = tokens.map(t => stripArabicDefinite(t)).filter(w => w.length >= 3);
@@ -290,11 +258,9 @@ export function isStudentInComplex(
     if (allTokens.length > 0) {
       const studentFields = [
         student.complexName,
-        student.complexId,
         student.halaqahName,
         student.notes,
         h?.complexName,
-        h?.complexId,
         h?.name,
         h?.description
       ].filter(Boolean).map(f => normalizeArabicText(f));

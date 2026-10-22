@@ -432,7 +432,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
             </div>
-          ) : null}
+          ) : (
+            <div
+              className="flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 shadow-sm transition-all border-2 border-b-4 shrink-0"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: themeBorder,
+                borderBottomColor: themeBorderBottom
+              }}
+              title={`المجمع القرآني: ${activeComplex?.name || complexName || 'المجمع الرئيسي'}`}
+            >
+              <Building2
+                className="w-3.5 h-3.5 shrink-0"
+                style={{ color: themeAccent }}
+              />
+              <span className="text-xs text-white font-black max-w-[160px] sm:max-w-xs truncate">
+                {activeComplex?.name || complexName || 'المجمع الرئيسي'}
+              </span>
+            </div>
+          )}
 
           {/* Halaqah selector / label */}
           {currentUser?.role === 'admin' && (

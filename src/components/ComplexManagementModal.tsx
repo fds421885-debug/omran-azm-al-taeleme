@@ -260,14 +260,20 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
         const found = teachers.find(t => t.id === supId);
         if (found) {
           supName = found.name;
-          // Ensure this supervisor teacher is strictly bound to this complex
+          const targetCompId = editingComplex.id || `complex-${Date.now()}`;
+          const existingCIds = found.complexIds || (found.complexId ? [found.complexId] : []);
+          const updatedCIds = Array.from(new Set([...existingCIds, targetCompId]));
+          const existingCNames = found.complexNames || (found.complexName ? [found.complexName] : []);
+          const updatedCNames = Array.from(new Set([...existingCNames, editingComplex.name.trim()]));
+
+          // Ensure this supervisor teacher retains all complexes and adds this complex
           const updatedTeacher: TeacherAccount = {
             ...found,
             role: found.role === 'developer' ? 'developer' : 'supervisor',
-            complexId: editingComplex.id,
-            complexName: editingComplex.name.trim(),
-            complexIds: [editingComplex.id],
-            complexNames: [editingComplex.name.trim()],
+            complexId: found.complexId || targetCompId,
+            complexName: found.complexName || editingComplex.name.trim(),
+            complexIds: updatedCIds,
+            complexNames: updatedCNames,
             title: found.title || `مشرف ${editingComplex.name.trim()}`
           };
           await onSaveTeacher(updatedTeacher);
@@ -291,6 +297,11 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
       };
 
       await onSaveComplex(fullComplex);
+
+      // Connect supervisor to this complex's database
+      if (supId) {
+        await OmranDataService.assignSupervisorToComplex(supId, fullComplex.id).catch(() => {});
+      }
       setStatusMsg({ type: 'success', text: `تم حفظ بيانات المجمع (${fullComplex.name}) بنجاح!` });
       setActiveView('list');
       setEditingComplex(null);

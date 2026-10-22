@@ -2210,15 +2210,17 @@ export class OmranDataService {
         } catch {}
       }
 
-      // Multi-Complex Teacher Sync: Ensure teacher document is written to the database of EVERY linked complex
+      // Multi-Complex Teacher Sync: Ensure teacher document is written to the database of EVERY linked or supervised complex
+      const complexes = await this.loadComplexes().catch(() => []);
+      const supervisedCIds = complexes.filter(c => c.supervisorTeacherId === teacher.id).map(c => c.id);
       const allLinkedComplexIds = Array.from(new Set([
         teacher.complexId,
-        ...(Array.isArray(teacher.complexIds) ? teacher.complexIds : [])
+        ...(Array.isArray(teacher.complexIds) ? teacher.complexIds : []),
+        ...supervisedCIds
       ])).filter(Boolean) as string[];
 
       if (allLinkedComplexIds.length > 0) {
         try {
-          const complexes = await this.loadComplexes();
           for (const cId of allLinkedComplexIds) {
             const comp = complexes.find(c => c.id === cId);
             if (comp && comp.databaseConfig?.isCustom) {
@@ -2652,13 +2654,16 @@ export class OmranDataService {
           repairedStudents++;
         }
       } else if (s.halaqahName && !s.halaqahId) {
-        // Find halaqah by name
-        const matchHalaqah = halaqahs.find(h => h.name.trim() === s.halaqahName?.trim());
+        // Find halaqah by name strictly respecting the student's existing complexId if set
+        const matchHalaqah = halaqahs.find(h => {
+          if (s.complexId && h.complexId && s.complexId !== h.complexId) return false;
+          return h.name.trim() === s.halaqahName?.trim();
+        });
         if (matchHalaqah) {
           const updatedSt: Student = {
             ...s,
             halaqahId: matchHalaqah.id,
-            complexId: matchHalaqah.complexId,
+            complexId: matchHalaqah.complexId || s.complexId,
             halaqahName: matchHalaqah.name
           };
           await this.saveStudent(updatedSt);
@@ -2716,19 +2721,26 @@ export class OmranDataService {
       }
     }
 
-    // 5. Ensure supervisor teachers are aligned with their complexes
+    // 5. Ensure supervisor teachers are aligned with their complexes (Multi-Complex Safe)
     for (const c of complexes) {
       if (c.supervisorTeacherId) {
         const sup = teachers.find(t => t.id === c.supervisorTeacherId);
-        if (sup && (sup.complexId !== c.id || sup.role !== 'supervisor')) {
-          const updatedSup: TeacherAccount = {
-            ...sup,
-            role: sup.role === 'developer' ? 'developer' : 'supervisor',
-            complexId: c.id,
-            complexName: c.name,
-            supervisedComplexId: c.id
-          };
-          await this.saveTeacher(updatedSup);
+        if (sup) {
+          const currentCIds = Array.isArray(sup.complexIds) ? sup.complexIds : (sup.complexId ? [sup.complexId] : []);
+          const needsCId = !currentCIds.includes(c.id);
+          const needsRole = sup.role !== 'supervisor' && sup.role !== 'developer';
+          if (needsCId || needsRole) {
+            const updatedSup: TeacherAccount = {
+              ...sup,
+              role: sup.role === 'developer' ? 'developer' : 'supervisor',
+              complexId: sup.complexId || c.id,
+              complexName: sup.complexName || c.name,
+              complexIds: Array.from(new Set([...currentCIds, c.id])),
+              complexNames: Array.from(new Set([...(sup.complexNames || []), c.name])),
+              supervisedComplexId: sup.supervisedComplexId || c.id
+            };
+            await this.saveTeacher(updatedSup);
+          }
         }
       }
     }
@@ -2801,10 +2813,16 @@ export class OmranDataService {
 
     // 4. Move and bind all students belonging to this halaqah with it
     const students = await this.loadStudents();
-    const halStudents = students.filter(s =>
-      s.halaqahId === halaqah.id ||
-      (s.halaqahName && normalizeTeacherText(s.halaqahName) === normalizeTeacherText(halaqah.name))
-    );
+    const halStudents = students.filter(s => {
+      // Strictly never touch or reassign students that already belong to a different complex!
+      if (s.complexId && updatedHalaqah.complexId && s.complexId !== updatedHalaqah.complexId) {
+        return false;
+      }
+      return (
+        s.halaqahId === halaqah.id ||
+        (!s.complexId && s.halaqahName && normalizeTeacherText(s.halaqahName) === normalizeTeacherText(halaqah.name))
+      );
+    });
     for (const st of halStudents) {
       if (st.complexId !== updatedHalaqah.complexId || st.halaqahId !== updatedHalaqah.id || st.halaqahName !== updatedHalaqah.name) {
         const updatedStudent: Student = {
@@ -2848,10 +2866,10 @@ export class OmranDataService {
       ...teacher,
       role: (teacher.role === 'developer' ? 'developer' : 'supervisor') as any,
       supervisedComplexId: complex.id,
-      complexId: complex.id,
-      complexName: complex.name,
-      complexIds: Array.from(new Set([...(teacher.complexIds || []), complex.id])),
-      complexNames: Array.from(new Set([...(teacher.complexNames || []), complex.name]))
+      complexId: teacher.complexId || complex.id,
+      complexName: teacher.complexName || complex.name,
+      complexIds: Array.from(new Set([...(teacher.complexIds || []), ...(teacher.complexId ? [teacher.complexId] : []), complex.id])),
+      complexNames: Array.from(new Set([...(teacher.complexNames || []), ...(teacher.complexName ? [teacher.complexName] : []), complex.name]))
     };
     await this.saveTeacher(updatedTeacher);
 
@@ -2863,6 +2881,19 @@ export class OmranDataService {
       updatedAt: new Date().toISOString()
     };
     await this.saveComplex(updatedComplex);
+
+    // 4. Directly connect and sync supervisor to the database of this complex (if custom/dedicated)
+    if (complex.databaseConfig?.isCustom && complex.databaseConfig?.projectId) {
+      try {
+        const compDb = this.getFirestoreInstanceForComplex(complex);
+        if (compDb && compDb !== this.getCentralDb()) {
+          const cleanTeacher = cleanFirestoreData(updatedTeacher);
+          await setDoc(doc(compDb, 'teachers', teacher.id), cleanTeacher, { merge: true }).catch(() => {});
+        }
+      } catch (dbErr) {
+        console.warn('Sync supervisor to complex dedicated database notice:', dbErr);
+      }
+    }
 
     return true;
   }
@@ -2880,7 +2911,12 @@ export class OmranDataService {
     const halaqahIds = new Set(complexHalaqahs.map(h => h.id));
 
     const allStudents = await this.loadStudents();
-    const complexStudents = allStudents.filter(s => s.halaqahId && halaqahIds.has(s.halaqahId));
+    const complexStudents = allStudents.filter(s => {
+      if (s.complexId && s.complexId !== complexId) return false;
+      if (s.complexId === complexId) return true;
+      if (s.halaqahId && halaqahIds.has(s.halaqahId)) return true;
+      return false;
+    });
     const studentIds = new Set(complexStudents.map(s => s.id));
 
     const allAttendance = await this.loadAttendance();
@@ -2970,7 +3006,12 @@ export class OmranDataService {
     const halaqahIds = new Set(complexHalaqahs.map(h => h.id));
 
     const allStudents = await this.loadStudents();
-    const complexStudents = allStudents.filter(s => (s.halaqahId && halaqahIds.has(s.halaqahId)) || s.complexId === complexId);
+    const complexStudents = allStudents.filter(s => {
+      if (s.complexId && s.complexId !== complexId) return false;
+      if (s.complexId === complexId) return true;
+      if (s.halaqahId && halaqahIds.has(s.halaqahId)) return true;
+      return false;
+    });
     const studentIds = new Set(complexStudents.map(s => s.id));
 
     // Delete attendance from central
@@ -3341,7 +3382,13 @@ export class OmranDataService {
     const halaqahIds = new Set(complexHalaqahs.map(h => h.id));
 
     const allStudents = await this.loadStudents();
-    const complexStudents = allStudents.filter(s => (s.halaqahId && halaqahIds.has(s.halaqahId)) || s.complexId === complex.id);
+    const complexStudents = allStudents.filter(s => {
+      // If student is explicitly tagged with another complex, NEVER migrate them!
+      if (s.complexId && s.complexId !== complex.id) return false;
+      if (s.complexId === complex.id) return true;
+      if (s.halaqahId && halaqahIds.has(s.halaqahId)) return true;
+      return false;
+    });
     const studentIds = new Set(complexStudents.map(s => s.id));
 
     const allAttendance = await this.loadAttendance();
@@ -3775,7 +3822,10 @@ export class OmranDataService {
           centralSnap.forEach(d => {
             const h = d.data() as Halaqah;
             if (h?.id && !deletedHalaqahIds.has(h.id) && !cloudList.some(item => item.id === h.id)) {
-              cloudList.push(h);
+              // Strictly isolate: only pull halaqahs that belong to this complex or have no complexId assigned
+              if (!h.complexId || (this.activeComplexId && h.complexId === this.activeComplexId)) {
+                cloudList.push(h);
+              }
             }
           });
         } catch {}
@@ -4008,8 +4058,18 @@ export class OmranDataService {
     broadcastDataUpdate('halaqah', clean);
 
     try {
-      await setDoc(doc(this.getActiveDb(), 'halaqahs', clean.id), clean);
-      if (this.getActiveDb() !== this.getCentralDb()) {
+      // Direct halaqah writes to the database of its OWN complex
+      let targetDb = this.getActiveDb();
+      if (clean.complexId) {
+        const complexes = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
+        const halComplex = complexes.find(c => c.id === clean.complexId);
+        if (halComplex && halComplex.databaseConfig?.isCustom) {
+          targetDb = this.getFirestoreInstanceForComplex(halComplex);
+        }
+      }
+
+      await setDoc(doc(targetDb, 'halaqahs', clean.id), clean);
+      if (targetDb !== this.getCentralDb()) {
         try {
           await setDoc(doc(this.getCentralDb(), 'halaqahs', clean.id), clean);
         } catch {}
@@ -5038,7 +5098,9 @@ export class OmranDataService {
           snap.forEach(d => {
             const h = d.data() as Halaqah;
             if (h?.id && !deletedHalaqahIds.has(h.id)) {
-              cloudList.push({ ...h, capacity: h.capacity || 15 });
+              if (!h.complexId || (this.activeComplexId && h.complexId === this.activeComplexId)) {
+                cloudList.push({ ...h, capacity: h.capacity || 15 });
+              }
             }
           });
           const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS);

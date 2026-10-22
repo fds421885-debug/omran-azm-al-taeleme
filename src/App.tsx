@@ -822,10 +822,20 @@ export function App() {
       return complexes[0] || null;
     }
 
-    // Supervisor: allow switching to complexes they supervise or manage
+    // Supervisor: allow switching ONLY to complexes they actually supervise or are assigned to
     if (isSupervisor && selectedComplexId && selectedComplexId !== 'all') {
       const match = complexes.find(c => c.id === selectedComplexId);
-      if (match) return match;
+      if (match) {
+        const isAuthorized =
+          isDeveloper ||
+          availableTeacherComplexes.some(c => c.id === match.id) ||
+          match.supervisorTeacherId === currentTeacher?.id ||
+          (currentTeacher?.complexIds && currentTeacher.complexIds.includes(match.id)) ||
+          currentTeacher?.complexId === match.id ||
+          (currentTeacher?.name && match.supervisorTeacherName && normalizeTeacherText(match.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name));
+
+        if (isAuthorized) return match;
+      }
     }
 
     // Teacher with assigned halaqahs: prioritize complex of assigned halaqahs
@@ -1306,20 +1316,29 @@ export function App() {
     applyComplexThemeToDOM(effectiveTheme, isInsideComplex);
   }, [activeComplex, settings.complexName, settings.theme, currentUser, activePortalStudent]);
 
-  // Permission to switch complexes:
-  // Developers and supervisors can switch between complexes freely to manage them.
-  const canSwitchComplex = useMemo(() => {
-    if (isDeveloper) return true;
-    if (isSupervisor) return complexes.length > 1;
-    if (currentTeacher && (currentTeacher.role === 'supervisor' || isTeacherSupervisor(currentTeacher))) return complexes.length > 1;
-    return availableTeacherComplexes.length > 1;
-  }, [isDeveloper, isSupervisor, currentTeacher, availableTeacherComplexes, complexes.length]);
-
-  // Scoped complexes: Programmer & Supervisor see all complexes to switch between them freely; teacher sees their assigned complexes
+  // Scoped complexes: Programmer sees all complexes; Supervisor sees their assigned and supervised complexes; teacher sees their assigned complexes
   const scopedComplexes = useMemo(() => {
-    if (isDeveloper || isSupervisor) return complexes;
-    return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : complexes);
-  }, [isDeveloper, isSupervisor, complexes, activeComplex, availableTeacherComplexes]);
+    if (isDeveloper) return complexes;
+    if (isSupervisor) {
+      const supComplexes = complexes.filter(c =>
+        c.supervisorTeacherId === currentTeacher?.id ||
+        (currentTeacher?.complexIds && currentTeacher.complexIds.includes(c.id)) ||
+        (currentTeacher?.complexId === c.id) ||
+        (currentTeacher?.name && c.supervisorTeacherName && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
+      );
+      if (supComplexes.length > 0) return supComplexes;
+      return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
+    }
+    return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
+  }, [isDeveloper, isSupervisor, complexes, activeComplex, availableTeacherComplexes, currentTeacher]);
+
+  // Permission to switch complexes:
+  // Developer can switch if complexes.length > 1.
+  // Supervisors and teachers can ONLY switch if they are assigned to / supervise MORE THAN ONE COMPLEX!
+  const canSwitchComplex = useMemo(() => {
+    if (isDeveloper) return complexes.length > 1;
+    return scopedComplexes.length > 1;
+  }, [isDeveloper, complexes.length, scopedComplexes.length]);
 
   // Scoped halaqahs: Strictly sees halaqahs of their ACTIVE QuranComplex!
   // ONLY if developer explicitly chose the 'all' view across complexes does it see ALL halaqahs!
@@ -1328,9 +1347,6 @@ export function App() {
     if (isDeveloper && selectedComplexId === 'all') return halaqahs;
 
     const filtered = halaqahs.filter(h => isHalaqahInComplex(h, activeComplex, complexes, students, teachers));
-    if (filtered.length === 0 && halaqahs.length > 0) {
-      return halaqahs;
-    }
     return filtered;
   }, [activeComplex, halaqahs, complexes, isDeveloper, selectedComplexId, students, teachers]);
 
@@ -1404,15 +1420,10 @@ export function App() {
         return s.complexId === activeComplex.id || (s.complexName && normalizeTeacherText(s.complexName) === normalizeTeacherText(activeComplex.name));
       }
 
-      // 3. Fallback: only primary complex
-      return complexes[0]?.id === activeComplex.id;
+      // 3. Fallback: only primary complex if student has neither complexId nor halaqah
+      return !s.complexId && !s.halaqahId && complexes[0]?.id === activeComplex.id;
     });
 
-    // Guaranteed visibility: If filtering by complex yielded 0 students but students exist,
-    // fallback to students so data is always visible normally!
-    if (filtered.length === 0 && students.length > 0) {
-      return students;
-    }
     return filtered;
   }, [isDeveloper, selectedComplexId, students, halaqahs, activeComplex, complexes, teachers, currentTeacher, activeHalaqahId, assignedHalaqahs]);
 
@@ -1474,8 +1485,9 @@ export function App() {
 
   // Switch between complexes seamlessly
   const handleSwitchComplex = (newComplexId: string) => {
-    // Only permitted if developer, or teacher linked to multiple complexes
+    // Only permitted if user can switch complexes and target complex is authorized
     if (!canSwitchComplex) return;
+    if (!isDeveloper && !scopedComplexes.some(c => c.id === newComplexId)) return;
 
     setSelectedComplexId(newComplexId);
     try {
@@ -1485,12 +1497,7 @@ export function App() {
     }
     const targetComplex = complexes.find(c => c.id === newComplexId);
     if (targetComplex) {
-      const assignedInTarget = getTeacherHalaqahsInComplex(currentTeacher, targetComplex.id, halaqahs, teachers, isSupervisor, complexes, students);
-      if (isSupervisor || assignedInTarget.length === 0) {
-        setActiveHalaqahId('all');
-      } else {
-        setActiveHalaqahId(assignedInTarget[0].id);
-      }
+      setActiveHalaqahId('all');
     }
   };
 

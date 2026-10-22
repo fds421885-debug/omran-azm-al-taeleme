@@ -477,8 +477,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (matchedTeacher) {
         const updatedTeacher: TeacherAccount = {
           ...matchedTeacher,
-          complexId: halaqahPayload.complexId,
-          complexName: halaqahPayload.complexName,
+          complexId: matchedTeacher.complexId || halaqahPayload.complexId,
+          complexName: matchedTeacher.complexName || halaqahPayload.complexName,
           complexIds: Array.from(new Set([...(matchedTeacher.complexIds || []), halaqahPayload.complexId!])),
           complexNames: Array.from(new Set([...(matchedTeacher.complexNames || []), halaqahPayload.complexName || 'المجمع'])),
           halaqahId: halaqahPayload.id,

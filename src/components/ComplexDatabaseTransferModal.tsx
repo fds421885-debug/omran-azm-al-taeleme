@@ -181,7 +181,13 @@ export const ComplexDatabaseTransferModal: React.FC<ComplexDatabaseTransferModal
   // Compute preview stats for target complex
   const complexHalaqahs = halaqahs.filter(h => h.complexId === targetComplex?.id);
   const complexHalaqahIds = new Set(complexHalaqahs.map(h => h.id));
-  const complexStudents = students.filter(s => (s.halaqahId && complexHalaqahIds.has(s.halaqahId)) || s.complexId === targetComplex?.id);
+  const complexStudents = students.filter(s => {
+    if (!targetComplex) return false;
+    if (s.complexId && s.complexId !== targetComplex.id) return false;
+    if (s.complexId === targetComplex.id) return true;
+    if (s.halaqahId && complexHalaqahIds.has(s.halaqahId)) return true;
+    return false;
+  });
 
   // Handle parsing of pasted firebaseConfig string
   const handleParseRawConfig = (text: string) => {
