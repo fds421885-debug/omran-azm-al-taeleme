@@ -3684,6 +3684,7 @@ export function App() {
                 isDeveloper={isDeveloper}
                 activeComplex={activeComplex}
                 initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                halaqahs={scopedHalaqahs}
               />
             )}
 

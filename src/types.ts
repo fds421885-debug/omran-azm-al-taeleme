@@ -1496,7 +1496,7 @@ export interface MosqueItem {
 
 export interface TeacherShift {
   id: string;
-  name: string; // e.g. "الفترة العصرية", "الفترة المسائية", "حلقة الفجر"
+  name: string; // e.g. "الفترة العصرية", "الفترة المسائية", "حلقة الفجر", "حلقة عن بعد"
   complexId?: string;
   mosqueId?: string; // الجامع المحدد لهذه الفترة
   mosqueName?: string; // اسم الجامع
@@ -1506,6 +1506,8 @@ export interface TeacherShift {
   checkOutEnd: string;   // "18:00"
   assignedTeacherIds: string[]; // IDs of teachers on duty
   createdAt: string;
+  isOnline?: boolean; // هل الفترة / الحلقة عن بعد (أونلاين) بدون اشتراط موقع المسجد
+  locationType?: 'in_person' | 'remote'; // نوع الحلقة: حضورية (بالمسجد) أو عن بعد (أونلاين)
 }
 
 export interface MosqueLocationConfig {
@@ -1539,6 +1541,8 @@ export interface TeacherAttendanceRecord {
   note?: string; // عذر أو ملاحظة
   recordedBy: 'self' | 'supervisor' | 'manual';
   createdAt: string;
+  isOnline?: boolean; // هل التحضير عن بعد
+  delayMinutes?: number; // عدد دقائق التأخير إذا كان متأخراً
 }
 
 /**
