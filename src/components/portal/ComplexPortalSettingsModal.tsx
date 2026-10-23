@@ -70,7 +70,7 @@ import {
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
-import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 import { calculatePortionFromPace } from '../../data/quranPagesData';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
 
@@ -523,9 +523,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
       const startSurah = maxJuz === 30 ? 78 : 2;
       const initialPortion = calculatePortionFromPace(startSurah, 1, 0.5);
+      const memJuzCount = Math.min(30, Math.max(0, maxJuz));
       const timeline = calculateRealisticKhatmTimeline({
-        memorizedJuz: maxJuz === 30 ? 1 : 0,
-        consolidatedJuz: 0,
+        memorizedJuz: memJuzCount,
+        consolidatedJuz: Math.max(0, memJuzCount > 2 ? memJuzCount - 2 : 0),
         dailyNewPages: 0.5,
         dailyReviewPages: 3,
         weeklyDaysCount: 5,
@@ -2785,6 +2786,37 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 )}
               </div>
 
+              {/* Diagnostic Test & Plan Action Buttons */}
+              {appDetailsToView.placementTestSummary && (
+                <div className="pt-2 border-t border-white/10 space-y-2">
+                  <div className="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <BrainCircuit className="w-4 h-4 text-cyan-400" />
+                      <div>
+                        <span className="text-[11px] font-black text-cyan-300 block">
+                          نتيجة الفحص التشخيصي المباشر: {appDetailsToView.placementTestSummary.overallScore || 0}%
+                        </span>
+                        <span className="text-[10px] text-slate-300 font-bold">
+                          المستوى: {(appDetailsToView.placementTestSummary as any).classifiedLevel || (appDetailsToView.placementTestSummary as any).levelClassification || 'متوسط'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = appDetailsToView;
+                        setAppDetailsToView(null);
+                        setAppDiagnosticToView(target);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-black border border-cyan-400/40 flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+                    >
+                      <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>معاينة الأسئلة والخيارات والزمن</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* View Full Plan Button */}
               <div className="pt-2 border-t border-white/10">
                 <button
@@ -3225,7 +3257,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </span>
                     </div>
                     <p className="text-xs text-slate-300 font-bold">
-                      {appDiagnosticToView.age} سنة • عام البدء: {appDiagnosticToView.startingYear || 'غير محدد'} • المسار: {appDiagnosticToView.previousDirection === 'baqarah_to_nas' ? 'من البقرة إلى الناس' : 'من الناس إلى البقرة'}
+                      {appDiagnosticToView.age} سنة • عام البدء: {appDiagnosticToView.startingYear || 'غير محدد'} • المسار: {appDiagnosticToView.previousDirection === 'from_baqarah' || (appDiagnosticToView.previousDirection as any) === 'baqarah_to_nas' ? 'من البقرة إلى الناس' : 'من الناس إلى البقرة'}
                     </p>
                   </div>
                 </div>
@@ -3241,152 +3273,225 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-                {appDiagnosticToView.placementTestSummary ? (
-                  <>
-                    {/* Score Badges */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
-                        <span className="text-[10px] text-slate-300 block">دقة الحفظ</span>
-                        <span className="text-lg font-black text-emerald-400 font-mono">
-                          {appDiagnosticToView.placementTestSummary.memorizationScore}%
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
-                        <span className="text-[10px] text-slate-300 block">أحكام التجويد</span>
-                        <span className="text-lg font-black text-amber-300 font-mono">
-                          {appDiagnosticToView.placementTestSummary.tajweedScore}%
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
-                        <span className="text-[10px] text-slate-300 block">ثبات الاستحضار</span>
-                        <span className="text-lg font-black text-cyan-300 font-mono">
-                          {appDiagnosticToView.placementTestSummary.retentionScore}%
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
-                        <span className="text-[10px] text-slate-300 block">المستوى المصنف</span>
-                        <span className="text-sm font-black text-amber-300">
-                          {appDiagnosticToView.placementTestSummary.classifiedLevel}
-                        </span>
-                      </div>
-                    </div>
+                {appDiagnosticToView.placementTestSummary ? (() => {
+                  const summary = appDiagnosticToView.placementTestSummary as any;
+                  const classifiedLevel = summary.classifiedLevel || summary.levelClassification || 'متوسط';
+                  const memorizationScore = summary.memorizationScore ?? 0;
+                  const tajweedScore = summary.tajweedScore ?? 0;
+                  const retentionScore = summary.retentionScore ?? 0;
+                  const overallScore = summary.overallScore ?? 0;
+                  const recommendations: string[] = summary.recommendations || summary.initialReviewRecommendations || [];
+                  const questionResults: any[] = summary.questionResults || summary.questionsHistory || [];
 
-                    {/* Recommendations */}
-                    {appDiagnosticToView.placementTestSummary.recommendations && (
-                      <div className="p-3.5 rounded-2xl bg-black/40 border border-[#065f46] space-y-1.5">
-                        <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
-                          <Sparkles className="w-4 h-4" />
-                          التوصيات التربوية والمنهجية المعتمدة:
-                        </span>
-                        <ul className="list-disc list-inside space-y-1 text-slate-200 text-xs">
-                          {appDiagnosticToView.placementTestSummary.recommendations.map((rec, rIdx) => (
-                            <li key={rIdx}>{rec}</li>
-                          ))}
-                        </ul>
+                  return (
+                    <>
+                      {/* Score Badges */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                          <span className="text-[10px] text-slate-300 block">دقة الحفظ</span>
+                          <span className="text-lg font-black text-emerald-400 font-mono">
+                            {memorizationScore}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                          <span className="text-[10px] text-slate-300 block">أحكام التجويد</span>
+                          <span className="text-lg font-black text-amber-300 font-mono">
+                            {tajweedScore}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                          <span className="text-[10px] text-slate-300 block">ثبات الاستحضار</span>
+                          <span className="text-lg font-black text-cyan-300 font-mono">
+                            {retentionScore}%
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                          <span className="text-[10px] text-slate-300 block">المستوى المصنف</span>
+                          <span className="text-sm font-black text-amber-300">
+                            {classifiedLevel}
+                          </span>
+                        </div>
                       </div>
-                    )}
 
-                    {/* Question by Question Inspector (All 10 Questions) */}
-                    <div className="space-y-3 pt-2">
-                      <h4 className="font-heading font-black text-sm text-cyan-300 flex items-center gap-2">
-                        <Award className="w-4 h-4 text-cyan-400" />
-                        سجل الأسئلة الـ 10 التفصيلي مع خيارات العرض وزمن الإجابة:
-                      </h4>
+                      {/* Overall Composite Score Bar */}
+                      <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] flex items-center justify-between">
+                        <span className="font-bold text-slate-200">المعدل العام المركب للفحص التشخيصي:</span>
+                        <span className="text-base font-black text-amber-400 font-mono">{overallScore}%</span>
+                      </div>
 
-                      <div className="space-y-3">
-                        {appDiagnosticToView.placementTestSummary.questionResults?.map((qRes, qIdx) => (
-                          <div
-                            key={qIdx}
-                            className={`p-4 rounded-2xl border-2 space-y-2.5 transition-all ${
-                              qRes.isCorrect
-                                ? 'bg-emerald-950/40 border-emerald-500/50'
-                                : 'bg-red-950/40 border-red-500/50'
-                            }`}
-                          >
-                            {/* Question Title & Meta */}
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs font-mono ${
-                                    qRes.isCorrect ? 'bg-emerald-500 text-[#022c22]' : 'bg-red-500 text-white'
+                      {/* Recommendations */}
+                      {recommendations.length > 0 && (
+                        <div className="p-3.5 rounded-2xl bg-black/40 border border-[#065f46] space-y-1.5">
+                          <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4" />
+                            التوصيات التربوية والمنهجية المعتمدة:
+                          </span>
+                          <ul className="list-disc list-inside space-y-1 text-slate-200 text-xs">
+                            {recommendations.map((rec, rIdx) => (
+                              <li key={rIdx}>{rec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Question by Question Inspector (All Questions with options, choice, correct answer, time) */}
+                      {questionResults.length > 0 && (
+                        <div className="space-y-3 pt-2">
+                          <h4 className="font-heading font-black text-sm text-cyan-300 flex items-center gap-2">
+                            <Award className="w-4 h-4 text-cyan-400" />
+                            <span>سجل الأسئلة التفصيلي ({questionResults.length} أسئلة) مع خيارات العرض وزمن الإجابة:</span>
+                          </h4>
+
+                          <div className="space-y-3">
+                            {questionResults.map((qRes, qIdx) => {
+                              const isCorrect = Boolean(qRes.isCorrect);
+                              const isTimedOut = Boolean(qRes.isTimedOut ?? qRes.isTimeout);
+                              const timeSec = qRes.timeTakenSeconds ?? 0;
+                              const optionsOrder: string[] = qRes.optionsOrder || qRes.options || [];
+                              const selectedOption = qRes.selectedOption || qRes.selectedAnswer || '';
+                              const correctAns = qRes.correctAnswer || '';
+                              const explanation = qRes.explanation || qRes.sourceReference;
+
+                              return (
+                                <div
+                                  key={qIdx}
+                                  className={`p-4 rounded-2xl border-2 space-y-2.5 transition-all ${
+                                    isCorrect
+                                      ? 'bg-emerald-950/40 border-emerald-500/50'
+                                      : 'bg-red-950/40 border-red-500/50'
                                   }`}
                                 >
-                                  {qIdx + 1}
-                                </span>
-                                <span className="font-black text-white text-xs sm:text-sm">
-                                  {qRes.questionText}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold">
-                                <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-300 font-mono">
-                                  {qRes.timeTakenSeconds}ث
-                                </span>
-                                {qRes.isTimedOut && (
-                                  <span className="px-2 py-0.5 rounded-md bg-red-500/30 text-red-300 border border-red-500/50">
-                                    انتهت المهلة
-                                  </span>
-                                )}
-                                <span
-                                  className={`px-2 py-0.5 rounded-md font-black ${
-                                    qRes.isCorrect
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                      : 'bg-red-500/20 text-red-300 border border-red-500/40'
-                                  }`}
-                                >
-                                  {qRes.isCorrect ? 'إجابة صحيحة ✓' : 'إجابة خاطئة ✗'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Options Display (Showing Decoupled Order) */}
-                            {qRes.optionsOrder && qRes.optionsOrder.length > 0 && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                                {qRes.optionsOrder.map((opt, oIdx) => {
-                                  const isStudentChoice = qRes.selectedOption === opt;
-                                  const isCorrectAns = qRes.correctAnswer === opt;
-
-                                  let optClass = 'bg-white/5 border-white/10 text-slate-300';
-                                  if (isCorrectAns) {
-                                    optClass = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-black';
-                                  } else if (isStudentChoice && !qRes.isCorrect) {
-                                    optClass = 'bg-red-500/20 border-red-500 text-red-200 line-through';
-                                  }
-
-                                  return (
-                                    <div
-                                      key={oIdx}
-                                      className={`p-2 rounded-xl border flex items-center justify-between text-xs ${optClass}`}
-                                    >
-                                      <span>{opt}</span>
-                                      {isStudentChoice && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-amber-300 font-bold shrink-0">
-                                          اختيار الطالب
-                                        </span>
-                                      )}
-                                      {isCorrectAns && !isStudentChoice && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/40 text-emerald-200 font-bold shrink-0">
-                                          الصواب
-                                        </span>
-                                      )}
+                                  {/* Question Title & Meta */}
+                                  <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs font-mono ${
+                                          isCorrect ? 'bg-emerald-500 text-[#022c22]' : 'bg-red-500 text-white'
+                                        }`}
+                                      >
+                                        {qIdx + 1}
+                                      </span>
+                                      <span className="font-black text-white text-xs sm:text-sm">
+                                        {qRes.questionText}
+                                      </span>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            )}
 
-                            {/* Pedagogical Explanation */}
-                            {qRes.explanation && (
-                              <p className="text-[11px] text-slate-300 bg-black/30 p-2 rounded-xl border border-white/5 font-bold">
-                                💡 التوضيح القرآني: {qRes.explanation}
-                              </p>
-                            )}
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                                      {qRes.difficulty && (
+                                        <span className="px-2 py-0.5 rounded-md bg-white/10 text-amber-300 text-[10px]">
+                                          {qRes.difficulty === 'easy' ? 'سهل' : qRes.difficulty === 'hard' ? 'متقدم' : 'متوسط'}
+                                        </span>
+                                      )}
+                                      <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-300 font-mono">
+                                        {timeSec}ث
+                                      </span>
+                                      {isTimedOut && (
+                                        <span className="px-2 py-0.5 rounded-md bg-red-500/30 text-red-300 border border-red-500/50">
+                                          انتهت المهلة
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`px-2 py-0.5 rounded-md font-black ${
+                                          isCorrect
+                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                            : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                                        }`}
+                                      >
+                                        {isCorrect ? 'إجابة صحيحة ✓' : 'إجابة خاطئة ✗'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Options Display (Showing Actual Order Shown to Student) */}
+                                  {optionsOrder.length > 0 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                                      {optionsOrder.map((opt, oIdx) => {
+                                        const isStudentChoice = selectedOption === opt;
+                                        const isCorrectAns = correctAns === opt;
+
+                                        let optClass = 'bg-white/5 border-white/10 text-slate-300';
+                                        if (isCorrectAns) {
+                                          optClass = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-black';
+                                        } else if (isStudentChoice && !isCorrect) {
+                                          optClass = 'bg-red-500/20 border-red-500 text-red-200 line-through';
+                                        }
+
+                                        return (
+                                          <div
+                                            key={oIdx}
+                                            className={`p-2 rounded-xl border flex items-center justify-between text-xs ${optClass}`}
+                                          >
+                                            <span>{opt}</span>
+                                            {isStudentChoice && (
+                                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-amber-300 font-bold shrink-0">
+                                                اختيار الطالب
+                                              </span>
+                                            )}
+                                            {isCorrectAns && !isStudentChoice && (
+                                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/40 text-emerald-200 font-bold shrink-0">
+                                                الصواب المعتمد
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Pedagogical Explanation or Quran Reference */}
+                                  {explanation && (
+                                    <p className="text-[11px] text-slate-300 bg-black/30 p-2 rounded-xl border border-white/5 font-bold">
+                                      💡 التوضيح القرآني والمرجع: {explanation}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : (
+                        </div>
+                      )}
+
+                      {/* Conversation Transcript with the AI Quran Assistant */}
+                      {appDiagnosticToView.conversationTranscript && appDiagnosticToView.conversationTranscript.length > 0 && (
+                        <div className="p-4 rounded-2xl bg-black/40 border border-[#065f46] space-y-3 pt-3">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="font-heading font-black text-sm text-amber-300 flex items-center gap-2">
+                              <MessageCircle className="w-4 h-4 text-amber-400" />
+                              <span>سجل المحادثة والتفاعل الكامل مع المساعد القرآني الذكي ({appDiagnosticToView.conversationTranscript.length} رسالة):</span>
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              حوار تفاعلي موثق
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {appDiagnosticToView.conversationTranscript.map((msg, mIdx) => {
+                              const isUser = (msg.sender as any) === 'user' || (msg.sender as any) === 'طالب';
+                              return (
+                                <div
+                                  key={mIdx}
+                                  className={`p-3 rounded-xl border text-xs space-y-1 ${
+                                    isUser
+                                      ? 'bg-amber-400/10 border-amber-400/30 text-amber-200 mr-4'
+                                      : 'bg-white/5 border-white/10 text-slate-200 ml-4'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="font-black text-amber-300">
+                                      {msg.sender === 'ai' ? '🤖 المساعد القرآني الذكي' : (typeof msg.sender === 'string' && msg.sender.includes('نظام') ? msg.sender : `👤 ${appDiagnosticToView.studentName}`)}
+                                    </span>
+                                    <span className="font-mono text-slate-400">{msg.timestamp}</span>
+                                  </div>
+                                  <p className="leading-relaxed font-bold whitespace-pre-wrap">{msg.text}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })() : (
                   <div className="p-8 text-center space-y-2 bg-black/30 rounded-2xl border border-white/10">
                     <p className="text-slate-300 font-bold">
                       هذا الطلب مسجل مسبقاً قبل تفعيل محرك الفحص التشخيصي المباشر.

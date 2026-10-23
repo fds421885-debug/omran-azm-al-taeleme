@@ -12,7 +12,8 @@ import {
   Minimize2,
   CheckCircle2,
   Layers,
-  Award
+  Award,
+  Check
 } from 'lucide-react';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import {
@@ -66,7 +67,11 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   highlightItems = [],
   activeItemId,
   studentName,
+  studentId,
+  teacherId,
+  teacherName,
   onRecordAyahError,
+  onRecordDetailedAyahError,
   recordedAyahErrors
 }) => {
   // Determine starting page
@@ -201,7 +206,9 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }
 
     const sInfo = getSurahInfo(surahNumber);
-    setLastErrorNotification(`⚡ تم رصد [${AYAH_ERROR_TYPE_LABELS[errorType]}] في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    const errObj = AYAH_ERROR_TYPE_LABELS[errorType];
+    const errorLabelStr = errObj?.label || errorType;
+    setLastErrorNotification(`⚡ تم رصد [${errorLabelStr}] في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
     setTimeout(() => setLastErrorNotification(null), 3500);
     setErrorDialogTarget(null);
     setErrorNotes('');
@@ -888,7 +895,8 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {(Object.keys(AYAH_ERROR_TYPE_LABELS) as AyahErrorType[]).map(errKey => {
                     const isSelected = selectedErrorType === errKey;
-                    const label = AYAH_ERROR_TYPE_LABELS[errKey];
+                    const errMeta = AYAH_ERROR_TYPE_LABELS[errKey];
+                    const label = errMeta?.label || errKey;
 
                     return (
                       <button

@@ -122,7 +122,7 @@ import { EditAccountModal } from './components/EditAccountModal';
 import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
 import { HalaqahPlansTab } from './components/tabs/HalaqahPlansTab';
 import { OnlineHalaqahsTab } from './components/tabs/OnlineHalaqahsTab';
-import { calculateRealisticKhatmTimeline } from './lib/aiPlanService';
+import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from './lib/aiPlanService';
 import { calculatePortionFromPace } from './data/quranPagesData';
 import { applyComplexThemeToDOM } from './lib/themeUtils';
 import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
@@ -1156,7 +1156,7 @@ export function App() {
         // Determine updated plan respecting consolidation rule:
         // "مش الطالب يختم بسرعة لا ان الطالب يختم وهو مثبت"
         const currentPlan = student.memorizationPlan;
-        const currentMem = currentPlan?.memorizedJuzCount || (student.currentSurah ? Math.max(1, Math.round((114 - student.currentSurah) / 3.8)) : 1);
+        const currentMem = currentPlan?.memorizedJuzCount || calculateStudentMemorizedJuz(student);
         const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
 
         const scheduleCfg = activeComplex?.planScheduleConfig;

@@ -167,7 +167,8 @@ export interface AyahErrorRecord {
   sessionDate?: string;
   teacherId?: string;
   teacherName?: string;
-  lastErrorDate: string;
+  lastErrorDate?: string;
+  timestamp?: string;
   notes?: string;
   cleared?: boolean;
   improvedDate?: string;
@@ -179,17 +180,20 @@ export interface AyahErrorRecord {
   }>;
 }
 
+export type AyahErrorLog = AyahErrorRecord;
+
 export interface PlanChangeLogEntry {
   id: string;
   timestamp: string; // ISO string
-  previousPlanSummary: string;
+  previousPlanSummary?: string;
   previousStateSummary?: string;
-  newPlanSummary: string;
+  newPlanSummary?: string;
   newStateSummary?: string;
   reason: string;
-  changedBy: 'ai' | 'teacher' | 'supervisor';
+  changedBy: 'ai' | 'teacher' | 'supervisor' | string;
   changedByName?: string;
   sessionDate?: string;
+  notes?: string;
   relatedErrors?: string[];
   approvedAt?: string;
   approvedByName?: string;
@@ -205,7 +209,10 @@ export interface StudentMemorizationPlan {
   estimatedDaysRemaining: number; // الأيام المتبقية للختمة
   progressPercentage: number; // نسبة الإنجاز والمسار نحو الختمة
   status: 'on_track' | 'needs_reinforcement' | 'ahead_of_schedule';
+  pathType?: string;
+  currentJuz?: number;
   currentSurahNumber?: number;
+  currentAyahNumber?: number;
   dailyFocusAyahs?: Array<{
     surahNumber: number;
     ayahNumber: number;
@@ -332,6 +339,9 @@ export type QuestionSkill =
   | 'tajweed_raa_laam' // أحكام الراء واللام
   | 'tajweed_waqf_ibtida' // أحكام الوقف والابتداء
   | 'tajweed_application' // تطبيق الأحكام على أمثلة قرآنية
+  | 'quran_memorization'
+  | 'tajweed_rules'
+  | 'mutashabihat'
   | 'general';
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
@@ -343,80 +353,100 @@ export type PlacementQuestionType =
   | 'next_verse' // اختر الآية التي تلي الآية المعروضة
   | 'surah_position' // تحديد موضع الآية أو اسم السورة
   | 'mutashabihat' // التمييز بين مواضع متشابهة لفظياً
+  | 'mutashabihat_distinction'
   | 'matching_phrase' // اختيار العبارة المطابقة للنص القرآني
   | 'tajweed_rule' // بيان الحكم التجويدي
-  | 'tajweed_application'; // استخراج أو تطبيق الحكم على المثال
+  | 'tajweed_application' // استخراج أو تطبيق الحكم على المثال
+  | string;
 
 export interface QuestionBankItem {
-  id: string; // المعرف الفريد
-  category: 'quran' | 'tajweed';
-  type: PlacementQuestionType;
+  id?: string; // المعرف الفريد
+  questionId?: string; // alias
+  category?: 'quran' | 'tajweed';
+  type?: PlacementQuestionType;
+  questionType?: string;
   questionText: string;
   surahNumber?: number;
   ayahNumber?: number;
   surahName?: string;
   ayahText?: string;
   ruleTopic?: string;
-  options: Array<{ id: string; text: string; subtext?: string }>;
-  correctOptionId: string; // معرف الإجابة الصحيحة المستقل عن الترتيب
+  options: Array<{ id: string; text: string; subtext?: string }> | string[];
+  optionsOrder?: string[];
+  correctOptionId?: string; // معرف الإجابة الصحيحة المستقل عن الترتيب
+  correctAnswer?: string;
+  selectedOption?: string;
   difficulty: QuestionDifficulty;
   skill: QuestionSkill;
-  targetCategory: 'khatim' | 'non_khatim' | 'all';
-  timeLimitSeconds: number; // مدة السؤال المحددة (افتراضياً 8 ثوانٍ)
+  targetCategory?: 'khatim' | 'non_khatim' | 'all';
+  timeLimitSeconds?: number; // مدة السؤال المحددة (افتراضياً 8 ثوانٍ)
   sourceReference?: string;
+  explanation?: string;
   createdAt?: string;
-  isVerified: boolean;
+  isVerified?: boolean;
 }
 
 export interface PlacementQuestionResult {
   questionId: string;
   questionText: string;
-  category: 'quran' | 'tajweed';
-  type: PlacementQuestionType;
-  displayedOptions: Array<{ id: string; text: string; subtext?: string }>;
-  selectedOptionId: string | null;
-  correctOptionId: string;
+  category?: 'quran' | 'tajweed';
+  type?: PlacementQuestionType;
+  displayedOptions?: Array<{ id: string; text: string; subtext?: string }>;
+  options?: string[];
+  optionsOrder?: string[];
+  selectedOptionId?: string | null;
+  selectedOption?: string;
+  selectedAnswer?: string;
+  correctOptionId?: string;
+  correctAnswer?: string;
   isCorrect: boolean;
-  isTimeout: boolean;
+  isTimeout?: boolean;
+  isTimedOut?: boolean;
   difficulty: QuestionDifficulty;
   skill: QuestionSkill;
-  timeTakenSeconds: number;
+  timeTakenSeconds?: number;
   surahName?: string;
   surahNumber?: number;
   ayahNumber?: number;
   sourceReference?: string;
+  explanation?: string;
 }
 
 export interface PlacementTestSummary {
   totalQuestions: number;
   correctCount: number;
   incorrectCount: number;
-  timeoutCount: number;
+  timeoutCount?: number;
   memorizationScore: number; // 0 - 100%
   retentionScore: number; // 0 - 100%
   tajweedScore: number; // 0 - 100%
   overallScore: number; // 0 - 100%
-  levelClassification:
+  levelClassification?:
     | 'يحتاج إلى تأسيس عاجل'
     | 'ضعيف'
     | 'متوسط'
     | 'جيد'
     | 'جيد جداً'
-    | 'ممتاز';
-  confidenceRating: 'عالية' | 'متوسطة' | 'أولية تحتاج تثبيت المعلم';
-  initialReviewRecommendations: string[];
+    | 'ممتاز'
+    | string;
+  classifiedLevel?: string;
+  confidenceRating: 'عالية' | 'متوسطة' | 'أولية تحتاج تثبيت المعلم' | 'medium' | 'high' | 'low';
+  initialReviewRecommendations?: string[];
+  recommendations?: string[];
   weakSurahsDeclared?: number[];
   reachedSurah?: number;
   reachedAyah?: number;
-  startDirection?: 'from_baqarah' | 'from_nas';
-  studentPath: 'khatim' | 'non_khatim';
-  questionsHistory: PlacementQuestionResult[];
-  completedAt: string;
+  startDirection?: 'from_baqarah' | 'from_nas' | 'nas_to_baqarah' | 'baqarah_to_nas' | string;
+  studentPath?: 'khatim' | 'non_khatim';
+  questionsHistory?: PlacementQuestionResult[];
+  questionResults?: PlacementQuestionResult[];
+  completedAt?: string;
 }
 
 export interface HalaqahShiftPeriod {
   id: string;
-  name: string; // e.g. "فترة الفجر", "فترة العصر", "فترة المغرب"
+  name?: string; // e.g. "فترة الفجر", "فترة العصر", "فترة المغرب"
+  period?: string; // alias e.g. 'morning' | 'afternoon' | 'evening'
   startTime: string; // e.g. "05:00", "16:00"
   endTime: string; // e.g. "06:30", "17:30"
   durationMinutes?: number;
@@ -430,6 +460,7 @@ export interface StudentRegistrationApplication {
   complexName?: string;
   studentName: string;
   age: number;
+  phone?: string;
   parentName: string;
   parentPhone: string;
   email?: string; // البريد الإلكتروني الموثق
@@ -458,21 +489,22 @@ export interface StudentRegistrationApplication {
   isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن الطاقة الاستيعابية
 
   // حالة تأكيد ودخول الطالب بعد القبول
-  studentAcceptanceStatus?: StudentAcceptanceConfirmationStatus;
+  studentAcceptanceStatus?: StudentAcceptanceConfirmationStatus | string;
   studentConfirmedAt?: string; // وقت تأكيد الطالب ودخوله رسمياً
 
   // التفاصيل الشاملة لاختبار التحديد ومقابلة الذكاء الاصطناعي
+  memorizedJuzCount?: number;
   placementTestSummary?: PlacementTestSummary;
-  conversationTranscript?: Array<{ sender: 'ai' | 'user'; text: string; timestamp: string }>;
-  proposedPlanSummary?: string;
+  conversationTranscript?: Array<{ sender: 'ai' | 'user' | string; text: string; timestamp: string }>;
+  proposedPlanSummary?: string | any;
   initialEstimatedKhatmDate?: string;
   startingYear?: string; // سنة بدء الحفظ
-  previousDirection?: 'from_baqarah' | 'from_nas'; // مسار الحفظ السابق
+  previousDirection?: 'from_baqarah' | 'from_nas' | 'nas_to_baqarah' | 'baqarah_to_nas' | string; // مسار الحفظ السابق
   weakSurahs?: number[]; // قائمة السور الضعيفة التي حددها الطالب
   actualReachedPosition?: { surahNumber: number; ayahNumber: number; surahName: string };
   dailyNewCapable?: string; // طاقة الحفظ اليومي التي صرح بها
   dailyReviewCapable?: string; // طاقة المراجعة اليومية
-  studentPathType?: 'beginner' | 'non_khatim' | 'khatim' | 'khatim_with_loss';
+  studentPathType?: 'beginner' | 'non_khatim' | 'khatim' | 'khatim_with_loss' | 'tathbeet' | 'standard_memorization' | 'khatim_itqan' | 'tajweed_foundation' | string;
 
   // إجابات الأسئلة المخصصة التي صممها المشرف
   customAnswers?: Record<string, any>;
@@ -1034,6 +1066,8 @@ export interface Student {
   currentAyah: number;
   dailyNewTarget: string;
   dailyReviewTarget: string;
+  dailyNewPages?: number;
+  dailyReviewPages?: number;
   level: StudentLevel;
   memorizedJuzList?: number[]; // قائمة أجزاء القرآن المحفوظة
   isExtraStudent?: boolean; // هل تم قبوله كطالب إضافي زائد عن سعة الحلقة
@@ -1054,6 +1088,8 @@ export interface Student {
   isFirstSession?: boolean; // هل هذه الجلسة الأولى للطالب (اليوم الأول لا توجد مراجعة، ومن الغد تبدأ)
   startSurahReached?: number; // السورة التي وصل إليها الطالب
   startAyahReached?: number; // الآية التي وصل إليها
+  weakSurahs?: number[]; // قائمة السور الضعيفة
+  lastAttendanceDate?: string; // تاريخ آخر حضور
   persistentReviewItems?: QuranRecitationItem[]; // بنود المراجعة والتراكمي والاختبار المحفوظة دائماً للطالب
   notes?: string;
   complexId?: string; // ID of the complex this student belongs to
@@ -1099,6 +1135,8 @@ export interface Student {
   reviewToAyah?: number;
   attendanceCount?: number; // عدد أيام الحضور المحسوبة
   completedParts?: number; // عدد الأجزاء المكتملة
+  retentionRate?: number; // معدل ثبات الاسترجاع
+  updatedAt?: string;
   createdAt: string;
 }
 

@@ -29,7 +29,8 @@ import {
   FileText,
   List,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -243,7 +244,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       skill: q.skill,
       difficulty: q.difficulty,
       questionText: q.questionText,
-      optionsOrder: q.options,
+      optionsOrder: (q.options || []).map(opt => typeof opt === 'string' ? opt : (opt as any).text),
       selectedOption: 'لم يجب ضمن الوقت',
       correctAnswer: q.correctAnswer,
       isCorrect: false,
@@ -273,7 +274,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       skill: q.skill,
       difficulty: q.difficulty,
       questionText: q.questionText,
-      optionsOrder: q.options,
+      optionsOrder: (q.options || []).map(opt => typeof opt === 'string' ? opt : (opt as any).text),
       selectedOption: selectedOpt,
       correctAnswer: q.correctAnswer,
       isCorrect,

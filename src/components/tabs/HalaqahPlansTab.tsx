@@ -31,7 +31,7 @@ import {
   StudentMemorizationPlan,
   ComplexPlanScheduleConfig
 } from '../../types';
-import { calculateRealisticKhatmTimeline, getExactTodayArabicInfo } from '../../lib/aiPlanService';
+import { calculateRealisticKhatmTimeline, getExactTodayArabicInfo, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
@@ -280,10 +280,8 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
         setCurrentProcessingName(student.name);
         setRecalcProgress(Math.round(((i + 1) / targetStudents.length) * 100));
 
-        // Determine student memorized juz
-        const memCount = student.currentSurah
-          ? (student.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - student.currentSurah) / 3.8)))
-          : 1;
+        // Determine student memorized juz precisely using calculateStudentMemorizedJuz
+        const memCount = calculateStudentMemorizedJuz(student);
 
         const consCount = student.memorizationPlan?.consolidatedJuzCount || Math.max(0, memCount - 2);
 

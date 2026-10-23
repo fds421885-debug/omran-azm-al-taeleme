@@ -8,9 +8,28 @@
 
 import { Student, StudentMemorizationPlan, Halaqah, QuranComplex, StudentEvaluation, QuranRecitationItem } from '../types';
 import { ApiConfig } from './apiConfig';
-import { calculatePortionFromPace } from '../data/quranPagesData';
+import { calculatePortionFromPace, SURAH_START_PAGE_MAP } from '../data/quranPagesData';
 import { getSurahInfo } from '../data/quranData';
 import { OmranAIService } from './omranAIService';
+
+/**
+ * Calculates student memorized Juz precisely from currentSurah or memorizedJuzCount/List
+ * using King Fahd 604-page Mushaf page boundaries (Surah 1 = page 1, Surah 114 = page 604).
+ */
+export function calculateStudentMemorizedJuz(student: { currentSurah?: number; memorizedJuzCount?: number; memorizedJuzList?: number[] }): number {
+  if (typeof student?.memorizedJuzCount === 'number' && student.memorizedJuzCount > 0) {
+    return Math.min(30, Math.max(0, student.memorizedJuzCount));
+  }
+  if (Array.isArray(student?.memorizedJuzList) && student.memorizedJuzList.length > 0) {
+    return Math.min(30, Math.max(0, Math.max(...student.memorizedJuzList)));
+  }
+  if (student?.currentSurah) {
+    const startPage = SURAH_START_PAGE_MAP[student.currentSurah] || 1;
+    const currentPagesReached = Math.max(0, startPage - 1);
+    return Math.min(30, Math.max(0, Math.floor(currentPagesReached / 20)));
+  }
+  return 0; // Default: beginner starting from beginning of Quran (0 Juz memorized)
+}
 
 export interface DynamicInterviewQuestion {
   questionId: string;

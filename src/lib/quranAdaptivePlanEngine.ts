@@ -305,7 +305,7 @@ export function checkStudentHiatusStatus(
 
 export interface HalaqahCapacityReport {
   halaqahId: string;
-  shiftPeriod: HalaqahShiftPeriod;
+  shiftPeriod: HalaqahShiftPeriod | string;
   totalShiftMinutes: number;
   enrolledStudentsCount: number;
   totalRequiredMinutes: number;
@@ -329,7 +329,7 @@ export interface HalaqahCapacityReport {
 export function calculateHalaqahTimeCapacity(params: {
   halaqah: Partial<Halaqah>;
   enrolledStudents: Array<Partial<Student>>;
-  shiftPeriod?: HalaqahShiftPeriod;
+  shiftPeriod?: HalaqahShiftPeriod | string;
   newStudentCandidateTimeMinutes?: number;
 }): HalaqahCapacityReport {
   const { halaqah, enrolledStudents, shiftPeriod = 'afternoon_asr', newStudentCandidateTimeMinutes = 0 } = params;
@@ -340,7 +340,10 @@ export function calculateHalaqahTimeCapacity(params: {
   const transitionBuffer = halaqah.bufferMinutesBetweenStudents || 1.0; // standard 1 min
 
   // Shift duration
-  const activeShift = halaqah.shifts?.find(s => s.period === shiftPeriod);
+  const shiftKey = typeof shiftPeriod === 'string' ? shiftPeriod : (shiftPeriod?.period || shiftPeriod?.id || shiftPeriod?.name);
+  const activeShift = typeof shiftPeriod === 'object' && shiftPeriod.durationMinutes
+    ? shiftPeriod
+    : halaqah.shifts?.find(s => s.period === shiftKey || s.id === shiftKey || s.name === shiftKey);
   const totalShiftMinutes = activeShift?.durationMinutes || 90; // default 90 mins
 
   let totalRequiredMinutes = newStudentCandidateTimeMinutes;

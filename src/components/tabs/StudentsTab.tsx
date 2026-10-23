@@ -38,7 +38,7 @@ import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { OmranDataService } from '../../lib/firebase';
 import { ComplexPortalSettingsModal } from '../portal/ComplexPortalSettingsModal';
 import { StudentAIPlacementModal } from '../assistant/StudentAIPlacementModal';
-import { calculateRealisticKhatmTimeline } from '../../lib/aiPlanService';
+import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 
 function toArabicNumerals(num: number | string): string {
   const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
@@ -1941,9 +1941,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
       {/* View Plan Modal */}
       {viewingPlanStudent && (() => {
-        const studentMemJuz = viewingPlanStudent.currentSurah
-          ? (viewingPlanStudent.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - viewingPlanStudent.currentSurah) / 3.8)))
-          : 1;
+        const studentMemJuz = calculateStudentMemorizedJuz(viewingPlanStudent);
         const fallbackTimeline = calculateRealisticKhatmTimeline({
           memorizedJuz: studentMemJuz,
           consolidatedJuz: Math.max(0, studentMemJuz - 2),
