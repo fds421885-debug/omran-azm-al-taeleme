@@ -65,6 +65,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [googleError, setGoogleError] = useState('');
   const [showUnregisteredModal, setShowUnregisteredModal] = useState(false);
   const [unregisteredEmail, setUnregisteredEmail] = useState('');
+  const [isTeacherLinkOpen, setIsTeacherLinkOpen] = useState(false);
+  const [linkTeacherUser, setLinkTeacherUser] = useState('');
+  const [linkTeacherPass, setLinkTeacherPass] = useState('');
+  const [isLinkingTeacher, setIsLinkingTeacher] = useState(false);
+  const [linkTeacherError, setLinkTeacherError] = useState('');
 
   // AI Placement Interview State
   const [isPlacementModalOpen, setIsPlacementModalOpen] = useState(false);

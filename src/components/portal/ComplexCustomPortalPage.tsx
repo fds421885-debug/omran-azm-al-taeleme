@@ -61,7 +61,6 @@ import {
   buildWaitingListEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
-import { QuickMailSetupModal } from './QuickMailSetupModal';
 
 
 // 30 Holy Quran Juz metadata (Part 1 to Part 30 with authentic names)
@@ -215,7 +214,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const [fallbackOtpCode, setFallbackOtpCode] = useState<string | null>(null);
-  const [isQuickMailSetupOpen, setIsQuickMailSetupOpen] = useState(false);
 
   // Countdown timer for resending OTP
   useEffect(() => {
@@ -354,6 +352,52 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         setEmailVerificationMethod('google');
         setOtpSent(false);
         setEnteredOtp('');
+
+        // 1. Check if this account belongs to an existing teacher or supervisor in this complex
+        try {
+          const teachers = await OmranDataService.loadTeachers();
+          const cleanEmail = verifiedEmail.toLowerCase();
+          const normGoogleName = verifiedName ? normalizeArabicText(verifiedName) : '';
+          let matchedTeacher = teachers.find(t => {
+            const inThisComplex =
+              t.complexId === complex.id ||
+              (t.complexIds && t.complexIds.includes(complex.id)) ||
+              t.role === 'developer';
+            const matchGoogle = t.googleEmail && t.googleEmail.trim().toLowerCase() === cleanEmail;
+            const matchUser = t.username && t.username.trim().toLowerCase() === cleanEmail;
+            const matchName = normGoogleName && normalizeArabicText(t.name) === normGoogleName;
+            return inThisComplex && (matchGoogle || matchUser || matchName);
+          });
+
+          if (matchedTeacher) {
+            if (!matchedTeacher.isGoogleLinked || matchedTeacher.googleEmail !== verifiedEmail) {
+              const updatedTeacher = {
+                ...matchedTeacher,
+                googleEmail: verifiedEmail,
+                isGoogleLinked: true
+              };
+              await OmranDataService.saveTeacher(updatedTeacher);
+              matchedTeacher = updatedTeacher;
+            }
+            setEmailSuccessNotice(`تم ربط حساب المعلم/المشرف (${matchedTeacher.name}) بحساب Google بنجاح! جاري الدخول...`);
+            setTimeout(() => {
+              onLoginSuccess(
+                {
+                  username: matchedTeacher.name || matchedTeacher.username,
+                  role: 'admin',
+                  teacherId: matchedTeacher.id,
+                  complexId: complex.id
+                },
+                matchedTeacher,
+                null
+              );
+            }, 800);
+            return;
+          }
+        } catch (e) {
+          console.warn('Teacher check notice during Google verification:', e);
+        }
+
         setEmailSuccessNotice(`تم التحقق والتوثيق التلقائي لبريدك (${verifiedEmail}) بنجاح عبر حساب Google.`);
 
         // Auto-fill student name if empty
@@ -855,17 +899,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsQuickMailSetupOpen(true)}
-              className="px-3 py-2 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:translate-y-0.5"
-              title="إعدادات البريد والمفتاح (حفظ دائم في قاعدة البيانات)"
-            >
-              <Mail className="w-4 h-4 text-amber-300" />
-              <span className="hidden sm:inline">إعدادات البريد والمفتاح</span>
-              <span className="sm:hidden">البريد</span>
-            </button>
-
-            <button
-              type="button"
               onClick={onExitPortal}
               className="px-3.5 py-2 rounded-xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
               style={{
@@ -1134,19 +1167,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
               </button>
             </form>
 
-            {/* Supervisor Email & Key Settings Link */}
-            <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-[11px] text-slate-300 font-bold">خدمة البريد والمفتاح (SMTP):</span>
-              <button
-                type="button"
-                onClick={() => setIsQuickMailSetupOpen(true)}
-                className="text-xs text-amber-300 hover:text-amber-200 font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl border border-amber-400/30"
-              >
-                <Key className="w-3.5 h-3.5 text-amber-400" />
-                <span>إعدادات بريد المجمع والمفتاح (حفظ دائم)</span>
-              </button>
-            </div>
-
             {showRegister && (
               <div className="pt-3 border-t border-white/10 text-center">
                 <p className="text-xs text-slate-300 font-bold">
@@ -1387,6 +1407,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 )}
 
+
+
                 {/* 1. Student Full Name (سؤال مقالي) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-200 flex items-center justify-between">
@@ -1609,29 +1631,17 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                     {fallbackOtpCode}
                                   </span>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2 pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEnteredOtp(fallbackOtpCode);
-                                      handleVerifyOtpCode(fallbackOtpCode);
-                                    }}
-                                    className="flex-1 py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#022c22] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>اعتماد وتأكيد الرمز [{fallbackOtpCode}] فوراً</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsQuickMailSetupOpen(true)}
-                                    className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all border border-white/20 shrink-0"
-                                    title="تهيئة بريد Gmail لإرسال الرسائل الحقيقية لصندوق الوارد"
-                                  >
-                                    <Key className="w-3.5 h-3.5 text-amber-300" />
-                                    <span>تهيئة بريد Gmail (للمشرف)</span>
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEnteredOtp(fallbackOtpCode);
+                                    handleVerifyOtpCode(fallbackOtpCode);
+                                  }}
+                                  className="w-full py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#022c22] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>اعتماد وتأكيد الرمز [{fallbackOtpCode}] فوراً</span>
+                                </button>
                               </div>
                             )}
 
@@ -2469,21 +2479,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           onCancel={() => setIsAIInterviewOpen(false)}
         />
       )}
-
-      {/* Quick Mail Setup Modal for Supervisor */}
-      <QuickMailSetupModal
-        isOpen={isQuickMailSetupOpen}
-        onClose={() => setIsQuickMailSetupOpen(false)}
-        complex={complex}
-        complexId={complex.id}
-        complexName={complex.name}
-        initialEmail={complex.mailConfig?.user || studentEmail}
-        onConfigSaved={() => {
-          setIsQuickMailSetupOpen(false);
-          setEmailSuccessNotice('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
-          setEmailError(null);
-        }}
-      />
     </div>
   );
 };

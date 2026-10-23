@@ -59,8 +59,9 @@ import {
 import { StudentExamTaker } from './StudentExamTaker';
 import { QuranAyahAudioPlayer } from './quran/QuranAyahAudioPlayer';
 import { getSurahInfo } from '../data/quranData';
-import { OmranDataService } from '../lib/firebase';
+import { OmranDataService, auth } from '../lib/firebase';
 import { GoogleWorkspaceService } from '../lib/googleWorkspace';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 interface ParentPortalViewProps {
   student: Student;

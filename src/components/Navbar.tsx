@@ -368,6 +368,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
                 </div>
 
+                {/* Google Account Link/Unlink Button for Teacher / Supervisor */}
+                {currentUser?.role === 'admin' && currentTeacher && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (currentTeacher.isGoogleLinked) {
+                        if (confirm(`هل تريد بالتأكيد فصل حساب Google (${currentTeacher.googleEmail})؟`)) {
+                          if (onUnlinkGoogleTeacher) await onUnlinkGoogleTeacher();
+                        }
+                      } else {
+                        if (onLinkGoogleTeacher) await onLinkGoogleTeacher();
+                      }
+                    }}
+                    disabled={isLinkingGoogleTeacher}
+                    className={`flex items-center gap-1.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 ${
+                      currentTeacher.isGoogleLinked
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-600/70 border-b-emerald-800 hover:bg-emerald-900'
+                        : 'bg-blue-950 text-blue-200 border-blue-600/70 border-b-blue-800 hover:bg-blue-900'
+                    }`}
+                    title={currentTeacher.isGoogleLinked ? `مربوط بحساب Google: ${currentTeacher.googleEmail} (انقر للفصل)` : 'ربط حساب Google للحصول على المزايا السحابية وتكامل Meet و Gmail'}
+                  >
+                    <ShieldCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${currentTeacher.isGoogleLinked ? 'text-emerald-400' : 'text-blue-400'}`} />
+                    <span className="hidden xs:inline">
+                      {isLinkingGoogleTeacher ? 'جاري الربط...' : currentTeacher.isGoogleLinked ? 'تم الربط ✓' : 'ربط Google'}
+                    </span>
+                  </button>
+                )}
+
                 {/* Duolingo 3D Themed Logout Button */}
                 <button
                   onClick={onLogout}
