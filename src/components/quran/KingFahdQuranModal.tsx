@@ -23,6 +23,7 @@ import {
   QuranPageInfo
 } from '../../data/quranPagesData';
 import { loadAllQuranVerses, getSurahVerses } from '../../lib/quranTextService';
+import { AyahErrorType, AYAH_ERROR_TYPE_LABELS, AyahErrorLog } from '../../types';
 
 export interface QuranHighlightItem {
   id: string;
@@ -42,7 +43,11 @@ interface KingFahdQuranModalProps {
   highlightItems?: QuranHighlightItem[];
   activeItemId?: string;
   studentName?: string;
+  studentId?: string;
+  teacherId?: string;
+  teacherName?: string;
   onRecordAyahError?: (surah: number, ayah: number, errorCount: number) => void;
+  onRecordDetailedAyahError?: (errorLog: AyahErrorLog) => void;
   recordedAyahErrors?: Record<string, number>;
 }
 
@@ -131,26 +136,24 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }, DURATION);
   };
 
+  // Detailed Ayah Error Categorization Dialog (9 Specific Types)
+  const [errorDialogTarget, setErrorDialogTarget] = useState<{ surahNumber: number; ayahNumber: number; text?: string; computedNext: number } | null>(null);
+  const [selectedErrorType, setSelectedErrorType] = useState<AyahErrorType>('word_forgotten');
+  const [errorNotes, setErrorNotes] = useState<string>('');
+
   const lastRecordedTimeRef = useRef<{ [key: string]: number }>({});
 
   const recordAyahError = (surahNumber: number, ayahNumber: number) => {
     const key = `${surahNumber}:${ayahNumber}`;
     const now = Date.now();
-    // Guard against duplicate triggers (e.g. synthetic dblclick after touchstart double tap, or rapid double clicks)
+    // Guard against duplicate triggers (debouncing)
     if (lastRecordedTimeRef.current[key] && (now - lastRecordedTimeRef.current[key]) < 450) {
       return;
     }
     lastRecordedTimeRef.current[key] = now;
 
-    let computedNext = 1;
-    setAyahErrors(prev => {
-      computedNext = (prev[key] || 0) + 1;
-      return { ...prev, [key]: computedNext };
-    });
-
-    if (onRecordAyahError) {
-      onRecordAyahError(surahNumber, ayahNumber, computedNext);
-    }
+    const currentCount = ayahErrors[key] || 0;
+    const computedNext = currentCount + 1;
 
     try {
       if (typeof window !== 'undefined' && 'navigator' in window && (navigator as any).vibrate) {
@@ -158,9 +161,50 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
       }
     } catch {}
 
+    // Find ayah text if available in quranMap
+    const surahVerses = quranMap[surahNumber];
+    const text = surahVerses && surahVerses[ayahNumber - 1] ? surahVerses[ayahNumber - 1] : '';
+
+    setErrorDialogTarget({
+      surahNumber,
+      ayahNumber,
+      text,
+      computedNext
+    });
+  };
+
+  const handleConfirmAyahError = (errorType: AyahErrorType, notes: string) => {
+    if (!errorDialogTarget) return;
+    const { surahNumber, ayahNumber, computedNext } = errorDialogTarget;
+    const key = `${surahNumber}:${ayahNumber}`;
+
+    setAyahErrors(prev => ({ ...prev, [key]: computedNext }));
+
+    if (onRecordAyahError) {
+      onRecordAyahError(surahNumber, ayahNumber, computedNext);
+    }
+
+    if (onRecordDetailedAyahError) {
+      const errorLog: AyahErrorLog = {
+        id: `err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        studentId: studentId || '',
+        surahNumber,
+        ayahNumber,
+        errorType,
+        errorCount: computedNext,
+        teacherId,
+        teacherName,
+        timestamp: new Date().toISOString(),
+        notes: notes.trim() || undefined
+      };
+      onRecordDetailedAyahError(errorLog);
+    }
+
     const sInfo = getSurahInfo(surahNumber);
-    setLastErrorNotification(`⚡ تم رصد خطأ تسميع (${computedNext}) بالنقر المزدوج في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setLastErrorNotification(`⚡ تم رصد [${AYAH_ERROR_TYPE_LABELS[errorType]}] في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
     setTimeout(() => setLastErrorNotification(null), 3500);
+    setErrorDialogTarget(null);
+    setErrorNotes('');
   };
 
   const lastTapRef = useRef<{ time: number; surah: number; ayah: number }>({ time: 0, surah: 0, ayah: 0 });
@@ -797,6 +841,108 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
           <div className="absolute bottom-16 right-1/2 translate-x-1/2 z-50 bg-rose-900/95 border-2 border-rose-400 text-white font-bold text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-bounce">
             <span className="text-sm">⚠️</span>
             <span>{lastErrorNotification}</span>
+          </div>
+        )}
+
+        {/* Ayah Recitation Error Categorization Modal (9 Specific Types) */}
+        {errorDialogTarget && (
+          <div className="fixed inset-0 z-[10020] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5" dir="rtl">
+            <div className="w-full max-w-lg bg-[#022c22] border-2 border-rose-500/80 rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl text-white animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-[#065f46] pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center border border-rose-500/40 font-black">
+                    ⚠️
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-sm sm:text-base text-rose-300">
+                      رصد خطأ تسميع: سورة {getSurahInfo(errorDialogTarget.surahNumber).name} (آية {toArabicNumerals(errorDialogTarget.ayahNumber)})
+                    </h3>
+                    <p className="text-[11px] text-slate-300 font-bold">
+                      {studentName ? `الطالب: ${studentName}` : 'تسميع الطالب'} • الخطأ رقم #{errorDialogTarget.computedNext} في هذه الآية
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setErrorDialogTarget(null)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Ayah preview */}
+              {errorDialogTarget.text && (
+                <div className="p-3 rounded-2xl bg-black/40 border border-[#065f46] text-amber-200 text-xs leading-relaxed font-bold max-h-24 overflow-y-auto">
+                  ﴿{errorDialogTarget.text}﴾
+                </div>
+              )}
+
+              {/* 9 Specific Ayah Error Types Grid */}
+              <div className="space-y-2">
+                <label className="text-xs font-black text-rose-300 block">
+                  حدد نوع الخطأ القرآني بدقة (للتوجيه في ورد الغد والمراجعة العلاجية):
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(Object.keys(AYAH_ERROR_TYPE_LABELS) as AyahErrorType[]).map(errKey => {
+                    const isSelected = selectedErrorType === errKey;
+                    const label = AYAH_ERROR_TYPE_LABELS[errKey];
+
+                    return (
+                      <button
+                        key={errKey}
+                        type="button"
+                        onClick={() => setSelectedErrorType(errKey)}
+                        className={`p-2.5 rounded-xl border text-right text-xs font-bold transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                          isSelected
+                            ? 'bg-rose-600 text-white border-rose-400 shadow-md font-black'
+                            : 'bg-[#064e3b] text-slate-200 border-[#065f46] hover:bg-[#065f46]'
+                        }`}
+                      >
+                        <span className="truncate">{label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Optional Notes */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-300 block">
+                  ملاحظة إضافية للمعلم (اختياري):
+                </label>
+                <input
+                  type="text"
+                  value={errorNotes}
+                  onChange={e => setErrorNotes(e.target.value)}
+                  placeholder="مثال: التبس مع موضع آل عمران، أبدل كلمة بكذا..."
+                  className="w-full bg-[#064e3b] border border-[#065f46] focus:border-rose-400 text-xs text-white rounded-xl py-2 px-3 outline-none"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#065f46]">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmAyahError(selectedErrorType, errorNotes)}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md cursor-pointer transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>تأكيد رصد الخطأ وتضمينه في ورد الغد</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setErrorDialogTarget(null)}
+                  className="px-4 py-2.5 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:text-white cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -21,8 +21,17 @@ import {
   Mic,
   BrainCircuit,
   MessageSquare,
-  Search
+  Search,
+  Timer,
+  AlertTriangle,
+  Flame,
+  CheckSquare,
+  FileText,
+  List,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Student,
   Halaqah,
@@ -30,21 +39,28 @@ import {
   Mosque,
   WaitingListStudent,
   StudentMemorizationPlan,
-  StudentRegistrationApplication
+  StudentRegistrationApplication,
+  QuestionBankItem,
+  PlacementQuestionResult,
+  PlacementTestSummary
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
+import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
+import { getPageOfAyah, calculatePortionFromPace } from '../../data/quranPagesData';
 import {
-  executeDynamicInterviewTurn,
-  calculateRealisticKhatmTimeline,
-  DynamicInterviewResponse,
-  DynamicInterviewQuestion
-} from '../../lib/aiPlanService';
+  generatePlacementDiagnosticTest,
+  evaluatePlacementDiagnostic
+} from '../../lib/quranQuestionBankEngine';
+import {
+  proposePlanFromPlacementResult,
+  calculateHalaqahTimeCapacity,
+  generateFiveStreamDailySchedule
+} from '../../lib/quranAdaptivePlanEngine';
 import {
   buildApplicationAcceptedEmail,
+  buildWaitingListEmail,
   sendRealPortalEmail
 } from '../../lib/portalEmailService';
-import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
-import { calculatePortionFromPace } from '../../data/quranPagesData';
 
 interface AIStudentPlacementInterviewProps {
   studentInitialData: {
@@ -57,6 +73,10 @@ interface AIStudentPlacementInterviewProps {
     memorizedJuzList: number[];
     notes?: string;
     trackingCode: string;
+    startingYear?: string;
+    previousDirection?: 'baqarah_to_nas' | 'nas_to_baqarah';
+    weakSurahs?: number[];
+    healthOrEducationalNotes?: string;
   };
   complex: QuranComplex;
   halaqahs: Halaqah[];
@@ -66,20 +86,16 @@ interface AIStudentPlacementInterviewProps {
   onCancel: () => void;
 }
 
-interface ChatMessage {
-  id: string;
-  sender: 'ai' | 'user';
-  text: string;
-  timestamp: string;
-  options?: Array<{ label: string; value: any; subtext?: string }>;
-  isQuestion?: boolean;
-  questionKey?: string;
-  isLiveTest?: boolean;
-  surahNumber?: number;
-  ayahNumber?: number;
-  customWidget?: 'juz_selector' | 'pace_selector' | 'mosque_selector' | 'result_success' | 'result_waiting' | 'surah_picker';
-  widgetData?: any;
-}
+// 7-Stage Pipeline Definitions
+const POST_TEST_STAGES = [
+  { id: 1, title: 'تحليل دقة الحفظ القرآني والتثبيت', icon: BookOpen, desc: 'فحص صحة استحضار الآيات وترتيب السور' },
+  { id: 2, title: 'تدقيق أحكام التجويد ومخارج الحروف', icon: Flame, desc: 'معايرة أحكام النون والميم والمدود والقلقلة' },
+  { id: 3, title: 'تقييم المتشابهات اللفظية ومواضع الاستدراك', icon: BrainCircuit, desc: 'رصد مواضع الالتباس الدقيقة وفواصل الآيات' },
+  { id: 4, title: 'تحديد المستوى القرآني المعتمد وفق معايير المنصة', icon: Award, desc: 'تصنيف الطالب ضمن المستويات الستة القياسية' },
+  { id: 5, title: 'فحص طاقة الحلقات المتاحة والموازنة الزمنية', icon: Clock, desc: 'مقارنة وقت التسميع المطلوب بسعة الشفت المتاحة (~2 دقيقة/وجه)' },
+  { id: 6, title: 'صياغة الخطة الفردية خماسية المسارات', icon: TrendingUp, desc: 'تخصيص مسارات الحفظ الجديد والمراجعات الأربعة وبروتوكول اليوم الأول' },
+  { id: 7, title: 'إصدار تذكرة القبول والتسكين الذكي', icon: CheckCircle2, desc: 'توليد كود التذكرة الفريد وتثبيت السجل النهائي' }
+];
 
 export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewProps> = ({
   studentInitialData,
@@ -90,510 +106,437 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
   onWaitingListAdded,
   onCancel
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [turnIndex, setTurnIndex] = useState<number>(1);
-  const [isTyping, setIsTyping] = useState<boolean>(true);
-  const [typingMessage, setTypingMessage] = useState<string>('المساعد القرآني يتأمل بياناتك ويبدأ المقابلة التفاعلية...');
-  const [userInput, setUserInput] = useState<string>('');
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  // Phase management
+  // 'setup' -> 'test' -> 'processing' -> 'result'
+  const [currentPhase, setCurrentPhase] = useState<'setup' | 'test' | 'processing' | 'result'>('setup');
 
-  // Accumulated assessment data gathered adaptively across dialogue turns
-  const [interviewData, setInterviewData] = useState<{
-    memorizedCount: number;
-    consolidatedCount: number;
-    tajweedScore: number;
-    hasIjazah: boolean;
-    goal: string;
-    dailyNewPages: number;
-    dailyReviewPages: number;
-    selectedMosqueId?: string;
-    selectedMosqueName?: string;
-    reachedSurah?: number;
-    reachedAyah?: number;
-    reachedSurahName?: string;
-    reviewDirection?: 'from_baqarah' | 'from_nas';
-    userAnswersList: string[];
-  }>({
-    memorizedCount: studentInitialData.memorizedJuzList?.length || 1,
-    consolidatedCount: Math.max(0, (studentInitialData.memorizedJuzList?.length || 1) - 2),
-    tajweedScore: 0,
-    hasIjazah: false,
-    goal: 'ختم القرآن الكريم وتثبيته كاملاً بإتقان',
-    dailyNewPages: 1,
-    dailyReviewPages: 5,
-    reachedSurah: undefined,
-    reachedAyah: undefined,
-    reachedSurahName: undefined,
-    reviewDirection: (studentInitialData.memorizedJuzList?.length || 1) >= 30 ? 'from_baqarah' : 'from_nas',
-    userAnswersList: []
-  });
+  // Registration profile fields
+  const [startingYear, setStartingYear] = useState<string>(studentInitialData.startingYear || '2023');
+  const [direction, setDirection] = useState<'baqarah_to_nas' | 'nas_to_baqarah'>(
+    studentInitialData.previousDirection || ((studentInitialData.memorizedJuzList?.length || 1) >= 30 ? 'baqarah_to_nas' : 'nas_to_baqarah')
+  );
+  const [selectedWeakSurahs, setSelectedWeakSurahs] = useState<number[]>(studentInitialData.weakSurahs || []);
+  const [healthNotes, setHealthNotes] = useState<string>(studentInitialData.healthOrEducationalNotes || '');
+  const [surahSearchTerm, setSurahSearchTerm] = useState<string>('');
+  const [isWeakSurahsModalOpen, setIsWeakSurahsModalOpen] = useState<boolean>(false);
 
-  const [placementResult, setPlacementResult] = useState<{
-    status: 'success' | 'waiting' | null;
-    matchedHalaqah?: Halaqah;
-    matchedMosque?: Mosque;
-    waitingEntry?: WaitingListStudent;
-    generatedPlan?: StudentMemorizationPlan;
-    newStudent?: Student;
-  }>({ status: null });
+  // Position reached
+  const [reachedSurah, setReachedSurah] = useState<number>(
+    (studentInitialData.memorizedJuzList?.length || 1) >= 30 ? 2 : 78
+  );
+  const [reachedAyah, setReachedAyah] = useState<number>(1);
 
-  // Auto scroll to bottom
-  useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTo({
-        top: chatScrollRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
+  // Placement Test State
+  const [diagnosticQuestions, setDiagnosticQuestions] = useState<QuestionBankItem[]>([]);
+  const [currentQuestionIdx, setCurrentQuestionIdx] = useState<number>(0);
+  const [questionResults, setQuestionResults] = useState<PlacementQuestionResult[]>([]);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState<boolean>(false);
+  const [timeLeft, setTimeLeft] = useState<number>(8); // Strict 8-second timer
+  const [timerActive, setTimerActive] = useState<boolean>(false);
+  const questionStartTimeRef = useRef<number>(Date.now());
+  const timerIntervalRef = useRef<any>(null);
+
+  // 7-Stage Processing State
+  const [processingStage, setProcessingStage] = useState<number>(1);
+  const [ticketCode, setTicketCode] = useState<string>('');
+
+  // Results State
+  const [testSummary, setTestSummary] = useState<PlacementTestSummary | null>(null);
+  const [matchedHalaqah, setMatchedHalaqah] = useState<Halaqah | null>(null);
+  const [matchedMosque, setMatchedMosque] = useState<Mosque | null>(null);
+  const [isWaitingList, setIsWaitingList] = useState<boolean>(false);
+  const [waitingEntry, setWaitingEntry] = useState<WaitingListStudent | null>(null);
+  const [generatedPlan, setGeneratedPlan] = useState<StudentMemorizationPlan | null>(null);
+  const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
+  const [conversationTranscript, setConversationTranscript] = useState<Array<{ sender: string; text: string; timestamp: string }>>([]);
+
+  const isKhatim = useMemo(() => {
+    return (studentInitialData.memorizedJuzList?.length || 0) >= 30;
+  }, [studentInitialData]);
+
+  // Idempotent ticket generator (OMR-XXXXXX)
+  const generateIdempotentTicket = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-  }, [messages, isTyping]);
+    return `OMR-${code}`;
+  };
 
-  // Welcome greeting & Turn 1 Launch
-  useEffect(() => {
-    const memCount = studentInitialData.memorizedJuzList?.length || 1;
-    const isKhatim = memCount >= 30;
-    const isChild = studentInitialData.age <= 12;
-
-    const timer = setTimeout(async () => {
-      const greetingText = isKhatim
-        ? `أهلاً وسهلاً بك يا ${studentInitialData.studentName} في مجمع ${complex.name}! 🌟\n\nأنا «المساعد القرآني الذكي لتسكين وتوجيه الطلاب». هنيئاً لك حفظ كتاب الله كاملاً، ومهمتي معك اليوم هي تقييم جودة السرد وضبط المتشابهات ورسم مسار الإجازة والسند المتصل، والبحث عن الحلقة الأنسب لمستواك العالي.`
-        : isChild
-        ? `أهلاً بالبطل الصغير ${studentInitialData.studentName} (عمرك ${studentInitialData.age} سنة) في مجمع ${complex.name}! 🌸\n\nأنا صديقك «المساعد الذكي». سنلعب معاً ونتحدث عن القرآن الكريم، لنتعرف على حفظك الجميل ونختار لك أحسن شيخ وأجمل حلقة!`
-        : `أهلاً وسهلاً بك يا ${studentInitialData.studentName} في مجمع ${complex.name}! 🌟\n\nأنا «المساعد القرآني الذكي لتسكين وتوجيه الطلاب». سنجري معاً مقابلة تفاعلية حية لفحص جودة حفظك وتجويدك ونفسيتك، لنرسم لك خطة تثبيت مخصصة حتى الختم والتثبيت، وتسكينك في الحلقة الأنسب.`;
-
-      const welcomeMsg: ChatMessage = {
-        id: 'msg_welcome',
-        sender: 'ai',
-        text: greetingText,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages([welcomeMsg]);
-      setIsTyping(true);
-      setTypingMessage('المساعد الذكي يحلل مستواك ويعد السؤال الأول...');
-
-      // Run Turn 1 dynamically
-      try {
-        const turn1 = await executeDynamicInterviewTurn({
-          studentInitialData,
-          complex,
-          turnIndex: 1,
-          chatHistory: [{ sender: 'ai', text: greetingText }],
-          accumulatedData: interviewData
-        });
-
-        setTimeout(() => {
-          setIsTyping(false);
-          const isSurahPicker = turn1.nextQuestion?.questionId === 'quran_position_reached' || (turn1 as any).customWidget === 'surah_picker';
-          const qMsg: ChatMessage = {
-            id: `msg_q_1`,
-            sender: 'ai',
-            text: turn1.replyText,
-            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-            isQuestion: true,
-            questionKey: turn1.nextQuestion?.questionId || 'turn_1',
-            options: turn1.nextQuestion?.options,
-            isLiveTest: turn1.nextQuestion?.isLiveRecitationTest,
-            surahNumber: turn1.nextQuestion?.surahNumber,
-            ayahNumber: turn1.nextQuestion?.ayahNumber,
-            customWidget: isSurahPicker ? 'surah_picker' : undefined
-          };
-          setMessages(prev => [...prev, qMsg]);
-        }, 900);
-      } catch (err) {
-        setIsTyping(false);
-      }
-    }, 700);
-
-    return () => clearTimeout(timer);
+  // Helper for Year options: last 15 years + "لا أتذكر"
+  const yearOptions = useMemo(() => {
+    const currentG = new Date().getFullYear();
+    const list: Array<{ label: string; value: string }> = [];
+    for (let y = currentG; y >= currentG - 15; y--) {
+      list.push({ label: `عام ${y}م`, value: String(y) });
+    }
+    list.push({ label: 'لا أتذكر عام البدء تحديداً', value: 'unknown' });
+    return list;
   }, []);
 
-  // Multi-Mosque system check
-  const isMultiMosqueSystem = useMemo(() => {
-    return complex.complexType === 'multi_mosque_system' || (complex.mosques && complex.mosques.length > 1);
-  }, [complex]);
+  // Filtered 114 Surahs for Weak Surahs Selector
+  const filteredSurahs = useMemo(() => {
+    const clean = surahSearchTerm.trim().toLowerCase();
+    if (!clean) return QURAN_SURAHS;
+    return QURAN_SURAHS.filter(s =>
+      s.name.includes(clean) ||
+      s.number.toString() === clean ||
+      s.englishName.toLowerCase().includes(clean)
+    );
+  }, [surahSearchTerm]);
 
-  // Mosque selection question
-  const askMosqueSelectionQuestion = () => {
-    if (!isMultiMosqueSystem || !complex.mosques || complex.mosques.length === 0) {
-      performAIPlacementAndPlanCalculation();
-      return;
-    }
-
-    setIsTyping(true);
-    setTypingMessage('المساعد الذكي يفحص المساجد التابعة للمنظومة...');
-    setTimeout(() => {
-      const qMsg: ChatMessage = {
-        id: 'msg_q_mosque',
-        sender: 'ai',
-        text: `بما أن مجمع «${complex.name}» يضم منظومة مساجد وجوامع متعددة:\n\nأيّ المساجد التالية هو الأقرب والأيسر لسكنك لنبحث لك عن حلقة بشاغر متاح فيه؟`,
-        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        isQuestion: true,
-        questionKey: 'mosque_picker',
-        customWidget: 'mosque_selector',
-        widgetData: {
-          mosques: complex.mosques
-        }
-      };
-      setMessages(prev => [...prev, qMsg]);
-      setIsTyping(false);
-    }, 700);
-  };
-
-  // Perform AI Matching, Capacity Checking, and Realistic Plan Generation
-  const performAIPlacementAndPlanCalculation = async (selectedMosqueId?: string) => {
-    setIsTyping(true);
-    setTypingMessage('الذكاء الاصطناعي يحسب جدول الختم الواقعي ويبحث عن الحلقة الشاغرة...');
-
-    setTimeout(async () => {
-      // 1. Search candidate halaqahs in this complex (or selected mosque)
-      let candidateHalaqahs = halaqahs.filter(h => {
-        if (h.complexId && h.complexId !== complex.id) return false;
-        if (selectedMosqueId && h.mosqueId && h.mosqueId !== selectedMosqueId) return false;
-        return true;
-      });
-
-      if (candidateHalaqahs.length === 0) {
-        candidateHalaqahs = halaqahs;
-      }
-
-      // 2. Check Capacity: count students currently in each halaqah
-      const halaqahStudentCounts = new Map<string, number>();
-      for (const s of existingStudents) {
-        if (s.halaqahId) {
-          const count = halaqahStudentCounts.get(s.halaqahId) || 0;
-          halaqahStudentCounts.set(s.halaqahId, count + 1);
-        }
-      }
-
-      // Filter halaqahs that have free capacity: current < capacity
-      const availableHalaqahs = candidateHalaqahs.filter(h => {
-        const cap = h.capacity && h.capacity > 0 ? h.capacity : 15;
-        const currentCount = halaqahStudentCounts.get(h.id) || 0;
-        return currentCount < cap;
-      });
-
-      // 3. Calculate Realistic, Mathematically Sound Khatmah Timeline
-      const weeklyDays = 5;
-      const dailyHours = 2;
-      const memCount = Math.max(1, interviewData.memorizedCount);
-      const isKhatim = memCount >= 30;
-      const consCount = Math.max(0, Math.min(memCount, interviewData.consolidatedCount));
-      const dailyNew = Math.max(0.25, interviewData.dailyNewPages);
-      const dailyRev = Math.max(2, interviewData.dailyReviewPages);
-
-      const startS = interviewData.reachedSurah || (isKhatim ? 2 : 78);
-      const startA = interviewData.reachedAyah || 1;
-      const startInfo = getSurahInfo(startS);
-
-      const timeline = calculateRealisticKhatmTimeline({
-        memorizedJuz: memCount,
-        consolidatedJuz: consCount,
-        dailyNewPages: dailyNew,
-        dailyReviewPages: dailyRev,
-        weeklyDaysCount: weeklyDays,
-        dailyHoursCount: dailyHours
-      });
-
-      const startPortion = calculatePortionFromPace(startS, startA, dailyNew);
-
-      // Day 1 Protocol:
-      // "اول يوم للقارئ وهيبدأ لو خاتم مش هيكون فيه مراجعة اول يوم ﻷنه لسه هيبدأ وهيسمع لكن بكرة لا خلاص اللي سمعه يحب يبدأ عليه المراجعة من الحفظ اللي سمعه امبارح"
-      const plan: StudentMemorizationPlan = {
-        dailyNewPages: dailyNew,
-        dailyReviewPages: dailyRev,
-        consolidatedJuzCount: consCount,
-        memorizedJuzCount: memCount,
-        targetJuz: 30,
-        targetCompletionDate: timeline.targetCompletionDate,
-        estimatedDaysRemaining: timeline.estimatedDaysRemaining,
-        progressPercentage: timeline.progressPercentage,
-        status: 'on_track',
-        weeklyDaysCount: weeklyDays,
-        dailyHoursCount: dailyHours,
-        tathbeetStopsCount: timeline.tathbeetStopsCount,
-        milestones: timeline.milestones,
-        nextDayAssignment: {
-          newMemorization: startPortion.description,
-          review: isKhatim
-            ? 'لا توجد مراجعة في اليوم الأول (انطلاقة التسميع الأولى - وتبدأ المراجعة غداً مما يتم تسميعه اليوم)'
-            : 'اليوم الأول مخصص للتسميع الجديد (وتبدأ المراجعة التراكمية غداً مما يُسمّع اليوم)',
-          action: 'advance_page',
-          reason: 'انطلاقة تأسيسية ذكية تبدأ من موضع الوصول المحدد بدقة مع بروتوكول اليوم الأول',
-          surahNumber: startPortion.fromSurah,
-          fromAyah: startPortion.fromAyah,
-          toSurahNumber: startPortion.toSurah,
-          toAyah: startPortion.toAyah
-        },
-        aiNotes: timeline.pedagogicalNote,
-        lastUpdated: new Date().toISOString()
-      };
-
-      if (availableHalaqahs.length > 0) {
-        // CASE A: Available Halaqah Found!
-        const matched = availableHalaqahs[0];
-        const matchedMosque = complex.mosques?.find(m => m.id === matched.mosqueId || m.id === selectedMosqueId);
-
-        const newStudentId = `std_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
-        const studentObj: Student = {
-          id: newStudentId,
-          name: studentInitialData.studentName,
-          password: '123',
-          phone: studentInitialData.phone,
-          age: studentInitialData.age,
-          parentName: studentInitialData.parentName,
-          parentPhones: [studentInitialData.parentPhone],
-          parentPhone: studentInitialData.parentPhone,
-          googleEmail: studentInitialData.email || null,
-          currentSurah: startS,
-          currentSurahName: startInfo.name,
-          currentAyah: startA,
-          startSurahReached: startS,
-          startAyahReached: startA,
-          reviewStartDirection: interviewData.reviewDirection || (isKhatim ? 'from_baqarah' : 'from_nas'),
-          isFirstSession: true,
-          dailyNewTarget: `${dailyNew} وجه يومياً`,
-          dailyReviewTarget: `${dailyRev} أوجه يومياً`,
-          level: interviewData.tajweedScore >= 1 || memCount >= 5 ? 'متميز' : 'متوسط',
-          complexId: complex.id,
-          complexName: complex.name,
-          halaqahId: matched.id,
-          halaqahName: matched.name,
-          assignedMosqueId: matchedMosque?.id,
-          assignedMosqueName: matchedMosque?.name,
-          memorizationPlan: plan,
-          aiPlan: {
-            roadmapSummary: `خطة تثبيت ذكية ومحسوبة بدقة. موعد الختم الواقعي: ${timeline.targetCompletionDate}.`,
-            currentDailyAssignment: {
-              newMemorization: plan.nextDayAssignment?.newMemorization || 'وجه جديد',
-              review: plan.nextDayAssignment?.review || 'مراجعة الماضي',
-              suggestedSheikh: 'الشيخ محمود خليل الحصري (المصحف المعلم)',
-              dailyNote: 'التكرار 3 مرات قبل النوم لضمان التثبيت',
-              targetRepetitions: 3
-            },
-            difficultyAdjustment: 'متزن',
-            estimatedDaysToFinishJuz: Math.ceil(20 / dailyNew),
-            lastUpdated: new Date().toISOString()
-          },
-          mushafErrors: [],
-          notes: studentInitialData.notes || 'تم التسكين والتوجيه بالمساعد الذكي التفاعلي',
-          createdAt: new Date().toISOString()
-        };
-
-        setPlacementResult({
-          status: 'success',
-          matchedHalaqah: matched,
-          matchedMosque,
-          generatedPlan: plan,
-          newStudent: studentObj
-        });
-
-        const resultMsg: ChatMessage = {
-          id: 'msg_result_success',
-          sender: 'ai',
-          text: `🎉 مبارك يا ${studentInitialData.studentName}! أتممت المقابلة التفاعلية بنجاح.\n\nبناءً على فحص مستواك ونفسيتك، وجدنا لك شاغراً مناسباً في: «${matched.name}» ${
-            matchedMosque ? `بجامع «${matchedMosque.name}»` : ''
-          }.\n\n📅 **موعد الختم المحسوب بتثبيت:** ${plan.targetCompletionDate}\n💡 **قاعدة الخطة:** ${timeline.pedagogicalNote}`,
-          timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-          customWidget: 'result_success',
-          widgetData: {
-            halaqah: matched,
-            mosque: matchedMosque,
-            plan,
-            student: studentObj
-          }
-        };
-        setMessages(prev => [...prev, resultMsg]);
-        setIsTyping(false);
-      } else {
-        // CASE B: All halaqahs full -> Add to Waiting List!
-        const queueNum = (complex.waitingList?.length || 0) + 1;
-        const waitingEntry: WaitingListStudent = {
-          id: `wait_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`,
-          applicationTrackingCode: studentInitialData.trackingCode,
-          studentName: studentInitialData.studentName,
-          age: studentInitialData.age,
-          phone: studentInitialData.phone,
-          parentName: studentInitialData.parentName,
-          parentPhone: studentInitialData.parentPhone,
-          memorizedJuz: memCount,
-          consolidatedJuz: consCount,
-          tajweedLevel: interviewData.tajweedScore >= 1 ? 'متقدم' : 'متوسط',
-          hasIjazah: Boolean(interviewData.hasIjazah),
-          dailyNewPace: dailyNew,
-          dailyReviewPace: dailyRev,
-          queueNumber: queueNum,
-          complexId: complex.id,
-          complexName: complex.name,
-          mosqueId: selectedMosqueId,
-          mosqueName: complex.mosques?.find(m => m.id === selectedMosqueId)?.name,
-          status: 'waiting',
-          notes: `موعد الختم المحسوب بالذكاء الاصطناعي: ${timeline.targetCompletionDate}. في انتظار شاغر أو موافقة المشرف كطالب إضافي.`,
-          addedAt: new Date().toISOString()
-        };
-
-        setPlacementResult({
-          status: 'waiting',
-          waitingEntry
-        });
-
-        const waitingMsg: ChatMessage = {
-          id: 'msg_result_waiting',
-          sender: 'ai',
-          text: `أهلاً بك يا ${studentInitialData.studentName}. أتممت المقابلة وحصلت على تقدير ممتاز.\n\nنظراً للإقبال الكبير واكتمال السعة الاستيعابية في جميع الحلقات حالياً بمجمع ${complex.name}، تم إدراجك في «قائمة الانتظار الرسمية للمجمع» برقم الدور: #${queueNum}.\n\nبإمكان المشرف مراجعة ملفك والموافقة على قبولك كطالب إضافي فوراً، وسيصلك إشعار بالبريد فور الاعتماد.`,
-          timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-          customWidget: 'result_waiting',
-          widgetData: {
-            waitingEntry
-          }
-        };
-        setMessages(prev => [...prev, waitingMsg]);
-        setIsTyping(false);
-      }
-    }, 1200);
-  };
-
-  // Advance conversation turn adaptively based on user answer
-  const advanceTurnWithAnswer = async (answerText: string, extraData?: Partial<typeof interviewData>) => {
-    // 1. Post user bubble
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: answerText,
-      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages(prev => [...prev, userMsg]);
-
-    const updatedData = {
-      ...interviewData,
-      ...extraData,
-      userAnswersList: [...interviewData.userAnswersList, answerText]
-    };
-    setInterviewData(updatedData);
-
-    // 2. Set thoughtful AI thinking state
-    setIsTyping(true);
-    setTypingMessage('المساعد الذكي يحلل إجابتك بدقة ويفحص أبعادها القرآنية والتربوية...');
-
-    // 3. Call dynamic turn engine
-    const nextTurn = turnIndex + 1;
-    setTurnIndex(nextTurn);
-
+  // Start Diagnostic Test
+  const handleLaunchTest = async () => {
+    setIsLoadingQuestions(true);
     try {
-      const response: DynamicInterviewResponse = await executeDynamicInterviewTurn({
-        studentInitialData,
-        complex,
-        turnIndex: nextTurn,
-        chatHistory: [...messages, userMsg].map(m => ({ sender: m.sender, text: m.text })),
-        lastUserAnswer: answerText,
-        accumulatedData: updatedData
+      const questions = await generatePlacementDiagnosticTest({
+        isKhatim,
+        startingDirection: direction,
+        weakSurahs: selectedWeakSurahs,
+        questionCount: 10
       });
 
-      setTimeout(() => {
-        setIsTyping(false);
+      setDiagnosticQuestions(questions);
+      setCurrentQuestionIdx(0);
+      setQuestionResults([]);
+      setCurrentPhase('test');
+      setIsLoadingQuestions(false);
 
-        if (response.isCompleted) {
-          // Final greeting message
-          const finalMsg: ChatMessage = {
-            id: `msg_final_${nextTurn}`,
-            sender: 'ai',
-            text: response.replyText,
-            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-          };
-          setMessages(prev => [...prev, finalMsg]);
+      // Start 8-second timer for question 1
+      startTimerForQuestion();
+    } catch (err) {
+      console.error('Error generating diagnostic test:', err);
+      setIsLoadingQuestions(false);
+    }
+  };
 
-          // Proceed to mosque selection or direct placement
-          if (isMultiMosqueSystem && complex.mosques && complex.mosques.length > 0) {
-            askMosqueSelectionQuestion();
-          } else {
-            performAIPlacementAndPlanCalculation();
-          }
-        } else {
-          // Next adaptive question bubble
-          const isSurahPicker = response.nextQuestion?.questionId === 'quran_position_reached' || (response as any).customWidget === 'surah_picker';
-          const nextQMsg: ChatMessage = {
-            id: `msg_q_${nextTurn}`,
-            sender: 'ai',
-            text: response.replyText,
-            timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-            isQuestion: true,
-            questionKey: response.nextQuestion?.questionId || `turn_${nextTurn}`,
-            options: response.nextQuestion?.options,
-            isLiveTest: response.nextQuestion?.isLiveRecitationTest,
-            surahNumber: response.nextQuestion?.surahNumber,
-            ayahNumber: response.nextQuestion?.ayahNumber,
-            customWidget: isSurahPicker ? 'surah_picker' : undefined
-          };
-          setMessages(prev => [...prev, nextQMsg]);
+  // Timer Controller
+  const startTimerForQuestion = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    setTimeLeft(8);
+    setTimerActive(true);
+    questionStartTimeRef.current = Date.now();
+
+    timerIntervalRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerIntervalRef.current);
+          handleTimeoutExpired();
+          return 0;
         }
-      }, 800);
-    } catch (e) {
-      setIsTyping(false);
-      // Fallback: proceed to placement
-      performAIPlacementAndPlanCalculation();
-    }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
-  // Handle clicking an option button
-  const handleSelectOption = (qKey: string, opt: { label: string; value: any }) => {
-    let extra: Partial<typeof interviewData> = {};
+  // Handle Question Timeout (Strict 8 seconds expired)
+  const handleTimeoutExpired = () => {
+    setTimerActive(false);
+    const q = diagnosticQuestions[currentQuestionIdx];
+    if (!q) return;
 
-    if (opt.value === 'correct') {
-      extra.tajweedScore = interviewData.tajweedScore + 1;
-    } else if (opt.value === 'from_baqarah' || opt.value === 'from_nas') {
-      extra.reviewDirection = opt.value;
-    } else if (typeof opt.value === 'number') {
-      if (qKey.includes('consolidated') || qKey.includes('cons')) {
-        extra.consolidatedCount = opt.value;
-      }
-    } else if (typeof opt.value === 'object' && opt.value !== null) {
-      if (opt.value.newPages !== undefined) {
-        extra.dailyNewPages = opt.value.newPages;
-        extra.dailyReviewPages = opt.value.reviewPages;
-      }
-    }
-
-    advanceTurnWithAnswer(opt.label, extra);
-  };
-
-  // Handle Quran Surah and Ayah reached confirmation
-  const handleSurahPositionSelected = (surahNum: number, ayahNum: number, surahName: string) => {
-    const text = `وصلت في سور القرآن الكريم عند: سورة ${surahName} (الآية ${ayahNum})`;
-    advanceTurnWithAnswer(text, {
-      reachedSurah: surahNum,
-      reachedAyah: ayahNum,
-      reachedSurahName: surahName
-    });
-  };
-
-  // Handle free text typed input
-  const handleSendCustomInput = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userInput.trim() || isTyping) return;
-    const text = userInput.trim();
-    setUserInput('');
-    advanceTurnWithAnswer(text);
-  };
-
-  // Mosque selection
-  const handleMosqueSelect = (mosque: Mosque) => {
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: `المسجد الأنسب لي هو: جامع «${mosque.name}» (${mosque.address || 'ضمن مساجد المنظومة'})`,
-      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+    const timeoutResult: PlacementQuestionResult = {
+      questionId: q.questionId,
+      skill: q.skill,
+      difficulty: q.difficulty,
+      questionText: q.questionText,
+      optionsOrder: q.options,
+      selectedOption: 'لم يجب ضمن الوقت',
+      correctAnswer: q.correctAnswer,
+      isCorrect: false,
+      timeTakenSeconds: 8.0,
+      isTimedOut: true,
+      explanation: q.explanation
     };
-    setMessages(prev => [...prev, userMsg]);
-    setInterviewData(prev => ({
-      ...prev,
-      selectedMosqueId: mosque.id,
-      selectedMosqueName: mosque.name
-    }));
 
-    performAIPlacementAndPlanCalculation(mosque.id);
+    recordAndProceed(timeoutResult);
   };
+
+  // Handle Option Click
+  const handleAnswerOption = (selectedOpt: string) => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    setTimerActive(false);
+
+    const q = diagnosticQuestions[currentQuestionIdx];
+    if (!q) return;
+
+    const timeSpent = Math.min(8.0, parseFloat(((Date.now() - questionStartTimeRef.current) / 1000).toFixed(1)));
+    const isCorrect = selectedOpt.trim() === q.correctAnswer.trim();
+
+    const res: PlacementQuestionResult = {
+      questionId: q.questionId,
+      skill: q.skill,
+      difficulty: q.difficulty,
+      questionText: q.questionText,
+      optionsOrder: q.options,
+      selectedOption: selectedOpt,
+      correctAnswer: q.correctAnswer,
+      isCorrect,
+      timeTakenSeconds: timeSpent,
+      isTimedOut: false,
+      explanation: q.explanation
+    };
+
+    recordAndProceed(res);
+  };
+
+  // Proceed to next question or 7-stage processing
+  const recordAndProceed = (res: PlacementQuestionResult) => {
+    const updated = [...questionResults, res];
+    setQuestionResults(updated);
+
+    if (currentQuestionIdx + 1 < diagnosticQuestions.length) {
+      setCurrentQuestionIdx(prev => prev + 1);
+      setTimeout(() => {
+        startTimerForQuestion();
+      }, 300);
+    } else {
+      // Completed all 10 questions!
+      finishPlacementTest(updated);
+    }
+  };
+
+  // Finish test & execute 7-stage post-test pipeline
+  const finishPlacementTest = async (allResults: PlacementQuestionResult[]) => {
+    setCurrentPhase('processing');
+    setProcessingStage(1);
+
+    // 1. Evaluate Multi-Dimensional Score
+    const summary = evaluatePlacementDiagnostic({
+      answers: allResults,
+      isKhatim,
+      studentInfo: {
+        weakSurahs: selectedWeakSurahs,
+        startingYear,
+        previousDirection: direction,
+        healthOrEducationalNotes: healthNotes
+      }
+    });
+    setTestSummary(summary);
+
+    // 2. Generate Unique Idempotent Ticket
+    const generatedTicket = generateIdempotentTicket();
+    setTicketCode(generatedTicket);
+
+    // 3. Propose Adaptive 5-Stream Plan
+    const proposal = proposePlanFromPlacementResult({
+      studentId: `std_${Date.now()}`,
+      testSummary: summary,
+      isKhatim,
+      weakSurahs: selectedWeakSurahs,
+      startingDirection: direction
+    });
+
+    // 4. Run 7 animated stages sequentially with smooth pacing
+    for (let st = 1; st <= 7; st++) {
+      setProcessingStage(st);
+      await new Promise(res => setTimeout(res, 650));
+    }
+
+    // 5. Match Halaqah and Check Capacity
+    const candidateHalaqahs = halaqahs.filter(h => !h.complexId || h.complexId === complex.id);
+    let bestHalaqah: Halaqah | null = null;
+    let isFull = true;
+
+    for (const h of candidateHalaqahs) {
+      const enrolled = existingStudents.filter(s => s.halaqahId === h.id);
+      const capReport = calculateHalaqahTimeCapacity({
+        halaqah: h,
+        enrolledStudents: enrolled,
+        newStudentCandidateTimeMinutes: proposal.initialStreams.estimatedHalaqahMinutesNeeded
+      });
+
+      if (!capReport.isOverCapacity) {
+        bestHalaqah = h;
+        isFull = false;
+        break;
+      }
+    }
+
+    // If all full, fall back to first candidate halaqah for queue
+    if (!bestHalaqah && candidateHalaqahs.length > 0) {
+      bestHalaqah = candidateHalaqahs[0];
+    }
+
+    const matchedM = complex.mosques?.find(m => m.id === bestHalaqah?.mosqueId) || null;
+    setMatchedHalaqah(bestHalaqah);
+    setMatchedMosque(matchedM);
+
+    // Build Student Memorization Plan
+    const fullPlan: StudentMemorizationPlan = {
+      dailyNewPages: proposal.dailyNewPages,
+      dailyReviewPages: proposal.dailyReviewPages,
+      pathType: proposal.pathType,
+      currentSurahNumber: reachedSurah,
+      currentAyahNumber: reachedAyah,
+      consolidatedJuzCount: Math.max(0, (studentInitialData.memorizedJuzList?.length || 1) - 2),
+      memorizedJuzCount: studentInitialData.memorizedJuzList?.length || 1,
+      targetJuz: 30,
+      targetCompletionDate: `بعد ${proposal.estimatedKhatmMonths} أشهر بإتقان تام`,
+      estimatedDaysRemaining: proposal.estimatedKhatmMonths * 30,
+      progressPercentage: Math.min(100, Math.round(((studentInitialData.memorizedJuzList?.length || 1) / 30) * 100)),
+      status: 'on_track',
+      nextDayAssignment: {
+        newMemorization: proposal.initialStreams.newMemorization
+          ? `${proposal.initialStreams.newMemorization.surahName} (الآيات ${proposal.initialStreams.newMemorization.fromAyah}-${proposal.initialStreams.newMemorization.toAyah})`
+          : 'تثبيت ومراجعة مكثفة',
+        review: proposal.initialStreams.nearReview
+          ? `${proposal.initialStreams.nearReview.surahName} (ص ${proposal.initialStreams.nearReview.fromPage}-${proposal.initialStreams.nearReview.toPage})`
+          : 'لا توجد مراجعة في اليوم الأول (بروتوكول اليوم الأول)',
+        action: 'advance_page',
+        reason: 'انطلاقة معتمدة من نتائج الفحص التشخيصي وخماسية المسارات'
+      },
+      lastUpdated: new Date().toISOString()
+    };
+    setGeneratedPlan(fullPlan);
+
+    // Create transcript
+    const transcript = allResults.map((r, i) => ({
+      sender: 'نظام الفحص القرآني التكيفي',
+      text: `السؤال (${i + 1}): ${r.questionText} | إجابة الطالب: ${r.selectedOption} | النتيجة: ${r.isCorrect ? 'صحيحة' : 'خاطئة'} (${r.timeTakenSeconds} ثانية)${r.isTimedOut ? ' [انتهت المهلة]' : ''}`,
+      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+    }));
+    setConversationTranscript(transcript);
+
+    if (!isFull && bestHalaqah) {
+      // Direct Placement
+      const newStdId = `std_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
+      const studentObj: Student = {
+        id: newStdId,
+        name: studentInitialData.studentName,
+        password: '123',
+        phone: studentInitialData.phone,
+        age: studentInitialData.age,
+        parentName: studentInitialData.parentName,
+        parentPhones: [studentInitialData.parentPhone],
+        parentPhone: studentInitialData.parentPhone,
+        googleEmail: studentInitialData.email || null,
+        currentSurah: reachedSurah,
+        currentSurahName: getSurahInfo(reachedSurah).name,
+        currentAyah: reachedAyah,
+        startSurahReached: reachedSurah,
+        startAyahReached: reachedAyah,
+        reviewStartDirection: direction === 'baqarah_to_nas' ? 'from_baqarah' : 'from_nas',
+        isFirstSession: true,
+        dailyNewTarget: `${proposal.dailyNewPages} وجه يومياً`,
+        dailyReviewTarget: `${proposal.dailyReviewPages} أوجه يومياً`,
+        level: summary.classifiedLevel as any,
+        complexId: complex.id,
+        complexName: complex.name,
+        halaqahId: bestHalaqah.id,
+        halaqahName: bestHalaqah.name,
+        assignedMosqueId: matchedM?.id,
+        assignedMosqueName: matchedM?.name,
+        memorizationPlan: fullPlan,
+        weakSurahs: selectedWeakSurahs,
+        notes: healthNotes ? `ملاحظات: ${healthNotes}` : 'تم التسكين عبر الفحص التشخيصي المتقدم',
+        createdAt: new Date().toISOString()
+      };
+
+      setCreatedStudent(studentObj);
+      setIsWaitingList(false);
+    } else {
+      // Waiting List
+      const qNum = (complex.waitingList?.length || 0) + 1;
+      const waitEntry: WaitingListStudent = {
+        id: `wait_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`,
+        applicationTrackingCode: generatedTicket,
+        studentName: studentInitialData.studentName,
+        age: studentInitialData.age,
+        phone: studentInitialData.phone,
+        parentName: studentInitialData.parentName,
+        parentPhone: studentInitialData.parentPhone,
+        memorizedJuz: studentInitialData.memorizedJuzList?.length || 1,
+        consolidatedJuz: fullPlan.consolidatedJuzCount || 0,
+        tajweedLevel: summary.tajweedScore >= 70 ? 'متقدم' : 'متوسط',
+        hasIjazah: false,
+        dailyNewPace: proposal.dailyNewPages,
+        dailyReviewPace: proposal.dailyReviewPages,
+        queueNumber: qNum,
+        complexId: complex.id,
+        complexName: complex.name,
+        status: 'waiting',
+        notes: `تصنيف المستوى: ${summary.classifiedLevel} (معدل: ${summary.overallScore}%). بانتظار شاغر في الحلقات.`,
+        addedAt: new Date().toISOString()
+      };
+
+      setWaitingEntry(waitEntry);
+      setIsWaitingList(true);
+    }
+
+    // Save/Update Registration Application in Firebase
+    try {
+      const appRecord: StudentRegistrationApplication = {
+        id: `app_${Date.now()}`,
+        complexId: complex.id,
+        complexName: complex.name,
+        trackingCode: generatedTicket,
+        studentName: studentInitialData.studentName,
+        age: studentInitialData.age,
+        phone: studentInitialData.phone,
+        email: studentInitialData.email || '',
+        parentName: studentInitialData.parentName,
+        parentPhone: studentInitialData.parentPhone,
+        appliedAt: new Date().toISOString(),
+        status: !isFull ? 'accepted' : 'pending',
+        memorizedJuzCount: studentInitialData.memorizedJuzList?.length || 1,
+        memorizedJuzList: studentInitialData.memorizedJuzList || [30],
+        startingYear,
+        previousDirection: direction,
+        weakSurahs: selectedWeakSurahs,
+        healthOrEducationalNotes: healthNotes,
+        actualReachedPosition: {
+          surahNumber: reachedSurah,
+          surahName: getSurahInfo(reachedSurah).name,
+          ayahNumber: reachedAyah
+        },
+        studentPathType: proposal.pathType,
+        placementTestSummary: summary,
+        conversationTranscript: transcript,
+        proposedPlanSummary: {
+          pathType: proposal.pathType,
+          dailyNewFaces: proposal.dailyNewPages,
+          dailyReviewFaces: proposal.dailyReviewPages,
+          recommendedHalaqahLevel: proposal.recommendedHalaqahLevel,
+          estimatedKhatmMonths: proposal.estimatedKhatmMonths,
+          notes: proposal.summaryArabic
+        },
+        assignedHalaqahId: bestHalaqah?.id,
+        assignedHalaqahName: bestHalaqah?.name,
+        studentAcceptanceStatus: !isFull ? 'confirmed_by_student' : 'pending_student_response'
+      };
+
+      await OmranDataService.saveRegistrationApplication(appRecord);
+    } catch (saveErr) {
+      console.warn('Could not persist registration application:', saveErr);
+    }
+
+    setCurrentPhase('result');
+  };
+
+  // Toggle Weak Surah selection
+  const toggleWeakSurah = (surahNum: number) => {
+    setSelectedWeakSurahs(prev =>
+      prev.includes(surahNum) ? prev.filter(n => n !== surahNum) : [...prev, surahNum]
+    );
+  };
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md select-none" dir="rtl">
       <div className="w-full max-w-3xl bg-[#022c22] border-2 border-amber-400/60 rounded-3xl shadow-2xl flex flex-col h-[90vh] max-h-[820px] overflow-hidden">
+        
         {/* Header Bar */}
         <div className="bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-b border-[#065f46] px-5 py-3.5 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-3">
@@ -606,10 +549,10 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-heading font-black text-sm sm:text-base text-white">
-                  المساعد الذكي لتسكين وتوجيه الطلاب
+                  محرك الفحص القرآني والتسكين الذكي
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#fbbf24] text-[#064e3b]">
-                  حوار تكيفي حي
+                  {isKhatim ? 'مسار الخاتمين والإتقان' : 'مسار الحفظ والتثبيت'}
                 </span>
               </div>
               <p className="text-xs text-[#86efac]/80">
@@ -627,504 +570,578 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           </button>
         </div>
 
-        {/* Chat Messages Body */}
-        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22]">
-          {messages.map(msg => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 max-w-[92%] sm:max-w-[85%] ${
-                msg.sender === 'user' ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row'
-              }`}
-            >
-              {/* Avatar */}
-              <div
-                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
-                  msg.sender === 'ai'
-                    ? 'bg-[#fbbf24] text-[#064e3b]'
-                    : 'bg-emerald-700 text-white'
-                }`}
-              >
-                {msg.sender === 'ai' ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+        {/* =========================================================================
+            PHASE 1: SMART ADAPTIVE REGISTRATION & DIAGNOSTIC SETUP
+           ========================================================================= */}
+        {currentPhase === 'setup' && (
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22] text-white">
+            <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-400/40 space-y-1 text-center">
+              <h4 className="font-heading font-black text-base text-amber-300 flex items-center justify-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                التهيئة الذكية للفحص التشخيصي المباشر
+              </h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                حدد خلفية مسيرتك القرآنية لنصمم لك اختباراً دقيقاً من 10 أسئلة أصيلة مع مهلة 8 ثوانٍ لكل سؤال.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* 1. Starting Year Dropdown */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-[#86efac] flex items-center justify-between">
+                  <span>عام بداية حفظ القرآن الكريم:</span>
+                  <span className="text-[10px] text-amber-400">قائمة معتمدة *</span>
+                </label>
+                <select
+                  value={startingYear}
+                  onChange={e => setStartingYear(e.target.value)}
+                  className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-amber-300 font-bold rounded-2xl py-3 px-3.5 text-xs outline-none cursor-pointer shadow-md"
+                >
+                  {yearOptions.map(y => (
+                    <option key={y.value} value={y.value} className="bg-[#022c22] text-white">
+                      {y.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Message Content Bubble */}
-              <div className="space-y-3 flex-1">
-                <div
-                  className={`rounded-2xl p-4 text-xs sm:text-sm leading-relaxed whitespace-pre-line shadow-md ${
-                    msg.sender === 'ai'
-                      ? 'bg-[#064e3b]/90 text-[#f0fdf4] border border-[#065f46] rounded-tr-none'
-                      : 'bg-[#fbbf24] text-[#064e3b] font-bold rounded-tl-none shadow-amber-500/20'
-                  }`}
+              {/* 2. Direction: Baqarah vs Nas */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-[#86efac] flex items-center justify-between">
+                  <span>اتجاه السير في الحفظ والمراجعة:</span>
+                  <span className="text-[10px] text-amber-400">المسار المتبع *</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDirection('nas_to_baqarah')}
+                    className={`p-3 rounded-2xl border-2 text-xs font-black transition-all cursor-pointer ${
+                      direction === 'nas_to_baqarah'
+                        ? 'bg-amber-400 text-[#064e3b] border-amber-300 shadow-md'
+                        : 'bg-[#064e3b] text-slate-300 border-[#065f46] hover:bg-[#065f46]'
+                    }`}
+                  >
+                    من الناس إلى البقرة
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDirection('baqarah_to_nas')}
+                    className={`p-3 rounded-2xl border-2 text-xs font-black transition-all cursor-pointer ${
+                      direction === 'baqarah_to_nas'
+                        ? 'bg-amber-400 text-[#064e3b] border-amber-300 shadow-md'
+                        : 'bg-[#064e3b] text-slate-300 border-[#065f46] hover:bg-[#065f46]'
+                    }`}
+                  >
+                    من البقرة إلى الناس
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Position Reached (سورة وآية الوصول) */}
+            <div className="p-4 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4" />
+                  <span>الموضع الذي وصلت إليه في القرآن الكريم حالياً:</span>
+                </label>
+                <span className="text-[11px] text-[#86efac] font-bold">
+                  سورة {getSurahInfo(reachedSurah).name} (آية {reachedAyah})
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <select
+                  value={reachedSurah}
+                  onChange={e => {
+                    const s = Number(e.target.value);
+                    setReachedSurah(s);
+                    setReachedAyah(1);
+                  }}
+                  className="w-full bg-[#022c22] border border-[#065f46] text-amber-300 font-bold rounded-xl py-2 px-3 text-xs outline-none cursor-pointer"
                 >
-                  {msg.text}
+                  {QURAN_SURAHS.map(s => (
+                    <option key={s.number} value={s.number} className="bg-[#022c22] text-white">
+                      {s.number}. سورة {s.name} ({s.numberOfAyahs} آية)
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-300 font-bold shrink-0">رقم الآية:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={getSurahInfo(reachedSurah).numberOfAyahs}
+                    value={reachedAyah}
+                    onChange={e => setReachedAyah(Math.max(1, Math.min(getSurahInfo(reachedSurah).numberOfAyahs, Number(e.target.value))))}
+                    className="flex-1 bg-[#022c22] border border-[#065f46] text-center font-bold text-amber-300 rounded-xl py-2 px-3 text-xs outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Multi-Select Weak Surahs Picker (من الـ 114 سورة كاملة) */}
+            <div className="p-4 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <label className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                    <BrainCircuit className="w-4 h-4" />
+                    <span>السور التي تستشعر فيها ضعفاً أو تفلتاً (من الـ 114 سورة):</span>
+                  </label>
+                  <p className="text-[11px] text-slate-300 font-bold">
+                    سيتم إدراج هذه السور تلقائياً في مسار المراجعة العلاجية واختبار تمكنك منها
+                  </p>
                 </div>
 
-                {/* Live Ayah Recitation Test Box */}
-                {msg.isLiveTest && (
-                  <div className="p-3.5 rounded-2xl bg-black/30 border border-amber-400/40 text-amber-200 text-xs flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
-                      <Mic className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-white block">فحص الاستحضار المباشر للآيات:</span>
-                      <span className="text-[11px] text-[#86efac]">
-                        بإمكانك كتابة بداية الآية في صندوق الرد بالأسفل أو اختيار الجاهزية مباشرة
-                      </span>
-                    </div>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setIsWeakSurahsModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] font-black text-xs flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>تحديد من قائمة الـ 114 سورة ({selectedWeakSurahs.length})</span>
+                </button>
+              </div>
 
-                {/* Question Interactive Options */}
-                {msg.options && msg.options.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    {msg.options.map((opt, i) => (
+              {/* Selected Pills */}
+              {selectedWeakSurahs.length > 0 ? (
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  {selectedWeakSurahs.map(sNum => (
+                    <span
+                      key={sNum}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40 text-xs font-bold"
+                    >
+                      <span>سورة {getSurahInfo(sNum).name}</span>
                       <button
-                        key={i}
                         type="button"
-                        onClick={() => handleSelectOption(msg.questionKey || '', opt)}
-                        className="text-right p-3 rounded-2xl bg-[#064e3b] hover:bg-[#065f46] border border-[#065f46] hover:border-[#fbbf24] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex flex-col gap-1 active:scale-[0.98]"
+                        onClick={() => toggleWeakSurah(sNum)}
+                        className="text-amber-400 hover:text-white cursor-pointer ml-1"
                       >
-                        <span className="font-black text-[#fbbf24]">{opt.label}</span>
-                        {opt.subtext && <span className="text-[11px] text-white/70 font-normal">{opt.subtext}</span>}
+                        ×
                       </button>
-                    ))}
-                  </div>
-                )}
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWeakSurahs([])}
+                    className="text-[11px] text-slate-400 hover:text-red-300 underline font-bold cursor-pointer mr-2"
+                  >
+                    مسح الكل
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 font-bold italic">
+                  لم يتم تحديد سور ضعيفة حتى الآن (اختياري).
+                </p>
+              )}
+            </div>
 
-                {/* Custom Widget: Quran Surah & Ayah Reached Picker */}
-                {msg.customWidget === 'surah_picker' && (
-                  <div className="pt-2">
-                    <QuranPositionReachedPicker
-                      initialSurah={interviewData.reachedSurah || (studentInitialData.memorizedJuzList?.length >= 30 ? 2 : 78)}
-                      initialAyah={interviewData.reachedAyah || 1}
-                      onConfirm={handleSurahPositionSelected}
-                    />
-                  </div>
-                )}
+            {/* 5. Health or Educational Notes */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-[#86efac] block">
+                ملاحظات صحية أو صعوبات تعلم أو توصيات خاصة (اختياري):
+              </label>
+              <textarea
+                rows={2}
+                value={healthNotes}
+                onChange={e => setHealthNotes(e.target.value)}
+                placeholder="مثال: صعوبة في النطق، بطء في الحفظ، ظروف صحية تستدعي وقتاً إضافياً..."
+                className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-white rounded-2xl py-2 px-3 text-xs outline-none resize-none font-bold placeholder-slate-400"
+              />
+            </div>
 
-                {/* Custom Widget: Mosque Selection */}
-                {msg.customWidget === 'mosque_selector' && msg.widgetData?.mosques && (
-                  <div className="space-y-2 pt-1">
-                    {msg.widgetData.mosques.map((m: Mosque) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => handleMosqueSelect(m)}
-                        className="w-full text-right p-3.5 rounded-2xl bg-[#064e3b] hover:bg-[#065f46] border border-[#065f46] hover:border-[#fbbf24] transition-all flex items-center justify-between gap-3 text-white cursor-pointer shadow-md group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-[#022c22] text-[#fbbf24] flex items-center justify-center shrink-0">
-                            <Compass className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-xs sm:text-sm font-black text-white group-hover:text-[#fbbf24]">
-                              {m.name}
-                            </p>
-                            <p className="text-[11px] text-white/70">{m.address || 'ضمن مساجد المنظومة القرآنية'}</p>
-                          </div>
-                        </div>
-                        <span className="px-2.5 py-1 rounded-xl bg-[#fbbf24] text-[#064e3b] text-xs font-black shrink-0">
-                          اختيار المسجد
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+            {/* Launch Diagnostic Button */}
+            <button
+              type="button"
+              disabled={isLoadingQuestions}
+              onClick={handleLaunchTest}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:brightness-110 text-[#064e3b] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              <Sparkles className="w-5 h-5 text-[#064e3b]" />
+              <span>
+                {isLoadingQuestions ? 'جارٍ توليد أسئلة الفحص الأصيلة...' : 'بدء الفحص التشخيصي المباشر (10 أسئلة • 8 ثوانٍ للآية) ➔'}
+              </span>
+            </button>
+          </div>
+        )}
 
-                {/* Custom Widget: Placement Success Card */}
-                {msg.customWidget === 'result_success' && msg.widgetData && (
-                  <PlacementSuccessCard
-                    data={msg.widgetData}
-                    onConfirm={() => {
-                      if (msg.widgetData.student) {
-                        onPlacementSuccess(msg.widgetData.student);
-                      }
-                    }}
-                  />
-                )}
+        {/* =========================================================================
+            PHASE 2: 10-QUESTION LIVE DIAGNOSTIC TEST (8s Strict Countdown Timer)
+           ========================================================================= */}
+        {currentPhase === 'test' && diagnosticQuestions.length > 0 && (
+          <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22] text-white flex flex-col justify-between">
+            {/* Top Bar: Progress + 8s Circular Countdown */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                <span className="flex items-center gap-1.5 text-amber-300 font-black">
+                  <Award className="w-4 h-4" />
+                  السؤال {currentQuestionIdx + 1} من {diagnosticQuestions.length}
+                </span>
 
-                {/* Custom Widget: Waiting List Card */}
-                {msg.customWidget === 'result_waiting' && msg.widgetData && (
-                  <WaitingListCard
-                    waitingEntry={msg.widgetData.waitingEntry}
-                    onConfirm={() => {
-                      if (msg.widgetData.waitingEntry) {
-                        onWaitingListAdded(msg.widgetData.waitingEntry);
-                      }
-                    }}
-                  />
-                )}
+                <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white text-[11px] font-mono">
+                  {diagnosticQuestions[currentQuestionIdx].skill === 'quran_memorization'
+                    ? '📖 حفظ واستحضار قرآني'
+                    : diagnosticQuestions[currentQuestionIdx].skill === 'mutashabihat'
+                    ? '⚡ ضبط المتشابهات اللفظية'
+                    : '💎 أحكام التجويد ومخارج الحروف'}
+                </span>
+              </div>
+
+              {/* Linear Progress Bar */}
+              <div className="w-full bg-[#064e3b] rounded-full h-2 overflow-hidden border border-[#065f46]">
+                <div
+                  className="bg-gradient-to-r from-emerald-400 to-amber-400 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${((currentQuestionIdx + 1) / diagnosticQuestions.length) * 100}%` }}
+                />
+              </div>
+
+              {/* 8-Second Strict Countdown Timer Bar */}
+              <div className="p-3 rounded-2xl bg-black/40 border border-[#065f46] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Timer className={`w-5 h-5 ${timeLeft <= 3 ? 'text-rose-400 animate-ping' : 'text-amber-400'}`} />
+                  <span className="text-xs font-bold text-slate-200">الوقت المتبقي للإجابة:</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-lg font-black font-mono px-3 py-0.5 rounded-xl border ${
+                      timeLeft <= 3
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500 animate-pulse'
+                        : 'bg-amber-400/20 text-amber-300 border-amber-400/40'
+                    }`}
+                  >
+                    00:0{timeLeft}
+                  </span>
+                  {timeLeft <= 3 && (
+                    <span className="text-[11px] text-rose-400 font-bold hidden sm:inline">
+                      أسرع قبل انتهاء المهلة!
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          ))}
 
-          {/* Typing & Thinking Indicator */}
-          {isTyping && (
-            <div className="flex items-center gap-2.5 text-xs text-[#86efac] p-3 rounded-2xl bg-[#064e3b]/40 border border-[#065f46] animate-pulse">
-              <Bot className="w-4 h-4 animate-bounce text-[#fbbf24] shrink-0" />
-              <span>{typingMessage}</span>
+            {/* Question Card */}
+            <div className="p-6 rounded-3xl bg-[#064e3b]/70 border-2 border-[#065f46] shadow-xl space-y-4 text-center my-auto">
+              <span className="inline-block px-3 py-1 rounded-full text-[10px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                مستوى السؤال: {diagnosticQuestions[currentQuestionIdx].difficulty === 'hard' ? 'متقدم ودقيق' : 'متوسط متزن'}
+              </span>
+
+              <h3 className="font-heading font-black text-base sm:text-lg text-white leading-relaxed whitespace-pre-line">
+                {diagnosticQuestions[currentQuestionIdx].questionText}
+              </h3>
             </div>
-          )}
-        </div>
 
-        {/* Interactive Chat Input Form (For free text and custom dynamic answers) */}
-        {!placementResult.status && (
-          <form
-            onSubmit={handleSendCustomInput}
-            className="p-3 bg-[#064e3b] border-t border-[#065f46] flex items-center gap-2 shrink-0"
-          >
-            <input
-              type="text"
-              value={userInput}
-              onChange={e => setUserInput(e.target.value)}
-              placeholder="اكتب إجابتك أو استفسارك هنا للمساعد الذكي..."
-              disabled={isTyping}
-              className="flex-1 bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-400 outline-none transition-all font-bold disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!userInput.trim() || isTyping}
-              className="p-2.5 sm:px-4 sm:py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-amber-400 disabled:opacity-40 text-[#064e3b] font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 shrink-0"
-              title="إرسال الإجابة"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">إرسال</span>
-            </button>
-          </form>
-        )}
+            {/* Decoupled Shuffled Options Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              {diagnosticQuestions[currentQuestionIdx].options.map((optionText, optIdx) => (
+                <button
+                  key={optIdx}
+                  type="button"
+                  onClick={() => handleAnswerOption(optionText)}
+                  className="text-right p-4 rounded-2xl bg-[#064e3b] hover:bg-[#065f46] border-2 border-[#065f46] hover:border-amber-400 text-white text-xs sm:text-sm font-bold transition-all shadow-md cursor-pointer flex items-center justify-between gap-3 active:scale-[0.98] group"
+                >
+                  <span className="leading-relaxed group-hover:text-amber-300">{optionText}</span>
+                  <span className="w-7 h-7 rounded-xl bg-[#022c22] text-amber-400 flex items-center justify-center text-xs font-mono font-black shrink-0 border border-amber-400/30">
+                    {optIdx + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
 
-        {/* Footer info banner */}
-        <div className="bg-[#022c22] border-t border-[#065f46] px-5 py-2.5 flex items-center justify-between text-[11px] text-[#86efac]/70">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-[#fbbf24]" />
-            <span>نظام التسكين الذكي والخرائط التثبيتية التكيفية • مدعوم بالذكاء الاصطناعي</span>
-          </div>
-          <span>منظومة عمران القرآنية</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Subcomponent: Placement Success Card
-// -------------------------------------------------------------------------
-interface PlacementSuccessCardProps {
-  data: {
-    halaqah: Halaqah;
-    mosque?: Mosque;
-    plan: StudentMemorizationPlan;
-    student: Student;
-  };
-  onConfirm: () => void;
-}
-
-const PlacementSuccessCard: React.FC<PlacementSuccessCardProps> = ({ data, onConfirm }) => {
-  const { halaqah, mosque, plan, student } = data;
-
-  return (
-    <div className="p-5 rounded-3xl bg-gradient-to-b from-[#064e3b] to-[#022c22] border-2 border-[#fbbf24] shadow-2xl space-y-4 text-white">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-[#fbbf24] text-[#064e3b] flex items-center justify-center shrink-0 shadow-lg">
-          <Award className="w-6 h-6" />
-        </div>
-        <div>
-          <h4 className="font-heading font-black text-base text-[#fbbf24]">
-            بطاقة القبول والتسكين الرسمي
-          </h4>
-          <p className="text-xs text-[#86efac]">تم التسكين بنجاح في الحلقة والمسجد المعتمد</p>
-        </div>
-      </div>
-
-      {/* Details Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-1">
-          <span className="text-white/60">الحلقة المعتمدة:</span>
-          <p className="font-black text-[#fbbf24] text-sm">{halaqah.name}</p>
-          <p className="text-[11px] text-white/70">المعلم: {halaqah.primaryTeacherName || 'معلم الحلقة'}</p>
-        </div>
-
-        <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-1">
-          <span className="text-white/60">المسجد والجامع:</span>
-          <p className="font-black text-white text-sm">{mosque?.name || halaqah.complexName || 'جامع المنظومة'}</p>
-          <div className="flex items-center gap-1 text-[11px] text-[#86efac]">
-            <MapPin className="w-3 h-3 text-[#fbbf24]" />
-            <span>{mosque?.address || 'الموقع محدد رسمياً على الخريطة'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Smart Plan Summary Banner */}
-      <div className="p-3.5 rounded-2xl bg-[#fbbf24]/10 border border-[#fbbf24]/30 space-y-2 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="font-black text-[#fbbf24] flex items-center gap-1.5">
-            <TrendingUp className="w-4 h-4" />
-            خطة التثبيت والختم التكيفية
-          </span>
-          <span className="px-2 py-0.5 rounded-lg bg-[#fbbf24] text-[#064e3b] font-black text-[10px]">
-            {plan.progressPercentage}% منجز
-          </span>
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-full bg-[#022c22] rounded-full h-2.5 overflow-hidden border border-[#065f46]">
-          <div
-            className="bg-gradient-to-r from-emerald-400 to-[#fbbf24] h-full rounded-full transition-all duration-700"
-            style={{ width: `${plan.progressPercentage}%` }}
-          ></div>
-        </div>
-
-        <div className="flex items-center justify-between text-[11px] text-white/80 pt-1">
-          <span>الورد اليومي: {plan.dailyNewPages} جديد + {plan.dailyReviewPages} مراجعة</span>
-          <span className="font-bold text-amber-200">الختم المتوقع: {plan.targetCompletionDate}</span>
-        </div>
-      </div>
-
-      {/* Direct Enter Button */}
-      <button
-        type="button"
-        onClick={onConfirm}
-        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#fbbf24] via-amber-400 to-[#fbbf24] hover:brightness-110 text-[#064e3b] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
-      >
-        <CheckCircle2 className="w-5 h-5 text-[#064e3b]" />
-        <span>تَمْ • الدخول المباشر إلى واجهة الطالب وبدء الحفظ</span>
-      </button>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Subcomponent: Waiting List Card
-// -------------------------------------------------------------------------
-interface WaitingListCardProps {
-  waitingEntry: WaitingListStudent;
-  onConfirm: () => void;
-}
-
-const WaitingListCard: React.FC<WaitingListCardProps> = ({ waitingEntry, onConfirm }) => {
-  return (
-    <div className="p-5 rounded-3xl bg-gradient-to-b from-[#064e3b] to-[#022c22] border-2 border-amber-400/80 shadow-2xl space-y-4 text-white">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-amber-400 text-[#064e3b] flex items-center justify-center shrink-0 shadow-lg">
-          <Clock className="w-6 h-6 animate-spin" />
-        </div>
-        <div>
-          <h4 className="font-heading font-black text-base text-amber-300">
-            بطاقة قائمة الانتظار المعتمدة
-          </h4>
-          <p className="text-xs text-white/70">نظراً لاكتمال سعة الحلقات (تعبئة كاملة)</p>
-        </div>
-      </div>
-
-      <div className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-2 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-white/70">رقمك في قائمة الانتظار:</span>
-          <span className="text-base font-black text-[#fbbf24] font-mono">
-            #{waitingEntry.queueNumber}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-white/70">كود متابعة الطلب:</span>
-          <span className="font-mono text-white font-bold">{waitingEntry.applicationTrackingCode}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-white/70">المجمع المنشود:</span>
-          <span className="text-white font-bold">{waitingEntry.complexName}</span>
-        </div>
-        {waitingEntry.mosqueName && (
-          <div className="flex items-center justify-between">
-            <span className="text-white/70">المسجد المفضل:</span>
-            <span className="text-amber-200 font-bold">{waitingEntry.mosqueName}</span>
+            <p className="text-[11px] text-center text-slate-400 font-bold pt-2">
+              💡 الفحص يقيس الدقة وسرعة الاستحضار؛ إن انقضت الـ 8 ثوانٍ دون إجابة يتم تسجيلها آلياً وتخطي السؤال.
+            </p>
           </div>
         )}
+
+        {/* =========================================================================
+            PHASE 3: 7-STAGE POST-TEST THEMED PROCESSING SCREEN
+           ========================================================================= */}
+        {currentPhase === 'processing' && (
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22] text-white flex flex-col justify-center items-center text-center">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-amber-200 text-[#064e3b] flex items-center justify-center shadow-2xl font-black">
+                <BrainCircuit className="w-10 h-10 animate-spin" />
+              </div>
+              <span className="absolute -bottom-1 -left-1 w-5 h-5 bg-emerald-400 border-2 border-[#022c22] rounded-full animate-ping"></span>
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-heading font-black text-lg sm:text-xl text-amber-300">
+                جارٍ تشغيل محرك المعالجة القرآنية خماسي المسارات...
+              </h3>
+              <p className="text-xs text-slate-300">
+                نحلل الآن أداء الطالب في الأسئلة الـ 10 ونطابق طاقة الحلقات المتاحة
+              </p>
+            </div>
+
+            {/* Stages Stack */}
+            <div className="w-full max-w-md space-y-2.5 text-right">
+              {POST_TEST_STAGES.map(st => {
+                const isPassed = processingStage > st.id;
+                const isCurrent = processingStage === st.id;
+                const IconComp = st.icon;
+
+                return (
+                  <div
+                    key={st.id}
+                    className={`p-3 rounded-2xl border-2 flex items-center justify-between gap-3 transition-all duration-300 ${
+                      isPassed
+                        ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
+                        : isCurrent
+                        ? 'bg-amber-500/20 border-amber-400 text-white shadow-lg animate-pulse'
+                        : 'bg-white/5 border-white/10 text-slate-400 opacity-40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          isPassed
+                            ? 'bg-emerald-500 text-[#022c22]'
+                            : isCurrent
+                            ? 'bg-amber-400 text-[#064e3b]'
+                            : 'bg-white/10 text-slate-400'
+                        }`}
+                      >
+                        <IconComp className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black">{st.title}</p>
+                        <p className="text-[10px] opacity-80">{st.desc}</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      {isPassed ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                      ) : isCurrent ? (
+                        <span className="text-[10px] font-mono font-bold text-amber-300 bg-black/40 px-2 py-0.5 rounded-md border border-amber-400/30">
+                          جارٍ الفحص...
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-slate-500">#{st.id}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* =========================================================================
+            PHASE 4: PLACEMENT RESULT & ADAPTIVE CARD (Direct Admission / Waiting List)
+           ========================================================================= */}
+        {currentPhase === 'result' && testSummary && (
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22] text-white">
+            
+            {/* Ticket & Classification Header Card */}
+            <div className="p-5 rounded-3xl bg-gradient-to-r from-[#064e3b] to-[#022c22] border-2 border-amber-400 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-400 text-[#064e3b] flex items-center justify-center font-black shadow-lg">
+                    <Award className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-black text-base text-amber-300">
+                      تذكرة التسكين القرآني المعتمدة: [{ticketCode}]
+                    </h3>
+                    <p className="text-xs text-[#86efac]">
+                      الطالب: {studentInitialData.studentName} • المجمع: {complex.name}
+                    </p>
+                  </div>
+                </div>
+
+                <span className="px-3 py-1 rounded-xl bg-amber-400 text-[#064e3b] font-black text-xs shadow-md">
+                  المستوى المصنف: {testSummary.classifiedLevel}
+                </span>
+              </div>
+
+              {/* 4 Score Badges Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-center">
+                <div className="p-2.5 rounded-xl bg-[#022c22] border border-[#065f46]">
+                  <span className="text-[10px] text-slate-300 block">دقة الحفظ القرآني</span>
+                  <span className="text-base font-black text-emerald-400 font-mono">{testSummary.memorizationScore}%</span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-[#022c22] border border-[#065f46]">
+                  <span className="text-[10px] text-slate-300 block">أحكام التجويد</span>
+                  <span className="text-base font-black text-amber-300 font-mono">{testSummary.tajweedScore}%</span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-[#022c22] border border-[#065f46]">
+                  <span className="text-[10px] text-slate-300 block">معدل ثبات الاستحضار</span>
+                  <span className="text-base font-black text-cyan-300 font-mono">{testSummary.retentionScore}%</span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-[#022c22] border border-[#065f46]">
+                  <span className="text-[10px] text-slate-300 block">المعدل العام المركب</span>
+                  <span className="text-base font-black text-amber-400 font-mono">{testSummary.overallScore}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Admission or Waiting List Card */}
+            {!isWaitingList && matchedHalaqah ? (
+              <div className="p-5 rounded-3xl bg-[#064e3b]/80 border-2 border-emerald-400/80 shadow-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-400 text-[#022c22] flex items-center justify-center font-bold shadow-lg">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-heading font-black text-base text-emerald-300">
+                      مبارك! تم العثور على شاغر مناسب والتسكين بالحلقة
+                    </h4>
+                    <p className="text-xs text-slate-200">
+                      الحلقة المعتمدة: «{matchedHalaqah.name}» {matchedMosque ? `بجامع «${matchedMosque.name}»` : ''}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 5-Stream Plan Summary Preview */}
+                <div className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-2 text-xs">
+                  <span className="font-black text-amber-300 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4" />
+                    الخطة المنهجية المعتمدة (بروتوكول اليوم الأول وخماسية المسارات):
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-200 pt-1">
+                    <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                      <span className="text-amber-400 font-bold block">1. الحفظ الجديد:</span>
+                      <span>{generatedPlan?.nextDayAssignment?.newMemorization || 'وجه يومياً'}</span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                      <span className="text-emerald-400 font-bold block">2. المراجعة القريبة والتراكمية:</span>
+                      <span>{generatedPlan?.nextDayAssignment?.review}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (createdStudent) {
+                      onPlacementSuccess(createdStudent);
+                    }
+                  }}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 hover:brightness-110 text-[#022c22] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Check className="w-5 h-5 stroke-[3]" />
+                  <span>تأكيد التسجيل والدخول الفوري إلى واجهة الطالب ➔</span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-5 rounded-3xl bg-[#064e3b]/80 border-2 border-amber-400/80 shadow-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-400 text-[#064e3b] flex items-center justify-center font-bold shadow-lg">
+                    <Clock className="w-6 h-6 animate-spin" />
+                  </div>
+                  <div>
+                    <h4 className="font-heading font-black text-base text-amber-300">
+                      تم الإدراج في قائمة الانتظار الرسمية للمجمع
+                    </h4>
+                    <p className="text-xs text-slate-200">
+                      نظراً لاكتمال سعة جميع الحلقات حالياً (رقمك بالدور: #{waitingEntry?.queueNumber || 1})
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed bg-[#022c22] p-3.5 rounded-2xl border border-[#065f46]">
+                  💡 تم حفظ نتيجتك الممتازة في الاختبار التشخيصي وتوليد تذكرتك [{ticketCode}]. بإمكان المشرف العام مراجعة أدائك وقبولك كطالب إضافي فوراً أو عند توفر أول شاغر، وسيصلك إشعار بالبريد فور الاعتماد.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (waitingEntry) {
+                      onWaitingListAdded(waitingEntry);
+                    }
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <span>حفظ بيانات الانتظار والعودة للبوابة ➔</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Modal: All 114 Surahs Multi-Select Picker */}
+        {isWeakSurahsModalOpen && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-md">
+            <div className="w-full max-w-xl bg-[#022c22] border-2 border-amber-400/80 rounded-3xl shadow-2xl p-5 space-y-4 max-h-[85vh] flex flex-col text-white">
+              <div className="flex items-center justify-between border-b border-[#065f46] pb-3">
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="w-5 h-5 text-amber-400" />
+                  <h4 className="font-heading font-black text-sm sm:text-base text-amber-300">
+                    اختر السور التي تحتاج مراجعة علاجية (من 114 سورة)
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsWeakSurahsModalOpen(false)}
+                  className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-xl border border-white/10"
+                >
+                  إغلاق
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={surahSearchTerm}
+                  onChange={e => setSurahSearchTerm(e.target.value)}
+                  placeholder="ابحث باسم السورة (البقرة، آل عمران، الكهف، مريم، يوسف، الملك...)"
+                  className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2 px-3.5 pr-9 text-xs text-white placeholder-slate-400 outline-none font-bold"
+                />
+                <Search className="w-4 h-4 text-amber-300 absolute right-3 top-2.5" />
+              </div>
+
+              {/* Grid of 114 Surahs */}
+              <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2 p-1 max-h-[420px] scrollbar-thin">
+                {filteredSurahs.map(s => {
+                  const isSelected = selectedWeakSurahs.includes(s.number);
+                  return (
+                    <button
+                      key={s.number}
+                      type="button"
+                      onClick={() => toggleWeakSurah(s.number)}
+                      className={`p-2 rounded-xl text-right border text-xs font-bold transition-all cursor-pointer flex items-center justify-between gap-1 ${
+                        isSelected
+                          ? 'bg-amber-400 text-[#064e3b] border-amber-300 shadow-md font-black'
+                          : 'bg-[#064e3b] text-slate-200 border-[#065f46] hover:bg-[#065f46]'
+                      }`}
+                    >
+                      <span className="truncate">{s.number}. {s.name}</span>
+                      {isSelected ? (
+                        <Check className="w-3.5 h-3.5 shrink-0 stroke-[3]" />
+                      ) : (
+                        <span className="text-[10px] opacity-40 font-mono">ج{s.juz}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 border-t border-[#065f46] flex items-center justify-between">
+                <span className="text-xs text-amber-300 font-bold">
+                  تم تحديد ({selectedWeakSurahs.length}) سورة
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsWeakSurahsModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] font-black text-xs shadow-md cursor-pointer"
+                >
+                  اعتماد التحديد ({selectedWeakSurahs.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
-
-      <p className="text-[11px] text-white/70 leading-relaxed">
-        💡 تم إشعار المشرف العام للتحقق من إمكانية فتح مقعد إضافي لك أو قبولك فور توفر أول شاغر.
-      </p>
-
-      <button
-        type="button"
-        onClick={onConfirm}
-        className="w-full py-3 rounded-2xl bg-[#064e3b] hover:bg-[#065f46] border border-[#fbbf24] text-[#fbbf24] font-black text-xs sm:text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-      >
-        <span>حفظ بيانات الانتظار والعودة للبوابة</span>
-      </button>
     </div>
   );
 };
-
-// -------------------------------------------------------------------------
-// Subcomponent: Quran Position Reached Searchable Dropdown & Ayah Picker
-// -------------------------------------------------------------------------
-interface QuranPositionReachedPickerProps {
-  initialSurah?: number;
-  initialAyah?: number;
-  onConfirm: (surahNumber: number, ayahNumber: number, surahName: string) => void;
-}
-
-const QuranPositionReachedPicker: React.FC<QuranPositionReachedPickerProps> = ({
-  initialSurah = 78,
-  initialAyah = 1,
-  onConfirm
-}) => {
-  const [search, setSearch] = useState('');
-  const [selectedSurah, setSelectedSurah] = useState<number>(initialSurah);
-  const [selectedAyah, setSelectedAyah] = useState<number>(initialAyah);
-
-  const curSurahInfo = useMemo(() => getSurahInfo(selectedSurah), [selectedSurah]);
-
-  const filteredSurahs = useMemo(() => {
-    if (!search.trim()) return QURAN_SURAHS;
-    const clean = search.trim();
-    return QURAN_SURAHS.filter(s =>
-      s.name.includes(clean) ||
-      s.number.toString() === clean ||
-      s.englishName.toLowerCase().includes(clean.toLowerCase())
-    );
-  }, [search]);
-
-  const maxAyahs = curSurahInfo.numberOfAyahs;
-
-  const handleSurahChange = (sNum: number) => {
-    setSelectedSurah(sNum);
-    setSelectedAyah(1);
-  };
-
-  const handleAyahChange = (val: number) => {
-    const clamped = Math.max(1, Math.min(maxAyahs, val));
-    setSelectedAyah(clamped);
-  };
-
-  return (
-    <div className="p-4 sm:p-5 rounded-3xl bg-[#022c22] border-2 border-amber-400/60 shadow-2xl space-y-3.5 text-white animate-fadeIn" dir="rtl">
-      <div className="flex items-center gap-2.5 border-b border-[#065f46] pb-2.5">
-        <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center font-bold">
-          <BookOpen className="w-4 h-4" />
-        </div>
-        <div>
-          <h4 className="text-xs sm:text-sm font-black text-amber-300">
-            حدد أين وصلت في سور القرآن الكريم بدقة:
-          </h4>
-          <p className="text-[11px] text-[#86efac]/80">
-            اختر السورة والآية التي تقف عندها من قائمة سور القرآن الكريم الـ ١١٤
-          </p>
-        </div>
-      </div>
-
-      {/* Surah Search & Select */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] text-[#86efac] font-bold block">
-          البحث في سور القرآن الكريم الـ ١١٤:
-        </label>
-        <div className="relative">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="ابحث باسم السورة (مثلاً: البقرة، الكهف، يس، النبأ، الملك...)"
-            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2 px-3.5 pr-9 text-xs text-white placeholder-slate-400 outline-none font-bold shadow-inner"
-          />
-          <Search className="w-4 h-4 text-amber-300 absolute right-3 top-2.5" />
-        </div>
-
-        {/* Dropdown Select with All 114 Surahs */}
-        <select
-          value={selectedSurah}
-          onChange={e => handleSurahChange(Number(e.target.value))}
-          className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-amber-300 font-bold rounded-2xl py-2.5 px-3 text-xs outline-none cursor-pointer shadow-md"
-        >
-          {filteredSurahs.map(s => (
-            <option key={s.number} value={s.number} className="bg-[#022c22] text-white">
-              {s.number}. سورة {s.name} ({s.numberOfAyahs} آية - جزء {s.juz} - {s.revelationType})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Selected Surah Badge Info */}
-      <div className="p-3 rounded-2xl bg-black/30 border border-[#065f46] flex items-center justify-between text-xs">
-        <div>
-          <span className="font-black text-white text-sm">سورة {curSurahInfo.name}</span>
-          <span className="text-[11px] text-[#86efac] block">
-            الجزء {curSurahInfo.juz} • {curSurahInfo.revelationType} • عدد آياتها {curSurahInfo.numberOfAyahs}
-          </span>
-        </div>
-        <span className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 font-bold text-xs border border-amber-400/40">
-          السورة رقم {curSurahInfo.number}
-        </span>
-      </div>
-
-      {/* Ayah Input & Presets */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-[#86efac] font-bold">
-          <span>الآية التي وصلت إليها:</span>
-          <span className="text-amber-300 font-mono font-black">(من 1 إلى {maxAyahs})</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleAyahChange(selectedAyah - 1)}
-            disabled={selectedAyah <= 1}
-            className="w-9 h-9 rounded-xl bg-[#064e3b] hover:bg-[#065f46] disabled:opacity-30 text-white font-black text-base flex items-center justify-center border border-[#065f46] cursor-pointer"
-          >
-            -
-          </button>
-          <input
-            type="number"
-            min={1}
-            max={maxAyahs}
-            value={selectedAyah}
-            onChange={e => handleAyahChange(Number(e.target.value))}
-            className="flex-1 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] text-center font-black text-amber-300 text-sm py-2 rounded-xl outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => handleAyahChange(selectedAyah + 1)}
-            disabled={selectedAyah >= maxAyahs}
-            className="w-9 h-9 rounded-xl bg-[#064e3b] hover:bg-[#065f46] disabled:opacity-30 text-white font-black text-base flex items-center justify-center border border-[#065f46] cursor-pointer"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Quick Ayah Presets */}
-        <div className="flex items-center gap-1.5 pt-1">
-          <button
-            type="button"
-            onClick={() => handleAyahChange(1)}
-            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
-          >
-            بداية السورة (آية 1)
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAyahChange(Math.round(maxAyahs / 2))}
-            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
-          >
-            المنتصف (آية {Math.round(maxAyahs / 2)})
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAyahChange(maxAyahs)}
-            className="flex-1 py-1 px-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold border border-white/10 cursor-pointer"
-          >
-            خاتمة السورة (آية {maxAyahs})
-          </button>
-        </div>
-      </div>
-
-      {/* Confirmation Action */}
-      <button
-        type="button"
-        onClick={() => onConfirm(curSurahInfo.number, selectedAyah, curSurahInfo.name)}
-        className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-[#fbbf24] hover:brightness-110 text-[#064e3b] font-black text-xs sm:text-sm cursor-pointer shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-      >
-        <Check className="w-4 h-4 stroke-[3]" />
-        <span>تأكيد الوصول عند: سورة {curSurahInfo.name} (الآية {selectedAyah}) ➔</span>
-      </button>
-    </div>
-  );
-};
-

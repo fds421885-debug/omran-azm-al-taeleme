@@ -18,6 +18,24 @@ export async function loadAllQuranVerses(): Promise<Record<number, string[]>> {
 
   loadPromise = (async () => {
     try {
+      // 0. If in Node.js environment (e.g. vitest), read from local public folder
+      if (typeof window === 'undefined') {
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const filePath = path.join(process.cwd(), 'public', 'quran-verses.json');
+          if (fs.existsSync(filePath)) {
+            const fileData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            if (fileData && Object.keys(fileData).length >= 114) {
+              cachedQuranMap = fileData;
+              return fileData;
+            }
+          }
+        } catch (nodeErr) {
+          // Continue to fetch if fs fails
+        }
+      }
+
       // 1. Try local bundled public file
       const resp = await fetch('/quran-verses.json');
       if (resp.ok) {

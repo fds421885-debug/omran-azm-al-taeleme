@@ -43,7 +43,10 @@ import {
   Lock,
   Timer,
   Mail,
-  Key
+  Key,
+  BrainCircuit,
+  Award,
+  Flame
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -233,6 +236,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [rejectionReason, setRejectionReason] = useState('نعتذر، اكتملت المقاعد المتاحة في هذه الفترة.');
   const [appDetailsToView, setAppDetailsToView] = useState<StudentRegistrationApplication | null>(null);
   const [appPlanToView, setAppPlanToView] = useState<StudentRegistrationApplication | null>(null);
+  const [appDiagnosticToView, setAppDiagnosticToView] = useState<StudentRegistrationApplication | null>(null);
+  const [appTranscriptToView, setAppTranscriptToView] = useState<StudentRegistrationApplication | null>(null);
+  const [appPlanToEdit, setAppPlanToEdit] = useState<StudentRegistrationApplication | null>(null);
+  const [editPlanNewFaces, setEditPlanNewFaces] = useState<number>(1);
+  const [editPlanReviewFaces, setEditPlanReviewFaces] = useState<number>(3);
+  const [editPlanPathType, setEditPlanPathType] = useState<string>('standard_memorization');
+  const [editPlanHalaqahId, setEditPlanHalaqahId] = useState<string>('');
   const [appToDelete, setAppToDelete] = useState<StudentRegistrationApplication | null>(null);
   const [isProcessingApp, setIsProcessingApp] = useState(false);
 
@@ -2311,12 +2321,38 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
                           <button
                             type="button"
+                            onClick={() => setAppDiagnosticToView(app)}
+                            className="px-2.5 py-1.5 rounded-xl border border-cyan-400/50 bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                            title="معاينة الاختبار التشخيصي التفصيلي المكون من 10 أسئلة مع المؤقت وسجل الإجابات"
+                          >
+                            <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>فحص الاختبار {app.placementTestSummary ? `(${app.placementTestSummary.overallScore}%)` : ''}</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => setAppPlanToView(app)}
                             className="px-2.5 py-1.5 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
                             title="عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم"
                           >
                             <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                             <span>عرض الخطة</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppPlanToEdit(app);
+                              setEditPlanNewFaces(app.proposedPlanSummary?.dailyNewFaces || 1);
+                              setEditPlanReviewFaces(app.proposedPlanSummary?.dailyReviewFaces || 3);
+                              setEditPlanPathType(app.proposedPlanSummary?.pathType || 'standard_memorization');
+                              setEditPlanHalaqahId(app.assignedHalaqahId || app.preferredHalaqahId || halaqahs[0]?.id || '');
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                            title="تعديل الخطة المقترحة وتخصيص الأوجه قبل الاعتماد"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>تعديل الخطة</span>
                           </button>
 
                           <button
@@ -3162,7 +3198,382 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           );
         })()}
 
-        {/* Pre-Flight Checklist Modal Before Opening / Sharing Link */}
+        {/* Full Diagnostic Test Inspector Modal */}
+        {appDiagnosticToView && (
+          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+            <div
+              className="w-full max-w-3xl rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-5 shadow-2xl my-auto animate-fadeIn text-right text-white max-h-[90vh] flex flex-col"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: '#38bdf8',
+                borderBottomColor: '#0284c7'
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b pb-3 shrink-0" style={{ borderColor: themeCardBorder }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center border border-cyan-400/40">
+                    <BrainCircuit className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-white">
+                        سجل الفحص التشخيصي الكامل: {appDiagnosticToView.studentName}
+                      </h3>
+                      <span className="text-xs font-mono px-2 py-0.5 rounded-lg bg-cyan-400/20 text-cyan-300 font-bold border border-cyan-400/30">
+                        {appDiagnosticToView.trackingCode}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 font-bold">
+                      {appDiagnosticToView.age} سنة • عام البدء: {appDiagnosticToView.startingYear || 'غير محدد'} • المسار: {appDiagnosticToView.previousDirection === 'baqarah_to_nas' ? 'من البقرة إلى الناس' : 'من الناس إلى البقرة'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAppDiagnosticToView(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+                {appDiagnosticToView.placementTestSummary ? (
+                  <>
+                    {/* Score Badges */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                        <span className="text-[10px] text-slate-300 block">دقة الحفظ</span>
+                        <span className="text-lg font-black text-emerald-400 font-mono">
+                          {appDiagnosticToView.placementTestSummary.memorizationScore}%
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                        <span className="text-[10px] text-slate-300 block">أحكام التجويد</span>
+                        <span className="text-lg font-black text-amber-300 font-mono">
+                          {appDiagnosticToView.placementTestSummary.tajweedScore}%
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                        <span className="text-[10px] text-slate-300 block">ثبات الاستحضار</span>
+                        <span className="text-lg font-black text-cyan-300 font-mono">
+                          {appDiagnosticToView.placementTestSummary.retentionScore}%
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46]">
+                        <span className="text-[10px] text-slate-300 block">المستوى المصنف</span>
+                        <span className="text-sm font-black text-amber-300">
+                          {appDiagnosticToView.placementTestSummary.classifiedLevel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Recommendations */}
+                    {appDiagnosticToView.placementTestSummary.recommendations && (
+                      <div className="p-3.5 rounded-2xl bg-black/40 border border-[#065f46] space-y-1.5">
+                        <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4" />
+                          التوصيات التربوية والمنهجية المعتمدة:
+                        </span>
+                        <ul className="list-disc list-inside space-y-1 text-slate-200 text-xs">
+                          {appDiagnosticToView.placementTestSummary.recommendations.map((rec, rIdx) => (
+                            <li key={rIdx}>{rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Question by Question Inspector (All 10 Questions) */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="font-heading font-black text-sm text-cyan-300 flex items-center gap-2">
+                        <Award className="w-4 h-4 text-cyan-400" />
+                        سجل الأسئلة الـ 10 التفصيلي مع خيارات العرض وزمن الإجابة:
+                      </h4>
+
+                      <div className="space-y-3">
+                        {appDiagnosticToView.placementTestSummary.questionResults?.map((qRes, qIdx) => (
+                          <div
+                            key={qIdx}
+                            className={`p-4 rounded-2xl border-2 space-y-2.5 transition-all ${
+                              qRes.isCorrect
+                                ? 'bg-emerald-950/40 border-emerald-500/50'
+                                : 'bg-red-950/40 border-red-500/50'
+                            }`}
+                          >
+                            {/* Question Title & Meta */}
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs font-mono ${
+                                    qRes.isCorrect ? 'bg-emerald-500 text-[#022c22]' : 'bg-red-500 text-white'
+                                  }`}
+                                >
+                                  {qIdx + 1}
+                                </span>
+                                <span className="font-black text-white text-xs sm:text-sm">
+                                  {qRes.questionText}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                                <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-300 font-mono">
+                                  {qRes.timeTakenSeconds}ث
+                                </span>
+                                {qRes.isTimedOut && (
+                                  <span className="px-2 py-0.5 rounded-md bg-red-500/30 text-red-300 border border-red-500/50">
+                                    انتهت المهلة
+                                  </span>
+                                )}
+                                <span
+                                  className={`px-2 py-0.5 rounded-md font-black ${
+                                    qRes.isCorrect
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                                  }`}
+                                >
+                                  {qRes.isCorrect ? 'إجابة صحيحة ✓' : 'إجابة خاطئة ✗'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Options Display (Showing Decoupled Order) */}
+                            {qRes.optionsOrder && qRes.optionsOrder.length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                                {qRes.optionsOrder.map((opt, oIdx) => {
+                                  const isStudentChoice = qRes.selectedOption === opt;
+                                  const isCorrectAns = qRes.correctAnswer === opt;
+
+                                  let optClass = 'bg-white/5 border-white/10 text-slate-300';
+                                  if (isCorrectAns) {
+                                    optClass = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-black';
+                                  } else if (isStudentChoice && !qRes.isCorrect) {
+                                    optClass = 'bg-red-500/20 border-red-500 text-red-200 line-through';
+                                  }
+
+                                  return (
+                                    <div
+                                      key={oIdx}
+                                      className={`p-2 rounded-xl border flex items-center justify-between text-xs ${optClass}`}
+                                    >
+                                      <span>{opt}</span>
+                                      {isStudentChoice && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-amber-300 font-bold shrink-0">
+                                          اختيار الطالب
+                                        </span>
+                                      )}
+                                      {isCorrectAns && !isStudentChoice && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/40 text-emerald-200 font-bold shrink-0">
+                                          الصواب
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Pedagogical Explanation */}
+                            {qRes.explanation && (
+                              <p className="text-[11px] text-slate-300 bg-black/30 p-2 rounded-xl border border-white/5 font-bold">
+                                💡 التوضيح القرآني: {qRes.explanation}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-8 text-center space-y-2 bg-black/30 rounded-2xl border border-white/10">
+                    <p className="text-slate-300 font-bold">
+                      هذا الطلب مسجل مسبقاً قبل تفعيل محرك الفحص التشخيصي المباشر.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-between pt-3 border-t shrink-0 flex-wrap gap-2" style={{ borderColor: themeCardBorder }}>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const app = appDiagnosticToView;
+                      setAppDiagnosticToView(null);
+                      handleAcceptSingleAsExtra(app);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>قبول كطالب إضافي</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const app = appDiagnosticToView;
+                      setAppDiagnosticToView(null);
+                      setAppToAccept(app);
+                      setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-[#58cc02] text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>قبول وتخصيص حلقة</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAppDiagnosticToView(null)}
+                  className="px-4 py-2 rounded-xl border text-xs font-bold text-slate-300 hover:text-white cursor-pointer"
+                  style={{ borderColor: themeCardBorder }}
+                >
+                  إغلاق الفحص
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Plan Editor Modal Before Approving */}
+        {appPlanToEdit && (
+          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+            <div
+              className="w-full max-w-lg rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-4 shadow-2xl my-auto animate-fadeIn text-right text-white"
+              style={{
+                backgroundColor: themeCard,
+                borderColor: '#10b981',
+                borderBottomColor: '#059669'
+              }}
+            >
+              <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: themeCardBorder }}>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                    <Edit3 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">
+                      تعديل الخطة المقترحة: {appPlanToEdit.studentName}
+                    </h3>
+                    <p className="text-xs text-slate-300 font-bold">تخصيص الأوجه ومسار التسميع قبل الاعتماد</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAppPlanToEdit(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                {/* Halaqah Picker */}
+                <div className="space-y-1">
+                  <label className="font-bold text-emerald-300 block">الحلقة القرآنية:</label>
+                  <select
+                    value={editPlanHalaqahId}
+                    onChange={e => setEditPlanHalaqahId(e.target.value)}
+                    className="w-full bg-[#022c22] border border-[#065f46] text-white font-bold rounded-xl py-2 px-3 outline-none cursor-pointer"
+                  >
+                    {halaqahs.map(h => (
+                      <option key={h.id} value={h.id}>
+                        {h.name} {h.complexName ? `(${h.complexName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Path Type */}
+                <div className="space-y-1">
+                  <label className="font-bold text-emerald-300 block">نوع المسار القرآني:</label>
+                  <select
+                    value={editPlanPathType}
+                    onChange={e => setEditPlanPathType(e.target.value)}
+                    className="w-full bg-[#022c22] border border-[#065f46] text-white font-bold rounded-xl py-2 px-3 outline-none cursor-pointer"
+                  >
+                    <option value="standard_memorization">الحفظ المتدرج القياسي</option>
+                    <option value="khatim_itqan">الإتقان العالي وسرد الختمة</option>
+                    <option value="tathbeet">التثبيت والاسترجاع المتباعد (سد الثغرات)</option>
+                    <option value="tajweed_foundation">التأسيس القرآني والتجويد العملي</option>
+                  </select>
+                </div>
+
+                {/* Daily New Faces */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block">أوجه الحفظ الجديد يومياً:</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="10"
+                      value={editPlanNewFaces}
+                      onChange={e => setEditPlanNewFaces(Number(e.target.value))}
+                      className="w-full bg-[#022c22] border border-[#065f46] text-center font-bold text-amber-300 rounded-xl py-2 px-3 outline-none"
+                    />
+                  </div>
+
+                  {/* Daily Review Faces */}
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block">أوجه المراجعة اليومية:</label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="40"
+                      value={editPlanReviewFaces}
+                      onChange={e => setEditPlanReviewFaces(Number(e.target.value))}
+                      className="w-full bg-[#022c22] border border-[#065f46] text-center font-bold text-emerald-300 rounded-xl py-2 px-3 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t" style={{ borderColor: themeCardBorder }}>
+                <button
+                  type="button"
+                  onClick={() => setAppPlanToEdit(null)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white"
+                >
+                  إلغاء
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!appPlanToEdit) return;
+                    const hName = halaqahs.find(h => h.id === editPlanHalaqahId)?.name || appPlanToEdit.preferredHalaqahName;
+                    const updatedApp: StudentRegistrationApplication = {
+                      ...appPlanToEdit,
+                      assignedHalaqahId: editPlanHalaqahId,
+                      assignedHalaqahName: hName,
+                      proposedPlanSummary: {
+                        pathType: editPlanPathType as any,
+                        dailyNewFaces: editPlanNewFaces,
+                        dailyReviewFaces: editPlanReviewFaces,
+                        recommendedHalaqahLevel: editPlanPathType,
+                        estimatedKhatmMonths: appPlanToEdit.proposedPlanSummary?.estimatedKhatmMonths || 12,
+                        notes: `تم تحديث الخطة بواسطة المشرف: ${editPlanNewFaces} أوجه جديد، ${editPlanReviewFaces} أوجه مراجعة.`
+                      }
+                    };
+                    await OmranDataService.saveRegistrationApplication(updatedApp);
+                    setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
+                    setAppPlanToEdit(null);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#022c22] font-black text-xs shadow-md cursor-pointer"
+                >
+                  حفظ تعديل الخطة
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <PortalPreFlightChecklistModal
           isOpen={isPreFlightOpen}
           onClose={() => {

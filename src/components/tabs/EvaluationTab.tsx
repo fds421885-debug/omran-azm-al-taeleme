@@ -45,7 +45,8 @@ import {
   CriteriaType,
   QuranRecitationItem,
   AppSettings,
-  QuranComplex
+  QuranComplex,
+  AyahErrorLog
 } from '../../types';
 import {
   QURAN_SURAHS,
@@ -67,6 +68,7 @@ import {
   analyzeAndDistributeAyahErrors,
   generateAdaptiveDailyReviews
 } from '../../lib/aiPlanService';
+import { checkStudentHiatusStatus } from '../../lib/quranAdaptivePlanEngine';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
@@ -376,6 +378,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       return cleanPrev ? `${cleanPrev}\n• ${errorNote}` : `• ${errorNote}`;
     });
   };
+
+  const handleRecordDetailedAyahError = (errorLog: AyahErrorLog) => {
+    if (!activeStudent) return;
+    const currentLogs = activeStudent.mushafErrors || [];
+    const updatedStd: Student = {
+      ...activeStudent,
+      mushafErrors: [...currentLogs, errorLog]
+    };
+    OmranDataService.saveStudent(updatedStd).catch(e => console.warn('Error saving ayah error log:', e));
+    window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
+  };
+
+  const hiatusStatus = useMemo(() => {
+    if (!activeStudent) return null;
+    return checkStudentHiatusStatus(activeStudent);
+  }, [activeStudent]);
 
   const openMushafReader = (surah: number, ayah: number, itemId?: string) => {
     setMushafInitialSurah(surah);
@@ -2656,6 +2674,25 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 );
               })()}
 
+              {/* Hiatus Alert Banner (> 30 Days Absence) */}
+              {hiatusStatus?.isHiatusDetected && (
+                <div className="bg-gradient-to-r from-rose-900/40 via-amber-950/40 to-rose-900/40 border-2 border-rose-500/80 rounded-3xl p-5 shadow-xl space-y-2 animate-pulse">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black shrink-0">
+                      <AlertTriangle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-heading font-black text-sm text-rose-300">
+                        تنبيه انقطاع لأكثر من 30 يوماً ({hiatusStatus.hiatusDaysCount} يوماً)
+                      </h4>
+                      <p className="text-xs text-slate-200">
+                        {hiatusStatus.alertMessageArabic}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* AI Plan Generating Card (Blocks recitation until plan is finalized) */}
               {(activeStudent.isGeneratingPlan || isManualGeneratingPlan) && (
                 <div className="bg-gradient-to-r from-amber-500/20 via-emerald-600/25 to-teal-500/20 border-2 border-amber-400/80 rounded-3xl p-6 text-center space-y-4 shadow-[0_0_35px_rgba(251,191,36,0.25)] animate-pulse">
@@ -4357,8 +4394,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         highlightItems={mushafHighlightItems}
         activeItemId={mushafActiveItemId}
         studentName={activeStudent?.name}
+        studentId={activeStudent?.id}
         recordedAyahErrors={mushafAyahErrors}
         onRecordAyahError={handleRecordAyahError}
+        onRecordDetailedAyahError={handleRecordDetailedAyahError}
       />
     </div>
   );

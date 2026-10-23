@@ -131,6 +131,29 @@ export interface WaitingListStudent {
   addedAt: string;
 }
 
+export type AyahErrorType =
+  | 'word_forgotten' // نسيان كلمة
+  | 'word_replaced' // استبدال كلمة بأخرى
+  | 'verse_dropped' // إسقاط آية أو جزء منها
+  | 'hesitation_pause' // تردد أو توقف
+  | 'mutashabih_confusion' // خلط بين موضعين متشابهين
+  | 'tajweed_error' // خطأ تجويدي
+  | 'pronunciation_error' // خطأ في النطق يحتاج إلى مراجعة
+  | 'waqf_ibtida_error' // خطأ في الوقف والابتداء
+  | 'other'; // نوع آخر يحدده المعلم
+
+export const AYAH_ERROR_TYPE_LABELS: Record<AyahErrorType, { label: string; description: string; color: string }> = {
+  word_forgotten: { label: 'نسيان كلمة', description: 'نسيان لفظ أو كلمة أثناء التلاوة', color: '#f59e0b' },
+  word_replaced: { label: 'استبدال كلمة بأخرى', description: 'إبدال كلمة بكلمة أخرى', color: '#ef4444' },
+  verse_dropped: { label: 'إسقاط آية أو جزء منها', description: 'تخطي آية كاملة أو شطر منها', color: '#dc2626' },
+  hesitation_pause: { label: 'تردد أو توقف', description: 'توقف متكرر وصعوبة في الاسترسال', color: '#f97316' },
+  mutashabih_confusion: { label: 'خلط بين متشابهين', description: 'الانتقال إلى موضع شبيه في سورة أخرى', color: '#8b5cf6' },
+  tajweed_error: { label: 'خطأ تجويدي', description: 'خلل في المد أو الغنة أو الإخفاء أو القلقلة', color: '#06b6d4' },
+  pronunciation_error: { label: 'خطأ في النطق', description: 'لحن خفي أو جلي في مخارج الحروف وصفاتها', color: '#ec4899' },
+  waqf_ibtida_error: { label: 'خطأ في الوقف والابتداء', description: 'وقف قبيح أو ابتداء يغير المعنى', color: '#3b82f6' },
+  other: { label: 'نوع آخر يحدده المعلم', description: 'ملاحظة خاصة من الشيخ المحفظ', color: '#6b7280' }
+};
+
 export interface AyahErrorRecord {
   id: string; // e.g. "err_studentId_114_3_timestamp"
   studentId: string;
@@ -139,8 +162,37 @@ export interface AyahErrorRecord {
   surahName?: string;
   ayahText?: string;
   errorCount: number; // عداد تكرار الخطأ (1, 2, 3...)
+  errorType?: AyahErrorType;
+  errorTypeLabel?: string;
+  sessionDate?: string;
+  teacherId?: string;
+  teacherName?: string;
   lastErrorDate: string;
+  notes?: string;
   cleared?: boolean;
+  improvedDate?: string;
+  history?: Array<{
+    date: string;
+    type: AyahErrorType;
+    teacherName?: string;
+    notes?: string;
+  }>;
+}
+
+export interface PlanChangeLogEntry {
+  id: string;
+  timestamp: string; // ISO string
+  previousPlanSummary: string;
+  previousStateSummary?: string;
+  newPlanSummary: string;
+  newStateSummary?: string;
+  reason: string;
+  changedBy: 'ai' | 'teacher' | 'supervisor';
+  changedByName?: string;
+  sessionDate?: string;
+  relatedErrors?: string[];
+  approvedAt?: string;
+  approvedByName?: string;
 }
 
 export interface StudentMemorizationPlan {
@@ -153,6 +205,7 @@ export interface StudentMemorizationPlan {
   estimatedDaysRemaining: number; // الأيام المتبقية للختمة
   progressPercentage: number; // نسبة الإنجاز والمسار نحو الختمة
   status: 'on_track' | 'needs_reinforcement' | 'ahead_of_schedule';
+  currentSurahNumber?: number;
   dailyFocusAyahs?: Array<{
     surahNumber: number;
     ayahNumber: number;
@@ -194,6 +247,9 @@ export interface StudentMemorizationPlan {
     daysReviewed: number;
     isShortSurahCluster?: boolean;
   }>;
+  changeHistory?: PlanChangeLogEntry[]; // سجل التغييرات التاريخية للخطة
+  lastHiatusCheckDate?: string; // تاريخ فحص الانقطاع الأخير
+  hiatusDaysCount?: number; // عدد أيام الانقطاع إذا تجاوزت شهراً
   aiNotes?: string;
   lastUpdated: string;
 }
@@ -262,6 +318,111 @@ export interface ComplexPortalConfig {
 export type RegistrationApplicationStatus = 'pending' | 'accepted' | 'rejected';
 export type StudentAcceptanceConfirmationStatus = 'pending_student_confirmation' | 'confirmed_by_student';
 
+export type QuestionSkill =
+  | 'retention_accuracy' // دقة الحفظ والاسترجاع
+  | 'mutashabihat_precision' // ضبط المتشابهات اللفظية
+  | 'sequential_memory' // ترابط الآيات وتسلسلها
+  | 'surah_recognition' // معرفة مواضع السور
+  | 'tajweed_noon_tanween' // أحكام النون الساكنة والتنوين
+  | 'tajweed_meem' // أحكام الميم الساكنة
+  | 'tajweed_ghunnah' // أحكام الغنة
+  | 'tajweed_madd' // أحكام المدود
+  | 'tajweed_qalqalah' // أحكام القلقلة
+  | 'tajweed_makhaarij' // مخارج الحروف وصفاتها
+  | 'tajweed_raa_laam' // أحكام الراء واللام
+  | 'tajweed_waqf_ibtida' // أحكام الوقف والابتداء
+  | 'tajweed_application' // تطبيق الأحكام على أمثلة قرآنية
+  | 'general';
+
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+
+export type PlacementQuestionType =
+  | 'complete_verse' // أكمل الآية من موضع محدد
+  | 'next_word' // اختر الكلمة الصحيحة التالية
+  | 'missing_segment' // أكمل الجزء الناقص من الآية
+  | 'next_verse' // اختر الآية التي تلي الآية المعروضة
+  | 'surah_position' // تحديد موضع الآية أو اسم السورة
+  | 'mutashabihat' // التمييز بين مواضع متشابهة لفظياً
+  | 'matching_phrase' // اختيار العبارة المطابقة للنص القرآني
+  | 'tajweed_rule' // بيان الحكم التجويدي
+  | 'tajweed_application'; // استخراج أو تطبيق الحكم على المثال
+
+export interface QuestionBankItem {
+  id: string; // المعرف الفريد
+  category: 'quran' | 'tajweed';
+  type: PlacementQuestionType;
+  questionText: string;
+  surahNumber?: number;
+  ayahNumber?: number;
+  surahName?: string;
+  ayahText?: string;
+  ruleTopic?: string;
+  options: Array<{ id: string; text: string; subtext?: string }>;
+  correctOptionId: string; // معرف الإجابة الصحيحة المستقل عن الترتيب
+  difficulty: QuestionDifficulty;
+  skill: QuestionSkill;
+  targetCategory: 'khatim' | 'non_khatim' | 'all';
+  timeLimitSeconds: number; // مدة السؤال المحددة (افتراضياً 8 ثوانٍ)
+  sourceReference?: string;
+  createdAt?: string;
+  isVerified: boolean;
+}
+
+export interface PlacementQuestionResult {
+  questionId: string;
+  questionText: string;
+  category: 'quran' | 'tajweed';
+  type: PlacementQuestionType;
+  displayedOptions: Array<{ id: string; text: string; subtext?: string }>;
+  selectedOptionId: string | null;
+  correctOptionId: string;
+  isCorrect: boolean;
+  isTimeout: boolean;
+  difficulty: QuestionDifficulty;
+  skill: QuestionSkill;
+  timeTakenSeconds: number;
+  surahName?: string;
+  surahNumber?: number;
+  ayahNumber?: number;
+  sourceReference?: string;
+}
+
+export interface PlacementTestSummary {
+  totalQuestions: number;
+  correctCount: number;
+  incorrectCount: number;
+  timeoutCount: number;
+  memorizationScore: number; // 0 - 100%
+  retentionScore: number; // 0 - 100%
+  tajweedScore: number; // 0 - 100%
+  overallScore: number; // 0 - 100%
+  levelClassification:
+    | 'يحتاج إلى تأسيس عاجل'
+    | 'ضعيف'
+    | 'متوسط'
+    | 'جيد'
+    | 'جيد جداً'
+    | 'ممتاز';
+  confidenceRating: 'عالية' | 'متوسطة' | 'أولية تحتاج تثبيت المعلم';
+  initialReviewRecommendations: string[];
+  weakSurahsDeclared?: number[];
+  reachedSurah?: number;
+  reachedAyah?: number;
+  startDirection?: 'from_baqarah' | 'from_nas';
+  studentPath: 'khatim' | 'non_khatim';
+  questionsHistory: PlacementQuestionResult[];
+  completedAt: string;
+}
+
+export interface HalaqahShiftPeriod {
+  id: string;
+  name: string; // e.g. "فترة الفجر", "فترة العصر", "فترة المغرب"
+  startTime: string; // e.g. "05:00", "16:00"
+  endTime: string; // e.g. "06:30", "17:30"
+  durationMinutes?: number;
+  days?: string[];
+}
+
 export interface StudentRegistrationApplication {
   id: string; // e.g. "app_123456"
   trackingCode: string; // e.g. "OMR-849201" (رقم تفقد الطلب)
@@ -278,6 +439,7 @@ export interface StudentRegistrationApplication {
   preferredHalaqahId?: string;
   preferredHalaqahName?: string;
   notes?: string;
+  healthOrEducationalNotes?: string; // ملاحظات صحية أو تعليمية خاصة
   status: RegistrationApplicationStatus;
   rejectionReason?: string;
   assignedHalaqahId?: string;
@@ -298,6 +460,19 @@ export interface StudentRegistrationApplication {
   // حالة تأكيد ودخول الطالب بعد القبول
   studentAcceptanceStatus?: StudentAcceptanceConfirmationStatus;
   studentConfirmedAt?: string; // وقت تأكيد الطالب ودخوله رسمياً
+
+  // التفاصيل الشاملة لاختبار التحديد ومقابلة الذكاء الاصطناعي
+  placementTestSummary?: PlacementTestSummary;
+  conversationTranscript?: Array<{ sender: 'ai' | 'user'; text: string; timestamp: string }>;
+  proposedPlanSummary?: string;
+  initialEstimatedKhatmDate?: string;
+  startingYear?: string; // سنة بدء الحفظ
+  previousDirection?: 'from_baqarah' | 'from_nas'; // مسار الحفظ السابق
+  weakSurahs?: number[]; // قائمة السور الضعيفة التي حددها الطالب
+  actualReachedPosition?: { surahNumber: number; ayahNumber: number; surahName: string };
+  dailyNewCapable?: string; // طاقة الحفظ اليومي التي صرح بها
+  dailyReviewCapable?: string; // طاقة المراجعة اليومية
+  studentPathType?: 'beginner' | 'non_khatim' | 'khatim' | 'khatim_with_loss';
 
   // إجابات الأسئلة المخصصة التي صممها المشرف
   customAnswers?: Record<string, any>;
@@ -331,6 +506,10 @@ export interface Halaqah {
   dailyHours?: number; // ساعات الحلقة في اليوم (مثلاً 1.5 أو 2)
   startTime?: string; // وقت البداية (مثلاً "16:00")
   endTime?: string; // وقت النهاية (مثلاً "18:00")
+  shifts?: HalaqahShiftPeriod[]; // فترات الدوام المتعددة للحلقة (فجرية، عصرية، إلخ)
+  pacePerFaceMinutes?: number; // متوسط زمن تسميع الوجه بالدقائق (افتراضياً 2 دقيقة)
+  bufferMinutesBetweenStudents?: number; // وقت احتياطي وتوجيه بين الطلاب بالدقائق
+  guidanceMinutesPerStudent?: number; // وقت التصحيح والتوجيه لكل طالب
   isOnline?: boolean; // هل الحلقة أونلاين / عن بعد
   onlineStartTime?: string; // وقت بدء الحلقة أونلاين
   onlineEndTime?: string; // وقت انتهاء الحلقة أونلاين
