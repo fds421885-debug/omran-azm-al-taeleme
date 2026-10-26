@@ -172,12 +172,11 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
       const evalPoints = stEvaluations.reduce((sum, ev) => {
         const criteriaPts = Number(ev.recitationDetails?.criteriaPointsEarnedToday) || 0;
         const pagePts = Number(ev.recitationDetails?.pagesPointsEarnedToday) || 0;
-        const attPts = Number(ev.recitationDetails?.attendancePointsEarnedToday) || 0;
         const pts = ev.recitationDetails?.pointsEarnedToday;
         const recitationOnly = criteriaPts + pagePts;
-        const dailyTotal = recitationOnly > 0 
-          ? recitationOnly 
-          : (pts !== undefined && pts !== null ? Math.max(0, pts - attPts) : 0);
+        const dailyTotal = typeof pts === 'number'
+          ? pts
+          : (recitationOnly > 0 ? recitationOnly : 0);
         return sum + dailyTotal;
       }, 0);
 

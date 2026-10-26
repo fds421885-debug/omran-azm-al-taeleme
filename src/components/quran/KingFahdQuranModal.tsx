@@ -13,7 +13,9 @@ import {
   CheckCircle2,
   Layers,
   Award,
-  Check
+  Check,
+  Lightbulb,
+  AlertTriangle
 } from 'lucide-react';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import {
@@ -141,18 +143,14 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }, DURATION);
   };
 
-  // Detailed Ayah Error Categorization Dialog (9 Specific Types)
-  const [errorDialogTarget, setErrorDialogTarget] = useState<{ surahNumber: number; ayahNumber: number; text?: string; computedNext: number } | null>(null);
-  const [selectedErrorType, setSelectedErrorType] = useState<AyahErrorType>('word_forgotten');
-  const [errorNotes, setErrorNotes] = useState<string>('');
-
   const lastRecordedTimeRef = useRef<{ [key: string]: number }>({});
 
+  // Direct error recording on double click / tap without any popup dialog
   const recordAyahError = (surahNumber: number, ayahNumber: number) => {
     const key = `${surahNumber}:${ayahNumber}`;
     const now = Date.now();
     // Guard against duplicate triggers (debouncing)
-    if (lastRecordedTimeRef.current[key] && (now - lastRecordedTimeRef.current[key]) < 450) {
+    if (lastRecordedTimeRef.current[key] && (now - lastRecordedTimeRef.current[key]) < 400) {
       return;
     }
     lastRecordedTimeRef.current[key] = now;
@@ -166,25 +164,10 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
       }
     } catch {}
 
-    // Find ayah text if available in quranMap
-    const surahVerses = quranMap[surahNumber];
-    const text = surahVerses && surahVerses[ayahNumber - 1] ? surahVerses[ayahNumber - 1] : '';
-
-    setErrorDialogTarget({
-      surahNumber,
-      ayahNumber,
-      text,
-      computedNext
-    });
-  };
-
-  const handleConfirmAyahError = (errorType: AyahErrorType, notes: string) => {
-    if (!errorDialogTarget) return;
-    const { surahNumber, ayahNumber, computedNext } = errorDialogTarget;
-    const key = `${surahNumber}:${ayahNumber}`;
-
+    // 1. Immediately update local state
     setAyahErrors(prev => ({ ...prev, [key]: computedNext }));
 
+    // 2. Immediately notify parent to update active student & persist to Cloud
     if (onRecordAyahError) {
       onRecordAyahError(surahNumber, ayahNumber, computedNext);
     }
@@ -195,23 +178,38 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
         studentId: studentId || '',
         surahNumber,
         ayahNumber,
-        errorType,
+        errorType: 'word_forgotten',
         errorCount: computedNext,
         teacherId,
         teacherName,
-        timestamp: new Date().toISOString(),
-        notes: notes.trim() || undefined
+        timestamp: new Date().toISOString()
       };
       onRecordDetailedAyahError(errorLog);
     }
 
     const sInfo = getSurahInfo(surahNumber);
-    const errObj = AYAH_ERROR_TYPE_LABELS[errorType];
-    const errorLabelStr = errObj?.label || errorType;
-    setLastErrorNotification(`⚡ تم رصد [${errorLabelStr}] في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
-    setTimeout(() => setLastErrorNotification(null), 3500);
-    setErrorDialogTarget(null);
-    setErrorNotes('');
+    setLastErrorNotification(`⚡ تم رصد خطأ في سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setTimeout(() => setLastErrorNotification(null), 2500);
+  };
+
+  // Clear all errors on a specific single ayah when its error badge is clicked
+  const handleClearSingleAyahError = (e: React.MouseEvent, surahNumber: number, ayahNumber: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const key = `${surahNumber}:${ayahNumber}`;
+    setAyahErrors(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+    if (onRecordAyahError) {
+      onRecordAyahError(surahNumber, ayahNumber, 0);
+    }
+
+    const sInfo = getSurahInfo(surahNumber);
+    setLastErrorNotification(`تمت إزالة الخطأ من سورة ${sInfo?.name || surahNumber} (الآية ${toArabicNumerals(ayahNumber)})`);
+    setTimeout(() => setLastErrorNotification(null), 2500);
   };
 
   const lastTapRef = useRef<{ time: number; surah: number; ayah: number }>({ time: 0, surah: 0, ayah: 0 });
@@ -228,23 +226,6 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }
     lastTapRef.current = { time: now, surah: surahNumber, ayah: ayahNumber };
     startLongPress(surahNumber, ayahNumber);
-  };
-
-  const handleDecrementError = (e: React.MouseEvent, surahNumber: number, ayahNumber: number) => {
-    e.stopPropagation();
-    const key = `${surahNumber}:${ayahNumber}`;
-    setAyahErrors(prev => {
-      const current = prev[key] || 0;
-      if (current <= 1) {
-        const updated = { ...prev };
-        delete updated[key];
-        if (onRecordAyahError) onRecordAyahError(surahNumber, ayahNumber, 0);
-        return updated;
-      }
-      const updated = { ...prev, [key]: current - 1 };
-      if (onRecordAyahError) onRecordAyahError(surahNumber, ayahNumber, current - 1);
-      return updated;
-    });
   };
 
   const totalErrorsCount = useMemo(() => {
@@ -652,26 +633,47 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             </div>
           )}
 
-          {/* Recitation Errors Counter & 2.5s Hint Badge */}
-          <div className="flex items-center gap-2">
-            {totalErrorsCount > 0 ? (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-600/30 border border-rose-500/60 text-rose-200 font-bold text-xs shadow-sm">
-                <span>⚠️</span>
-                <span>أخطاء التسميع المرصودة: {totalErrorsCount}</span>
+          {/* Recitation Guidance Badges & Errors Summary */}
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Hint 1: Record error by double clicking */}
+            <span className="inline-flex items-center gap-1.5 text-xs text-[#f0f9f6] font-bold bg-[#022c22]/90 px-3 py-1.5 rounded-2xl border border-[#fbbf24]/60 shadow-md">
+              <span className="w-5 h-5 rounded-lg bg-[#fbbf24]/20 border border-[#fbbf24]/40 flex items-center justify-center shrink-0">
+                <Lightbulb className="w-3.5 h-3.5 text-[#fbbf24]" />
+              </span>
+              <span className="text-[#fbbf24] font-black">لرصد الأخطاء: اضغط مرتين على الآية</span>
+            </span>
+
+            {/* Hint 2: Remove error by clicking the error badge on the verse */}
+            <span className="inline-flex items-center gap-1.5 text-xs text-[#f0f9f6] font-bold bg-[#022c22]/90 px-3 py-1.5 rounded-2xl border border-rose-500/50 shadow-md">
+              <span className="w-5 h-5 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-300" />
+              </span>
+              <span className="text-rose-200 font-bold">لحذف الخطأ: اضغط على علامة الخطأ بالآية</span>
+            </span>
+
+            {/* Total Recorded Errors Badge */}
+            {totalErrorsCount > 0 && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[#7f1d1d] border border-amber-400/60 text-amber-200 font-black text-xs shadow-md">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>أخطاء التسميع: {totalErrorsCount}</span>
                 <button
                   type="button"
-                  onClick={() => setAyahErrors({})}
-                  className="mr-1 text-[10px] text-rose-300 underline hover:text-white cursor-pointer"
-                  title="تصفير أخطاء التسميع"
+                  onClick={() => {
+                    const currentKeys = Object.keys(ayahErrors);
+                    setAyahErrors({});
+                    if (onRecordAyahError) {
+                      currentKeys.forEach(k => {
+                        const [s, a] = k.split(':').map(Number);
+                        onRecordAyahError(s, a, 0);
+                      });
+                    }
+                  }}
+                  className="mr-1 text-[10px] text-amber-300 underline hover:text-white cursor-pointer"
+                  title="تصفير أخطاء التسميع بالكامل"
                 >
-                  (تصفير)
+                  (تصفير الكل)
                 </button>
               </div>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#86efac] font-bold bg-[#064e3b]/80 px-3 py-1 rounded-xl border border-amber-400/50 shadow-sm animate-pulse">
-                <span>💡</span>
-                <span>لرصد خطأ تسميع: انقر نقرتين متتاليتين (Double Click / Tap) على الآية</span>
-              </span>
             )}
           </div>
         </div>
@@ -761,20 +763,21 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                                   ? 'ayah-highlighted bg-[#fbbf24]/35 text-[#064e3b] font-bold shadow-[0_0_8px_rgba(251,191,36,0.3)] ring-1 ring-[#d97706]'
                                   : 'hover:bg-amber-100/60'
                               }`}
-                              title={`انقر نقرتين سريعتين (Double Click) أو علّق 2.5 ثانية لرصد خطأ | سورة ${sec.surahInfo.name} - آية ${toArabicNumerals(ayah.ayahNumber)}`}
+                              title={`اضغط مرتين على الآية أو استمر بالضغط لرصد خطأ تسميع | سورة ${sec.surahInfo.name} - آية ${toArabicNumerals(ayah.ayahNumber)}`}
                             >
                               {ayah.text}
 
-                              {/* Error Badge Counter if errors recorded on this ayah */}
+                              {/* Error Badge Counter with Theme Styling - click to clear this specific ayah error */}
                               {errorCount > 0 && (
                                 <button
                                   type="button"
-                                  onClick={e => handleDecrementError(e, sec.surahNumber, ayah.ayahNumber)}
-                                  className="inline-flex items-center gap-0.5 mx-1 px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer active:scale-95 transition-all"
-                                  title="انقر لتعديل أو تقليل عدد الأخطاء"
+                                  onClick={e => handleClearSingleAyahError(e, sec.surahNumber, ayah.ayahNumber)}
+                                  className="inline-flex items-center gap-1 mx-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#7f1d1d] hover:bg-rose-700 text-amber-200 border border-amber-400/60 shadow-md cursor-pointer active:scale-95 transition-all select-none align-middle"
+                                  title="اضغط على علامة الخطأ لحذف الخطأ من هذه الآية"
                                 >
-                                  <span>⚠️</span>
-                                  <span>{errorCount} {errorCount === 1 ? 'خطأ' : 'أخطاء'}</span>
+                                  <AlertTriangle className="w-3 h-3 text-amber-300 shrink-0" />
+                                  <span>{errorCount > 1 ? `${errorCount} أخطاء` : 'خطأ'}</span>
+                                  <span className="text-amber-300 hover:text-white font-black text-xs mr-0.5" title="حذف الخطأ">✕</span>
                                 </button>
                               )}
 
@@ -843,114 +846,13 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
           </button>
         </div>
 
-        {/* Floating Error Recording Notification Toast */}
+        {/* Floating Error Recording Notification Toast with Platform Theme */}
         {lastErrorNotification && (
-          <div className="absolute bottom-16 right-1/2 translate-x-1/2 z-50 bg-rose-900/95 border-2 border-rose-400 text-white font-bold text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-bounce">
-            <span className="text-sm">⚠️</span>
-            <span>{lastErrorNotification}</span>
-          </div>
-        )}
-
-        {/* Ayah Recitation Error Categorization Modal (9 Specific Types) */}
-        {errorDialogTarget && (
-          <div className="fixed inset-0 z-[10020] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5" dir="rtl">
-            <div className="w-full max-w-lg bg-[#022c22] border-2 border-rose-500/80 rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl text-white animate-fadeIn">
-              <div className="flex items-center justify-between border-b border-[#065f46] pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center border border-rose-500/40 font-black">
-                    ⚠️
-                  </div>
-                  <div>
-                    <h3 className="font-heading font-black text-sm sm:text-base text-rose-300">
-                      رصد خطأ تسميع: سورة {getSurahInfo(errorDialogTarget.surahNumber).name} (آية {toArabicNumerals(errorDialogTarget.ayahNumber)})
-                    </h3>
-                    <p className="text-[11px] text-slate-300 font-bold">
-                      {studentName ? `الطالب: ${studentName}` : 'تسميع الطالب'} • الخطأ رقم #{errorDialogTarget.computedNext} في هذه الآية
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setErrorDialogTarget(null)}
-                  className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Ayah preview */}
-              {errorDialogTarget.text && (
-                <div className="p-3 rounded-2xl bg-black/40 border border-[#065f46] text-amber-200 text-xs leading-relaxed font-bold max-h-24 overflow-y-auto">
-                  ﴿{errorDialogTarget.text}﴾
-                </div>
-              )}
-
-              {/* 9 Specific Ayah Error Types Grid */}
-              <div className="space-y-2">
-                <label className="text-xs font-black text-rose-300 block">
-                  حدد نوع الخطأ القرآني بدقة (للتوجيه في ورد الغد والمراجعة العلاجية):
-                </label>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(Object.keys(AYAH_ERROR_TYPE_LABELS) as AyahErrorType[]).map(errKey => {
-                    const isSelected = selectedErrorType === errKey;
-                    const errMeta = AYAH_ERROR_TYPE_LABELS[errKey];
-                    const label = errMeta?.label || errKey;
-
-                    return (
-                      <button
-                        key={errKey}
-                        type="button"
-                        onClick={() => setSelectedErrorType(errKey)}
-                        className={`p-2.5 rounded-xl border text-right text-xs font-bold transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
-                          isSelected
-                            ? 'bg-rose-600 text-white border-rose-400 shadow-md font-black'
-                            : 'bg-[#064e3b] text-slate-200 border-[#065f46] hover:bg-[#065f46]'
-                        }`}
-                      >
-                        <span className="truncate">{label}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0 stroke-[3]" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Optional Notes */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-300 block">
-                  ملاحظة إضافية للمعلم (اختياري):
-                </label>
-                <input
-                  type="text"
-                  value={errorNotes}
-                  onChange={e => setErrorNotes(e.target.value)}
-                  placeholder="مثال: التبس مع موضع آل عمران، أبدل كلمة بكذا..."
-                  className="w-full bg-[#064e3b] border border-[#065f46] focus:border-rose-400 text-xs text-white rounded-xl py-2 px-3 outline-none"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#065f46]">
-                <button
-                  type="button"
-                  onClick={() => handleConfirmAyahError(selectedErrorType, errorNotes)}
-                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md cursor-pointer transition-all active:scale-95 flex items-center justify-center gap-1.5"
-                >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  <span>تأكيد رصد الخطأ وتضمينه في ورد الغد</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setErrorDialogTarget(null)}
-                  className="px-4 py-2.5 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:text-white cursor-pointer"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </div>
+          <div className="absolute bottom-16 right-1/2 translate-x-1/2 z-50 bg-[#022c22]/95 border-2 border-[#fbbf24] text-white font-bold text-xs px-5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-bounce">
+            <span className="w-5 h-5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0">
+              ⚡
+            </span>
+            <span className="text-amber-200">{lastErrorNotification}</span>
           </div>
         )}
       </div>

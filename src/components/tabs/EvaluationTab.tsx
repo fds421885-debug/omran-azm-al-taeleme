@@ -46,7 +46,8 @@ import {
   QuranRecitationItem,
   AppSettings,
   QuranComplex,
-  AyahErrorLog
+  AyahErrorLog,
+  AyahErrorRecord
 } from '../../types';
 import {
   QURAN_SURAHS,
@@ -370,13 +371,54 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
     const sInfo = getSurahInfo(surah);
     const surahName = sInfo?.name || `سورة ${surah}`;
-    const errorNote = `[رصد خطأ تسميع بالنقر المزدوج ⚡]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
+    const errorNote = `[رصد خطأ تسميع بالضغط المزدوج ⚡]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
 
     setTeacherNotes(prev => {
       const cleanPrev = (prev || '').split('\n').filter(line => !line.includes(`سورة ${surahName} الآية ${ayah}`)).join('\n');
       if (errorCount <= 0) return cleanPrev;
       return cleanPrev ? `${cleanPrev}\n• ${errorNote}` : `• ${errorNote}`;
     });
+
+    // Real-Time Persistent Cloud Firestore Save strictly for activeStudent
+    if (activeStudent) {
+      const currentLogs: AyahErrorRecord[] = [...(activeStudent.mushafErrors || [])];
+      let updatedLogs: AyahErrorRecord[];
+
+      if (errorCount <= 0) {
+        // Completely clear this ayah error from the student's records
+        updatedLogs = currentLogs.filter(l => !(l.surahNumber === surah && l.ayahNumber === ayah));
+      } else {
+        const existingIdx = currentLogs.findIndex(l => l.surahNumber === surah && l.ayahNumber === ayah);
+        const record: AyahErrorRecord = {
+          id: existingIdx >= 0 ? currentLogs[existingIdx].id : `err_${activeStudent.id}_${surah}_${ayah}_${Date.now()}`,
+          studentId: activeStudent.id,
+          surahNumber: surah,
+          ayahNumber: ayah,
+          surahName,
+          errorCount,
+          lastErrorDate: selectedDate,
+          sessionDate: selectedDate,
+          timestamp: new Date().toISOString(),
+          cleared: false
+        };
+        if (existingIdx >= 0) {
+          updatedLogs = [...currentLogs];
+          updatedLogs[existingIdx] = { ...updatedLogs[existingIdx], ...record };
+        } else {
+          updatedLogs = [...currentLogs, record];
+        }
+      }
+
+      const updatedStd: Student = {
+        ...activeStudent,
+        mushafErrors: updatedLogs
+      };
+
+      OmranDataService.saveStudent(updatedStd).catch(e => console.warn('Cloud save ayah mistake notice:', e));
+      try {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
+      } catch {}
+    }
   };
 
   const handleRecordDetailedAyahError = (errorLog: AyahErrorLog) => {
@@ -758,6 +800,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       } else {
         setIsManualPointsModified(false);
       }
+
+      // Load errors strictly for this activeStudent (Per-student isolated Mushaf)
+      const studentErrorsMap: Record<string, number> = {};
+      const evalErrors = (existing.recitationDetails as any)?.ayahErrors;
+      if (evalErrors && typeof evalErrors === 'object' && Object.keys(evalErrors).length > 0) {
+        Object.assign(studentErrorsMap, evalErrors);
+      } else if (activeStudent.mushafErrors && activeStudent.mushafErrors.length > 0) {
+        activeStudent.mushafErrors.forEach(err => {
+          if (!err.cleared && err.errorCount > 0) {
+            studentErrorsMap[`${err.surahNumber}:${err.ayahNumber}`] = err.errorCount;
+          }
+        });
+      }
+      setMushafAyahErrors(studentErrorsMap);
     } else {
       setIsManualPointsModified(false);
       // 2. No evaluation exists for this date yet!
@@ -1093,6 +1149,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       });
       setCriteriaValues(defaults);
       setTeacherNotes('أداء طيب ومتقن ما شاء الله، نسأل الله له التوفيق والرفعة.');
+
+      // Load errors strictly for this activeStudent (Per-student isolated Mushaf)
+      const studentErrorsMap: Record<string, number> = {};
+      if (activeStudent.mushafErrors && activeStudent.mushafErrors.length > 0) {
+        activeStudent.mushafErrors.forEach(err => {
+          if (!err.cleared && err.errorCount > 0) {
+            studentErrorsMap[`${err.surahNumber}:${err.ayahNumber}`] = err.errorCount;
+          }
+        });
+      }
+      setMushafAyahErrors(studentErrorsMap);
     }
   }, [activeStudentId, selectedDate, evaluations, criteria]);
 
@@ -1672,13 +1739,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         id: `eval_${selectedDate}_${activeStudent.id}`,
         date: selectedDate,
         studentId: activeStudent.id,
-        criteriaValues: {},
+        criteriaValues: criteriaValues || {},
         recitationDetails: {
           newMemorizationAchieved: todayNewDidNotRecite
             ? `لم يُسمّع: ${todayNewFormatted} (${todayNewDidNotReciteReason || 'لم يحفظ الورد المقرر'})`
             : todayNewFormatted,
           reviewAchieved: reviewAchievedSummary || '',
-          teacherNotes: '',
+          teacherNotes: teacherNotes || '',
           todayNewItem,
           todayReviewItems: todayReviews || [],
           tomorrowNewItem,
@@ -1691,7 +1758,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           pagesPointsEarnedToday: livePagesTotalPoints,
           attendancePointsEarnedToday: attendancePoints,
           pointsEarnedToday: finalPointsToday,
-          pagesCompletedToday
+          pagesCompletedToday,
+          ayahErrors: { ...mushafAyahErrors }
         },
         evaluatedAt: new Date().toISOString()
       };
@@ -1769,12 +1837,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       // 1. Save evaluation and atomically update student's points, position, and assignments
       await onSaveEvaluation(fullEvaluation, newDailyAssignment, updatedPosition, listeningAssignmentForStudent, studentUpdates);
 
-      // 2. Also ensure onUpdateStudentAIPlan is notified for backwards compatibility
-      if (onUpdateStudentAIPlan) {
-        onUpdateStudentAIPlan(activeStudent.id, newDailyAssignment, updatedPosition, listeningAssignmentForStudent).catch(() => {});
-      }
-
-      // 3. Dispatch background AI plan optimization event
+      // 2. Dispatch background AI plan optimization event
       try {
         const errorsList = Object.entries(mushafAyahErrors).map(([key, count]) => {
           const [s, a] = key.split(':').map(Number);

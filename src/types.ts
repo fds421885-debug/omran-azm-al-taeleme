@@ -1207,6 +1207,7 @@ export interface StudentEvaluation {
     pagesPointsEarnedToday?: number;
     criteriaPointsEarnedToday?: number;
     attendancePointsEarnedToday?: number;
+    ayahErrors?: Record<string, number>;
   };
   aiFeedback?: {
     studentProgressStatus: 'متقدم' | 'منتظم' | 'متأخر' | 'يحتاج مساعدة';

@@ -1174,42 +1174,64 @@ export function App() {
           startDate
         });
 
-        const updatedStudent: Student = {
-          ...student,
-          isFirstSession: false,
-          recentlyCompletedSurahs: detail.updatedRecentlyCompletedSurahs || student.recentlyCompletedSurahs,
-          mushafErrors: detail.updatedMushafErrors || student.mushafErrors,
-          persistentReviewItems: detail.newDailyAssignment?.reviewItems || student.persistentReviewItems,
-          memorizationPlan: {
+        setStudents(prev => {
+          const liveStudent = prev.find(s => s.id === student.id) || student;
+          const currentPlan = liveStudent.memorizationPlan || student.memorizationPlan;
+          const currentMem = currentPlan?.memorizedJuzCount || calculateStudentMemorizedJuz(liveStudent);
+          const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
+
+          const scheduleCfg = activeComplex?.planScheduleConfig;
+          const weeklyDaysCount = scheduleCfg?.selectedDays?.length || currentPlan?.weeklyDaysCount || 5;
+          const dailyHoursCount = scheduleCfg?.dailyHours || currentPlan?.dailyHoursCount || 2;
+          const startDate = new Date();
+
+          const timeline = calculateRealisticKhatmTimeline({
+            memorizedJuz: currentMem,
+            consolidatedJuz: currentCons,
             dailyNewPages: currentPlan?.dailyNewPages || 1,
             dailyReviewPages: currentPlan?.dailyReviewPages || 5,
-            consolidatedJuzCount: currentCons,
-            memorizedJuzCount: currentMem,
-            targetJuz: 30,
-            targetCompletionDate: timeline.targetCompletionDate,
-            estimatedDaysRemaining: timeline.estimatedDaysRemaining,
-            progressPercentage: timeline.progressPercentage,
-            status: hasErrors ? 'needs_reinforcement' : 'on_track',
-            weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
-            dailyHoursCount: currentPlan?.dailyHoursCount || 2,
-            tathbeetStopsCount: timeline.tathbeetStopsCount,
-            milestones: timeline.milestones,
-            nextDayAssignment: {
-              newMemorization: hasErrors
-                ? `تكرار وتثبيت ما تم تسميعه اليوم حتى يرسخ في الصدر`
-                : (detail.newDailyAssignment?.newMemorization || 'مقرر جديد متزن'),
-              review: detail.newDailyAssignment?.review || 'مراجعة الماضي',
-              suggestedSheikh: detail.newDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
-              action: hasErrors ? 'repeat_surah' : 'advance_page',
-              reason: hasErrors ? 'تكرار لتثبيت الآيات التي وقع فيها خطأ' : 'انطلاقة متزنة نحو الختم'
-            },
-            aiNotes: `تم الضبط التلقائي في الخلفية بواسطة الذكاء الاصطناعي بعد جلسة التسميع. ${timeline.pedagogicalNote}`,
-            lastUpdated: new Date().toISOString()
-          }
-        };
+            weeklyDaysCount,
+            dailyHoursCount,
+            startDate
+          });
 
-        await OmranDataService.saveStudent(updatedStudent);
-        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+          const updatedStudent: Student = {
+            ...liveStudent,
+            isFirstSession: false,
+            recentlyCompletedSurahs: detail.updatedRecentlyCompletedSurahs || liveStudent.recentlyCompletedSurahs,
+            mushafErrors: detail.updatedMushafErrors || liveStudent.mushafErrors,
+            persistentReviewItems: detail.newDailyAssignment?.reviewItems || liveStudent.persistentReviewItems,
+            memorizationPlan: {
+              dailyNewPages: currentPlan?.dailyNewPages || 1,
+              dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+              consolidatedJuzCount: currentCons,
+              memorizedJuzCount: currentMem,
+              targetJuz: 30,
+              targetCompletionDate: timeline.targetCompletionDate,
+              estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+              progressPercentage: timeline.progressPercentage,
+              status: hasErrors ? 'needs_reinforcement' : 'on_track',
+              weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
+              dailyHoursCount: currentPlan?.dailyHoursCount || 2,
+              tathbeetStopsCount: timeline.tathbeetStopsCount,
+              milestones: timeline.milestones,
+              nextDayAssignment: {
+                newMemorization: hasErrors
+                  ? `تكرار وتثبيت ما تم تسميعه اليوم حتى يرسخ في الصدر`
+                  : (detail.newDailyAssignment?.newMemorization || 'مقرر جديد متزن'),
+                review: detail.newDailyAssignment?.review || 'مراجعة الماضي',
+                suggestedSheikh: detail.newDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+                action: hasErrors ? 'repeat_surah' : 'advance_page',
+                reason: hasErrors ? 'تكرار لتثبيت الآيات التي وقع فيها خطأ' : 'انطلاقة متزنة نحو الختم'
+              },
+              aiNotes: `تم الضبط التلقائي في الخلفية بواسطة الذكاء الاصطناعي بعد جلسة التسميع. ${timeline.pedagogicalNote}`,
+              lastUpdated: new Date().toISOString()
+            }
+          };
+
+          OmranDataService.saveStudent(updatedStudent).catch(e => console.warn('AI tune saveStudent notice:', e));
+          return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+        });
       } catch (err) {
         console.warn('Background AI tuning note:', err);
       } finally {
@@ -2267,6 +2289,14 @@ export function App() {
         finalAyah = todayNew.toAyah || todayNew.fromAyah || 1;
       }
 
+      const currentPoints = typeof targetStudent.points === 'number' ? targetStudent.points : 0;
+      // Calculate new total points:
+      // If previous evaluation existed and student already had points accounting for it, apply deltaTotal.
+      // If student had 0 points (or was newly created/desynced), guarantee they receive at least newTotalEarned.
+      const calculatedPoints = (previousEval && currentPoints >= prevTotalEarned)
+        ? Math.max(0, currentPoints + deltaTotal)
+        : Math.max(newTotalEarned, currentPoints + newTotalEarned);
+
       const updatedStudent: Student = {
         ...targetStudent,
         ...studentUpdates,
@@ -2276,7 +2306,7 @@ export function App() {
         currentAyah: finalAyah,
         criteriaPoints: Math.max(0, (targetStudent.criteriaPoints || 0) + deltaCriteria),
         totalPagePoints: Math.max(0, (targetStudent.totalPagePoints || 0) + deltaPage),
-        points: Math.max(0, (targetStudent.points || 0) + deltaTotal),
+        points: calculatedPoints,
         persistentReviewItems: newAssignment?.reviewItems || targetStudent.persistentReviewItems,
         activeListeningAssignment: listeningAssignment || targetStudent.activeListeningAssignment,
         memorizationPlan: targetStudent.memorizationPlan && newAssignment ? {
@@ -2305,6 +2335,10 @@ export function App() {
       OmranDataService.saveStudent(updatedStudent).catch(err => {
         console.warn('Student save warning in evaluation:', err);
       });
+
+      try {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStudent }));
+      } catch (e) {}
 
       return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
     });
