@@ -1,0 +1,4235 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Home,
+  Users,
+  UserCheck,
+  BookOpen,
+  MessageCircle,
+  Award,
+  Sparkles,
+  Database,
+  Sliders,
+  LogOut,
+  Calendar,
+  Lock,
+  Unlock,
+  ShieldAlert,
+  Layers,
+  FileText,
+  Headphones,
+  UserCog,
+  Building2,
+  ClipboardList,
+  Trophy,
+  Clock,
+  FolderArchive,
+  Radio,
+  UserPlus,
+  Bell,
+  BrainCircuit,
+  RefreshCw,
+  X
+} from 'lucide-react';
+import { darkenHex, lightenHex } from './lib/themeUtils';
+import {
+  Student,
+  AttendanceRecord,
+  StudentEvaluation,
+  EvaluationCriteria,
+  AppSettings,
+  ChatMessage,
+  UserRole,
+  TeacherAccount,
+  BehaviorViolation,
+  Halaqah,
+  Exam,
+  ExamSubmission,
+  LeaderboardSettings,
+  GoogleOAuthConfig,
+  SurahRecording,
+  RecordingsConfig,
+  isTeacherSupervisor,
+  isTeacherDeveloper,
+  getTeacherComplex,
+  getTeacherAllComplexes,
+  getTeacherHalaqahsInComplex,
+  normalizeTeacherText,
+  QuranComplex,
+  isHalaqahInComplex,
+  getThreePartNameValidation,
+  IssuedCertificate,
+  StudentListeningLog,
+  LibraryDocument,
+  StudentRegistrationApplication
+} from './types';
+import {
+  OmranDataService,
+  DEFAULT_CRITERIA,
+  DEFAULT_SETTINGS,
+  DEFAULT_HALAQAHS,
+  INITIAL_STUDENTS,
+  INITIAL_TEACHERS,
+  INITIAL_ATTENDANCE,
+  INITIAL_EVALUATIONS,
+  DEFAULT_RECORDINGS_CONFIG,
+  DEFAULT_COMPLEXES,
+  INITIAL_VIOLATIONS,
+  INITIAL_EXAMS,
+  DEFAULT_LEADERBOARD_SETTINGS,
+  OMRAN_CACHE_KEYS,
+  getLocalCache,
+  getDeletedExamIds
+} from './lib/firebase';
+import { AnimatedBackground } from './components/AnimatedBackground';
+import { Navbar } from './components/Navbar';
+import { GoogleWorkspaceService, normalizeArabicText } from './lib/googleWorkspace';
+import { LoginModal } from './components/LoginModal';
+import { PublicLandingPage } from './components/PublicLandingPage';
+import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
+import {
+  TopProgressBar,
+  LiveSyncButton,
+  TabSkeleton,
+  GenericTabSkeleton,
+  LoginSyncModalOverlay,
+  ModernQuranLoader
+} from './components/loading/ModernLoadingSuite';
+import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
+import { ParentPortalView } from './components/ParentPortalView';
+import { TeacherManagementModal } from './components/TeacherManagementModal';
+import { SettingsModal } from './components/SettingsModal';
+import { ComplexManagementModal } from './components/ComplexManagementModal';
+import { TeacherMultiComplexModal } from './components/TeacherMultiComplexModal';
+import { UnassignedTeacherView } from './components/UnassignedTeacherView';
+import { UnassignedStudentView } from './components/UnassignedStudentView';
+import { getSurahInfo } from './data/quranData';
+import { HomeTab } from './components/tabs/HomeTab';
+import { StudentsTab } from './components/tabs/StudentsTab';
+import { AttendanceTab } from './components/tabs/AttendanceTab';
+import { EvaluationTab } from './components/tabs/EvaluationTab';
+import { BehaviorTab } from './components/tabs/BehaviorTab';
+import { ParentsWhatsAppTab } from './components/tabs/ParentsWhatsAppTab';
+import { ReportsTab } from './components/tabs/ReportsTab';
+import { DataBackupTab } from './components/tabs/DataBackupTab';
+import { ExamsTab } from './components/tabs/ExamsTab';
+import { AccountsTab } from './components/tabs/AccountsTab';
+import { CertificatesTab } from './components/tabs/CertificatesTab';
+import { LeaderboardTab } from './components/tabs/LeaderboardTab';
+import { TeacherAttendanceTab } from './components/tabs/TeacherAttendanceTab';
+import { LibraryTab } from './components/tabs/LibraryTab';
+import { EditAccountModal } from './components/EditAccountModal';
+import { ComplexPortalSettingsModal } from './components/portal/ComplexPortalSettingsModal';
+import { HalaqahPlansTab } from './components/tabs/HalaqahPlansTab';
+import { OnlineHalaqahsTab } from './components/tabs/OnlineHalaqahsTab';
+import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from './lib/aiPlanService';
+import { calculatePortionFromPace } from './data/quranPagesData';
+import { applyComplexThemeToDOM } from './lib/themeUtils';
+import { QuranAIAssistant } from './components/assistant/QuranAIAssistant';
+import { triggerComplexThemePulse, dispatchHighlightItem } from './utils/highlightHelper';
+import { ApiConfig } from './lib/apiConfig';
+
+// Gentle Web Audio API chime for live incoming application notification
+function playGentleApplicationChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.2, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+    playTone(659.25, now, 0.22); // E5
+    playTone(830.61, now + 0.09, 0.28); // G#5
+    playTone(987.77, now + 0.2, 0.42); // B5
+  } catch {}
+}
+
+export function App() {
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<{
+    username: string;
+    role: UserRole;
+    studentId?: string;
+    teacherId?: string;
+    complexId?: string;
+    displayName?: string;
+  } | null>(() => {
+    const saved = localStorage.getItem('omran_session');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  // Public Route State ('landing' | 'login' | 'privacy')
+  const [publicRoute, setPublicRoute] = useState<'landing' | 'login' | 'privacy'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const s = window.location.search.toLowerCase();
+      const h = window.location.hash.toLowerCase();
+      if (p.includes('/privacy') || s.includes('privacy') || h.includes('privacy')) {
+        return 'privacy';
+      }
+      if (p.includes('/login') || s.includes('login') || h.includes('login')) {
+        return 'login';
+      }
+    }
+    return 'landing';
+  });
+
+  // Keep publicRoute in sync with browser forward/back buttons
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = () => {
+      const p = window.location.pathname.toLowerCase();
+      const s = window.location.search.toLowerCase();
+      const h = window.location.hash.toLowerCase();
+      if (p.includes('/privacy') || s.includes('privacy') || h.includes('privacy')) {
+        setPublicRoute('privacy');
+      } else if (p.includes('/login') || s.includes('login') || h.includes('login')) {
+        setPublicRoute('login');
+      } else {
+        setPublicRoute('landing');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigatePublic = (route: 'landing' | 'login' | 'privacy') => {
+    setPublicRoute(route);
+    if (typeof window !== 'undefined') {
+      const target = route === 'privacy' ? '/privacy' : route === 'login' ? '/login' : '/';
+      if (window.location.pathname !== target) {
+        window.history.pushState(null, '', target);
+      }
+    }
+  };
+
+  // Check URL portal query param for direct parent portal link (?portal=std-1 or ?id=std-1)
+  const [portalStudentId, setPortalStudentId] = useState<string | null>(null);
+  const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(null);
+
+  // Active Tab for Admin
+  const [activeTab, setActiveTab] = useState<string>('home');
+  const [backgroundAIQueue, setBackgroundAIQueue] = useState<string[]>([]);
+  const [targetStudentForEval, setTargetStudentForEval] = useState<string | undefined>();
+  const [targetStudentForWhatsApp, setTargetStudentForWhatsApp] = useState<string | undefined>();
+  const [targetStudentForBehavior, setTargetStudentForBehavior] = useState<string | undefined>();
+
+  // Teachers State & Modal
+  const [teachers, setTeachers] = useState<TeacherAccount[]>(() => {
+    try {
+      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []);
+      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
+      const cached = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS);
+      return Array.isArray(cached) ? cached.filter(t => t?.id && !delSet.has(t.id)) : [];
+    } catch {
+      return INITIAL_TEACHERS;
+    }
+  });
+  const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
+
+  // Halaqahs State & Settings Modal
+  const [halaqahs, setHalaqahs] = useState<Halaqah[]>(() => {
+    try {
+      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []);
+      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
+      const cached = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS);
+      return Array.isArray(cached) ? cached.filter(h => h?.id && !delSet.has(h.id)) : [];
+    } catch {
+      return DEFAULT_HALAQAHS;
+    }
+  });
+  const [activeHalaqahId, setActiveHalaqahId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('omran_active_halaqah_id');
+      if (saved) return saved;
+    } catch {}
+    return 'all';
+  });
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Complexes State & Complex Management Modal (المجمعات القرآنية)
+  const [complexes, setComplexes] = useState<QuranComplex[]>(() => {
+    try {
+      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []);
+      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
+      const cached = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
+      return Array.isArray(cached) ? cached.filter(c => c?.id && !delSet.has(c.id)) : [];
+    } catch {
+      return DEFAULT_COMPLEXES;
+    }
+  });
+  const [isComplexModalOpen, setIsComplexModalOpen] = useState(false);
+  const [selectedComplexId, setSelectedComplexId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('omran_selected_complex_id');
+      if (saved) return saved;
+      const session = localStorage.getItem('omran_session');
+      if (session) {
+        const u = JSON.parse(session);
+        if (u?.complexId) return u.complexId;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  });
+  const [isMultiComplexModalOpen, setIsMultiComplexModalOpen] = useState(false);
+  const [newlyAddedComplexName, setNewlyAddedComplexName] = useState<string | null>(null);
+  const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
+  const [isLoginSyncing, setIsLoginSyncing] = useState(false);
+  const [loginSyncUser, setLoginSyncUser] = useState<string>('');
+
+  // Registration Applications Hub & Live Real-Time Notifications
+  const [registrationApplications, setRegistrationApplications] = useState<StudentRegistrationApplication[]>([]);
+  const [isApplicationsModalOpen, setIsApplicationsModalOpen] = useState(false);
+  const [applicationsModalInitialTab, setApplicationsModalInitialTab] = useState<'link_and_config' | 'applications'>('applications');
+  const [liveNewAppAlert, setLiveNewAppAlert] = useState<StudentRegistrationApplication | null>(null);
+
+  // Main Data States with instantaneous LocalCache hydration
+  const [students, setStudents] = useState<Student[]>(() => {
+    try {
+      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []);
+      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
+      const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
+      return Array.isArray(cached) ? cached.filter(s => s?.id && !delSet.has(s.id)) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE)
+  );
+  const [evaluations, setEvaluations] = useState<StudentEvaluation[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, INITIAL_EVALUATIONS)
+  );
+  const [violations, setViolations] = useState<BehaviorViolation[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.VIOLATIONS, INITIAL_VIOLATIONS)
+  );
+  const [criteria, setCriteria] = useState<EvaluationCriteria[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA)
+  );
+  const [settings, setSettings] = useState<AppSettings>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.SETTINGS, DEFAULT_SETTINGS)
+  );
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const fromSession = sessionStorage.getItem('omran_ai_active_messages');
+        if (fromSession) {
+          const parsed = JSON.parse(fromSession);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+        const fromLocal = localStorage.getItem('omran_ai_active_messages');
+        if (fromLocal) {
+          const parsed = JSON.parse(fromLocal);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [exams, setExams] = useState<Exam[]>(() => {
+    const deleted = getDeletedExamIds();
+    const hasInit = typeof localStorage !== 'undefined' && localStorage.getItem('omran_exams_initialized') === 'true';
+    const fallback = hasInit ? [] : INITIAL_EXAMS;
+    return getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, fallback).filter(e => !deleted.has(e.id));
+  });
+  const [submissions, setSubmissions] = useState<ExamSubmission[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.SUBMISSIONS, [])
+  );
+  const [leaderboardSettings, setLeaderboardSettings] = useState<LeaderboardSettings | null>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.LEADERBOARD, DEFAULT_LEADERBOARD_SETTINGS)
+  );
+  const [googleAuthConfig, setGoogleAuthConfig] = useState<GoogleOAuthConfig>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.GOOGLE_AUTH, { isLinked: false })
+  );
+  const [recordings, setRecordings] = useState<SurahRecording[]>([]);
+  const [recordingsConfig, setRecordingsConfig] = useState<RecordingsConfig>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.RECORDINGS_CONFIG, DEFAULT_RECORDINGS_CONFIG)
+  );
+  const [certificates, setCertificates] = useState<IssuedCertificate[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, [])
+  );
+  const [listeningLogs, setListeningLogs] = useState<StudentListeningLog[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.LISTENING_LOGS, [])
+  );
+  const [libraryDocs, setLibraryDocs] = useState<LibraryDocument[]>(() =>
+    getLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, [])
+  );
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isTabLoading, setIsTabLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>('مُحدّث سحابياً');
+
+  // Dedicated Complex Portal ID parsed from shareable link (e.g. ?complexPortal=xxx)
+  const [portalComplexId, setPortalComplexId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const cp = p.get('complexPortal') || p.get('complex');
+      if (cp) return decodeURIComponent(cp);
+      if (window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        const hcp = hashParams.get('complexPortal') || hashParams.get('complex');
+        if (hcp) return decodeURIComponent(hcp);
+      }
+    }
+    return null;
+  });
+
+  // Parse URL on initial load and handle direct login links
+  useEffect(() => {
+    const parseUrlParams = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      let portalId =
+        urlParams.get('portal') ||
+        urlParams.get('id') ||
+        urlParams.get('student') ||
+        urlParams.get('studentId');
+
+      let complexParam = urlParams.get('complexPortal') || urlParams.get('complex');
+
+      if ((!portalId || !complexParam) && window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        if (!portalId) {
+          portalId =
+            hashParams.get('portal') ||
+            hashParams.get('id') ||
+            hashParams.get('student') ||
+            (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
+            (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+        }
+        if (!complexParam) {
+          complexParam = hashParams.get('complexPortal') || hashParams.get('complex');
+        }
+      }
+
+      if (portalId) {
+        setPortalStudentId(decodeURIComponent(portalId));
+      }
+      if (complexParam) {
+        setPortalComplexId(decodeURIComponent(complexParam));
+      }
+    };
+
+    parseUrlParams();
+    window.addEventListener('popstate', parseUrlParams);
+    window.addEventListener('hashchange', parseUrlParams);
+    return () => {
+      window.removeEventListener('popstate', parseUrlParams);
+      window.removeEventListener('hashchange', parseUrlParams);
+    };
+  }, []);
+
+  // Dedicated effect to resolve portal complex securely from cloud if not present in memory
+  useEffect(() => {
+    if (!portalComplexId) return;
+
+    const found = complexes.find(c => c.id === portalComplexId);
+    if (!found) {
+      OmranDataService.loadComplexes()
+        .then(list => {
+          if (list && list.length > 0) {
+            setComplexes(list);
+            const target = list.find(c => c.id === portalComplexId);
+            if (target) {
+              OmranDataService.setActiveComplex(target);
+            }
+          }
+        })
+        .catch(err => console.warn('Could not load complexes for portal link:', err));
+    } else {
+      OmranDataService.setActiveComplex(found);
+    }
+  }, [portalComplexId]);
+
+  // Dedicated effect to resolve portal student securely
+  useEffect(() => {
+    if (!portalStudentId) {
+      setDirectPortalStudent(null);
+      return;
+    }
+
+    const resolvePortalStudent = async () => {
+      const clean = decodeURIComponent(portalStudentId).trim();
+      const match = students.find(
+        s =>
+          s.id === clean ||
+          s.id.toLowerCase() === clean.toLowerCase()
+      );
+      if (match) {
+        setDirectPortalStudent(match);
+        return;
+      }
+
+      const fetched = await OmranDataService.findStudentByIdOrQuery(portalStudentId);
+      if (fetched) {
+        setDirectPortalStudent(fetched);
+        setStudents(prev => (prev.some(s => s.id === fetched.id) ? prev : [...prev, fetched]));
+      }
+    };
+
+    resolvePortalStudent();
+  }, [portalStudentId, students]);
+
+  // Load all data from Firestore / LocalCache with non-blocking live sync
+  const loadAllData = async (isManualSync = false) => {
+    if (isManualSync) {
+      setIsSyncing(true);
+    }
+    // Safety auto-dismiss: ensure loading state never hangs
+    const safetyTimer = setTimeout(() => {
+      setIsSyncing(false);
+      setIsLoadingData(false);
+    }, 1800);
+
+    try {
+      if (isManualSync) {
+        // Auto-reconcile in background only on explicit manual sync
+        OmranDataService.reconcileAndSyncStudentsWithHalaqahs().catch(() => {});
+      }
+
+      const [
+        loadedStudents,
+        loadedAttendance,
+        loadedEvaluations,
+        loadedCriteria,
+        loadedSettings,
+        loadedChats,
+        loadedTeachers,
+        loadedViolations,
+        loadedHalaqahs,
+        loadedExams,
+        loadedSubmissions,
+        loadedLeaderboard,
+        loadedGoogleOAuth,
+        loadedRecordings,
+        loadedRecordingsConfig,
+        loadedComplexes,
+        loadedCertificates,
+        loadedListeningLogs,
+        loadedLibraryDocs
+      ] = await Promise.all([
+        OmranDataService.loadStudents(),
+        OmranDataService.loadAttendance(),
+        OmranDataService.loadEvaluations(),
+        OmranDataService.loadCriteria(),
+        OmranDataService.loadSettings(),
+        OmranDataService.loadChats(),
+        OmranDataService.loadTeachers(),
+        OmranDataService.loadViolations(),
+        OmranDataService.loadHalaqahs(),
+        OmranDataService.loadExams(),
+        OmranDataService.loadSubmissions(),
+        OmranDataService.loadLeaderboardSettings(),
+        OmranDataService.loadGoogleOAuthConfig(),
+        OmranDataService.loadRecordings(),
+        OmranDataService.loadRecordingsConfig(),
+        OmranDataService.loadComplexes(),
+        OmranDataService.loadCertificates(),
+        OmranDataService.loadListeningLogs(),
+        OmranDataService.loadLibraryDocuments()
+      ]);
+
+      setStudents(loadedStudents);
+      setAttendance(loadedAttendance);
+      setEvaluations(loadedEvaluations);
+      setCriteria(loadedCriteria);
+      setSettings(loadedSettings);
+      if (Array.isArray(loadedChats) && loadedChats.length > 0) {
+        setChatHistory(prev => (prev && prev.length > 0 ? prev : loadedChats));
+      }
+      setTeachers(loadedTeachers);
+      setViolations(loadedViolations);
+      setHalaqahs(loadedHalaqahs);
+      setExams(loadedExams);
+      setSubmissions(loadedSubmissions);
+      setLeaderboardSettings(loadedLeaderboard);
+      setGoogleAuthConfig(loadedGoogleOAuth);
+      setRecordings(loadedRecordings);
+      // Enrich complexes with cloud-persisted planScheduleConfig if not directly attached
+      const enrichedComplexes = await Promise.all(
+        loadedComplexes.map(async c => {
+          if (c.planScheduleConfig?.selectedDays?.length) return c;
+          const cfg = await OmranDataService.loadPlanScheduleConfig(c.id).catch(() => null);
+          return cfg ? { ...c, planScheduleConfig: cfg } : c;
+        })
+      );
+      setComplexes(enrichedComplexes);
+      setCertificates(loadedCertificates);
+      setListeningLogs(loadedListeningLogs);
+      setLibraryDocs(loadedLibraryDocs);
+
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      setLastSyncedTime(`مُحدّث (${timeStr})`);
+    } catch (e) {
+      console.warn('Initial data load notice:', e);
+    } finally {
+      clearTimeout(safetyTimer);
+      setIsLoadingData(false);
+      setIsSyncing(false);
+    }
+  };
+
+  // Identify Teacher and Supervisor Roles (MUST run before any conditional returns)
+  const currentTeacher = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'admin') return null;
+    const cleanUser = currentUser.username.trim().toLowerCase();
+    const tid = currentUser.teacherId;
+    if (tid) {
+      const matchById = teachers.find(t => t.id === tid);
+      if (matchById) return matchById;
+    }
+    return teachers.find(
+      t =>
+        t.username.trim().toLowerCase() === cleanUser ||
+        t.name.trim().toLowerCase() === cleanUser ||
+        normalizeArabicText(t.name) === normalizeArabicText(currentUser.username)
+    ) || null;
+  }, [currentUser, teachers]);
+
+  // Check Developer / System Administrator
+  const isDeveloper = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.role !== 'admin' && (currentUser.role as string) !== 'developer') return false;
+    if (currentTeacher) {
+      if (isTeacherDeveloper(currentTeacher, currentUser)) return true;
+    }
+    const cleanUser = (currentUser.username || '').trim().toLowerCase();
+    return (
+      cleanUser === 'admin' ||
+      cleanUser === 'developer' ||
+      cleanUser === 'montaser' ||
+      cleanUser.includes('منتصر') ||
+      cleanUser.includes('مبرمج') ||
+      cleanUser.includes('مطور') ||
+      currentUser.teacherId === 'teacher-1' ||
+      currentUser.teacherId === 'dev-1'
+    );
+  }, [currentUser, currentTeacher]);
+
+  // STRICT IMMUNITY: Protect teachers and supervisors from demotion, without hijacking other teachers' accounts
+  useEffect(() => {
+    if (!currentUser) return;
+    const cleanUser = currentUser.username.trim().toLowerCase();
+    const isMontaserOrDev =
+      cleanUser === 'admin' ||
+      cleanUser === 'developer' ||
+      cleanUser === 'montaser' ||
+      cleanUser.includes('منتصر');
+
+    // 1. Resolve the specific teacher account belonging to the active session
+    let matchedTeacher: TeacherAccount | undefined;
+    if (currentUser.teacherId) {
+      matchedTeacher = teachers.find(t => t.id === currentUser.teacherId);
+    }
+    if (!matchedTeacher) {
+      matchedTeacher = teachers.find(
+        t =>
+          t.username.trim().toLowerCase() === cleanUser ||
+          t.name.trim().toLowerCase() === cleanUser ||
+          normalizeArabicText(t.name) === normalizeArabicText(currentUser.username)
+      );
+    }
+
+    // 2. Only if the logged in user is explicitly developer/Montaser and no other teacher was matched
+    if (!matchedTeacher && isMontaserOrDev) {
+      matchedTeacher = teachers.find(t => t.role === 'developer' || t.id === 'teacher-1');
+    }
+
+    // 3. If a valid teacher account is matched, preserve their role as admin and ensure no demotion to student
+    if (matchedTeacher) {
+      const needsUpdate =
+        currentUser.role !== 'admin' ||
+        Boolean(currentUser.studentId) ||
+        currentUser.teacherId !== matchedTeacher.id ||
+        (matchedTeacher.complexId && currentUser.complexId !== matchedTeacher.complexId);
+
+      if (needsUpdate) {
+        console.warn('Preserving exact teacher account session integrity for:', matchedTeacher.name);
+        const safeUser = {
+          username: matchedTeacher.name || matchedTeacher.username,
+          role: 'admin' as const,
+          teacherId: matchedTeacher.id,
+          complexId: matchedTeacher.complexId
+        };
+        setCurrentUser(safeUser);
+        localStorage.setItem('omran_session', JSON.stringify(safeUser));
+        if (matchedTeacher.complexId) {
+          setSelectedComplexId(matchedTeacher.complexId);
+          try {
+            localStorage.setItem('omran_selected_complex_id', matchedTeacher.complexId);
+          } catch {}
+        }
+      }
+    }
+  }, [currentUser, teachers]);
+
+  // 1. Resolve active student for parent/student portal if active
+  const activePortalStudent = useMemo<Student | null>(() => {
+    if (portalStudentId) {
+      return (
+        directPortalStudent ||
+        students.find(
+          s =>
+            s.id === portalStudentId ||
+            s.id.toLowerCase() === portalStudentId.toLowerCase() ||
+            s.name.trim() === portalStudentId.trim() ||
+            s.name.replace(/\s+/g, '') === portalStudentId.replace(/\s+/g, '') ||
+            s.phone.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '') ||
+            (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '')))
+        ) ||
+        null
+      );
+    }
+    if (currentUser?.role === 'student') {
+      return (
+        students.find(
+          s =>
+            (currentUser.studentId && s.id === currentUser.studentId) ||
+            (currentUser.studentId && s.id.toLowerCase() === currentUser.studentId.toLowerCase()) ||
+            s.name.trim() === currentUser.username.trim() ||
+            normalizeArabicText(s.name) === normalizeArabicText(currentUser.username)
+        ) || null
+      );
+    }
+    return null;
+  }, [portalStudentId, directPortalStudent, students, currentUser]);
+
+  // 1. Determine if current user is supervisor or higher (developer has full rights, supervisor manages their complex)
+  const isSupervisor = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'admin') return false;
+    if (isDeveloper) return true;
+    if (currentTeacher) {
+      // STRICT: If role is explicitly teacher, they are strictly a regular teacher, NEVER supervisor
+      if (currentTeacher.role === 'teacher') return false;
+      if (currentTeacher.role === 'supervisor') return true;
+      if (currentTeacher.supervisedComplexId) return true;
+      if (complexes.some(c =>
+        (c.supervisorTeacherId && c.supervisorTeacherId === currentTeacher.id) ||
+        (c.supervisorTeacherName && currentTeacher.name && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
+      )) return true;
+      return isTeacherSupervisor(currentTeacher);
+    }
+    const cleanUser = currentUser.username.trim().toLowerCase();
+    return (
+      cleanUser === 'admin' ||
+      cleanUser === 'developer' ||
+      cleanUser === 'المشرف العام'
+    );
+  }, [currentUser, isDeveloper, currentTeacher, complexes]);
+
+  // 2. All complexes associated with current teacher (or all complexes if developer)
+  const availableTeacherComplexes = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'admin') return complexes;
+    return getTeacherAllComplexes(currentTeacher, teachers, complexes, halaqahs, isDeveloper);
+  }, [currentUser, currentTeacher, teachers, complexes, halaqahs, isDeveloper]);
+
+  // 3. Raw halaqahs directly assigned to teacher across all complexes
+  const rawTeacherAssignedHalaqahs = useMemo(() => {
+    if (!currentTeacher) return [];
+    const teacherId = currentTeacher.id;
+    const cleanTeacherName = normalizeTeacherText(currentTeacher.name || '');
+    const cleanTeacherUser = normalizeTeacherText(currentTeacher.username || '');
+
+    const result: Halaqah[] = [];
+    halaqahs.forEach(h => {
+      const hTeacherName = normalizeTeacherText(h.primaryTeacherName || '');
+      const isPrimary =
+        h.primaryTeacherId === teacherId ||
+        (h.teacherIds && h.teacherIds.includes(teacherId)) ||
+        (hTeacherName && (hTeacherName === cleanTeacherName || hTeacherName === cleanTeacherUser)) ||
+        (h.teacherNames && h.teacherNames.some(tn => {
+          const norm = normalizeTeacherText(tn);
+          return norm === cleanTeacherName || norm === cleanTeacherUser;
+        }));
+
+      const isAssigned =
+        currentTeacher.halaqahId === h.id ||
+        (currentTeacher.halaqahIds && currentTeacher.halaqahIds.includes(h.id)) ||
+        (currentTeacher.halaqahName && normalizeTeacherText(currentTeacher.halaqahName) === normalizeTeacherText(h.name)) ||
+        (currentTeacher.halaqahNames && currentTeacher.halaqahNames.some(hn => normalizeTeacherText(hn) === normalizeTeacherText(h.name)));
+
+      if (isPrimary || isAssigned) {
+        const parentComplex = complexes.find(c => c.id === h.complexId);
+        result.push({
+          ...h,
+          complexName: parentComplex?.name || h.complexName || 'المجمع'
+        });
+      }
+    });
+    return result;
+  }, [currentTeacher, halaqahs, complexes]);
+
+  // 4. Active Complex:
+  // 1. If portal student or direct student logged in: resolved strictly to student's complex
+  // 2. If developer or supervisor: specifically selected complex (or first complex)
+  // 3. For regular teacher: aligned with their active halaqah's complex or assigned complex
+  const activeComplex = useMemo<QuranComplex | null>(() => {
+    if (complexes.length === 0) return null;
+    if (activePortalStudent) {
+      if (activePortalStudent.complexId) {
+        const match = complexes.find(c => c.id === activePortalStudent.complexId);
+        if (match) return match;
+      }
+      if (activePortalStudent.halaqahId) {
+        const hMatch = halaqahs.find(h => h.id === activePortalStudent.halaqahId);
+        if (hMatch?.complexId) {
+          const cMatch = complexes.find(c => c.id === hMatch.complexId);
+          if (cMatch) return cMatch;
+        }
+      }
+    }
+
+    // If teacher has an active halaqah selected, strictly align with that halaqah's complex
+    if (currentTeacher && !isDeveloper && activeHalaqahId && activeHalaqahId !== 'all') {
+      const activeH = halaqahs.find(h => h.id === activeHalaqahId);
+      if (activeH?.complexId) {
+        const cMatch = complexes.find(c => c.id === activeH.complexId);
+        if (cMatch) return cMatch;
+      }
+    }
+
+    // Developer can switch to any complex freely
+    if (isDeveloper) {
+      if (selectedComplexId && selectedComplexId !== 'all') {
+        const match = complexes.find(c => c.id === selectedComplexId);
+        if (match) return match;
+      }
+      return complexes[0] || null;
+    }
+
+    // Supervisor: allow switching ONLY to complexes they actually supervise or are assigned to
+    if (isSupervisor && selectedComplexId && selectedComplexId !== 'all') {
+      const match = complexes.find(c => c.id === selectedComplexId);
+      if (match) {
+        const isAuthorized =
+          isDeveloper ||
+          availableTeacherComplexes.some(c => c.id === match.id) ||
+          match.supervisorTeacherId === currentTeacher?.id ||
+          (currentTeacher?.complexIds && currentTeacher.complexIds.includes(match.id)) ||
+          currentTeacher?.complexId === match.id ||
+          (currentTeacher?.name && match.supervisorTeacherName && normalizeTeacherText(match.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name));
+
+        if (isAuthorized) return match;
+      }
+    }
+
+    // Teacher with assigned halaqahs: prioritize complex of assigned halaqahs
+    if (rawTeacherAssignedHalaqahs.length > 0) {
+      const firstH = rawTeacherAssignedHalaqahs[0];
+      if (firstH.complexId) {
+        const cMatch = complexes.find(c => c.id === firstH.complexId);
+        if (cMatch) return cMatch;
+      }
+    }
+
+    if (currentTeacher?.supervisedComplexId) {
+      const cMatch = complexes.find(c => c.id === currentTeacher.supervisedComplexId);
+      if (cMatch) return cMatch;
+    }
+
+    if (currentTeacher?.complexId) {
+      const cMatch = complexes.find(c => c.id === currentTeacher.complexId);
+      if (cMatch) return cMatch;
+    }
+
+    if (currentUser?.complexId) {
+      const cMatch = complexes.find(c => c.id === currentUser.complexId);
+      if (cMatch) return cMatch;
+    }
+
+    return availableTeacherComplexes[0] || complexes[0] || null;
+  }, [
+    complexes,
+    activePortalStudent,
+    selectedComplexId,
+    isDeveloper,
+    isSupervisor,
+    currentUser,
+    currentTeacher,
+    availableTeacherComplexes,
+    rawTeacherAssignedHalaqahs,
+    activeHalaqahId,
+    halaqahs
+  ]);
+
+  // Complex scope resolution for teacher/supervisor:
+  const supervisedComplex = activeComplex;
+
+  const targetHalaqahIdRef = useRef<string | null>(null);
+
+  // Safety watchdog: ensure syncing state never hangs
+  useEffect(() => {
+    if (isSyncing) {
+      const t = setTimeout(() => setIsSyncing(false), 1600);
+      return () => clearTimeout(t);
+    }
+  }, [isSyncing]);
+
+  // Synchronize OmranDataService active database whenever activeComplex changes,
+  // and bind real-time subscriptions to the active database instance!
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Tell OmranDataService to set active complex and resolve its Firestore instance
+    OmranDataService.setActiveComplex(activeComplex);
+
+    // 2. Load all data from the active database
+    loadAllData();
+
+    // 4. Attach Firestore real-time subscriptions for the active database
+    const unsubStudents = OmranDataService.subscribeStudents(newStudents => {
+      if (isMounted) {
+        if (newStudents && newStudents.length > 0) {
+          setStudents(prev => {
+            if (!prev || prev.length === 0) return newStudents;
+            const prevMap = new Map<string, Student>(prev.map(s => [s.id, s]));
+            return newStudents.map(ns => {
+              const local = prevMap.get(ns.id);
+              if (
+                local?.mushafErrorsUpdatedAt &&
+                (!ns.mushafErrorsUpdatedAt || local.mushafErrorsUpdatedAt > ns.mushafErrorsUpdatedAt)
+              ) {
+                return {
+                  ...ns,
+                  mushafErrors: local.mushafErrors,
+                  mushafErrorsUpdatedAt: local.mushafErrorsUpdatedAt
+                };
+              }
+              return ns;
+            });
+          });
+        } else {
+          setStudents(prev => (prev.length > 0 ? prev : newStudents));
+        }
+      }
+    });
+    const unsubAttendance = OmranDataService.subscribeAttendance(newAtt => {
+      if (isMounted) setAttendance(newAtt);
+    });
+    const unsubEvaluations = OmranDataService.subscribeEvaluations(newEvals => {
+      if (isMounted) setEvaluations(newEvals);
+    });
+    const unsubCriteria = OmranDataService.subscribeCriteria(newCrit => {
+      if (isMounted) setCriteria(newCrit);
+    });
+    const unsubSettings = OmranDataService.subscribeSettings(newSet => {
+      if (isMounted) setSettings(newSet);
+    });
+    const unsubTeachers = OmranDataService.subscribeTeachers(newTeach => {
+      if (isMounted) setTeachers(newTeach);
+    });
+    const unsubViolations = OmranDataService.subscribeViolations(newViolations => {
+      if (isMounted) setViolations(newViolations);
+    });
+    const unsubHalaqahs = OmranDataService.subscribeHalaqahs(newHalaqahs => {
+      if (isMounted) {
+        if (newHalaqahs && newHalaqahs.length > 0) {
+          setHalaqahs(newHalaqahs);
+        } else {
+          setHalaqahs(prev => (prev.length > 0 ? prev : newHalaqahs));
+        }
+      }
+    });
+    // complexes subscription always listens to Central DB
+    const unsubComplexes = OmranDataService.subscribeComplexes(newComplexes => {
+      if (isMounted) setComplexes(newComplexes);
+    });
+    const unsubPlanConfig = OmranDataService.subscribePlanScheduleConfig(cfg => {
+      if (!isMounted || !cfg) return;
+      setComplexes(prev =>
+        prev.map(c => {
+          if (!activeComplex?.id || c.id === activeComplex.id) {
+            return { ...c, planScheduleConfig: cfg };
+          }
+          return c;
+        })
+      );
+    }, activeComplex?.id);
+    const unsubExams = OmranDataService.subscribeExams(newExams => {
+      if (isMounted) setExams(newExams);
+    });
+    const unsubSubmissions = OmranDataService.subscribeSubmissions(newSubs => {
+      if (isMounted) setSubmissions(newSubs);
+    });
+    const unsubLeaderboard = OmranDataService.subscribeLeaderboardSettings(newLead => {
+      if (isMounted) setLeaderboardSettings(newLead);
+    });
+    const unsubGoogle = OmranDataService.subscribeGoogleOAuthConfig(newGoogle => {
+      if (isMounted) setGoogleAuthConfig(newGoogle);
+    });
+    const unsubRecordings = OmranDataService.subscribeRecordings(newRecordings => {
+      if (isMounted) setRecordings(newRecordings);
+    });
+    const unsubRecordingsConfig = OmranDataService.subscribeRecordingsConfig(newConfig => {
+      if (isMounted) setRecordingsConfig(newConfig);
+    });
+    const unsubCertificates = OmranDataService.subscribeCertificates(newCerts => {
+      if (isMounted) setCertificates(newCerts);
+    });
+    const unsubListeningLogs = OmranDataService.subscribeListeningLogs(newLogs => {
+      if (isMounted) setListeningLogs(newLogs);
+    });
+    const unsubLibraryDocs = OmranDataService.subscribeLibraryDocuments(newDocs => {
+      if (isMounted) setLibraryDocs(newDocs);
+    });
+    const unsubTombstones = OmranDataService.subscribeTombstones(tombstones => {
+      if (!isMounted) return;
+      setStudents(prev => prev.filter(s => s?.id && !tombstones.deletedStudents.has(s.id)));
+      setTeachers(prev => prev.filter(t => t?.id && !tombstones.deletedTeachers.has(t.id)));
+      setHalaqahs(prev => prev.filter(h => h?.id && !tombstones.deletedHalaqahs.has(h.id)));
+      setComplexes(prev => prev.filter(c => c?.id && !tombstones.deletedComplexes.has(c.id)));
+      if (currentTeacher && tombstones.deletedTeachers.has(currentTeacher.id)) {
+        handleLogout();
+      }
+    });
+
+    // Real-time synchronization of active halaqah across all devices and browser tabs
+    const unsubActiveHalaqah = OmranDataService.subscribeActiveHalaqah(data => {
+      if (!isMounted || !data?.activeHalaqahId) return;
+      // CRITICAL: Only sync if this update came from the same authenticated user or session,
+      // and within the same active complex! Never allow a remote update from another user or
+      // complex to hijack the active halaqah while the user is using the app!
+      if (data.updatedBy && currentUser?.username && data.updatedBy !== currentUser.username) {
+        return;
+      }
+      if (data.complexId && activeComplex?.id && data.complexId !== activeComplex.id) {
+        return;
+      }
+      const remoteHId = data.activeHalaqahId;
+      targetHalaqahIdRef.current = remoteHId;
+      setActiveHalaqahId(prev => {
+        if (prev !== remoteHId) {
+          try {
+            localStorage.setItem('omran_active_halaqah_id', remoteHId);
+          } catch {}
+          return remoteHId;
+        }
+        return prev;
+      });
+    });
+
+    const handleBroadcastUpdate = (e: any) => {
+      const type = e.detail?.type;
+      const payload = e.detail?.payload;
+      if (type === 'student' && payload) {
+        setStudents(prev =>
+          prev.some(s => s.id === payload.id)
+            ? prev.map(s => (s.id === payload.id ? payload : s))
+            : [payload, ...prev]
+        );
+      } else if (type === 'student-deleted' && payload) {
+        setStudents(prev => prev.filter(s => s.id !== payload));
+      } else if (type === 'library' && payload) {
+        setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+      } else if (type === 'library-deleted' && payload) {
+        setLibraryDocs(prev => prev.filter(d => d.id !== payload));
+      } else if (type === 'certificate' && payload) {
+        setCertificates(prev => [payload, ...prev.filter(c => c.id !== payload.id)]);
+      } else if (type === 'certificates-batch' && Array.isArray(payload)) {
+        setCertificates(prev => {
+          const map = new Map<string, IssuedCertificate>();
+          for (const c of payload) map.set(c.id, c);
+          for (const c of prev) if (!map.has(c.id)) map.set(c.id, c);
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      } else if (type === 'certificate-deleted' && payload) {
+        setCertificates(prev => prev.filter(c => c.id !== payload));
+      } else if (type === 'exam' && payload) {
+        setExams(prev => [payload, ...prev.filter(x => x.id !== payload.id)]);
+      } else if (type === 'exam-deleted' && payload) {
+        setExams(prev => prev.filter(x => x.id !== payload));
+      } else if (type === 'complex' && payload) {
+        setComplexes(prev => {
+          const idx = prev.findIndex(c => c.id === payload.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = payload;
+            return next;
+          }
+          return [payload, ...prev];
+        });
+        if (payload.theme && (!activeComplex || activeComplex.id === payload.id)) {
+          applyComplexThemeToDOM(payload.theme, true);
+          setSettings(prev => ({ ...prev, theme: payload.theme }));
+        }
+      } else if (type === 'complex-deleted' && payload) {
+
+        setComplexes(prev => prev.filter(c => c.id !== payload));
+      } else if (type === 'settings' && payload) {
+        setSettings(prev => ({ ...prev, ...payload }));
+      } else if ((type === 'attendance-records' || type === 'attendance') && Array.isArray(payload)) {
+        setAttendance(prev => {
+          const map = new Map<string, AttendanceRecord>();
+          for (const a of prev) if (a?.id) map.set(a.id, a);
+          for (const a of payload) if (a?.id) map.set(a.id, a);
+          return Array.from(map.values());
+        });
+      } else if (type === 'library' && payload) {
+        setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+      } else if (type === 'library-deleted' && payload) {
+        setLibraryDocs(prev => prev.filter(d => d.id !== payload));
+      } else if (type === 'certificate' && payload) {
+        setCertificates(prev => [payload, ...prev.filter(c => c.id !== payload.id)]);
+      } else if (type === 'student' && payload) {
+        setStudents(prev =>
+          prev.some(s => s.id === payload.id)
+            ? prev.map(s => (s.id === payload.id ? payload : s))
+            : [payload, ...prev]
+        );
+      } else if (type === 'student-deleted' && payload) {
+        setStudents(prev => prev.filter(s => s.id !== payload));
+      } else if (type === 'halaqah' && payload) {
+        setHalaqahs(prev => [payload, ...prev.filter(h => h.id !== payload.id)]);
+      } else if (type === 'exam' && payload) {
+        setExams(prev => [payload, ...prev.filter(e => e.id !== payload.id)]);
+      } else if (type === 'exam-deleted' && payload) {
+        setExams(prev => prev.filter(e => e.id !== payload));
+      } else if (type === 'plan_schedule' && payload) {
+        setComplexes(prev =>
+          prev.map(c => {
+            if (!activeComplex?.id || c.id === activeComplex.id) {
+              return { ...c, planScheduleConfig: payload };
+            }
+            return c;
+          })
+        );
+      } else if (type === 'evaluation' && payload) {
+        setEvaluations(prev => [payload, ...prev.filter(ev => ev.id !== payload.id)]);
+      }
+    };
+
+    const handleDirectStudentUpdated = (e: any) => {
+      const updated = e.detail as Student | undefined;
+      if (!updated?.id) return;
+      setStudents(prev =>
+        prev.some(s => s.id === updated.id)
+          ? prev.map(s => (s.id === updated.id ? updated : s))
+          : [updated, ...prev]
+      );
+    };
+
+    window.addEventListener('omran:data-updated', handleBroadcastUpdate);
+    window.addEventListener('omran:students-updated', handleDirectStudentUpdated);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('omran:data-updated', handleBroadcastUpdate);
+      window.removeEventListener('omran:students-updated', handleDirectStudentUpdated);
+      unsubStudents();
+      unsubAttendance();
+      unsubEvaluations();
+      unsubCriteria();
+      unsubSettings();
+      unsubTeachers();
+      unsubViolations();
+      unsubHalaqahs();
+      unsubComplexes();
+      unsubPlanConfig();
+      unsubExams();
+      unsubSubmissions();
+      unsubLeaderboard();
+      unsubGoogle();
+      unsubRecordings();
+      unsubRecordingsConfig();
+      unsubCertificates();
+      unsubListeningLogs();
+      unsubLibraryDocs();
+      unsubTombstones();
+      unsubActiveHalaqah();
+    };
+  }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+
+  // Real-time Background AI Tuning Worker for Student Plans
+  useEffect(() => {
+    const handleTunePlanEvent = async (e: any) => {
+      const detail = e.detail;
+      if (!detail?.student) return;
+      const student = detail.student as Student;
+      const sName = student.name || 'طالب';
+
+      setBackgroundAIQueue(prev => [...prev, sName]);
+
+      try {
+        // Evaluate mistakes and adjust tomorrow's plan in background
+        const res = await fetch(ApiConfig.getEndpoint('/api/gemini/adapt-student-plan'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student,
+            todayEvaluation: detail.todayEvaluation,
+            ayahErrors: detail.ayahErrors
+          })
+        }).catch(() => null);
+
+        const hasErrors = (detail.ayahErrors && detail.ayahErrors.length > 0) || detail.didNotRecite;
+
+        // Determine updated plan respecting consolidation rule:
+        // "مش الطالب يختم بسرعة لا ان الطالب يختم وهو مثبت"
+        const currentPlan = student.memorizationPlan;
+        const currentMem = currentPlan?.memorizedJuzCount || calculateStudentMemorizedJuz(student);
+        const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
+
+        const scheduleCfg = activeComplex?.planScheduleConfig;
+        const weeklyDaysCount = scheduleCfg?.selectedDays?.length || currentPlan?.weeklyDaysCount || 5;
+        const dailyHoursCount = scheduleCfg?.dailyHours || currentPlan?.dailyHoursCount || 2;
+        const startDate = new Date();
+
+        const timeline = calculateRealisticKhatmTimeline({
+          memorizedJuz: currentMem,
+          consolidatedJuz: currentCons,
+          dailyNewPages: currentPlan?.dailyNewPages || 1,
+          dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+          weeklyDaysCount,
+          dailyHoursCount,
+          startDate
+        });
+
+        setStudents(prev => {
+          const liveStudent = prev.find(s => s.id === student.id) || student;
+          const currentPlan = liveStudent.memorizationPlan || student.memorizationPlan;
+          const currentMem = currentPlan?.memorizedJuzCount || calculateStudentMemorizedJuz(liveStudent);
+          const currentCons = currentPlan?.consolidatedJuzCount || Math.max(0, currentMem - 2);
+
+          const scheduleCfg = activeComplex?.planScheduleConfig;
+          const weeklyDaysCount = scheduleCfg?.selectedDays?.length || currentPlan?.weeklyDaysCount || 5;
+          const dailyHoursCount = scheduleCfg?.dailyHours || currentPlan?.dailyHoursCount || 2;
+          const startDate = new Date();
+
+          const timeline = calculateRealisticKhatmTimeline({
+            memorizedJuz: currentMem,
+            consolidatedJuz: currentCons,
+            dailyNewPages: currentPlan?.dailyNewPages || 1,
+            dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+            weeklyDaysCount,
+            dailyHoursCount,
+            startDate
+          });
+
+          const hasNewerLocalMushafErrors =
+            Boolean(liveStudent.mushafErrorsUpdatedAt) &&
+            (!detail.dispatchedAt || liveStudent.mushafErrorsUpdatedAt! > detail.dispatchedAt);
+
+          const updatedStudent: Student = {
+            ...liveStudent,
+            isFirstSession: false,
+            recentlyCompletedSurahs: detail.updatedRecentlyCompletedSurahs || liveStudent.recentlyCompletedSurahs,
+            mushafErrors: hasNewerLocalMushafErrors
+              ? liveStudent.mushafErrors
+              : (detail.updatedMushafErrors || liveStudent.mushafErrors),
+            mushafErrorsUpdatedAt: hasNewerLocalMushafErrors
+              ? liveStudent.mushafErrorsUpdatedAt
+              : (detail.dispatchedAt || liveStudent.mushafErrorsUpdatedAt),
+            persistentReviewItems: detail.newDailyAssignment?.reviewItems || liveStudent.persistentReviewItems,
+            memorizationPlan: {
+              dailyNewPages: currentPlan?.dailyNewPages || 1,
+              dailyReviewPages: currentPlan?.dailyReviewPages || 5,
+              consolidatedJuzCount: currentCons,
+              memorizedJuzCount: currentMem,
+              targetJuz: 30,
+              targetCompletionDate: timeline.targetCompletionDate,
+              estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+              progressPercentage: timeline.progressPercentage,
+              status: hasErrors ? 'needs_reinforcement' : 'on_track',
+              weeklyDaysCount: currentPlan?.weeklyDaysCount || 5,
+              dailyHoursCount: currentPlan?.dailyHoursCount || 2,
+              tathbeetStopsCount: timeline.tathbeetStopsCount,
+              milestones: timeline.milestones,
+              nextDayAssignment: {
+                newMemorization: hasErrors
+                  ? `تكرار وتثبيت ما تم تسميعه اليوم حتى يرسخ في الصدر`
+                  : (detail.newDailyAssignment?.newMemorization || 'مقرر جديد متزن'),
+                review: detail.newDailyAssignment?.review || 'مراجعة الماضي',
+                suggestedSheikh: detail.newDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+                action: hasErrors ? 'repeat_surah' : 'advance_page',
+                reason: hasErrors ? 'تكرار لتثبيت الآيات التي وقع فيها خطأ' : 'انطلاقة متزنة نحو الختم'
+              },
+              aiNotes: `تم الضبط التلقائي في الخلفية بواسطة الذكاء الاصطناعي بعد جلسة التسميع. ${timeline.pedagogicalNote}`,
+              lastUpdated: new Date().toISOString()
+            }
+          };
+
+          OmranDataService.saveStudent(updatedStudent).catch(e => console.warn('AI tune saveStudent notice:', e));
+          return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+        });
+      } catch (err) {
+        console.warn('Background AI tuning note:', err);
+      } finally {
+        setBackgroundAIQueue(prev => prev.filter(name => name !== sName));
+      }
+    };
+
+    const handleStudentsUpdated = (e: any) => {
+      if (e.detail) {
+        const updated = e.detail as Student;
+        setStudents(prev => {
+          if (!prev.some(s => s.id === updated.id)) {
+            return [updated, ...prev];
+          }
+          return prev.map(s => s.id === updated.id ? updated : s);
+        });
+      }
+    };
+
+    window.addEventListener('omran:ai-tune-plan', handleTunePlanEvent);
+    window.addEventListener('omran:students-updated', handleStudentsUpdated);
+    return () => {
+      window.removeEventListener('omran:ai-tune-plan', handleTunePlanEvent);
+      window.removeEventListener('omran:students-updated', handleStudentsUpdated);
+    };
+  }, []);
+
+  // Live Real-Time Subscription for Incoming Student Registration Applications
+  // Immediately notifies supervisor in real-time the instant a student submits from any device!
+  useEffect(() => {
+    if (!currentUser) return;
+    const isSup = isSupervisor || isDeveloper;
+    if (!isSup) return;
+
+    let isInitialLoad = true;
+    const unsub = OmranDataService.subscribeToRegistrationApplications(
+      (apps, isRealtimeUpdate, latestNewApp) => {
+        setRegistrationApplications(apps);
+
+        if (!isInitialLoad && isRealtimeUpdate && latestNewApp && latestNewApp.status === 'pending') {
+          playGentleApplicationChime();
+          setLiveNewAppAlert(latestNewApp);
+        }
+        isInitialLoad = false;
+      },
+      activeComplex?.id
+    );
+
+    return () => unsub();
+  }, [currentUser, isSupervisor, isDeveloper, activeComplex?.id]);
+
+  // Auto-dismiss live incoming application alert after 25 seconds
+  useEffect(() => {
+    if (!liveNewAppAlert) return;
+    const timer = setTimeout(() => {
+      setLiveNewAppAlert(null);
+    }, 25000);
+    return () => clearTimeout(timer);
+  }, [liveNewAppAlert]);
+
+  // Real-time synchronization of active halaqah across browser tabs on the same device
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('omran_active_halaqah_sync');
+        bc.onmessage = (event) => {
+          const remoteHId = event.data?.activeHalaqahId;
+          if (remoteHId && remoteHId !== activeHalaqahId) {
+            setActiveHalaqahId(remoteHId);
+          }
+        };
+      }
+    } catch {}
+    return () => {
+      try { bc?.close(); } catch {}
+    };
+  }, [activeHalaqahId]);
+
+  // Real-time synchronization of Browser Tab Title, Favicon, and Complex Theme
+  useEffect(() => {
+    // 1. Dynamic Browser Tab Title (عنوان تبويب المتصفح على اسم المجمع)
+    const complexDisplayName = activeComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
+    document.title = complexDisplayName;
+
+    // 2. Dynamic Browser Tab Favicon (شعار المجمع كأيقونة تبويب المتصفح)
+    let faviconLink = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
+    if (!faviconLink) {
+      faviconLink = document.createElement('link');
+      faviconLink.rel = 'icon';
+      document.head.appendChild(faviconLink);
+    }
+    if (activeComplex?.logoUrl) {
+      faviconLink.href = activeComplex.logoUrl;
+    } else {
+      faviconLink.href = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23fbbf24"><path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></svg>`;
+    }
+
+    // 3. Dynamic Complex Theme Colors on Document Root & Body
+    // Strictly: Only apply complex theme if inside a complex (logged-in user or active portal student).
+    // Outside the complex (landing page, login modal, privacy), strictly resets to natural platform colors (#022c22 & #fbbf24)!
+    const isInsideComplex = Boolean(currentUser || activePortalStudent);
+    const effectiveTheme = activeComplex?.theme || settings?.theme;
+    applyComplexThemeToDOM(effectiveTheme, isInsideComplex);
+  }, [activeComplex, settings.complexName, settings.theme, currentUser, activePortalStudent]);
+
+  // Scoped complexes: Programmer sees all complexes; Supervisor sees their assigned and supervised complexes; teacher sees their assigned complexes
+  const scopedComplexes = useMemo(() => {
+    if (isDeveloper) return complexes;
+    if (isSupervisor) {
+      const supComplexes = complexes.filter(c =>
+        c.supervisorTeacherId === currentTeacher?.id ||
+        (currentTeacher?.complexIds && currentTeacher.complexIds.includes(c.id)) ||
+        (currentTeacher?.complexId === c.id) ||
+        (currentTeacher?.name && c.supervisorTeacherName && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
+      );
+      if (supComplexes.length > 0) return supComplexes;
+      return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
+    }
+    return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
+  }, [isDeveloper, isSupervisor, complexes, activeComplex, availableTeacherComplexes, currentTeacher]);
+
+  // Permission to switch complexes:
+  // Developer can switch if complexes.length > 1.
+  // Supervisors and teachers can ONLY switch if they are assigned to / supervise MORE THAN ONE COMPLEX!
+  const canSwitchComplex = useMemo(() => {
+    if (isDeveloper) return complexes.length > 1;
+    return scopedComplexes.length > 1;
+  }, [isDeveloper, complexes.length, scopedComplexes.length]);
+
+  // Scoped halaqahs: Strictly sees halaqahs of their ACTIVE QuranComplex!
+  // ONLY if developer explicitly chose the 'all' view across complexes does it see ALL halaqahs!
+  const scopedHalaqahs = useMemo(() => {
+    if (!activeComplex) return halaqahs;
+    if (isDeveloper && selectedComplexId === 'all') return halaqahs;
+
+    const filtered = halaqahs.filter(h => isHalaqahInComplex(h, activeComplex, complexes, students, teachers));
+    return filtered;
+  }, [activeComplex, halaqahs, complexes, isDeveloper, selectedComplexId, students, teachers]);
+
+  const scopedHalaqahIds = useMemo(() => {
+    return new Set(scopedHalaqahs.map(h => h.id));
+  }, [scopedHalaqahs]);
+
+  // Assigned halaqahs for current user:
+  // If teacher has assigned halaqahs across one or more complexes, ALWAYS include them with complexName attached.
+  const assignedHalaqahs = useMemo(() => {
+    if (isDeveloper) {
+      return scopedHalaqahs;
+    }
+    if (!currentTeacher) {
+      return [];
+    }
+    if (rawTeacherAssignedHalaqahs.length > 0) {
+      return rawTeacherAssignedHalaqahs;
+    }
+    if (isSupervisor) {
+      return scopedHalaqahs;
+    }
+    if (scopedHalaqahs.length === 1) {
+      return scopedHalaqahs;
+    }
+    return [];
+  }, [isDeveloper, isSupervisor, scopedHalaqahs, currentTeacher, rawTeacherAssignedHalaqahs]);
+
+  // Scoped students: If programmer and 'all' chosen, sees all students.
+  // Otherwise, STRICTLY isolated to the active complex's halaqahs and students!
+  const scopedStudents = useMemo(() => {
+    if (!activeComplex) return students;
+    if (isDeveloper && selectedComplexId === 'all') return students;
+
+    const halaqahMap = new Map<string, Halaqah>(halaqahs.map(h => [h.id, h]));
+    const activeH = halaqahs.find(h => h.id === activeHalaqahId);
+
+    const filtered = students.filter(s => {
+      // 0. Guaranteed visibility: If teacher is viewing, NEVER hide students belonging to their active or assigned halaqahs!
+      if (currentTeacher && !isDeveloper) {
+        if (activeHalaqahId && activeHalaqahId !== 'all') {
+          if (s.halaqahId === activeHalaqahId) return true;
+          if (activeH && s.halaqahName && normalizeTeacherText(s.halaqahName) === normalizeTeacherText(activeH.name)) return true;
+        }
+        const isInAssigned = assignedHalaqahs.some(h =>
+          h.id === s.halaqahId ||
+          (s.halaqahName && normalizeTeacherText(h.name) === normalizeTeacherText(s.halaqahName))
+        );
+        if (isInAssigned) return true;
+      }
+
+      // 1. Authoritative: If student belongs to a halaqah, that halaqah's complex strictly decides where the student appears!
+      if (s.halaqahId && s.halaqahId !== 'all' && s.halaqahId !== 'unassigned') {
+        const studentHalaqah = halaqahMap.get(s.halaqahId);
+        if (studentHalaqah) {
+          return isHalaqahInComplex(studentHalaqah, activeComplex, complexes, students, teachers);
+        }
+      }
+
+      // 1.5 Student matches halaqah by name
+      if (s.halaqahName && s.halaqahName.trim() !== '') {
+        const normStHal = normalizeTeacherText(s.halaqahName);
+        const matchingH = halaqahs.find(h => normalizeTeacherText(h.name) === normStHal);
+        if (matchingH) {
+          return isHalaqahInComplex(matchingH, activeComplex, complexes, students, teachers);
+        }
+      }
+
+      // 2. Direct assignment to a complex (for students with unassigned halaqah)
+      if (s.complexId) {
+        return s.complexId === activeComplex.id || (s.complexName && normalizeTeacherText(s.complexName) === normalizeTeacherText(activeComplex.name));
+      }
+
+      // 3. Fallback: only primary complex if student has neither complexId nor halaqah
+      return !s.complexId && !s.halaqahId && complexes[0]?.id === activeComplex.id;
+    });
+
+    return filtered;
+  }, [isDeveloper, selectedComplexId, students, halaqahs, activeComplex, complexes, teachers, currentTeacher, activeHalaqahId, assignedHalaqahs]);
+
+  const scopedStudentIds = useMemo(() => {
+    return new Set(scopedStudents.map(s => s.id));
+  }, [scopedStudents]);
+
+  // Scoped teachers: Teachers belonging strictly to the active complex
+  // STRICT RULE: Supervisor CANNOT see the Programmer in the complex teachers list!
+  const scopedTeachers = useMemo(() => {
+    if (!supervisedComplex) {
+      return isDeveloper ? teachers : teachers.filter(t => !isTeacherDeveloper(t));
+    }
+    if (isDeveloper && selectedComplexId === 'all') return teachers;
+    const matched = teachers.filter(t => {
+      // If current user is supervisor (NOT developer), programmer is NEVER visible in complex teachers list!
+      if (!isDeveloper && isTeacherDeveloper(t)) {
+        return false;
+      }
+      if (currentTeacher && t.id === currentTeacher.id) return true;
+      if (t.complexId === supervisedComplex.id) return true;
+      if (t.complexIds && t.complexIds.includes(supervisedComplex.id)) return true;
+      if (t.halaqahId && scopedHalaqahIds.has(t.halaqahId)) return true;
+      if (t.halaqahIds && t.halaqahIds.some(hid => scopedHalaqahIds.has(hid))) return true;
+      return false;
+    });
+    if (matched.length === 0 && isDeveloper) return teachers;
+    return matched;
+  }, [isDeveloper, selectedComplexId, teachers, supervisedComplex, currentTeacher, scopedHalaqahIds]);
+
+  // Handle switching halaqahs: Live synchronization across all devices and sessions
+  const handleSwitchHalaqah = (newHalaqahId: string) => {
+    targetHalaqahIdRef.current = newHalaqahId;
+    setActiveHalaqahId(newHalaqahId);
+
+    // 1. Sync to local device storage & BroadcastChannel
+    try {
+      localStorage.setItem('omran_active_halaqah_id', newHalaqahId);
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('omran_active_halaqah_sync');
+        bc.postMessage({ activeHalaqahId: newHalaqahId, timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (e) {}
+
+    // 2. Real-time multi-device cloud synchronization via Firestore
+    OmranDataService.syncActiveHalaqah(newHalaqahId, activeComplex?.id, currentUser?.username);
+
+    if (newHalaqahId !== 'all') {
+      const targetH = halaqahs.find(h => h.id === newHalaqahId);
+      if (targetH && targetH.complexId && targetH.complexId !== activeComplex?.id) {
+        setSelectedComplexId(targetH.complexId);
+        try {
+          localStorage.setItem('omran_selected_complex_id', targetH.complexId);
+        } catch (e) {}
+      }
+    }
+  };
+
+  // Switch between complexes seamlessly
+  const handleSwitchComplex = (newComplexId: string) => {
+    // Only permitted if user can switch complexes and target complex is authorized
+    if (!canSwitchComplex) return;
+    if (!isDeveloper && !scopedComplexes.some(c => c.id === newComplexId)) return;
+
+    setSelectedComplexId(newComplexId);
+    try {
+      localStorage.setItem('omran_selected_complex_id', newComplexId);
+    } catch (e) {
+      // ignore
+    }
+    const targetComplex = complexes.find(c => c.id === newComplexId);
+    if (targetComplex) {
+      setActiveHalaqahId('all');
+    }
+  };
+
+  // Multi-complex detection & welcome alert when teacher is added to another complex or enters
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    if (!canSwitchComplex || availableTeacherComplexes.length <= 1) return;
+    if (isDeveloper) return; // Developers don't need intrusive popups for complex list
+
+    const teacherKey = currentTeacher?.id || currentTeacher?.username || currentUser.username;
+    const storageKeyKnown = `omran_known_complexes_${teacherKey}`;
+    const storageKeySkip = `omran_skip_complex_welcome_${teacherKey}`;
+
+    let knownIds: string[] = [];
+    try {
+      const stored = localStorage.getItem(storageKeyKnown);
+      if (stored) knownIds = JSON.parse(stored);
+    } catch (e) {
+      knownIds = [];
+    }
+
+    const currentIds = availableTeacherComplexes.map(c => c.id);
+    const newlyAdded = availableTeacherComplexes.find(c => !knownIds.includes(c.id));
+    const skipWelcome = localStorage.getItem(storageKeySkip) === 'true';
+
+    if (newlyAdded && knownIds.length > 0) {
+      setNewlyAddedComplexName(newlyAdded.name);
+      setIsMultiComplexModalOpen(true);
+      try {
+        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
+      } catch (e) {}
+    } else if (!skipWelcome && knownIds.length === 0) {
+      setIsMultiComplexModalOpen(true);
+      try {
+        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
+      } catch (e) {}
+    } else {
+      try {
+        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
+      } catch (e) {}
+    }
+  }, [currentUser, currentTeacher, availableTeacherComplexes]);
+
+  // Scoped settings for the active complex:
+  // If user belongs to a separate complex, ensures halaqahName and teacherName strictly
+  // reflect their complex and active halaqah/teacher — with ZERO mention of Zubair or Mohamed Montaser.
+  const scopedSettings = useMemo<AppSettings>(() => {
+    if (isDeveloper) {
+      return settings;
+    }
+    if (supervisedComplex) {
+      const activeHalaqah = activeHalaqahId && activeHalaqahId !== 'all'
+        ? scopedHalaqahs.find(h => h.id === activeHalaqahId)
+        : (assignedHalaqahs[0] || scopedHalaqahs[0]);
+
+      const currentTeacherName = currentTeacher?.name || supervisedComplex.supervisorTeacherName || currentUser?.username || 'المعلم المشرف';
+      const resolvedHalaqahName = activeHalaqah?.name || supervisedComplex.name || 'الحلقة القرآنية';
+
+      return {
+        ...settings,
+        halaqahName: resolvedHalaqahName,
+        teacherName: currentTeacherName,
+        theme: activeComplex?.theme || settings.theme
+      };
+    }
+    return {
+      ...settings,
+      theme: activeComplex?.theme || settings.theme
+    };
+  }, [settings, isDeveloper, supervisedComplex, scopedHalaqahs, activeHalaqahId, assignedHalaqahs, currentTeacher, currentUser, activeComplex]);
+
+  // Scoped criteria: Specific to active complex if set
+  const scopedCriteria = useMemo(() => {
+    const complexId = activeComplex?.id;
+    if (!complexId) return criteria;
+
+    const matched = criteria.filter(c => c.complexId === complexId);
+    if (matched.length > 0) return matched;
+
+    return criteria.filter(c => !c.complexId);
+  }, [criteria, activeComplex]);
+
+  // Auto-switch to assigned halaqah for teacher or valid complex halaqah for supervisor
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+
+    // If teacher is currently switching to a specific target halaqah, preserve it!
+    if (targetHalaqahIdRef.current && activeHalaqahId === targetHalaqahIdRef.current) {
+      return;
+    }
+
+    // If teacher already has an active halaqah in their assigned list, PRESERVE IT unconditionally!
+    if (assignedHalaqahs.length > 0 && activeHalaqahId && assignedHalaqahs.some(h => h.id === activeHalaqahId)) {
+      return;
+    }
+
+    if (isSupervisor) {
+      if (activeHalaqahId && activeHalaqahId !== 'all') {
+        const isValid = scopedHalaqahIds.has(activeHalaqahId) || assignedHalaqahs.some(h => h.id === activeHalaqahId);
+        if (!isValid) {
+          setActiveHalaqahId('all');
+        }
+      }
+    } else {
+      if (assignedHalaqahs.length > 0) {
+        if (!activeHalaqahId || activeHalaqahId === 'all' || !assignedHalaqahs.some(h => h.id === activeHalaqahId)) {
+          setActiveHalaqahId(assignedHalaqahs[0].id);
+        }
+      }
+    }
+  }, [currentUser, isSupervisor, assignedHalaqahs, activeHalaqahId, scopedHalaqahIds, scopedHalaqahs.length]);
+
+  // Real-time tab-to-tab BroadcastChannel listener for active halaqah synchronization across all tabs and devices
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('omran_active_halaqah_sync');
+      bc.onmessage = (event) => {
+        if (event.data?.activeHalaqahId) {
+          targetHalaqahIdRef.current = event.data.activeHalaqahId;
+          setActiveHalaqahId(event.data.activeHalaqahId);
+        }
+      };
+      return () => {
+        try { bc.close(); } catch {}
+      };
+    }
+  }, []);
+
+  // Guard programmer-only tabs: accounts/ranks and database backup are strictly for Programmer (Mohamed Montaser)
+  useEffect(() => {
+    if (!isDeveloper && (activeTab === 'accounts' || activeTab === 'backup')) {
+      setActiveTab('home');
+    }
+    if (activeTab === 'recordings') {
+      setActiveTab('home');
+    }
+  }, [isDeveloper, isSupervisor, activeTab]);
+
+  // Helper to check whether a student has an assigned halaqah
+  const isStudentAssigned = (s: Student) => {
+    return Boolean(
+      s.halaqahId &&
+      s.halaqahId.trim() !== '' &&
+      s.halaqahId !== 'unassigned' &&
+      s.halaqahId !== 'none'
+    );
+  };
+
+  // Pending registration applications count for supervisor badge & alerts
+  const pendingApplicationsCount = useMemo(() => {
+    return registrationApplications.filter(a => a.status === 'pending').length;
+  }, [registrationApplications]);
+
+  // Filter students based on active halaqah selection (or show all for supervisor within their complex)
+  // Teachers and complex supervisors MUST only see students assigned to their complex, but can always see unassigned students in queue!
+  const displayedStudents = useMemo(() => {
+    const activeH = halaqahs.find(h => h.id === activeHalaqahId);
+
+    const matchesActiveHalaqah = (s: Student) => {
+      if (!activeHalaqahId || activeHalaqahId === 'all') return true;
+      if (s.halaqahId === activeHalaqahId) return true;
+      if (activeH && s.halaqahName && normalizeTeacherText(s.halaqahName) === normalizeTeacherText(activeH.name)) return true;
+      return false;
+    };
+
+    let list = scopedStudents;
+    if (isSupervisor) {
+      if (activeHalaqahId && activeHalaqahId !== 'all') {
+        const filtered = scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else {
+        list = scopedStudents;
+      }
+    } else {
+      if (activeHalaqahId && activeHalaqahId !== 'all') {
+        const filtered = scopedStudents.filter(s => matchesActiveHalaqah(s) || !s.halaqahId || s.halaqahId === 'unassigned');
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else if (assignedHalaqahs.length > 0) {
+        const allowedIds = new Set(assignedHalaqahs.map(h => h.id));
+        const allowedNames = new Set(assignedHalaqahs.map(h => normalizeTeacherText(h.name)));
+        const filtered = scopedStudents.filter(s =>
+          !s.halaqahId ||
+          s.halaqahId === 'unassigned' ||
+          allowedIds.has(s.halaqahId) ||
+          (s.halaqahName && allowedNames.has(normalizeTeacherText(s.halaqahName)))
+        );
+        list = filtered.length > 0 ? filtered : scopedStudents;
+      } else {
+        list = scopedStudents;
+      }
+    }
+
+    if (list.length === 0 && students.length > 0) {
+      return students;
+    }
+    return list;
+  }, [scopedStudents, isSupervisor, activeHalaqahId, assignedHalaqahs, halaqahs, students]);
+
+  // Students for attendance, evaluations, behavior, reports, and WhatsApp:
+  // Must only include assigned students within displayedStudents
+  const assignedDisplayedStudents = useMemo(() => {
+    return displayedStudents.filter(isStudentAssigned);
+  }, [displayedStudents]);
+
+  // Scope attendance, evaluations, and violations based on displayed students
+  const displayedStudentIds = useMemo(() => {
+    return new Set(displayedStudents.map(s => s.id));
+  }, [displayedStudents]);
+
+  const displayedAttendance = useMemo(() => {
+    if (activeHalaqahId === 'all' && isSupervisor) {
+      return attendance.filter(a => scopedStudentIds.has(a.studentId));
+    }
+    return attendance.filter(a => displayedStudentIds.has(a.studentId));
+  }, [activeHalaqahId, isSupervisor, attendance, scopedStudentIds, displayedStudentIds]);
+
+  const displayedEvaluations = useMemo(() => {
+    if (activeHalaqahId === 'all' && isSupervisor) {
+      return evaluations.filter(e => scopedStudentIds.has(e.studentId));
+    }
+    return evaluations.filter(e => displayedStudentIds.has(e.studentId));
+  }, [activeHalaqahId, isSupervisor, evaluations, scopedStudentIds, displayedStudentIds]);
+
+  const displayedViolations = useMemo(() => {
+    if (activeHalaqahId === 'all' && isSupervisor) {
+      return violations.filter(v => scopedStudentIds.has(v.studentId));
+    }
+    return violations.filter(v => displayedStudentIds.has(v.studentId));
+  }, [activeHalaqahId, isSupervisor, violations, scopedStudentIds, displayedStudentIds]);
+
+  // Scoped exams & submissions strictly restricted to the Quran complex:
+  // Each complex has its own isolated exams. Teachers and supervisors cannot see exams from other complexes.
+  const scopedExams = useMemo(() => {
+    if (isDeveloper) return exams;
+    if (!activeComplex) return [];
+
+    const activeComplexId = activeComplex.id;
+    const teacherIdSet = new Set(scopedTeachers.map(t => t.id));
+
+    return exams.filter(e => {
+      // 1. If exam has explicit complexId, it MUST match the active complex
+      if (e.complexId) {
+        return e.complexId === activeComplexId;
+      }
+
+      // 2. If legacy exam without complexId:
+      // If targets specific halaqat, all targeted halaqat must belong to the active complex
+      const targetsSpecificHalaqahs = e.targetHalaqat && e.targetHalaqat.length > 0 && !e.targetHalaqat.includes('all');
+      if (targetsSpecificHalaqahs) {
+        return e.targetHalaqat.some(hid => scopedHalaqahIds.has(hid));
+      }
+
+      // If created by a teacher in this complex
+      if (e.createdById && teacherIdSet.has(e.createdById)) {
+        return true;
+      }
+
+      // If legacy sample exam without complexId, assign to first complex only
+      const defaultComplexId = complexes[0]?.id;
+      if (defaultComplexId && activeComplexId === defaultComplexId) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [isDeveloper, exams, activeComplex, scopedTeachers, scopedHalaqahIds, complexes]);
+
+  const scopedSubmissions = useMemo(() => {
+    if (isDeveloper) return submissions;
+    return submissions.filter(sub => scopedStudentIds.has(sub.studentId));
+  }, [isDeveloper, submissions, scopedStudentIds]);
+
+  const scopedEvaluations = useMemo(() => {
+    if (isDeveloper) return evaluations;
+    return evaluations.filter(e => scopedStudentIds.has(e.studentId));
+  }, [isDeveloper, evaluations, scopedStudentIds]);
+
+  // Save session on login with modern cloud sync confirmation
+  const handleLoginSuccess = async (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => {
+    setLoginSyncUser(user.username || 'المستخدم');
+    setIsLoginSyncing(true);
+    setCurrentUser(user);
+    if (user.complexId) {
+      setSelectedComplexId(user.complexId);
+      try {
+        localStorage.setItem('omran_selected_complex_id', user.complexId);
+      } catch {}
+    }
+    localStorage.setItem('omran_session', JSON.stringify(user));
+
+    try {
+      await loadAllData(true);
+    } catch {}
+
+    setTimeout(() => {
+      setIsLoginSyncing(false);
+    }, 700);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('omran_session');
+    setPortalStudentId(null);
+    navigatePublic('landing');
+  };
+
+  // Teacher Google Account Linking Handlers
+  const [isLinkingGoogleTeacher, setIsLinkingGoogleTeacher] = useState(false);
+
+  const handleLinkGoogleTeacher = async () => {
+    if (!currentTeacher) {
+      return;
+    }
+    setIsLinkingGoogleTeacher(true);
+    try {
+      const updatedTeacher = await GoogleWorkspaceService.linkTeacherGoogleAccount(currentTeacher);
+      setTeachers(prev => prev.map(t => t.id === updatedTeacher.id ? updatedTeacher : t));
+    } catch (err: any) {
+      console.warn('Teacher Google linking warning:', err);
+    } finally {
+      setIsLinkingGoogleTeacher(false);
+    }
+  };
+
+  const handleUnlinkGoogleTeacher = async () => {
+    if (!currentTeacher) return;
+    try {
+      const updatedTeacher = await GoogleWorkspaceService.unlinkTeacherGoogleAccount(currentTeacher);
+      setTeachers(prev => prev.map(t => t.id === updatedTeacher.id ? updatedTeacher : t));
+    } catch (err: any) {
+      console.warn('Teacher Google unlinking warning:', err);
+    }
+  };
+
+  // Multi-Teacher Handlers
+  const handleSaveTeacher = async (teacher: TeacherAccount) => {
+    // STRICT PROTECTION: Supervisor CANNOT edit or modify the Programmer account
+    const existing = teachers.find(t => t.id === teacher.id);
+    if (!isDeveloper && (isTeacherDeveloper(teacher) || (existing && isTeacherDeveloper(existing)))) {
+      throw new Error('عذراً، لا يمكن للمشرف تعديل أو تغيير بيانات حساب مبرمج ومطور المنظومة.');
+    }
+
+    const isSup = isTeacherSupervisor(teacher);
+    const val = getThreePartNameValidation(teacher.name, isSup ? 'مشرف' : 'معلم');
+    if (!val.isValid) {
+      throw new Error(val.message || 'الاسم الثلاثي إلزامي.');
+    }
+
+    const cleanTeacherName = (teacher.name || '').trim();
+    const normTeacherName = normalizeArabicText(cleanTeacherName);
+
+    // Duplicate name check against other teachers
+    const duplicateTeacher = teachers.find(
+      t => t.id !== teacher.id && normalizeArabicText(t.name) === normTeacherName
+    );
+    if (duplicateTeacher) {
+      throw new Error(`عذراً، هذا الاسم (${cleanTeacherName}) مسجل مسبقاً لمعلم أو مشرف آخر في المنظومة! يرجى كتابة الاسم الرباعي أو إضافة اسم العائلة والجد لتجنب تطابق الأسماء.`);
+    }
+
+    // Duplicate name check against students
+    const duplicateStudent = students.find(
+      s => normalizeArabicText(s.name) === normTeacherName
+    );
+    if (duplicateStudent) {
+      throw new Error(`عذراً، هذا الاسم (${cleanTeacherName}) مسجل مسبقاً كطالب في المنظومة! يرجى كتابة الاسم الرباعي لتمييز المعلم/المشرف وتجنب تطابق الأسماء.`);
+    }
+
+    await OmranDataService.saveTeacher(teacher);
+    const updated = await OmranDataService.loadTeachers();
+    setTeachers(updated);
+  };
+
+  const handleDeleteTeacher = async (teacherId: string) => {
+    // STRICT PROTECTION: Supervisor CANNOT delete the Programmer account
+    const existing = teachers.find(t => t.id === teacherId);
+    if (!isDeveloper && existing && isTeacherDeveloper(existing)) {
+      throw new Error('عذراً، لا يمكن للمشرف حذف حساب مبرمج ومطور المنظومة.');
+    }
+
+    setTeachers(prev => prev.filter(t => t.id !== teacherId));
+    await OmranDataService.deleteTeacher(teacherId);
+    const updatedTeachers = await OmranDataService.loadTeachers();
+    setTeachers(updatedTeachers);
+    const updatedHalaqahs = await OmranDataService.loadHalaqahs();
+    setHalaqahs(updatedHalaqahs);
+    const updatedComplexes = await OmranDataService.loadComplexes();
+    setComplexes(updatedComplexes);
+  };
+
+  // Halaqah Management Handlers
+  const handleSaveHalaqah = async (halaqah: Halaqah) => {
+    await OmranDataService.saveHalaqah(halaqah);
+    const updated = await OmranDataService.loadHalaqahs();
+    setHalaqahs(updated);
+  };
+
+  const handleDeleteHalaqah = async (halaqahId: string) => {
+    await OmranDataService.deleteHalaqah(halaqahId);
+    const updated = await OmranDataService.loadHalaqahs();
+    setHalaqahs(updated);
+    if (activeHalaqahId === halaqahId) {
+      setActiveHalaqahId('all');
+    }
+  };
+
+  // Student Transfer Handler (Preserves full student history & evaluation records)
+  const handleTransferStudent = async (studentId: string, targetHalaqahId: string, targetHalaqahName: string) => {
+    if (targetHalaqahId && targetHalaqahId !== 'unassigned') {
+      const match = halaqahs.find(h => h.id === targetHalaqahId) || scopedHalaqahs.find(h => h.id === targetHalaqahId);
+      if (match) {
+        const enrolled = students.filter(s => s.halaqahId === targetHalaqahId && s.id !== studentId).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    }
+    await OmranDataService.transferStudentToHalaqah(studentId, targetHalaqahId, targetHalaqahName);
+    const updated = await OmranDataService.loadStudents();
+    setStudents(updated);
+  };
+
+  // Batch Student Transfer Handler (Transfers multiple students in one operation to Firestore)
+  const handleBatchTransferStudents = async (studentIds: string[], targetHalaqahId: string, targetHalaqahName: string) => {
+    if (targetHalaqahId && targetHalaqahId !== 'unassigned') {
+      const match = halaqahs.find(h => h.id === targetHalaqahId) || scopedHalaqahs.find(h => h.id === targetHalaqahId);
+      if (match) {
+        const enrolled = students.filter(s => s.halaqahId === targetHalaqahId && !studentIds.includes(s.id)).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled + studentIds.length > cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    }
+    await OmranDataService.transferMultipleStudentsToHalaqah(studentIds, targetHalaqahId, targetHalaqahName);
+    const updated = await OmranDataService.loadStudents();
+    setStudents(updated);
+  };
+
+  // 1. Student Registration / Addition
+  const handleAddStudent = async (studentData: Partial<Student>): Promise<boolean> => {
+    const nameVal = getThreePartNameValidation(studentData.name, 'طالب');
+    if (!nameVal.isValid) {
+      throw new Error(nameVal.message || 'الاسم الثلاثي إلزامي للطالب.');
+    }
+
+    const cleanStudentName = (studentData.name || '').trim();
+    const normStudentName = normalizeArabicText(cleanStudentName);
+
+    // Duplicate name check against students
+    const duplicateStudent = students.find(
+      s => normalizeArabicText(s.name) === normStudentName
+    );
+    if (duplicateStudent) {
+      throw new Error(`عذراً، هذا الاسم (${cleanStudentName}) مسجل مسبقاً في المنظومة! يرجى كتابة الاسم الرباعي أو إضافة اسم العائلة والجد لتجنب تطابق الأسماء.`);
+    }
+
+    // Duplicate name check against teachers
+    const duplicateTeacher = teachers.find(
+      t => normalizeArabicText(t.name) === normStudentName
+    );
+    if (duplicateTeacher) {
+      throw new Error(`عذراً، هذا الاسم (${cleanStudentName}) مسجل مسبقاً كمعلم أو مشرف في المنظومة! يرجى كتابة الاسم الرباعي لتمييز الطالب وتجنب تطابق الأسماء.`);
+    }
+
+    let chosenHalaqahId = studentData.halaqahId !== undefined ? studentData.halaqahId : '';
+    let chosenHalaqahName = studentData.halaqahName || '';
+
+    if (chosenHalaqahId) {
+      const match = halaqahs.find(h => h.id === chosenHalaqahId) || scopedHalaqahs.find(h => h.id === chosenHalaqahId);
+      if (match) {
+        chosenHalaqahName = match.name;
+        // Capacity check
+        const enrolled = students.filter(s => s.halaqahId === chosenHalaqahId).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    } else if (studentData.halaqahId === undefined && activeHalaqahId && activeHalaqahId !== 'all') {
+      const match = halaqahs.find(h => h.id === activeHalaqahId) || scopedHalaqahs.find(h => h.id === activeHalaqahId);
+      if (match) {
+        chosenHalaqahId = match.id;
+        chosenHalaqahName = match.name;
+        // Capacity check
+        const enrolled = students.filter(s => s.halaqahId === match.id).length;
+        const cap = (match.capacity && match.capacity > 0) ? match.capacity : (enrolled > 0 ? enrolled : 15);
+        if (cap > 0 && enrolled >= cap) {
+          throw new Error('لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب');
+        }
+      }
+    }
+
+    const studentStartSurah = studentData.currentSurah || 78;
+    const studentStartAyah = studentData.currentAyah || 1;
+    const pace = (studentData.dailyNewTarget || '').includes('وجهين')
+      ? 2.0
+      : (studentData.dailyNewTarget || '').includes('ربع')
+      ? 0.25
+      : (studentData.dailyNewTarget || '').includes('وجه واحد')
+      ? 1.0
+      : 0.5;
+
+    const initialPortion = calculatePortionFromPace(studentStartSurah, studentStartAyah, pace);
+
+    const newStudent: Student = {
+      id: `std_${Date.now()}`,
+      name: (studentData.name || 'طالب جديد').trim(),
+      password: studentData.password || '123',
+      phone: studentData.phone || '',
+      age: studentData.age || 10,
+      parentName: studentData.parentName || `ولي أمر ${studentData.name}`,
+      parentPhones: studentData.parentPhones || [studentData.phone || ''],
+      currentSurah: studentStartSurah,
+      currentSurahName: studentData.currentSurahName || 'النبأ',
+      currentAyah: studentStartAyah,
+      dailyNewTarget: studentData.dailyNewTarget || 'نصف وجه',
+      dailyReviewTarget: studentData.dailyReviewTarget || 'وجه واحد',
+      level: studentData.level || 'متوسط',
+      complexId: activeComplex?.id,
+      halaqahId: chosenHalaqahId,
+      halaqahName: chosenHalaqahName,
+      notes: studentData.notes || '',
+      isGeneratingPlan: true,
+      memorizationPlan: studentData.memorizationPlan || (() => {
+        const memJuz = studentData.memorizedJuzList?.length || 1;
+        const consJuz = Math.max(0, memJuz - 2);
+        const scheduleCfg = activeComplex?.planScheduleConfig;
+        const weeklyDaysCount = scheduleCfg?.selectedDays?.length || 5;
+        const dailyHoursCount = scheduleCfg?.dailyHours || 2;
+        const startDate = new Date();
+
+        const timeline = calculateRealisticKhatmTimeline({
+          memorizedJuz: memJuz,
+          consolidatedJuz: consJuz,
+          dailyNewPages: pace,
+          dailyReviewPages: 5,
+          weeklyDaysCount,
+          dailyHoursCount,
+          startDate
+        });
+        return {
+          dailyNewPages: pace,
+          dailyReviewPages: 5,
+          consolidatedJuzCount: consJuz,
+          memorizedJuzCount: memJuz,
+          targetJuz: 30,
+          targetCompletionDate: timeline.targetCompletionDate,
+          estimatedDaysRemaining: timeline.estimatedDaysRemaining,
+          progressPercentage: timeline.progressPercentage,
+          status: 'on_track' as const,
+          weeklyDaysCount: 5,
+          dailyHoursCount: 2,
+          tathbeetStopsCount: timeline.tathbeetStopsCount,
+          milestones: timeline.milestones,
+          nextDayAssignment: {
+            newMemorization: initialPortion.description,
+            review: 'الفاتحة وقصار السور وتثبيت الحفظ',
+            action: 'advance_page' as const,
+            reason: 'خطة منهجية تأسيسية متقنة ومدروسة بمعدل مصحف المدينة',
+            surahNumber: initialPortion.fromSurah,
+            fromAyah: initialPortion.fromAyah,
+            toSurahNumber: initialPortion.toSurah,
+            toAyah: initialPortion.toAyah
+          },
+          lastUpdated: new Date().toISOString()
+        };
+      })(),
+      createdAt: new Date().toISOString()
+    };
+
+    // Optimistically add to state and dual persistence immediately
+    setStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+    await OmranDataService.saveStudent(newStudent);
+
+    // Asynchronously trigger Gemini AI plan in background without blocking addition
+    fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student: newStudent })
+    })
+      .then(res => {
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          return res.json();
+        }
+        return null;
+      })
+      .then(data => {
+        const aiPlanObj = data?.plan;
+        const aiPortion = data?.portion || initialPortion;
+        const withPlan: Student = {
+          ...newStudent,
+          isGeneratingPlan: false,
+          aiPlan: aiPlanObj ? {
+            ...aiPlanObj,
+            lastUpdated: new Date().toISOString()
+          } : undefined,
+          memorizationPlan: {
+            ...newStudent.memorizationPlan!,
+            dailyNewPages: pace,
+            nextDayAssignment: {
+              ...newStudent.memorizationPlan!.nextDayAssignment!,
+              newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
+              review: aiPlanObj?.currentDailyAssignment?.review || newStudent.memorizationPlan!.nextDayAssignment!.review,
+              suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+              surahNumber: aiPortion.fromSurah,
+              fromAyah: aiPortion.fromAyah,
+              toSurahNumber: aiPortion.toSurah,
+              toAyah: aiPortion.toAyah
+            },
+            aiNotes: aiPlanObj?.roadmapSummary || newStudent.memorizationPlan!.aiNotes,
+            lastUpdated: new Date().toISOString()
+          }
+        };
+        setStudents(prev => prev.map(s => (s.id === newStudent.id ? withPlan : s)));
+        OmranDataService.saveStudent(withPlan).catch(() => {});
+        window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: withPlan }));
+      })
+      .catch(e => {
+        console.warn('AI Plan background generation notice:', e);
+        const resolved: Student = { ...newStudent, isGeneratingPlan: false };
+        setStudents(prev => prev.map(s => (s.id === newStudent.id ? resolved : s)));
+        OmranDataService.saveStudent(resolved).catch(() => {});
+        window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: resolved }));
+      });
+
+    return true;
+  };
+
+  // 2. Update Student
+  const handleUpdateStudent = async (student: Student): Promise<boolean> => {
+    const nameVal = getThreePartNameValidation(student.name, 'طالب');
+    if (!nameVal.isValid) {
+      throw new Error(nameVal.message || 'الاسم الثلاثي إلزامي للطالب.');
+    }
+    await OmranDataService.saveStudent(student);
+    const updated = await OmranDataService.loadStudents();
+    setStudents(updated);
+    return true;
+  };
+
+  // 3. Delete Student
+  const handleDeleteStudent = async (studentId: string): Promise<boolean> => {
+    // 1. Optimistic instant UI update
+    setStudents(prev => prev.filter(s => s.id !== studentId));
+    // 2. Persist to Firestore and storage
+    await OmranDataService.deleteStudent(studentId);
+    const updatedSeq = await OmranDataService.loadStudents();
+    setStudents(updatedSeq);
+    return true;
+  };
+
+  // 3.1 Batch Delete Students
+  const handleBatchDeleteStudents = async (studentIds: string[]): Promise<boolean> => {
+    if (!studentIds || studentIds.length === 0) return true;
+    const idSet = new Set(studentIds);
+    setStudents(prev => prev.filter(s => !idSet.has(s.id)));
+    if ((OmranDataService as any).deleteStudentsBatch) {
+      await (OmranDataService as any).deleteStudentsBatch(studentIds);
+    } else {
+      await Promise.all(studentIds.map(id => OmranDataService.deleteStudent(id)));
+    }
+    const updatedSeq = await OmranDataService.loadStudents();
+    setStudents(updatedSeq);
+    return true;
+  };
+
+  // 4. Toggle Student Registration
+  const handleToggleRegistration = async () => {
+    const newSettings: AppSettings = {
+      ...settings,
+      allowStudentRegistration: !settings.allowStudentRegistration
+    };
+    setSettings(newSettings);
+    await OmranDataService.saveSettings(newSettings);
+  };
+
+  // 5. Trigger AI Plan for specific student
+  const handleTriggerAIPlan = async (student: Student) => {
+    try {
+      const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student })
+      });
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const data = await res.json();
+        if (data?.plan) {
+          const updatedStudent: Student = {
+            ...student,
+            aiPlan: {
+              ...data.plan,
+              lastUpdated: new Date().toISOString()
+            }
+          };
+          await OmranDataService.saveStudent(updatedStudent);
+          const list = await OmranDataService.loadStudents();
+          setStudents(list);
+        }
+      }
+    } catch (e) {
+      console.error('Trigger AI plan error:', e);
+    }
+  };
+
+  // 6. Save Attendance (Optimistic instant update + persistent cloud write)
+  const handleSaveAttendance = async (records: AttendanceRecord[]) => {
+    // 1. Immediately reflect in memory so the table updates with zero lag
+    setAttendance(prev => {
+      const map = new Map<string, AttendanceRecord>();
+      for (const a of prev) if (a?.id) map.set(a.id, a);
+      for (const r of records) if (r?.id) map.set(r.id, r);
+      return Array.from(map.values());
+    });
+    // 2. Persist to cloud & dual cache
+    await OmranDataService.saveAttendanceRecords(records);
+  };
+
+  // 7. Save Evaluation & dynamically update student's current position and adjust points by delta
+  const handleSaveEvaluation = async (
+    evaluation: StudentEvaluation,
+    newAssignment?: any,
+    updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
+    listeningAssignment?: any,
+    studentUpdates?: Partial<Student>
+  ) => {
+    // Check if there was an earlier evaluation for this student on this date to compute exact delta
+    const previousEval = evaluations.find(
+      e => e.id === evaluation.id || (e.studentId === evaluation.studentId && e.date === evaluation.date)
+    );
+    const prevCriteriaPts = previousEval?.recitationDetails?.criteriaPointsEarnedToday || 0;
+    const prevPagePts = previousEval?.recitationDetails?.pagesPointsEarnedToday || 0;
+    const prevAttendancePts = previousEval?.recitationDetails?.attendancePointsEarnedToday || 0;
+    const prevTotalEarned = typeof previousEval?.recitationDetails?.pointsEarnedToday === 'number'
+      ? previousEval.recitationDetails.pointsEarnedToday
+      : (prevCriteriaPts + prevPagePts + prevAttendancePts);
+
+    const newCriteriaPts = evaluation.recitationDetails?.criteriaPointsEarnedToday || 0;
+    const newPagePts = evaluation.recitationDetails?.pagesPointsEarnedToday || 0;
+    const newAttendancePts = evaluation.recitationDetails?.attendancePointsEarnedToday || 0;
+    const newTotalEarned = typeof evaluation.recitationDetails?.pointsEarnedToday === 'number'
+      ? evaluation.recitationDetails.pointsEarnedToday
+      : (newCriteriaPts + newPagePts + newAttendancePts);
+
+    const deltaCriteria = newCriteriaPts - prevCriteriaPts;
+    const deltaPage = newPagePts - prevPagePts;
+    const deltaTotal = newTotalEarned - prevTotalEarned;
+
+    await OmranDataService.saveEvaluation(evaluation);
+    const list = await OmranDataService.loadEvaluations();
+    setEvaluations(list);
+
+    // Update the student's position, assignment, and adjust points by delta
+    setStudents(prev => {
+      const targetStudent = prev.find(s => s.id === evaluation.studentId);
+      if (!targetStudent) return prev;
+
+      const todayNew = evaluation.recitationDetails?.todayNewItem;
+
+      let finalSurahNum = updatedPosition?.surahNumber ?? targetStudent.currentSurah;
+      let finalSurahName = updatedPosition?.surahName ?? targetStudent.currentSurahName;
+      let finalAyah = updatedPosition?.ayah ?? targetStudent.currentAyah;
+
+      if (!updatedPosition && todayNew && todayNew.surahNumber && !todayNew.didNotRecite) {
+        finalSurahNum = todayNew.toSurahNumber || todayNew.surahNumber;
+        finalSurahName = todayNew.toSurahName || todayNew.surahName || getSurahInfo(finalSurahNum).name;
+        finalAyah = todayNew.toAyah || todayNew.fromAyah || 1;
+      }
+
+      const currentPoints = typeof targetStudent.points === 'number' ? targetStudent.points : 0;
+      // Calculate new total points:
+      // If previous evaluation existed and student already had points accounting for it, apply deltaTotal.
+      // If student had 0 points (or was newly created/desynced), guarantee they receive at least newTotalEarned.
+      const calculatedPoints = (previousEval && currentPoints >= prevTotalEarned)
+        ? Math.max(0, currentPoints + deltaTotal)
+        : Math.max(newTotalEarned, currentPoints + newTotalEarned);
+
+      const updatedStudent: Student = {
+        ...targetStudent,
+        ...studentUpdates,
+        isFirstSession: false,
+        currentSurah: finalSurahNum,
+        currentSurahName: finalSurahName,
+        currentAyah: finalAyah,
+        criteriaPoints: Math.max(0, (targetStudent.criteriaPoints || 0) + deltaCriteria),
+        totalPagePoints: Math.max(0, (targetStudent.totalPagePoints || 0) + deltaPage),
+        points: calculatedPoints,
+        persistentReviewItems: newAssignment?.reviewItems || targetStudent.persistentReviewItems,
+        activeListeningAssignment: listeningAssignment || targetStudent.activeListeningAssignment,
+        memorizationPlan: targetStudent.memorizationPlan && newAssignment ? {
+          ...targetStudent.memorizationPlan,
+          nextDayAssignment: {
+            ...targetStudent.memorizationPlan.nextDayAssignment,
+            newMemorization: newAssignment.newMemorization,
+            review: newAssignment.review,
+            suggestedSheikh: newAssignment.suggestedSheikh,
+            surahNumber: newAssignment.newItem?.surahNumber || finalSurahNum,
+            fromAyah: newAssignment.newItem?.fromAyah || 1,
+            toSurahNumber: newAssignment.newItem?.toSurahNumber || finalSurahNum,
+            toAyah: newAssignment.newItem?.toAyah || finalAyah
+          },
+          lastUpdated: new Date().toISOString()
+        } : targetStudent.memorizationPlan,
+        aiPlan: newAssignment ? {
+          roadmapSummary: targetStudent.aiPlan?.roadmapSummary || 'خطة الحفظ والمراجعة التراكمية',
+          difficultyAdjustment: targetStudent.aiPlan?.difficultyAdjustment || 'وتيرة متوازنة',
+          estimatedDaysToFinishJuz: targetStudent.aiPlan?.estimatedDaysToFinishJuz || 30,
+          currentDailyAssignment: newAssignment,
+          lastUpdated: new Date().toISOString()
+        } : targetStudent.aiPlan
+      };
+
+      OmranDataService.saveStudent(updatedStudent).catch(err => {
+        console.warn('Student save warning in evaluation:', err);
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStudent }));
+      } catch (e) {}
+
+      return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+    });
+  };
+
+  // 8. Update Criteria (scoped to active complex)
+  const handleSaveCriteria = async (list: EvaluationCriteria[]) => {
+    const complexId = activeComplex?.id || 'default-complex';
+    const taggedList = list.map(c => ({
+      ...c,
+      complexId: c.complexId || complexId
+    }));
+
+    const otherComplexCriteria = criteria.filter(c => c.complexId && c.complexId !== complexId);
+    const fullList = [...otherComplexCriteria, ...taggedList];
+
+    setCriteria(fullList);
+    await OmranDataService.saveCriteriaList(fullList);
+  };
+
+  const handleDeleteCriteria = async (id: string) => {
+    await OmranDataService.deleteCriteria(id);
+    const list = await OmranDataService.loadCriteria();
+    setCriteria(list);
+  };
+
+  // Handler for current teacher/supervisor/developer editing their own account credentials
+  const handleSaveCurrentTeacherAccount = async (updatedTeacher: TeacherAccount) => {
+    await OmranDataService.saveTeacher(updatedTeacher);
+    const updatedList = await OmranDataService.loadTeachers();
+    setTeachers(updatedList);
+
+    // Sync session user
+    if (currentUser) {
+      setCurrentUser(prev => prev ? {
+        ...prev,
+        username: updatedTeacher.name || updatedTeacher.username
+      } : null);
+      try {
+        const stored = sessionStorage.getItem('omran_auth_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.username = updatedTeacher.name || updatedTeacher.username;
+          sessionStorage.setItem('omran_auth_user', JSON.stringify(parsed));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  };
+
+  // 9. Update Student AI Plan Assignment & Position
+  const handleUpdateStudentAIPlan = async (
+    studentId: string,
+    newAssignment: any,
+    updatedPosition?: { surahNumber: number; surahName: string; ayah: number },
+    listeningAssignment?: any
+  ) => {
+    setStudents(prev => {
+      const student = prev.find(s => s.id === studentId);
+      if (!student) return prev;
+
+      const updatedStudent: Student = {
+        ...student,
+        currentSurah: updatedPosition?.surahNumber ?? student.currentSurah,
+        currentSurahName: updatedPosition?.surahName ?? student.currentSurahName,
+        currentAyah: updatedPosition?.ayah ?? student.currentAyah,
+        persistentReviewItems: newAssignment?.reviewItems || student.persistentReviewItems,
+        activeListeningAssignment: listeningAssignment || student.activeListeningAssignment,
+        aiPlan: {
+          roadmapSummary: student.aiPlan?.roadmapSummary || 'خطة الحفظ والمراجعة التراكمية',
+          difficultyAdjustment: student.aiPlan?.difficultyAdjustment || 'وتيرة متوازنة',
+          estimatedDaysToFinishJuz: student.aiPlan?.estimatedDaysToFinishJuz || 30,
+          currentDailyAssignment: newAssignment,
+          lastUpdated: new Date().toISOString()
+        }
+      };
+
+      OmranDataService.saveStudent(updatedStudent).catch(e => console.warn('Save student AI plan notice:', e));
+      return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+    });
+  };
+
+  // Award / Deduct Bonus Points for Student directly from Leaderboard
+  const handleAwardBonusPoints = async (studentId: string, pointsDelta: number, reason: string) => {
+    const targetStudent = students.find(s => s.id === studentId);
+    if (!targetStudent) return;
+
+    // Use current recorded points or fallback to existing criteria + page points
+    const currentPoints = typeof targetStudent.points === 'number'
+      ? targetStudent.points
+      : (targetStudent.criteriaPoints || 0) + (targetStudent.totalPagePoints || 0);
+
+    const newPoints = Math.max(0, currentPoints + pointsDelta);
+    const newBonusPoints = (targetStudent.bonusPoints || 0) + pointsDelta;
+
+    const updatedStudent: Student = {
+      ...targetStudent,
+      points: newPoints,
+      bonusPoints: newBonusPoints
+    };
+
+    // 1. Immediately update state in memory for snappy, responsive UI
+    setStudents(prev => prev.map(s => (s.id === studentId ? updatedStudent : s)));
+
+    // 2. Persist to Firestore directly
+    await OmranDataService.saveStudent(updatedStudent);
+  };
+
+  // 10. Update Settings (Instant local application + resilient Firestore persistence)
+  const handleUpdateSettings = async (newSettings: Partial<AppSettings> | AppSettings) => {
+    const merged: AppSettings = { ...settings, ...newSettings };
+    setSettings(merged);
+    if (merged.theme) {
+      applyComplexThemeToDOM(merged.theme, true);
+      try {
+        localStorage.setItem('omran_active_theme', JSON.stringify(merged.theme));
+      } catch (e) {}
+      const targetC = activeComplex || complexes[0];
+      if (targetC) {
+        const updatedC: QuranComplex = { ...targetC, theme: merged.theme };
+        await OmranDataService.saveComplex(updatedC);
+        setComplexes(prev => prev.map(c => c.id === updatedC.id ? updatedC : c));
+      }
+    }
+    try {
+      await OmranDataService.saveSettings(merged);
+    } catch (err) {
+      console.warn('Settings saved locally, remote sync error:', err);
+    }
+  };
+
+  // 11. Send Chat
+  const handleSendChatMessage = async (msg: ChatMessage) => {
+    await OmranDataService.saveChatMessage(msg);
+    const list = await OmranDataService.loadChats();
+    setChatHistory(list);
+  };
+
+  const handleClearChat = async () => {
+    await OmranDataService.clearChats();
+    setChatHistory([]);
+  };
+
+  // 12. Violation Handlers (Supports automatic point deduction on students)
+  const handleSaveViolation = async (violation: BehaviorViolation) => {
+    const existingViolation = violations.find(v => v.id === violation.id);
+    const prevPointsDeducted = Number(existingViolation?.pointsDeducted) || 0;
+    const newPointsDeducted = Number(violation.pointsDeducted) || 0;
+    const deltaDeduction = newPointsDeducted - prevPointsDeducted;
+
+    setViolations(prev => {
+      const idx = prev.findIndex(v => v.id === violation.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = violation;
+        return copy;
+      }
+      return [violation, ...prev];
+    });
+    await OmranDataService.saveViolation(violation);
+
+    // Apply points deduction delta directly to the student's total score
+    if (deltaDeduction !== 0) {
+      setStudents(prev => {
+        const targetStudent = prev.find(s => s.id === violation.studentId);
+        if (!targetStudent) return prev;
+        const currentPoints = typeof targetStudent.points === 'number'
+          ? targetStudent.points
+          : (targetStudent.criteriaPoints || 0) + (targetStudent.totalPagePoints || 0);
+
+        const updatedStudent: Student = {
+          ...targetStudent,
+          points: Math.max(0, currentPoints - deltaDeduction)
+        };
+        OmranDataService.saveStudent(updatedStudent).catch(err => {
+          console.warn('Student save warning on violation points deduction:', err);
+        });
+        return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+      });
+    }
+  };
+
+  const handleDeleteViolation = async (id: string) => {
+    const targetViolation = violations.find(v => v.id === id);
+    const restoredPoints = Number(targetViolation?.pointsDeducted) || 0;
+
+    setViolations(prev => prev.filter(v => v.id !== id));
+    await OmranDataService.deleteViolation(id);
+
+    // If the violation had deducted points, restore them to the student upon deletion
+    if (restoredPoints > 0 && targetViolation?.studentId) {
+      setStudents(prev => {
+        const targetStudent = prev.find(s => s.id === targetViolation.studentId);
+        if (!targetStudent) return prev;
+        const currentPoints = typeof targetStudent.points === 'number'
+          ? targetStudent.points
+          : (targetStudent.criteriaPoints || 0) + (targetStudent.totalPagePoints || 0);
+
+        const updatedStudent: Student = {
+          ...targetStudent,
+          points: currentPoints + restoredPoints
+        };
+        OmranDataService.saveStudent(updatedStudent).catch(err => {
+          console.warn('Student save warning on violation deletion restore:', err);
+        });
+        return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+      });
+    }
+  };
+
+  // 13. Exam Handlers
+  const handleSaveExam = async (exam: Exam) => {
+    // Ensure exam is strictly linked to current active complex if not already set
+    const enrichedExam: Exam = {
+      ...exam,
+      complexId: exam.complexId || activeComplex?.id,
+      complexName: exam.complexName || activeComplex?.name
+    };
+    setExams(prev => {
+      const idx = prev.findIndex(e => e.id === enrichedExam.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = enrichedExam;
+        return copy;
+      }
+      return [enrichedExam, ...prev];
+    });
+    await OmranDataService.saveExam(enrichedExam);
+  };
+
+  const handleDeleteExam = async (id: string) => {
+    setExams(prev => prev.filter(e => e.id !== id));
+    await OmranDataService.deleteExam(id);
+  };
+
+  const handleSaveSubmission = async (sub: ExamSubmission) => {
+    // Enrich submission with complex info based on halaqah / active complex
+    const studentHalaqah = halaqahs.find(h => h.id === sub.halaqahId);
+    const subComplexId = sub.complexId || studentHalaqah?.complexId || activeComplex?.id;
+    const subComplex = subComplexId ? complexes.find(c => c.id === subComplexId) : null;
+    const enrichedSub: ExamSubmission = {
+      ...sub,
+      complexId: subComplexId,
+      complexName: sub.complexName || subComplex?.name || activeComplex?.name
+    };
+
+    setSubmissions(prev => {
+      const idx = prev.findIndex(s => s.id === enrichedSub.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = enrichedSub;
+        return copy;
+      }
+      return [enrichedSub, ...prev];
+    });
+    await OmranDataService.saveSubmission(enrichedSub);
+  };
+
+  const handleDeleteSubmission = async (submissionId: string) => {
+    setSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    await OmranDataService.deleteSubmission(submissionId);
+  };
+
+  // Recordings Handlers
+  const handleSaveRecording = async (rec: SurahRecording) => {
+    setRecordings(prev => {
+      const idx = prev.findIndex(r => r.id === rec.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = rec;
+        return copy;
+      }
+      return [rec, ...prev];
+    });
+    await OmranDataService.saveRecording(rec);
+  };
+
+  const handleDeleteRecording = async (recId: string) => {
+    setRecordings(prev => prev.filter(r => r.id !== recId));
+    await OmranDataService.deleteRecording(recId);
+  };
+
+  const handleSaveRecordingsConfig = async (cfg: RecordingsConfig) => {
+    setRecordingsConfig(cfg);
+    await OmranDataService.saveRecordingsConfig(cfg);
+  };
+
+  const handleSaveLeaderboardSettings = async (settings: LeaderboardSettings) => {
+    setLeaderboardSettings(settings);
+    await OmranDataService.saveLeaderboardSettings(settings);
+  };
+
+  const handleRefreshGoogleAuth = async () => {
+    const cfg = await OmranDataService.loadGoogleOAuthConfig();
+    setGoogleAuthConfig(cfg);
+  };
+
+  // Certificate Handlers
+  const handleSaveCertificate = async (cert: IssuedCertificate) => {
+    setCertificates(prev => [cert, ...prev.filter(c => c.id !== cert.id)]);
+    try {
+      await OmranDataService.saveCertificate(cert);
+    } catch (e) {
+      console.warn('Save certificate notice:', e);
+    }
+  };
+
+  const handleSaveCertificates = async (newCerts: IssuedCertificate[]) => {
+    setCertificates(prev => {
+      const map = new Map<string, IssuedCertificate>();
+      for (const c of newCerts) map.set(c.id, c);
+      for (const c of prev) if (!map.has(c.id)) map.set(c.id, c);
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+    try {
+      await OmranDataService.saveCertificates(newCerts);
+    } catch (e) {
+      console.warn('Save certificates notice:', e);
+    }
+  };
+
+  const handleDeleteCertificate = async (certId: string) => {
+    setCertificates(prev => prev.filter(c => c.id !== certId));
+    try {
+      await OmranDataService.deleteCertificate(certId);
+    } catch (e) {
+      console.warn('Delete certificate notice:', e);
+    }
+  };
+
+  // Library Handlers (المكتبة والأرشيف السحابي)
+  const handleSaveLibraryDoc = async (docItem: LibraryDocument) => {
+    setLibraryDocs(prev => [docItem, ...prev.filter(d => d.id !== docItem.id)]);
+    try {
+      await OmranDataService.saveLibraryDocument(docItem);
+    } catch (e) {
+      console.warn('Save library document notice:', e);
+    }
+  };
+
+  const handleDeleteLibraryDoc = async (docId: string) => {
+    setLibraryDocs(prev => prev.filter(d => d.id !== docId));
+    try {
+      await OmranDataService.deleteLibraryDocument(docId);
+    } catch (e) {
+      console.warn('Delete library document notice:', e);
+    }
+  };
+
+  // Batch Add Students Handler (إضافة الطلاب دفعة واحدة)
+  const handleBatchAddStudents = async (studentsToAdd: Student[]): Promise<boolean> => {
+    try {
+      setStudents(prev => [...studentsToAdd, ...prev]);
+      return await OmranDataService.batchCreateStudents(studentsToAdd);
+    } catch (e) {
+      console.error('Batch add students error:', e);
+      return false;
+    }
+  };
+
+  // 14. Complexes Handlers (المجمعات القرآنية)
+  const handleSaveComplex = async (complex: QuranComplex) => {
+    // 1. Synchronously update local state so UI reacts instantly without waiting
+    setComplexes(prev => {
+      const idx = prev.findIndex(c => c.id === complex.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = complex;
+        return copy;
+      }
+      return [complex, ...prev];
+    });
+
+    // 2. Immediately apply complex theme to DOM & state
+    if (complex.theme) {
+      applyComplexThemeToDOM(complex.theme, true);
+      setSettings(prev => ({ ...prev, theme: complex.theme }));
+      try {
+        localStorage.setItem('omran_active_theme', JSON.stringify(complex.theme));
+      } catch (e) {}
+    }
+
+    // 3. Persist to storage & cloud
+    await OmranDataService.saveComplex(complex);
+    const list = await OmranDataService.loadComplexes();
+    setComplexes(list);
+    if (complex.theme) {
+      await OmranDataService.saveSettings({ ...settings, theme: complex.theme }).catch(() => {});
+    }
+  };
+
+
+  const handleDeleteComplex = async (complexId: string) => {
+    await OmranDataService.deleteComplex(complexId);
+    if (selectedComplexId === complexId) {
+      setSelectedComplexId('');
+      localStorage.removeItem('omran_selected_complex_id');
+    }
+    const list = await OmranDataService.loadComplexes();
+    setComplexes(list);
+    const hList = await OmranDataService.loadHalaqahs();
+    setHalaqahs(hList);
+    const sList = await OmranDataService.loadStudents();
+    setStudents(sList);
+    const tList = await OmranDataService.loadTeachers();
+    setTeachers(tList);
+  };
+
+  // Navigation metadata for deep linking (e.g. from Quran AI Assistant)
+  const [navMeta, setNavMeta] = useState<any>(null);
+  const [complexToEditForTheme, setComplexToEditForTheme] = useState<QuranComplex | null>(null);
+
+  // 15. Navigation Handlers with Smooth Contextual Loading
+  const handleNavigateTab = (tab: string, meta?: any) => {
+    setNavMeta(meta || null);
+    if (tab === 'settings') {
+      setIsSettingsModalOpen(true);
+    }
+    if (meta?.highlightId || meta?.itemId || meta?.studentId) {
+      const targetId = meta.highlightId || meta.itemId || meta.studentId;
+      setTimeout(() => {
+        triggerComplexThemePulse(targetId);
+      }, 300);
+      setTimeout(() => {
+        triggerComplexThemePulse(targetId);
+      }, 700);
+    }
+    if (tab === activeTab) {
+      setIsTabLoading(true);
+      setTimeout(() => setIsTabLoading(false), 350);
+      return;
+    }
+    setIsTabLoading(true);
+    setActiveTab(tab);
+    setTimeout(() => setIsTabLoading(false), 450);
+  };
+
+  const handleOpenThemeCustomizer = (targetComplex?: any) => {
+    const comp = targetComplex || activeComplex || complexes[0] || null;
+    setComplexToEditForTheme(comp);
+    setIsComplexModalOpen(true);
+  };
+
+  const handleRefreshViolations = async () => {
+    try {
+      const v = await OmranDataService.loadViolations();
+      setViolations(v);
+    } catch (e) {
+      console.error('Failed to load violations', e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'behavior') {
+      handleRefreshViolations();
+    }
+  }, [activeTab]);
+
+  const handleSelectStudentForEval = (studentId: string) => {
+    setTargetStudentForEval(studentId);
+    handleNavigateTab('evaluation');
+  };
+
+  const handleNavigateToWhatsApp = (studentId: string) => {
+    setTargetStudentForWhatsApp(studentId);
+    handleNavigateTab('parents');
+  };
+
+  const handleNavigateToBehavior = (studentId: string) => {
+    setTargetStudentForBehavior(studentId);
+    handleNavigateTab('behavior');
+  };
+
+  const handleUpdateChatMessages = useCallback((msgs: ChatMessage[]) => {
+    if (!Array.isArray(msgs)) return;
+    setChatHistory(prev => {
+      if (prev.length === msgs.length && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
+        return prev;
+      }
+      return msgs;
+    });
+    try {
+      if (typeof window !== 'undefined' && msgs.length > 0) {
+        sessionStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
+        localStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
+      }
+    } catch {}
+  }, []);
+
+  // Scoped settings for students / parent portal
+  const portalSettings = useMemo<AppSettings>(() => {
+    if (!activePortalStudent) return scopedSettings;
+    const sHalaqah = halaqahs.find(h => h.id === activePortalStudent.halaqahId);
+    const sComplex = sHalaqah?.complexId ? complexes.find(c => c.id === sHalaqah.complexId) : null;
+    return {
+      ...settings,
+      halaqahName: activePortalStudent.halaqahName || sHalaqah?.name || 'الحلقة القرآنية',
+      teacherName: sHalaqah?.primaryTeacherName || sComplex?.supervisorTeacherName || 'معلم ومحفظ الحلقة'
+    };
+  }, [settings, scopedSettings, activePortalStudent, halaqahs, complexes]);
+
+  // 1. Strict Student Portal Handling: If user is authenticated as STUDENT, MUST NEVER leak to admin dashboard
+  if (currentUser?.role === 'student') {
+    if (isLoadingData && !activePortalStudent) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="max-w-4xl mx-auto px-4 py-12 relative z-10">
+            <GenericTabSkeleton title="جارٍ مزامنة سجل الطالب وبوابة الحفظ سحابياً..." />
+          </div>
+        </div>
+      );
+    }
+
+    if (activePortalStudent) {
+      if (!isStudentAssigned(activePortalStudent)) {
+        return (
+          <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+            <AnimatedBackground />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <UnassignedStudentView
+                studentName={activePortalStudent.name}
+                studentPhone={activePortalStudent.phone}
+                onRefresh={loadAllData}
+                onLogout={handleLogout}
+                settings={portalSettings}
+              />
+            </motion.div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+          <AnimatedBackground />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <ParentPortalView
+              student={activePortalStudent}
+              attendance={attendance}
+              evaluations={evaluations}
+              settings={portalSettings}
+              violations={violations}
+              exams={exams}
+              submissions={submissions}
+              students={students}
+              halaqahs={halaqahs}
+              leaderboardSettings={leaderboardSettings || undefined}
+              recordings={recordings}
+              recordingsConfig={recordingsConfig}
+              certificates={certificates}
+              listeningLogs={listeningLogs}
+              activeComplex={activeComplex}
+              complexes={complexes}
+              isLoggedInStudent={true}
+              onLogout={handleLogout}
+              onSaveSubmission={handleSaveSubmission}
+              onUpdateStudent={handleUpdateStudent}
+            />
+          </motion.div>
+        </div>
+      );
+    }
+
+    // If logged in as student but activePortalStudent could not be found in memory:
+    return (
+      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
+        <AnimatedBackground />
+        <div className="relative z-10 text-center space-y-5 max-w-md bg-[#064e3b]/90 border border-amber-500/40 p-8 rounded-[32px] backdrop-blur-md shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-amber-500/30">
+            <BookOpen className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold font-heading text-white">لم يتم العثور على سجل الطالب</h2>
+            <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
+              تعذر العثور على سجل الطالب ({currentUser.username}). قد يكون تم تعديل الاسم أو نقله لحلقة أخرى.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleLogout}
+              className="flex-1 py-3 px-4 rounded-2xl bg-[#fbbf24] text-[#064e3b] font-black text-xs hover:bg-[#f59e0b] shadow-lg cursor-pointer transition-all"
+            >
+              تسجيل الخروج والعودة
+            </button>
+            <button
+              onClick={() => loadAllData()}
+              className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
+            >
+              إعادة التحميل
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Direct Portal URL link view (when not logged in as student, e.g. via parent WhatsApp link ?portal=std-1)
+  if (activePortalStudent) {
+    if (!isStudentAssigned(activePortalStudent)) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+          <AnimatedBackground />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <UnassignedStudentView
+              studentName={activePortalStudent.name}
+              studentPhone={activePortalStudent.phone}
+              onRefresh={loadAllData}
+              onLogout={handleLogout}
+              settings={portalSettings}
+            />
+          </motion.div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        data-complex-themed={activeComplex?.theme ? "true" : undefined}
+        className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] transition-colors duration-300"
+        style={activeComplex?.theme ? {
+          backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
+          color: activeComplex.theme.textColor || '#f0f9f6'
+        } : undefined}
+        dir="rtl"
+      >
+        <AnimatedBackground />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <ParentPortalView
+            student={activePortalStudent}
+            attendance={attendance}
+            evaluations={evaluations}
+            settings={portalSettings}
+            violations={violations}
+            exams={exams}
+            submissions={submissions}
+            students={students}
+            halaqahs={halaqahs}
+            leaderboardSettings={leaderboardSettings || undefined}
+            recordings={recordings}
+            recordingsConfig={recordingsConfig}
+            certificates={certificates}
+            listeningLogs={listeningLogs}
+            activeComplex={activeComplex}
+            complexes={complexes}
+            isLoggedInStudent={!!currentUser}
+            onLogout={handleLogout}
+            onSaveSubmission={handleSaveSubmission}
+            onUpdateStudent={handleUpdateStudent}
+          />
+        </motion.div>
+      </div>
+    );
+  }
+
+  // 2. Direct Portal URL link view (when not logged in as student, e.g. via parent WhatsApp link ?portal=std-1)
+  if (portalStudentId && isLoadingData && !activePortalStudent) {
+    return (
+      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+        <TopProgressBar isLoading={true} />
+        <AnimatedBackground />
+        <div className="max-w-4xl mx-auto px-4 py-12 relative z-10">
+          <GenericTabSkeleton title="جارٍ استرجاع سجل الطالب وبوابة ولي الأمر سحابياً..." />
+        </div>
+      </div>
+    );
+  }
+
+  // 3. If Portal Link was invalid / not found after data loaded
+  if (portalStudentId && !isLoadingData && !activePortalStudent) {
+    return (
+      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
+        <AnimatedBackground />
+        <div className="relative z-10 text-center space-y-5 max-w-md bg-[#064e3b]/90 border border-amber-500/40 p-8 rounded-[32px] backdrop-blur-md shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-amber-500/30">
+            <BookOpen className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold font-heading text-white">لم يتم العثور على ملف الطالب</h2>
+            <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
+              تعذر العثور على سجل الطالب بالمعرّف المرفق. قد يكون تم تحديث السجل أو تعديل بيانات الحلقة.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={() => {
+                setPortalStudentId(null);
+                window.history.replaceState({}, '', window.location.pathname);
+              }}
+              className="flex-1 py-3 px-4 rounded-2xl bg-[#fbbf24] text-[#064e3b] font-black text-xs hover:bg-[#f59e0b] shadow-lg cursor-pointer transition-all"
+            >
+              الذهاب إلى البوابة الرئيسية
+            </button>
+            <button
+              onClick={() => loadAllData()}
+              className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Priority 1: If user navigated to /privacy or clicked Privacy Policy link
+  if (publicRoute === 'privacy') {
+    return (
+      <PrivacyPolicyPage
+        onBackToHome={() => navigatePublic('landing')}
+        onGoToLogin={!currentUser ? () => navigatePublic('login') : undefined}
+      />
+    );
+  }
+
+  // Priority 1.5: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
+  if (portalComplexId) {
+    const targetComplex = complexes.find(c => c.id === portalComplexId) || (complexes.length > 0 ? complexes[0] : null);
+    if (!targetComplex) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] flex items-center justify-center p-6" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="relative z-10 text-center space-y-4">
+            <ModernQuranLoader title="جارٍ فتح بوابة المجمع..." subtitle="يتم مزامنة واسترجاع بيانات المجمع المخصص سحابياً..." />
+          </div>
+        </div>
+      );
+    }
+
+    const complexHalaqahs = halaqahs.filter(h => isHalaqahInComplex(h, targetComplex, complexes, students, teachers));
+
+    return (
+      <ComplexCustomPortalPage
+        complex={targetComplex}
+        halaqahs={complexHalaqahs}
+        canManagePortalMail={Boolean(isDeveloper || isSupervisor || currentUser?.role === 'admin')}
+        onUpdateComplex={handleSaveComplex}
+        onLoginSuccess={(user, teacher, student) => {
+          handleLoginSuccess(user);
+          if (student) {
+            setPortalStudentId(student.id);
+            setDirectPortalStudent(student);
+          }
+          setPortalComplexId(null);
+        }}
+        onExitPortal={() => {
+          setPortalComplexId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('complexPortal');
+            url.searchParams.delete('complex');
+            window.history.pushState({}, '', url.pathname);
+          } catch {}
+        }}
+      />
+    );
+  }
+
+  // Priority 2: If not logged in, render Public Landing Page or Login Modal
+  if (!currentUser) {
+    if (publicRoute === 'login') {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+          <AnimatedBackground />
+          <LoginModal
+            onLoginSuccess={handleLoginSuccess}
+            onRegisterStudent={handleAddStudent}
+            students={students}
+            teachers={teachers}
+            settings={settings}
+            onBackToLanding={() => navigatePublic('landing')}
+            onOpenPrivacyPolicy={() => navigatePublic('privacy')}
+          />
+        </div>
+      );
+    }
+
+    // Default Public Landing Page (accessible to Google App Reviewer and public visitors)
+    return (
+      <PublicLandingPage
+        onOpenLogin={() => navigatePublic('login')}
+        onOpenPrivacyPolicy={() => navigatePublic('privacy')}
+        onOpenParentPortal={() => {
+          navigatePublic('login');
+        }}
+        appName="منصة عُمْرَان"
+      />
+    );
+  }
+
+  const onlineHalaqahsList = useMemo(() => {
+    if (isDeveloper || isSupervisor) return scopedHalaqahs.filter(h => h.isOnline);
+    if (!currentTeacher) return [];
+    const tHalaqahs = getTeacherHalaqahsInComplex(currentTeacher, activeComplex?.id || '', halaqahs, teachers, isSupervisor, complexes, students);
+    return tHalaqahs.filter(h => h.isOnline);
+  }, [isDeveloper, isSupervisor, scopedHalaqahs, currentTeacher, activeComplex, halaqahs, teachers, complexes, students]);
+
+  const hasOnlineHalaqahAssigned = useMemo(() => {
+    if (isDeveloper || isSupervisor) return true;
+    return onlineHalaqahsList.length > 0;
+  }, [isDeveloper, isSupervisor, onlineHalaqahsList]);
+
+  // Navigation Items for Admin/Teacher
+  const navItems = [
+    { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'students', label: 'الطلاب والتسجيل', icon: Users, badge: displayedStudents.length },
+    { id: 'attendance', label: 'حضور الطلاب', icon: UserCheck },
+    { id: 'teacher_attendance', label: 'تحضير المعلمين', icon: Clock },
+    { id: 'evaluation', label: 'تقييم التسميع', icon: BookOpen },
+    { id: 'exams', label: 'قسم الاختبارات', icon: FileText, badge: scopedExams.length > 0 ? scopedExams.length : undefined },
+    { id: 'certificates', label: 'قسم الشهادات', icon: Award },
+    { id: 'leaderboard', label: 'لوحة الشرف', icon: Trophy },
+    ...(isDeveloper ? [
+      { id: 'accounts', label: 'إدارة الحسابات والرتب', icon: UserCog, badge: teachers.length }
+    ] : []),
+    ...(hasOnlineHalaqahAssigned ? [
+      { id: 'online_halaqahs', label: 'حلقات أونلاين', icon: Radio, badge: onlineHalaqahsList.length > 0 ? onlineHalaqahsList.length : undefined }
+    ] : []),
+    { id: 'behavior', label: 'المخالفات السلوكية', icon: ShieldAlert, badge: displayedViolations.length > 0 ? displayedViolations.length : undefined },
+    { id: 'parents', label: 'رسائل الواتساب', icon: MessageCircle },
+    { id: 'reports', label: 'التقارير الدورية', icon: ClipboardList },
+    ...((isSupervisor || isDeveloper) ? [
+      { id: 'halaqah_plans', label: 'ضبط الخطة ومواعيد الختم', icon: BrainCircuit }
+    ] : []),
+    { id: 'library', label: 'المكتبة والأرشيف', icon: FolderArchive, badge: libraryDocs.length > 0 ? libraryDocs.length : undefined },
+    ...(isDeveloper ? [
+      { id: 'backup', label: 'النسخ الاحتياطي', icon: Database }
+    ] : [])
+  ];
+
+  return (
+    <div
+      data-complex-themed={activeComplex?.theme ? "true" : undefined}
+      className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] pb-12 transition-colors duration-300 w-full max-w-full overflow-x-hidden"
+      style={activeComplex?.theme ? {
+        backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
+        color: activeComplex.theme.textColor || '#f0f9f6'
+      } : undefined}
+      dir="rtl"
+    >
+      <AnimatedBackground />
+
+      {/* Modern Global Non-Intrusive Top Progress Bar (مثل المنصات العالمية) */}
+      <TopProgressBar isLoading={isLoadingData || isTabLoading || isSyncing} />
+
+      {/* Main Navbar with Settings Button & Halaqah Selector */}
+      <Navbar
+        currentUser={currentUser}
+        currentTeacher={currentTeacher}
+        onLinkGoogleTeacher={handleLinkGoogleTeacher}
+        onUnlinkGoogleTeacher={handleUnlinkGoogleTeacher}
+        isLinkingGoogleTeacher={isLinkingGoogleTeacher}
+        onLogout={handleLogout}
+        settings={scopedSettings}
+        studentsCount={displayedStudents.length}
+        teachersCount={scopedTeachers.length}
+        complexesCount={isDeveloper ? complexes.length : 1}
+        complexName={supervisedComplex?.name}
+        availableComplexes={scopedComplexes}
+        activeComplexId={activeComplex?.id}
+        activeComplex={activeComplex}
+        onSwitchComplex={canSwitchComplex ? handleSwitchComplex : undefined}
+        onOpenMultiComplexModal={canSwitchComplex ? () => setIsMultiComplexModalOpen(true) : undefined}
+        canSwitchComplex={canSwitchComplex}
+        halaqahs={scopedHalaqahs}
+        assignedHalaqahs={assignedHalaqahs}
+        isSupervisor={isSupervisor}
+        isDeveloper={isDeveloper}
+        activeHalaqahId={activeHalaqahId}
+        onSwitchHalaqah={handleSwitchHalaqah}
+        onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenComplexManagement={(isDeveloper || isSupervisor) ? () => setIsComplexModalOpen(true) : undefined}
+        onOpenPrivacyPolicy={() => navigatePublic('privacy')}
+
+        onOpenEditAccount={() => setIsEditAccountModalOpen(true)}
+        pendingApplicationsCount={pendingApplicationsCount}
+        onOpenApplications={() => {
+          setApplicationsModalInitialTab('applications');
+          setIsApplicationsModalOpen(true);
+        }}
+      />
+
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 pt-4 sm:pt-6 relative space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
+        {/* Active Halaqah Header & Switcher Banner with smooth motion.div workspace transition */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeHalaqahId || 'default'}
+            initial={{ opacity: 0, y: 10, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.99 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
+            style={{
+              backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+              borderColor: activeComplex?.theme?.cardColor || '#203843',
+              borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
+            }}
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div
+                className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
+                style={{
+                  backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                  color: activeComplex?.theme?.accentColor || '#ffc800',
+                  borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                  borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                }}
+              >
+                <Layers className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold shrink-0" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }}>الحلقة الحالية:</span>
+                  <span className="text-sm sm:text-base font-black text-white font-heading truncate">
+                    {activeHalaqahId === 'all'
+                      ? 'الكل'
+                      : (() => {
+                          const activeHItem = halaqahs.find(h => h.id === activeHalaqahId);
+                          const parentC = complexes.find(c => c.id === activeHItem?.complexId);
+                          const compName = parentC?.name || activeHItem?.complexName || activeComplex?.name;
+                          return activeHItem
+                            ? `${activeHItem.name}${compName ? ` (${compName})` : ''}`
+                            : (scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل');
+                        })()}
+                  </span>
+                  {activeHalaqahId === 'all' ? (
+                    <span
+                      className="text-[11px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs shrink-0"
+                      style={{
+                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}20`,
+                        color: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}50`,
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      }}
+                    >
+                      كافة الطلاب ({displayedStudents.length})
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[11px] px-2.5 py-0.5 rounded-full font-black border-2 border-b-2 shadow-xs shrink-0"
+                      style={{
+                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                        color: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}60`,
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      }}
+                    >
+                      {displayedStudents.length} طلاب
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] font-bold mt-1 text-slate-300">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: activeComplex?.theme?.accentColor || '#ffc800' }}
+                  />
+                  <span className="truncate">
+                    {isDeveloper
+                      ? 'وضع المشرف والمبرمج العام • إشراف شامل ومباشر'
+                      : isSupervisor
+                      ? `إشراف: ${supervisedComplex?.name || 'المجمع القرآني'} • متابعة وإدارة الحلقات`
+                      : 'مساحة المعلم • متابعة وتسميع الحلقات'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Background AI Student Queue Badge (علامة طلاب وفيها أرقام كم طالب بيعمل ويظبط خطته بكرة) */}
+            {backgroundAIQueue.length > 0 && (
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-lg animate-pulse shrink-0"
+                style={{
+                  backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                  borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                  borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28),
+                  color: activeComplex?.theme?.accentColor || '#ffc800'
+                }}
+                title={`الذكاء الاصطناعي يضبط خطط الغد في الخلفية للطلاب: ${backgroundAIQueue.join('، ')}`}
+              >
+                <Users className="w-4 h-4" />
+                <span>الذكاء الاصطناعي يضبط خطط الغد: <strong>{backgroundAIQueue.length} طلاب</strong></span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              </div>
+            )}
+
+            {/* Quick Switching Buttons & Live Cloud Sync */}
+            <div className="flex items-center gap-1.5 flex-wrap self-stretch sm:self-auto justify-end shrink-0 max-w-full overflow-x-auto scrollbar-none slider-horizontal">
+              <LiveSyncButton
+                isSyncing={isSyncing}
+                onRefresh={() => loadAllData(true)}
+                lastSyncedText={lastSyncedTime}
+                label="تحديث مباشر"
+                compact={true}
+                activeComplex={activeComplex}
+              />
+
+              {canSwitchComplex && scopedComplexes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsMultiComplexModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer shadow-sm shrink-0 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                    borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                    borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.28),
+                    color: activeComplex?.theme?.accentColor || '#ffc800'
+                  }}
+                  title="عرض بطاقات المجمعات والحلقات التابعة لك"
+                >
+                  <Building2 className="w-3.5 h-3.5" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
+                  <span>مجمعاتي ({scopedComplexes.length})</span>
+                  <Sparkles className="w-3 h-3" style={{ color: activeComplex?.theme?.accentColor || '#ffc800' }} />
+                </button>
+              )}
+
+              {isSupervisor ? (
+                <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-full">
+                  <div
+                    className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                    style={{
+                      backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                      borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+                      borderBottomColor: darkenHex(activeComplex?.theme?.cardColor || '#203843', 0.35)
+                    }}
+                  >
+                    <button
+                      onClick={() => handleSwitchHalaqah('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                        activeHalaqahId === 'all'
+                          ? 'border-b-4 shadow-md'
+                          : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                      }`}
+                      style={activeHalaqahId === 'all' ? {
+                        backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                        color: activeComplex?.theme?.primaryColor || '#131f24',
+                        borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      } : undefined}
+                    >
+                      الكل
+                    </button>
+                    {scopedHalaqahs.map(h => (
+                      <button
+                        key={h.id}
+                        onClick={() => handleSwitchHalaqah(h.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                          activeHalaqahId === h.id
+                            ? 'border-b-4 shadow-md'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                        }`}
+                        style={activeHalaqahId === h.id ? {
+                          backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          color: activeComplex?.theme?.primaryColor || '#131f24',
+                          borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                        } : undefined}
+                      >
+                        {h.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Current Active Halaqah Label */}
+                  <div className="flex items-center gap-1.5 px-2 text-xs font-bold" dir="rtl">
+                    <span className="text-slate-300 font-black">الحلقة الحالية:</span>
+                    <span
+                      className="px-3 py-1 rounded-xl border-2 border-b-4 font-black shadow-sm text-xs"
+                      style={{
+                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                        color: activeComplex?.theme?.accentColor || '#ffc800',
+                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                      }}
+                    >
+                      {activeHalaqahId === 'all'
+                        ? 'الكل'
+                        : (scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل')}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                assignedHalaqahs.length > 0 && (
+                  <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-full">
+                    <div
+                      className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                      style={{
+                        backgroundColor: activeComplex?.theme?.cardColor || '#203843',
+                        borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+                        borderBottomColor: darkenHex(activeComplex?.theme?.cardColor || '#203843', 0.35)
+                      }}
+                    >
+                      <button
+                        onClick={() => handleSwitchHalaqah('all')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                          activeHalaqahId === 'all'
+                            ? 'border-b-4 shadow-md'
+                            : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                        }`}
+                        style={activeHalaqahId === 'all' ? {
+                          backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          color: activeComplex?.theme?.primaryColor || '#131f24',
+                          borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                          borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                        } : undefined}
+                      >
+                        الكل
+                      </button>
+                      {assignedHalaqahs.map(h => (
+                        <button
+                          key={h.id}
+                          onClick={() => handleSwitchHalaqah(h.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                            activeHalaqahId === h.id
+                              ? 'border-b-4 shadow-md'
+                              : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                          }`}
+                          style={activeHalaqahId === h.id ? {
+                            backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                            color: activeComplex?.theme?.primaryColor || '#131f24',
+                            borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+                            borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                          } : undefined}
+                          title={`الانتقال إلى ${h.name} (${h.complexName || 'المجمع'})`}
+                        >
+                          {h.name} {h.complexName ? `(${h.complexName})` : ''}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Current Active Halaqah Label */}
+                    <div className="flex items-center gap-1.5 px-2 text-xs font-bold" dir="rtl">
+                      <span className="text-slate-300 font-black">الحلقة الحالية:</span>
+                      <span
+                        className="px-3 py-1 rounded-xl border-2 border-b-4 font-black shadow-sm text-xs"
+                        style={{
+                          backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
+                          color: activeComplex?.theme?.accentColor || '#ffc800',
+                          borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
+                          borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
+                        }}
+                      >
+                        {activeHalaqahId === 'all'
+                          ? 'الكل'
+                          : (assignedHalaqahs.find(h => h.id === activeHalaqahId)?.name || scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل')}
+                      </span>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Navigation Tabs Bar */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
+          style={{
+            backgroundColor: `${activeComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
+            borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
+            borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
+          }}
+        >
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
+            const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavigateTab(item.id)}
+                className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer select-none ${
+                  isActive
+                    ? 'font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTabIndicator"
+                    className="absolute inset-0 rounded-xl shadow-md z-0 border-b-2"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderBottomColor: darkenHex(themeAccent, 0.28)
+                    }}
+                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                  />
+                )}
+                <span
+                  className="relative z-10 flex items-center gap-2"
+                  style={isActive ? { color: themePrimary } : undefined}
+                >
+                  <Icon className="w-4 h-4" style={isActive ? { color: themePrimary } : { color: themeAccent }} />
+                  <span>{item.label}</span>
+                  {item.badge !== undefined && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-mono font-black"
+                      style={isActive ? {
+                        backgroundColor: `${themePrimary}25`,
+                        color: themePrimary
+                      } : {
+                        backgroundColor: `${themeAccent}25`,
+                        color: themeAccent
+                      }}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </motion.div>
+
+        {/* Tab Views with Buttery Smooth Animated Transitions (مثل المنصات العالمية) */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab + (isTabLoading || isLoadingData ? '_loading' : '_ready')}
+            initial={{ opacity: 0, y: 10, scale: 0.995 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.995 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full space-y-6"
+          >
+            {isTabLoading || isLoadingData ? (
+              <TabSkeleton activeTab={activeTab} activeComplex={activeComplex} />
+            ) : (
+              <>
+                {activeTab === 'home' && (
+                  <HomeTab
+                    students={displayedStudents}
+                    attendance={displayedAttendance}
+                    evaluations={displayedEvaluations}
+                    settings={scopedSettings}
+                    teachers={scopedTeachers}
+                    currentUserName={currentTeacher?.name || currentUser?.displayName || (currentUser?.username && currentUser.username !== 'admin' && currentUser.username !== 'developer' ? currentUser.username : (activeComplex?.supervisorTeacherName || scopedSettings.teacherName || (isDeveloper ? 'المشرف والمطور العام' : 'مشرف المجمع')))}
+                    isSupervisor={isSupervisor}
+                    isDeveloper={isDeveloper}
+                    activeComplex={activeComplex}
+                    onNavigateTab={handleNavigateTab}
+                    onSelectStudentForEval={handleSelectStudentForEval}
+                    onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
+                    pendingApplicationsCount={pendingApplicationsCount}
+                    onOpenApplications={() => {
+                      setApplicationsModalInitialTab('applications');
+                      setIsApplicationsModalOpen(true);
+                    }}
+                  />
+                )}
+
+            {activeTab === 'students' && (
+              <StudentsTab
+                students={displayedStudents}
+                settings={scopedSettings}
+                halaqahs={scopedHalaqahs}
+                activeHalaqahId={activeHalaqahId}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeComplex={activeComplex}
+                onAddStudent={handleAddStudent}
+                onBatchAddStudents={handleBatchAddStudents}
+                onUpdateStudent={handleUpdateStudent}
+                onDeleteStudent={handleDeleteStudent}
+                onBatchDeleteStudents={handleBatchDeleteStudents}
+                onToggleRegistration={handleToggleRegistration}
+                onTriggerAIPlan={handleTriggerAIPlan}
+                onTransferStudent={handleTransferStudent}
+                onBatchTransferStudents={handleBatchTransferStudents}
+                initialStudentToDeleteId={navMeta?.studentId}
+                initialSearchQuery={navMeta?.searchQuery || navMeta?.studentName}
+              />
+            )}
+
+            {activeTab === 'attendance' && (
+              <AttendanceTab
+                students={assignedDisplayedStudents}
+                attendanceRecords={displayedAttendance}
+                onSaveAttendance={handleSaveAttendance}
+                settings={scopedSettings}
+                teacherName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                isDeveloper={isDeveloper}
+                onUpdateSettings={handleUpdateSettings}
+                complexName={activeComplex?.name || scopedSettings.complexName}
+                activeComplex={activeComplex}
+                halaqahName={halaqahs.find(h => h.id === activeHalaqahId)?.name || scopedSettings.halaqahName}
+                isSyncing={isSyncing}
+                onRefreshData={() => loadAllData(true)}
+              />
+            )}
+
+            {activeTab === 'evaluation' && (
+              <EvaluationTab
+                students={assignedDisplayedStudents}
+                attendance={displayedAttendance}
+                evaluations={displayedEvaluations}
+                criteria={scopedCriteria}
+                isSupervisor={isSupervisor || isDeveloper}
+                activeComplexId={activeComplex?.id || 'default-complex'}
+                activeComplex={activeComplex}
+                settings={scopedSettings}
+                selectedStudentId={targetStudentForEval}
+                onSaveEvaluation={handleSaveEvaluation}
+                onSaveCriteria={handleSaveCriteria}
+                onDeleteCriteria={handleDeleteCriteria}
+                onUpdateStudentAIPlan={handleUpdateStudentAIPlan}
+                onNavigateToWhatsApp={handleNavigateToWhatsApp}
+                onNavigateToBehavior={handleNavigateToBehavior}
+              />
+            )}
+
+            {activeTab === 'exams' && (
+              <ExamsTab
+                exams={scopedExams}
+                submissions={scopedSubmissions}
+                students={scopedStudents}
+                halaqahs={scopedHalaqahs}
+                currentUserId={currentUser?.teacherId || currentUser?.studentId || 'admin'}
+                currentUserName={currentUser?.username || scopedSettings.teacherName}
+                isSupervisor={isSupervisor}
+                googleAuthConfig={googleAuthConfig}
+                leaderboardSettings={leaderboardSettings || undefined}
+                activeComplex={activeComplex}
+                onSaveExam={handleSaveExam}
+                onDeleteExam={handleDeleteExam}
+                onSaveSubmission={handleSaveSubmission}
+                onDeleteSubmission={handleDeleteSubmission}
+                onSaveLeaderboardSettings={handleSaveLeaderboardSettings}
+                onRefreshGoogleAuth={handleRefreshGoogleAuth}
+                onSaveCertificate={handleSaveCertificate}
+              />
+            )}
+
+            {activeTab === 'certificates' && (
+              <CertificatesTab
+                students={assignedDisplayedStudents}
+                halaqahs={scopedHalaqahs}
+                settings={scopedSettings}
+                currentUserName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeHalaqahId={activeHalaqahId}
+                onUpdateSettings={handleUpdateSettings}
+                certificates={certificates}
+                onSaveCertificate={handleSaveCertificate}
+                onSaveCertificates={handleSaveCertificates}
+                onDeleteCertificate={handleDeleteCertificate}
+                selectedComplexId={selectedComplexId}
+                activeComplexName={activeComplex?.name || scopedSettings.complexName}
+                activeComplex={activeComplex}
+                submissions={scopedSubmissions}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+              />
+            )}
+
+            {activeTab === 'teacher_attendance' && (
+              <TeacherAttendanceTab
+                teachers={scopedTeachers}
+                currentTeacher={currentTeacher}
+                currentUserName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeComplex={activeComplex}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                halaqahs={scopedHalaqahs}
+              />
+            )}
+
+            {activeTab === 'leaderboard' && (
+              <LeaderboardTab
+                students={scopedStudents}
+                halaqahs={scopedHalaqahs}
+                attendance={displayedAttendance}
+                evaluations={scopedEvaluations}
+                submissions={scopedSubmissions}
+                listeningLogs={listeningLogs}
+                leaderboardSettings={leaderboardSettings || undefined}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeHalaqahId={activeHalaqahId}
+                activeComplex={activeComplex}
+                settings={scopedSettings}
+                currentUserName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                onSaveLeaderboardSettings={handleSaveLeaderboardSettings}
+                onAwardBonusPoints={handleAwardBonusPoints}
+              />
+            )}
+
+            {activeTab === 'accounts' && (
+              <AccountsTab
+                teachers={teachers}
+                students={students}
+                halaqahs={halaqahs}
+                complexes={complexes}
+                isDeveloper={isDeveloper}
+                onSaveTeacher={handleSaveTeacher}
+                onDeleteTeacher={handleDeleteTeacher}
+                onUpdateStudent={async (st) => { await handleUpdateStudent(st); }}
+                onDeleteStudent={async (stId) => { await handleDeleteStudent(stId); }}
+                initialStudentToDeleteId={navMeta?.studentId}
+                initialSearchQuery={navMeta?.searchQuery || navMeta?.studentName}
+                initialSubTab={navMeta?.subTab || (navMeta?.studentId ? 'students' : undefined)}
+              />
+            )}
+
+            {activeTab === 'behavior' && (
+              <BehaviorTab
+                students={assignedDisplayedStudents}
+                violations={displayedViolations}
+                settings={scopedSettings}
+                activeComplex={activeComplex}
+                teacherName={currentUser?.username || scopedSettings.teacherName}
+                onSaveViolation={handleSaveViolation}
+                onDeleteViolation={handleDeleteViolation}
+                preselectedStudentId={targetStudentForBehavior || navMeta?.studentId}
+                onRefreshViolations={handleRefreshViolations}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+              />
+            )}
+
+            {activeTab === 'parents' && (
+              <ParentsWhatsAppTab
+                students={assignedDisplayedStudents}
+                attendance={displayedAttendance}
+                evaluations={displayedEvaluations}
+                settings={scopedSettings}
+                preselectedStudentId={targetStudentForWhatsApp}
+                senderAccountName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                currentUserName={currentUser?.username}
+                activeComplex={activeComplex}
+              />
+            )}
+
+            {activeTab === 'online_halaqahs' && (
+              <OnlineHalaqahsTab
+                halaqahs={scopedHalaqahs}
+                teachers={teachers}
+                students={students}
+                currentUser={currentUser}
+                currentTeacher={currentTeacher}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeComplex={activeComplex}
+                onUpdateHalaqah={async (h) => {
+                  await OmranDataService.saveHalaqah(h);
+                  setHalaqahs(prev => prev.map(item => item.id === h.id ? h : item));
+                }}
+                onRefreshData={() => loadAllData(true)}
+              />
+            )}
+
+            {activeTab === 'reports' && (
+              <ReportsTab
+                students={assignedDisplayedStudents}
+                attendance={displayedAttendance}
+                evaluations={displayedEvaluations}
+                settings={scopedSettings}
+                onUpdateSettings={handleUpdateSettings}
+                teacherName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                certificates={certificates}
+                activeComplex={activeComplex}
+                onSaveLibraryDoc={handleSaveLibraryDoc}
+              />
+            )}
+
+            {activeTab === 'library' && (
+              <LibraryTab
+                libraryDocs={libraryDocs}
+                students={scopedStudents}
+                halaqahs={scopedHalaqahs}
+                teacherHalaqahs={assignedHalaqahs}
+                exams={scopedExams}
+                attendance={displayedAttendance}
+                evaluations={displayedEvaluations}
+                currentUserName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                activeComplex={activeComplex}
+                onSaveDocument={handleSaveLibraryDoc}
+                onDeleteDocument={handleDeleteLibraryDoc}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                initialSearchQuery={navMeta?.searchQuery}
+              />
+            )}
+
+            {activeTab === 'halaqah_plans' && (isSupervisor || isDeveloper) && (
+              <HalaqahPlansTab
+                students={scopedStudents}
+                halaqahs={scopedHalaqahs}
+                activeComplex={activeComplex}
+                activeHalaqahId={activeHalaqahId}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                initialSearchQuery={navMeta?.searchQuery}
+                onUpdateComplex={handleSaveComplex}
+                onUpdateStudents={async (updatedStudents) => {
+                  await OmranDataService.saveStudentsBatch(updatedStudents);
+                  setStudents(prev => {
+                    const map = new Map(prev.map(s => [s.id, s]));
+                    updatedStudents.forEach(u => map.set(u.id, u));
+                    return Array.from(map.values());
+                  });
+                }}
+              />
+            )}
+
+            {activeTab === 'backup' && isDeveloper && (
+              <DataBackupTab
+                onRefreshAllData={loadAllData}
+                googleAuthConfig={googleAuthConfig}
+                onRefreshGoogleAuth={handleRefreshGoogleAuth}
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                complexes={complexes}
+                onSaveComplex={handleSaveComplex}
+                halaqahs={halaqahs}
+                students={students}
+                teachers={teachers}
+              />
+            )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* Platform Global Footer */}
+      <footer className="max-w-7xl mx-auto px-4 mt-12 pt-6 border-t border-[#065f46]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#86efac]/70">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+          <span className="font-bold text-white">{activeComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم'}</span>
+        </div>
+        <div className="flex items-center gap-2 text-center text-xs text-[#fbbf24] font-bold bg-[#064e3b]/80 px-3.5 py-1.5 rounded-full border border-amber-400/30 shadow-sm">
+          <span>مشغل بواسطة منصة عمران</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigatePublic('privacy')}
+            className="hover:text-amber-300 transition-colors font-medium cursor-pointer"
+          >
+            وثيقة سياسة الخصوصية (Privacy Policy)
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => navigatePublic('landing')}
+            className="hover:text-amber-300 transition-colors font-medium underline cursor-pointer"
+          >
+            الصفحة التعريفية للمنظومة
+          </button>
+        </div>
+      </footer>
+
+      {/* Comprehensive Settings Modal (Teachers, Halaqahs, Student Transfer) */}
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        teachers={scopedTeachers}
+        allTeachers={teachers}
+        halaqahs={scopedHalaqahs}
+        students={scopedStudents}
+        settings={scopedSettings}
+        complexes={scopedComplexes}
+        activeComplex={activeComplex}
+        isDeveloper={isDeveloper}
+        complexName={activeComplex?.name || supervisedComplex?.name}
+        activeHalaqahId={activeHalaqahId}
+        onSaveTeacher={handleSaveTeacher}
+        onDeleteTeacher={handleDeleteTeacher}
+        onSaveHalaqah={handleSaveHalaqah}
+        onDeleteHalaqah={handleDeleteHalaqah}
+        onTransferStudent={handleTransferStudent}
+        onBatchTransferStudents={handleBatchTransferStudents}
+        onSwitchActiveHalaqah={setActiveHalaqahId}
+        onSaveComplex={handleSaveComplex}
+        onUpdateSettings={handleUpdateSettings}
+        initialTab={navMeta?.subTab || (navMeta?.type === 'halaqah' ? 'halaqahs' : undefined)}
+        initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+      />
+
+      {/* Complex Management Modal (إدارة المجمعات القرآنية) - متاح للمطور والمشرف */}
+      {(isDeveloper || isSupervisor) && (
+        <ComplexManagementModal
+          isOpen={isComplexModalOpen}
+          onClose={() => {
+            setIsComplexModalOpen(false);
+            setComplexToEditForTheme(null);
+          }}
+          complexes={complexes}
+          halaqahs={halaqahs}
+          teachers={teachers}
+          students={students}
+          onSaveComplex={handleSaveComplex}
+          onDeleteComplex={handleDeleteComplex}
+          onSaveHalaqah={handleSaveHalaqah}
+          onDeleteHalaqah={handleDeleteHalaqah}
+          onSaveTeacher={handleSaveTeacher}
+          onStudentsUpdated={setStudents}
+          onHalaqahsUpdated={setHalaqahs}
+          isSupervisor={isSupervisor}
+          isDeveloper={isDeveloper}
+          initialComplexToEdit={complexToEditForTheme}
+        />
+      )}
+
+      {/* Teacher Multi-Complex Modal (عرض المجمعات والحلقات والانتقال بينها) */}
+      <TeacherMultiComplexModal
+        isOpen={isMultiComplexModalOpen && canSwitchComplex && scopedComplexes.length > 1}
+        onClose={() => {
+          setIsMultiComplexModalOpen(false);
+          setNewlyAddedComplexName(null);
+        }}
+        teacher={currentTeacher}
+        teacherName={currentTeacher?.name || currentUser?.username || 'المعلم'}
+        complexes={scopedComplexes}
+        activeComplexId={activeComplex?.id || ''}
+        onSelectComplex={handleSwitchComplex}
+        halaqahs={halaqahs}
+        allTeachers={teachers}
+        students={students}
+        isNewlyAdded={Boolean(newlyAddedComplexName)}
+        newlyAddedComplexName={newlyAddedComplexName}
+      />
+
+      {/* Edit Account Modal (for Teacher, Supervisor, and Developer) */}
+      {isEditAccountModalOpen && currentTeacher && (
+        <EditAccountModal
+          isOpen={isEditAccountModalOpen}
+          onClose={() => setIsEditAccountModalOpen(false)}
+          currentTeacher={currentTeacher}
+          allTeachers={teachers}
+          allStudents={students}
+          onSaveTeacherAccount={handleSaveCurrentTeacherAccount}
+        />
+      )}
+
+      {/* Floating Quranic AI Assistant (متاح للمبرمج والمشرف والمعلم) */}
+      <QuranAIAssistant
+        currentUser={currentUser}
+        currentTeacherName={currentTeacher?.name || currentUser?.username}
+        isDeveloper={isDeveloper}
+        isSupervisor={isSupervisor}
+        activeComplex={activeComplex}
+        activeHalaqahId={activeHalaqahId}
+        students={students}
+        halaqahs={scopedHalaqahs}
+        teachers={teachers}
+        attendance={attendance}
+        evaluations={evaluations}
+        violations={violations}
+        complexes={complexes}
+        allHalaqahs={halaqahs}
+        onAddStudent={handleAddStudent}
+        onDeleteStudent={handleDeleteStudent}
+        onTransferStudent={handleTransferStudent}
+        onSaveAttendance={handleSaveAttendance}
+        onSaveHalaqah={handleSaveHalaqah}
+        onDeleteHalaqah={handleDeleteHalaqah}
+        onDeleteTeacher={handleDeleteTeacher}
+        onSaveViolation={handleSaveViolation}
+        onNavigateTab={handleNavigateTab}
+        onSaveLibraryDoc={handleSaveLibraryDoc}
+        onOpenThemeCustomizer={handleOpenThemeCustomizer}
+        certificates={certificates}
+        onSaveCertificate={handleSaveCertificate}
+        onSaveCertificates={handleSaveCertificates}
+        recordings={recordings}
+        listeningLogs={listeningLogs}
+        submissions={submissions}
+        libraryDocs={libraryDocs}
+        leaderboardSettings={leaderboardSettings}
+        onSaveEvaluation={handleSaveEvaluation}
+        onSaveComplex={handleSaveComplex}
+        chatMessages={chatHistory}
+        onUpdateChatMessages={handleUpdateChatMessages}
+      />
+
+      {/* Modern Login & Cloud Sync Confirmation Overlay */}
+      <LoginSyncModalOverlay
+        isOpen={isLoginSyncing}
+        userName={loginSyncUser}
+        activeComplex={activeComplex}
+      />
+
+      {/* Complex Portal & Registration Applications Modal for Supervisor & Developer */}
+      {isApplicationsModalOpen && activeComplex && (
+        <ComplexPortalSettingsModal
+          isOpen={isApplicationsModalOpen}
+          onClose={() => setIsApplicationsModalOpen(false)}
+          complex={activeComplex}
+          halaqahs={scopedHalaqahs}
+          teachers={scopedTeachers}
+          onUpdateComplex={handleSaveComplex}
+          onStudentCreatedFromApp={(newStudent) => {
+            setStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
+            if (newStudent.isGeneratingPlan) {
+              fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ student: newStudent })
+              })
+                .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
+                .then(data => {
+                  const aiPlanObj = data?.plan;
+                  const aiPortion = data?.portion;
+                  const withPlan: Student = {
+                    ...newStudent,
+                    isGeneratingPlan: false,
+                    aiPlan: aiPlanObj ? { ...aiPlanObj, lastUpdated: new Date().toISOString() } : undefined,
+                    memorizationPlan: {
+                      ...newStudent.memorizationPlan!,
+                      nextDayAssignment: {
+                        ...newStudent.memorizationPlan!.nextDayAssignment!,
+                        newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion?.description || newStudent.memorizationPlan!.nextDayAssignment!.newMemorization,
+                        review: aiPlanObj?.currentDailyAssignment?.review || newStudent.memorizationPlan!.nextDayAssignment!.review,
+                        suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+                        surahNumber: aiPortion?.fromSurah || newStudent.currentSurah || 78,
+                        fromAyah: aiPortion?.fromAyah || newStudent.currentAyah || 1,
+                        toSurahNumber: aiPortion?.toSurah || newStudent.currentSurah || 78,
+                        toAyah: aiPortion?.toAyah || 15
+                      },
+                      lastUpdated: new Date().toISOString()
+                    }
+                  };
+                  setStudents(prev => prev.map(s => s.id === newStudent.id ? withPlan : s));
+                  OmranDataService.saveStudent(withPlan).catch(() => {});
+                  window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: withPlan }));
+                })
+                .catch(() => {
+                  const resolved = { ...newStudent, isGeneratingPlan: false };
+                  setStudents(prev => prev.map(s => s.id === newStudent.id ? resolved : s));
+                  OmranDataService.saveStudent(resolved).catch(() => {});
+                  window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: resolved }));
+                });
+            }
+          }}
+          initialTab={applicationsModalInitialTab}
+        />
+      )}
+
+      {/* Prominent Instant Floating Alert Banner for Newly Submitted Registration Applications */}
+      <AnimatePresence>
+        {liveNewAppAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -60, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 450, damping: 28 }}
+            className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-[9999] rounded-2xl p-4 shadow-2xl border-2 border-b-4 bg-[#1b2e35] text-white backdrop-blur-lg"
+            style={{
+              borderColor: activeComplex?.theme?.accentColor || '#ffc800',
+              borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.35),
+              boxShadow: `0 12px 36px rgba(0, 0, 0, 0.45), 0 0 24px ${activeComplex?.theme?.accentColor || '#ffc800'}45`
+            }}
+            dir="rtl"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md animate-pulse"
+                style={{
+                  backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                  color: '#022c22'
+                }}
+              >
+                <Bell className="w-5 h-5 font-black" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-black text-amber-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                    طلب انضمام جديد وصل الآن!
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLiveNewAppAlert(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                    title="إغلاق التنبيه"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <h4 className="font-black text-sm text-white mt-1 truncate">
+                  {liveNewAppAlert.studentName}
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5 line-clamp-1">
+                  {liveNewAppAlert.complexName || activeComplex?.name} • هاتف: {liveNewAppAlert.parentPhone}
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplicationsModalInitialTab('applications');
+                      setIsApplicationsModalOpen(true);
+                      setLiveNewAppAlert(null);
+                    }}
+                    className="flex-1 py-1.5 px-3 rounded-xl text-xs font-black shadow-md border-b-2 active:translate-y-0.5 transition-all text-center cursor-pointer"
+                    style={{
+                      backgroundColor: activeComplex?.theme?.accentColor || '#ffc800',
+                      color: '#022c22',
+                      borderColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.25)
+                    }}
+                  >
+                    مراجعة واعتماد الطلب الآن
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLiveNewAppAlert(null)}
+                    className="py-1.5 px-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default App;

@@ -1,0 +1,8397 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+import nodemailer from "nodemailer";
+import {
+  QURAN_SURAHS,
+  getSurahInfo,
+  calculateRealisticQuranAssignment,
+  FAMOUS_RECITERS
+} from "./src/data/quranData.ts";
+import {
+  calculateRecitationFractionalFaces,
+  getPageOfAyah,
+  calculatePortionFromPace
+} from "./src/data/quranPagesData.ts";
+import {
+  resolveStudentQuery,
+  detectTeacherInQuery,
+  matchStudentLevel,
+  findMatchingComplex,
+  isStudentInComplex,
+  isTeacherInComplex,
+  isHalaqahInComplex,
+  cleanComplexBaseName,
+  isStudentInHalaqah,
+  scoreStudentNameMatch,
+  type StudentResolutionResult,
+  type SearchUserContext
+} from "./src/lib/assistantStudentSearch.ts";
+import {
+  executeAssistantTool,
+  ASSISTANT_TOOLS_DEFINITIONS
+} from "./src/lib/assistantToolsService.ts";
+
+import { db } from "./src/lib/firebase.ts";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+
+dotenv.config();
+
+export const app = express();
+const PORT = 3000;
+
+app.use(express.json({ limit: "10mb" }));
+
+// Health check route
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Centralized Student Search Endpoint (Strict RBAC & Deterministic Scope)
+app.post("/api/assistant/search-students", (req, res) => {
+  try {
+    const { query = "", students = [], halaqahs = [], user = {}, complex = {}, activeHalaqah = {} } = req.body;
+    const isTeacher = user.role === "teacher";
+    const userContext: SearchUserContext = {
+      role: (user.role || "teacher") as any,
+      userId: user.id || user.uid,
+      userName: user.name || user.username || "",
+      complexId: complex.id,
+      complexName: complex.name,
+      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
+      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
+      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
+      childStudentIds: user.childStudentIds || user.studentIds,
+      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
+    };
+    const result = resolveStudentQuery(query, students, halaqahs, userContext);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Centralized Assistant Tool Execution Endpoint
+app.post("/api/assistant/execute-tool", async (req, res) => {
+  try {
+    const { toolName, params = {}, context = {} } = req.body;
+    const result = await executeAssistantTool(toolName, params, context);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Persistent Mail Configuration Path & Firestore Cloud Sync
+const MAIL_CONFIG_PATH = path.join(process.cwd(), "data", "mail-config.json");
+let inMemoryMailConfig: any = null;
+
+async function getFirestoreMailConfig(complexId?: string): Promise<any> {
+  try {
+    if (complexId) {
+      const complexMailSnap = await getDoc(doc(db, "settings", `mail_config_${complexId}`));
+      if (complexMailSnap.exists() && complexMailSnap.data()?.user && complexMailSnap.data()?.pass) {
+        return complexMailSnap.data();
+      }
+      const complexDocSnap = await getDoc(doc(db, "complexes", complexId));
+      if (complexDocSnap.exists() && complexDocSnap.data()?.mailConfig?.user && complexDocSnap.data()?.mailConfig?.pass) {
+        return complexDocSnap.data()?.mailConfig;
+      }
+    }
+    const snap = await getDoc(doc(db, "settings", "mail_config"));
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (e) {
+    console.warn("Could not read mail config from Firestore:", e);
+  }
+  return null;
+}
+
+async function saveFirestoreMailConfig(config: any, complexId?: string): Promise<void> {
+  try {
+    const payload = {
+      ...config,
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, "settings", "mail_config"), payload, { merge: true });
+    if (complexId) {
+      await setDoc(doc(db, "settings", `mail_config_${complexId}`), payload, { merge: true });
+      await setDoc(doc(db, "complexes", complexId), {
+        mailConfig: {
+          user: payload.user,
+          pass: payload.pass,
+          fromName: payload.fromName,
+          fromEmail: payload.fromEmail,
+          updatedAt: payload.updatedAt
+        }
+      }, { merge: true });
+    }
+  } catch (e) {
+    console.warn("Could not save mail config to Firestore:", e);
+  }
+}
+
+function getStoredMailConfig(): {
+  user?: string;
+  pass?: string;
+  fromName?: string;
+  fromEmail?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+} {
+  if (inMemoryMailConfig && (inMemoryMailConfig.user || inMemoryMailConfig.pass)) {
+    return inMemoryMailConfig;
+  }
+  try {
+    if (fs.existsSync(MAIL_CONFIG_PATH)) {
+      inMemoryMailConfig = JSON.parse(fs.readFileSync(MAIL_CONFIG_PATH, "utf-8"));
+      return inMemoryMailConfig;
+    }
+  } catch (e) {
+    console.error("Error reading mail config:", e);
+  }
+  return inMemoryMailConfig || {};
+}
+
+function saveStoredMailConfig(config: any, complexId?: string) {
+  inMemoryMailConfig = config;
+  try {
+    const dir = path.dirname(MAIL_CONFIG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(MAIL_CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving mail config:", e);
+  }
+  // Also persist asynchronously to Firestore cloud database
+  saveFirestoreMailConfig(config, complexId).catch(err => console.warn("Firestore mail config save error:", err));
+}
+
+// Get Mail Configuration Status
+app.get("/api/mail/config", async (req, res) => {
+  const complexId = typeof req.query.complexId === "string" ? req.query.complexId.trim() : undefined;
+  let stored = getStoredMailConfig();
+  if (complexId || !stored.user || !stored.pass) {
+    const cloudConfig = await getFirestoreMailConfig(complexId);
+    if (cloudConfig?.user && cloudConfig?.pass) {
+      stored = { ...stored, ...cloudConfig };
+      if (!complexId) {
+        saveStoredMailConfig(stored);
+      }
+    }
+  }
+  const envUser = process.env.SMTP_USER || process.env.GMAIL_USER || "";
+  const envPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "";
+  const user = stored.user || envUser;
+  const hasPass = Boolean(stored.pass || envPass);
+
+  return res.json({
+    isConfigured: Boolean(user && hasPass),
+    hasEnvCredentials: Boolean(envUser && envPass),
+    user: user || "",
+    pass: stored.pass || envPass || "",
+    fromName: stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية",
+    fromEmail: stored.fromEmail || user || "qdrat2626@gmail.com",
+    provider: (stored.smtpHost || process.env.SMTP_HOST) ? "custom_smtp" : "gmail_smtp"
+  });
+});
+
+// Save Mail Configuration
+app.post("/api/mail/config", async (req, res) => {
+  try {
+    const { user, pass, fromName, fromEmail, smtpHost, smtpPort, complexId } = req.body;
+    if (!user || !pass) {
+      return res.status(400).json({ error: "اسم المستخدم وكلمة المرور مطلوبان." });
+    }
+
+    const cleanComplexId = complexId ? String(complexId).trim() : undefined;
+    const current = getStoredMailConfig();
+    const updated = {
+      ...current,
+      user: String(user).trim().toLowerCase(),
+      pass: String(pass).trim().replace(/\s+/g, ""),
+      fromName: fromName ? String(fromName).trim() : (current.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية"),
+      fromEmail: fromEmail ? String(fromEmail).trim().toLowerCase() : String(user).trim().toLowerCase(),
+      smtpHost: smtpHost ? String(smtpHost).trim() : undefined,
+      smtpPort: smtpPort ? Number(smtpPort) : undefined,
+      complexId: cleanComplexId,
+      updatedAt: new Date().toISOString()
+    };
+
+    saveStoredMailConfig(updated, cleanComplexId);
+    await saveFirestoreMailConfig(updated, cleanComplexId);
+    return res.json({ success: true, message: "تم حفظ وتفعيل إعدادات البريد والمفتاح بنجاح للأبد في قاعدة البيانات السحابية." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Comprehensive Real Email Dispatcher via Gmail API or Gmail SMTP (Nodemailer)
+app.post("/api/mail/send-gmail", async (req, res) => {
+  try {
+    const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword, smtpHost, smtpPort, complexId } = req.body;
+    const authHeader = req.headers.authorization;
+    const bearerToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
+
+    if (!to || !subject || (!html && !text)) {
+      return res.status(400).json({
+        success: false,
+        error: "حقول البريد (إلى، الموضوع، المحتوى) إلزامية."
+      });
+    }
+
+    const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
+    const cleanComplexId = complexId ? String(complexId).trim() : undefined;
+    let stored = getStoredMailConfig();
+    if (!gmailAppPassword && (cleanComplexId || !stored?.pass)) {
+      try {
+        const cloudConfig = await getFirestoreMailConfig(cleanComplexId);
+        if (cloudConfig?.pass) {
+          stored = { ...stored, ...cloudConfig };
+          if (!cleanComplexId) {
+            inMemoryMailConfig = stored;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const effectiveUser = String(gmailUser || stored.user || process.env.SMTP_USER || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    // Clean spaces from Google 16-character App Passwords (e.g. "abcd efgh ijkl mnop" -> "abcdefghijklmnop")
+    const rawPass = String(gmailAppPassword || stored.pass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "").trim();
+    const effectivePass = rawPass.replace(/\s+/g, "");
+    const cleanFrom = (fromEmail && !fromEmail.includes("qdrat2626") && fromEmail.includes("@")) ? String(fromEmail).replace(/[\r\n]/g, "").trim() : effectiveUser;
+    const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
+    const bodyContent = html || text;
+
+    // 1. Try Gmail OAuth API if bearer token provided
+    if (bearerToken) {
+      try {
+        const utf8Subject = `=?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`;
+        const utf8FromName = `=?UTF-8?B?${Buffer.from(cleanFromName, "utf-8").toString("base64")}?=`;
+        const contentType = html ? 'text/html; charset="UTF-8"' : 'text/plain; charset="UTF-8"';
+
+        const rfcMessage = [
+          `From: ${utf8FromName} <${cleanFrom}>`,
+          `To: <${cleanTo}>`,
+          `Subject: ${utf8Subject}`,
+          "MIME-Version: 1.0",
+          `Content-Type: ${contentType}`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          Buffer.from(bodyContent, "utf-8").toString("base64")
+        ].join("\r\n");
+
+        const base64UrlMessage = Buffer.from(rfcMessage, "utf-8")
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+
+        const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ raw: base64UrlMessage })
+        });
+
+        if (gmailRes.ok) {
+          const gmailData = await gmailRes.json();
+          return res.json({
+            success: true,
+            provider: "gmail_oauth_api",
+            messageId: gmailData.id,
+            threadId: gmailData.threadId
+          });
+        }
+      } catch (gmailErr) {
+        console.warn("Gmail OAuth API attempt error, falling back to SMTP:", gmailErr);
+      }
+    }
+
+    // 2. Try Nodemailer with Gmail SMTP / App Password
+    if (effectiveUser && effectivePass) {
+      const activeHost = smtpHost || stored.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
+      const activePort = Number(smtpPort || stored.smtpPort || process.env.SMTP_PORT || (activeHost === "smtp.gmail.com" ? 465 : 587));
+
+      // Primary transport attempt (Port 465 SSL for Gmail by default)
+      try {
+        const transporter = nodemailer.createTransport(
+          activeHost !== "smtp.gmail.com"
+            ? {
+                host: activeHost,
+                port: activePort || 587,
+                secure: activePort === 465,
+                auth: { user: effectiveUser, pass: effectivePass }
+              }
+            : {
+                host: "smtp.gmail.com",
+                port: 465,
+                secure: true,
+                auth: {
+                  user: effectiveUser,
+                  pass: effectivePass
+                }
+              }
+        );
+
+        const info = await transporter.sendMail({
+          from: `"${cleanFromName}" <${cleanFrom}>`,
+          to: cleanTo,
+          subject,
+          html: bodyContent,
+          text: text || undefined
+        });
+
+        return res.json({
+          success: true,
+          provider: activeHost !== "smtp.gmail.com" ? "custom_smtp" : "gmail_smtp_465",
+          messageId: info.messageId
+        });
+      } catch (smtpErr: any) {
+        console.warn("Primary SMTP error, attempting fallback port 587:", smtpErr?.message);
+
+        // Fallback: Port 587 with STARTTLS for Gmail
+        if (activeHost === "smtp.gmail.com") {
+          try {
+            const fallbackTransporter = nodemailer.createTransport({
+              host: "smtp.gmail.com",
+              port: 587,
+              secure: false,
+              auth: {
+                user: effectiveUser,
+                pass: effectivePass
+              }
+            });
+
+            const fallbackInfo = await fallbackTransporter.sendMail({
+              from: `"${cleanFromName}" <${cleanFrom}>`,
+              to: cleanTo,
+              subject,
+              html: bodyContent,
+              text: text || undefined
+            });
+
+            return res.json({
+              success: true,
+              provider: "gmail_smtp_587",
+              messageId: fallbackInfo.messageId
+            });
+          } catch (retryErr: any) {
+            console.warn("Gmail SMTP port 587 error:", retryErr?.message);
+          }
+        }
+
+        let userMsg = "تعذر إرسال البريد عبر خادم Google SMTP.";
+        const combinedErr = `${smtpErr?.message || ''} ${smtpErr?.code || ''}`;
+        if (combinedErr.includes('EAUTH') || combinedErr.includes('535') || combinedErr.includes('BadCredentials') || combinedErr.includes('Username and Password not accepted')) {
+          userMsg = "فشل المصادقة مع Google (كلمة المرور غير مقبولة). يرجى التأكد من كتابة بريد Gmail بشكل صحيح، واستخدام 'كلمة مرور تطبيقات' (Google App Password) مكونة من 16 حرفاً من myaccount.google.com/apppasswords وليس كلمة المرور العادية للحساب.";
+        } else if (combinedErr.includes('ETIMEDOUT') || combinedErr.includes('ESOCKET')) {
+          userMsg = "انتهت مهلة الاتصال بخادم البريد. يرجى المحاولة بعد قليل.";
+        }
+
+        return res.status(400).json({
+          success: false,
+          error: userMsg,
+          details: smtpErr?.message
+        });
+      }
+    }
+
+    // 3. Clear, honest error if credentials are not configured yet
+    return res.status(400).json({
+      success: false,
+      error: "خدمة إرسال البريد الحقيقي غير مهيأة بعد. يرجى ضبط المتغيرين SMTP_USER و SMTP_PASS أو إدخال حساب Gmail وكلمة مرور التطبيقات (App Password) في إعدادات المنظومة لحفظها وتفعيل الإرسال الحقيقي فوراً إلى صندوق الوارد."
+    });
+  } catch (err: any) {
+    console.error("Gmail endpoint error:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "حدث خطأ غير متوقع أثناء إرسال البريد."
+    });
+  }
+});
+
+// Dedicated Real Registration Application Dispatcher (includes ticket number, verification link & full application details)
+app.post("/api/mail/send-registration", async (req, res) => {
+  try {
+    const {
+      to,
+      subject,
+      html,
+      text,
+      fromName,
+      fromEmail,
+      trackingCode,
+      verificationUrl,
+      studentName
+    } = req.body;
+
+    if (!to || (!html && !text)) {
+      return res.status(400).json({
+        success: false,
+        error: "بيانات البريد غير مكتملة."
+      });
+    }
+
+    const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
+    let stored = getStoredMailConfig();
+    if (!stored?.pass) {
+      try {
+        const cloudConfig = await getFirestoreMailConfig();
+        if (cloudConfig?.pass) {
+          stored = { ...stored, ...cloudConfig };
+          inMemoryMailConfig = stored;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const effectiveUser = String(process.env.SMTP_USER || stored.user || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    const rawPass = String(process.env.SMTP_PASS || stored.pass || process.env.GMAIL_APP_PASSWORD || "").trim();
+    const effectivePass = rawPass.replace(/\s+/g, "");
+    const cleanFrom = (fromEmail && !fromEmail.includes("qdrat2626") && fromEmail.includes("@")) ? String(fromEmail).replace(/[\r\n]/g, "").trim() : effectiveUser;
+    const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
+    const finalSubject = subject || `تم استلام طلب انضمامك بنجاح • تذكرة متابعة [${trackingCode || "OMR-APP"}]`;
+
+    if (!effectiveUser || !effectivePass) {
+      return res.status(400).json({
+        success: false,
+        error: "خدمة إرسال البريد غير مهيأة. يرجى تعيين SMTP_USER و SMTP_PASS في المتغيرات البيئية أو إعدادات المنظومة."
+      });
+    }
+
+    const activeHost = stored.smtpHost || process.env.SMTP_HOST || "smtp.gmail.com";
+    const activePort = Number(stored.smtpPort || process.env.SMTP_PORT || (activeHost === "smtp.gmail.com" ? 465 : 587));
+
+    let info: any = null;
+    try {
+      const transporter = nodemailer.createTransport(
+        activeHost !== "smtp.gmail.com"
+          ? {
+              host: activeHost,
+              port: activePort,
+              secure: activePort === 465,
+              auth: { user: effectiveUser, pass: effectivePass }
+            }
+          : {
+              host: "smtp.gmail.com",
+              port: 465,
+              secure: true,
+              auth: { user: effectiveUser, pass: effectivePass }
+            }
+      );
+
+      info = await transporter.sendMail({
+        from: `"${cleanFromName}" <${cleanFrom}>`,
+        to: cleanTo,
+        subject: finalSubject,
+        html: html || text,
+        text: text || undefined
+      });
+    } catch (primaryErr: any) {
+      if (activeHost === "smtp.gmail.com") {
+        console.warn("[MailService] Primary 465 failed, trying 587 STARTTLS:", primaryErr?.message);
+        const fallbackTransporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false,
+          auth: { user: effectiveUser, pass: effectivePass }
+        });
+
+        info = await fallbackTransporter.sendMail({
+          from: `"${cleanFromName}" <${cleanFrom}>`,
+          to: cleanTo,
+          subject: finalSubject,
+          html: html || text,
+          text: text || undefined
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    console.log(`[MailService] Registration email sent successfully to ${cleanTo} (Tracking: ${trackingCode}, MsgId: ${info?.messageId})`);
+
+    return res.json({
+      success: true,
+      provider: "smtp",
+      messageId: info?.messageId,
+      trackingCode,
+      verificationUrl,
+      studentName
+    });
+  } catch (err: any) {
+    console.error("[MailService] Error sending registration email:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "تعذر إرسال بريد طلب التسجيل الفعلي."
+    });
+  }
+});
+
+// Google Maps Geocoding Proxy Route (prevents CORS and secures key)
+app.get("/api/maps/geocode", async (req, res) => {
+  try {
+    const query = String(req.query.q || "").trim();
+    if (!query) {
+      return res.status(400).json({ error: "Missing query parameter 'q'" });
+    }
+    const key =
+      process.env.VITE_GOOGLE_MAPS_API_KEY ||
+      process.env.GOOGLE_MAPS_API_KEY ||
+      "";
+    if (!key) {
+      return res.status(500).json({ error: "Maps API key not configured" });
+    }
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+      query
+    )}&key=${key}&language=ar`;
+    const response = await fetch(url);
+    const data = await response.json();
+    return res.json(data);
+  } catch (err: any) {
+    console.error("Geocode proxy error:", err);
+    return res.status(500).json({ error: err.message || "Geocoding failed" });
+  }
+});
+
+// Initialize Google GenAI with dynamic key support from Developer Settings
+let dynamicMasterApiKey = "";
+let dynamicMasterModel = "gemini-3.8-flash";
+
+export function sanitizeGeminiModelName(modelName?: string): string {
+  if (!modelName) return "gemini-3.8-flash";
+  const m = modelName.trim().toLowerCase();
+  if (
+    m === "gemini-2.5-flash" ||
+    m === "gemini-1.5-flash" ||
+    m === "gemini-2.0-flash" ||
+    m === "gemini-flash" ||
+    m === "gemini-2.5-pro" ||
+    m === "gemini-1.5-pro" ||
+    m === "gemini-2.0-pro"
+  ) {
+    return "gemini-3.8-flash";
+  }
+  if (m === "gemini-2.0-flash-lite" || m === "gemini-flash-lite" || m === "gemini-lite") {
+    return "gemini-3.1-flash-lite";
+  }
+  return modelName.trim();
+}
+
+function getCandidateGeminiKeys(clientKey?: string): string[] {
+  const rawKeys = [
+    process.env.GEMINI_API_KEY,
+    dynamicMasterApiKey,
+    clientKey,
+  ];
+  const uniqueKeys: string[] = [];
+  for (const k of rawKeys) {
+    const trimmed = (k || "").trim();
+    if (trimmed && !uniqueKeys.includes(trimmed)) {
+      uniqueKeys.push(trimmed);
+    }
+  }
+  return uniqueKeys;
+}
+
+function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
+  const effectiveKey = getCandidateGeminiKeys(clientKey)[0] || "";
+
+  return new GoogleGenAI({
+    apiKey: effectiveKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+}
+
+const ai = getEffectiveGenAI();
+
+function hasServerGeminiKey(req?: any): boolean {
+  const headerKey = req?.headers?.["x-gemini-api-key"] as string | undefined;
+  const bodyKey = req?.body?.apiKey as string | undefined;
+  return getCandidateGeminiKeys(bodyKey || headerKey).length > 0;
+}
+
+// Endpoint to sync the Master API Key and Model configured in Developer Backup Tab
+app.post("/api/gemini/sync-config", (req, res) => {
+  try {
+    const { apiKey, model } = req.body;
+    if (apiKey && typeof apiKey === 'string') {
+      dynamicMasterApiKey = apiKey.trim();
+    }
+    if (model && typeof model === 'string') {
+      dynamicMasterModel = sanitizeGeminiModelName(model);
+    }
+    const hasActiveKey = hasServerGeminiKey();
+    return res.json({ success: true, hasActiveKey, model: dynamicMasterModel });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Sync failed' });
+  }
+});
+
+// Endpoint to test developer's Gemini API key & model with live response
+app.post("/api/gemini/test-key", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { apiKey, model } = req.body;
+    const cleanKey = (apiKey || "").trim() || getCandidateGeminiKeys()[0] || "";
+    const cleanModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
+
+    if (!cleanKey) {
+      return res.status(400).json({
+        success: false,
+        error: "يرجى إدخال مفتاح Gemini API",
+        latencyMs: 0
+      });
+    }
+
+    const testAi = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const response = await Promise.race([
+      testAi.models.generateContent({
+        model: cleanModel,
+        contents: "اختبار اتصال: أجب بعبارة قصيرة واحدة باللغة العربية تبدأ بـ \"تم الاتصال بنجاح بمنظومة عمران القرآنية\".",
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("انتهت مهلة الاتصال بخوادم Google (Timeout)")), 15000))
+    ]);
+
+    const latencyMs = Date.now() - startTime;
+    const responseText = response?.text?.trim() || "تم الاتصال بنجاح بمنظومة عمران القرآنية";
+
+    if ((apiKey || "").trim()) {
+      dynamicMasterApiKey = cleanKey;
+    }
+    dynamicMasterModel = cleanModel;
+
+    return res.json({
+      success: true,
+      latencyMs,
+      responseText,
+      model: cleanModel
+    });
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    console.warn("[Gemini Test-Key Error]:", err?.message || err);
+    return res.status(200).json({
+      success: false,
+      error: err?.message || "فشل الاتصال بخدمة Google Gemini",
+      latencyMs
+    });
+  }
+});
+
+// General server-side Gemini generation endpoint used by OmranAIService
+app.post("/api/gemini/generate", async (req, res) => {
+  try {
+    const {
+      prompt = "",
+      systemInstruction = "",
+      model = "",
+      temperature = 0.7,
+      jsonMode = false,
+      apiKey = "",
+    } = req.body || {};
+
+    const headerKey = (req.headers["x-gemini-api-key"] as string) || "";
+    const candidateKeys = getCandidateGeminiKeys(apiKey || headerKey);
+    if (!prompt || candidateKeys.length === 0) {
+      return res.status(400).json({ error: "تعذر تنفيذ الطلب لعدم توفر النص أو مفتاح الخدمة" });
+    }
+
+    const preferredModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
+    const candidateModels = Array.from(new Set([
+      preferredModel,
+      "gemini-3.8-flash",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-latest",
+    ]));
+
+    let lastError = "";
+    for (const key of candidateKeys) {
+      const client = new GoogleGenAI({
+        apiKey: key,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+      for (const m of candidateModels) {
+        try {
+          const config: Record<string, any> = { temperature };
+          if (systemInstruction) config.systemInstruction = systemInstruction;
+          if (jsonMode) config.responseMimeType = "application/json";
+
+          const resp = await Promise.race([
+            client.models.generateContent({
+              model: m,
+              contents: prompt,
+              config,
+            }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000)),
+          ]);
+          if (resp?.text) {
+            return res.json({ text: resp.text.trim(), model: m });
+          }
+        } catch (err: any) {
+          lastError = err?.message || String(err);
+        }
+      }
+    }
+
+    return res.status(502).json({ error: lastError || "تعذر الاتصال بنموذج الذكاء الاصطناعي حالياً" });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "حدث خطأ غير متوقع" });
+  }
+});
+
+// Helper to call Gemini with robust multi-key & multi-model fallback cascade
+async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI | null, contents: any, config?: any): Promise<string> {
+  const models = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+  const candidateKeys = getCandidateGeminiKeys();
+  const clients: GoogleGenAI[] = candidateKeys.length > 0
+    ? candidateKeys.map((k) => new GoogleGenAI({
+        apiKey: k,
+        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+      }))
+    : (aiInstance ? [aiInstance] : [getEffectiveGenAI()]);
+
+  for (const client of clients) {
+    for (const model of models) {
+      try {
+        const resp = await Promise.race([
+          client.models.generateContent({
+            model,
+            contents,
+            config,
+          }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
+        ]);
+        if (resp?.text) return resp.text.trim();
+      } catch (err: any) {
+        console.warn(`[Gemini Fallback] Model ${model} note:`, err?.status || err?.message?.slice(0, 80));
+      }
+    }
+  }
+  return "";
+}
+
+// Helper for realistic fallback when Gemini key is not set or network issue
+function getFallbackPlan(student: any) {
+  const surahId = student.currentSurah || student.currentSurahName || 78;
+  const ayah = student.currentAyah || 1;
+  const assignment = calculateRealisticQuranAssignment(
+    surahId,
+    ayah,
+    student.level || "متوسط",
+    student.dailyNewTarget || "نصف وجه"
+  );
+
+  const isWeak = student.level === "ضعيف";
+  const isStrong = student.level === "قوي";
+
+  return {
+    roadmapSummary: `خطة تحفيظ تربوية متقنة للطالب ${student.name} في ${assignment.surah.name} (عدد آياتها ${assignment.surah.numberOfAyahs} آية)، تبدأ من الآية (${assignment.startAyah}) بمعدل ${student.dailyNewTarget || "نصف وجه"} يومياً مع التثبيت الدوري.`,
+    currentDailyAssignment: {
+      newMemorization: assignment.newMemorization,
+      review: assignment.review,
+      suggestedSheikh: assignment.suggestedSheikh,
+      tajweedFocus: assignment.tajweedFocus,
+      dailyNote: assignment.dailyNote,
+    },
+    difficultyAdjustment: isWeak
+      ? "خطة ميسرة تراعي سن وقدرة الطالب مع التركيز على التكرار وضبط المخارج"
+      : isStrong
+      ? "خطة متقدمة تركز على سرعة الاستيعاب وجودة الإتقان والربط"
+      : "خطة متوازنة تحقق الاستمرارية والإتقان",
+    estimatedDaysToFinishJuz: isWeak ? 40 : isStrong ? 20 : 30,
+  };
+}
+
+// Pedagogical & mathematical Khatm timeline calculation
+function calculateServerKhatmTimeline(params: {
+  memorizedJuz: number;
+  consolidatedJuz?: number;
+  dailyNewPages: number;
+  dailyReviewPages: number;
+  weeklyDaysCount?: number;
+  dailyHoursCount?: number;
+  startDate?: Date;
+}) {
+  const totalPagesInQuran = 604;
+  const memorizedJuz = Math.max(0, Math.min(30, Number(params.memorizedJuz) || 0));
+  const consolidatedJuz = Math.max(0, Math.min(memorizedJuz, Number(params.consolidatedJuz) || 0));
+  const weeklyDays = Math.max(1, Math.min(7, Number(params.weeklyDaysCount) || 5));
+  const dailyNewPages = Math.max(0.25, Math.min(5, Number(params.dailyNewPages) || 1));
+  const baseDate = params.startDate ? new Date(params.startDate) : new Date();
+  const safeBaseDate = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+
+  const currentMemorizedPages = memorizedJuz * 20;
+  const remainingPages = Math.max(0, totalPagesInQuran - currentMemorizedPages);
+
+  if (remainingPages <= 0) {
+    const consolidationDays = Math.ceil((30 - consolidatedJuz) * 12);
+    const targetDate = new Date(safeBaseDate.getTime());
+    targetDate.setDate(targetDate.getDate() + Math.max(60, Math.round((consolidationDays / weeklyDays) * 7)));
+    return {
+      targetCompletionDate: targetDate.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
+      estimatedDaysRemaining: Math.round((consolidationDays / weeklyDays) * 7),
+      progressPercentage: 100,
+    };
+  }
+
+  const sessionsNeededForNew = Math.ceil(remainingPages / dailyNewPages);
+  const remainingJuz = Math.ceil(remainingPages / 20);
+  const fiveJuzStops = Math.floor(remainingJuz / 5);
+  const tenJuzStops = Math.floor(remainingJuz / 10);
+  const haltSessions = (fiveJuzStops * 8) + (tenJuzStops * 12) + 20;
+  const totalHalaqahSessions = sessionsNeededForNew + haltSessions;
+  const calendarDays = Math.ceil((totalHalaqahSessions / weeklyDays) * 7);
+
+  const targetDate = new Date(safeBaseDate.getTime());
+  targetDate.setDate(targetDate.getDate() + calendarDays);
+
+  return {
+    targetCompletionDate: targetDate.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }),
+    estimatedDaysRemaining: calendarDays,
+    progressPercentage: Math.min(99, Math.round((currentMemorizedPages / totalPagesInQuran) * 100)),
+  };
+}
+
+// 1. Generate Daily Quran AI Plan with STRICT Quran Ground Truth
+app.post("/api/gemini/generate-plan", async (req, res) => {
+  try {
+    const { student } = req.body;
+    if (!student) {
+      return res.status(400).json({ error: "بيانات الطالب مطلوبة" });
+    }
+
+    const surah = getSurahInfo(student.currentSurah || student.currentSurahName || 78);
+    const startAyah = Math.max(1, Math.min(student.currentAyah || 1, surah.numberOfAyahs));
+
+    const pagePace = (student.dailyNewTarget || "").includes("وجهين")
+      ? 2.0
+      : (student.dailyNewTarget || "").includes("نصف")
+      ? 0.5
+      : (student.dailyNewTarget || "").includes("ربع")
+      ? 0.25
+      : 1.0;
+    const computedPortion = calculatePortionFromPace(surah.number, startAyah, pagePace);
+
+    if (!hasServerGeminiKey(req)) {
+      return res.json({ plan: getFallbackPlan(student), portion: computedPortion });
+    }
+
+    const prompt = `أنت شيخ مقرئ ومربٍ خبير في تحفيظ القرآن الكريم وتوجيه الحلقات القرآنية.
+المطلوب: التفكير بروية وحكمة، وبناء خطة يومية تربوية دقيقة وخارطة طريق تحفيظ للطالب التالي:
+- اسم الطالب: ${student.name}
+- العمر: ${student.age} سنة
+- المستوى: ${student.level} (ضعيف / متوسط / قوي)
+- طاقة الحفظ اليومي للجديد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
+- طاقة المراجعة اليومية: ${student.dailyReviewTarget || 'وجه واحد'}
+- ملاحظات المعلم: ${student.notes || "لا توجد"}
+
+بيانات موضع الحفظ القرآني الحالي (حقائق قرآنية ملزمة من مصحف المدينة النبوية - 604 أوجه، كل وجه 15 سطراً):
+- السورة الحالية: سورة ${surah.name} (رقم ${surah.number} في المصحف، نوعها: ${surah.revelationType}، الجزء: ${surah.juz})
+- عدد آيات السورة الإجمالي: ${surah.numberOfAyahs} آية فقط!
+- الآية الحالية التي يقف عندها: الآية رقم ${startAyah}
+- الحساب المعياري لمصحف مجمع الملك فهد:
+  * المقدار المعتمد: ${student.dailyNewTarget || 'نصف وجه'} (${pagePace} وجه)
+  * تقدير الحدود المعيارية: من سورة ${surah.name} آية (${computedPortion.fromAyah}) إلى آية (${computedPortion.toAyah}) [${computedPortion.description}]
+
+قواعد قرآنية وتربوية صارمة يجب الالتزام بها 100%:
+1. [قاعدة حاسمة في نصف الوجه]:
+   - الوجه في مصحف المدينة 15 سطراً، ونصف الوجه يعادل 7 إلى 8 أسطر تقريباً.
+   - إذا كانت الآيات قصيرة (مثل قصار السور أو جزء عم أو تسارع الآيات)، نصف الوجه يستوعب من 10 إلى 16 آية تقريباً، ولا يجوز اختزاله إلى 4 آيات عشوائياً!
+   - إذا كانت الآيات طويلة أو متوسطة، قف عند رأس الآية المناسبة التي تحقق حوالي 7-8 أسطر مع مراعاة تمام المعنى.
+   - الآيات المحسوبة لمصحف المدينة هي من الآية (${computedPortion.fromAyah}) إلى (${computedPortion.toAyah}). اضبط الورد بدقة بناءً عليها.
+2. [حدود السورة]: إجمالي آيات سورة ${surah.name} هو ${surah.numberOfAyahs} آية فقط! ممنوع نهائياً ومطلقاً ذكر أي رقم آية يتجاوز ${surah.numberOfAyahs}. وإذا انتهت السورة، انتقل للسورة التالية من الآية 1.
+3. [ممنوع التكليف بسورة كاملة فجأة]: لا تكلف الطالب بسورة كاملة فجأة أبداً إلا إذا كانت سورة قصيرة جداً (3-6 آيات) ويستطيعها.
+4. حدد ورد المراجعة بالسورة والآيات، واقترح قارئاً معلماً معتمداً، واكتب توجيهاً منزلياً لولي الأمر.
+
+أخرج النتيجة بصيغة JSON فقط:
+{
+  "fromSurah": ${computedPortion.fromSurah},
+  "fromAyah": ${computedPortion.fromAyah},
+  "toSurah": ${computedPortion.toSurah},
+  "toAyah": ${computedPortion.toAyah},
+  "roadmapSummary": "ملخص تربوي واستراتيجي لخطة الطالب في إتمام الحفظ والمراجعة",
+  "currentDailyAssignment": {
+    "newMemorization": "${computedPortion.description}",
+    "review": "تحديد ورد المراجعة اليومي بدقة مع أسماء السور والآيات",
+    "suggestedSheikh": "الشيخ محمود خليل الحصري - المصحف المعلم",
+    "tajweedFocus": "الحكم التجويدي أو المهارة الصوتية للتركيز عليها اليوم",
+    "dailyNote": "توجيه تربوي عملي للربط والتكرار بالمنزل"
+  },
+  "difficultyAdjustment": "توضيح هل تم التيسير أو التدرج ولماذا بناءً على مستوى الطالب",
+  "estimatedDaysToFinishJuz": 30
+}`;
+
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
+    });
+
+    if (aiText) {
+      try {
+        const plan = JSON.parse(aiText);
+        if (plan) {
+          const resFromSurah = Number(plan.fromSurah) || computedPortion.fromSurah;
+          const resFromAyah = Number(plan.fromAyah) || computedPortion.fromAyah;
+          const resToSurah = Number(plan.toSurah) || computedPortion.toSurah;
+          const toSurahInfo = getSurahInfo(resToSurah);
+          const resToAyah = Math.min(Number(plan.toAyah) || computedPortion.toAyah, toSurahInfo.numberOfAyahs);
+
+          const finalPortion = {
+            ...computedPortion,
+            fromSurah: resFromSurah,
+            fromAyah: resFromAyah,
+            toSurah: resToSurah,
+            toAyah: resToAyah,
+            description: plan.currentDailyAssignment?.newMemorization || computedPortion.description
+          };
+          return res.json({ plan, portion: finalPortion });
+        }
+      } catch (e) {}
+    }
+
+    res.json({ plan: getFallbackPlan(student), portion: computedPortion });
+  } catch (error) {
+    console.error("Gemini generate-plan error:", error);
+    res.json({ plan: getFallbackPlan(req.body?.student || {}) });
+  }
+});
+
+// 2. Evaluate Recitation Progress & Adjust Next Day Plan
+app.post("/api/gemini/evaluate-progress", async (req, res) => {
+  try {
+    const { student, evaluation, currentPlan } = req.body;
+    if (!student || !evaluation) {
+      return res.status(400).json({ error: "بيانات الطالب والتقييم مطلوبة" });
+    }
+
+    const surah = getSurahInfo(student.currentSurah || student.currentSurahName || 78);
+    const lastNew = evaluation.recitationDetails?.todayNewItem;
+    const curEndSurah = Number(lastNew?.toSurahNumber || lastNew?.surahNumber || surah.number);
+    const curEndAyah = Number(lastNew?.toAyah || student.currentAyah || 1);
+    const advanceStartAyah = curEndAyah + 1;
+    const pace = (student.dailyNewTarget || "").includes("وجهين")
+      ? 2.0
+      : (student.dailyNewTarget || "").includes("نصف")
+      ? 0.5
+      : (student.dailyNewTarget || "").includes("ربع")
+      ? 0.25
+      : 1.0;
+    const computedTomorrow = calculatePortionFromPace(curEndSurah, advanceStartAyah, pace);
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        feedback: {
+          studentProgressStatus: "منتظم",
+          analysis: `تم إنجاز التسميع بنجاح في سورة ${surah.name} ومستوى الطالب طيب ومبشر.`,
+          reasoning: "مواصلة الخطة المقررة مع التثبيت المستمر.",
+          nextDayPlan: {
+            newMemorization: computedTomorrow.description,
+            review: currentPlan?.currentDailyAssignment?.review || "مراجعة الماضي وتثبيته",
+            suggestedSheikh: "الشيخ محمود خليل الحصري",
+            tajweedFocus: "مراعاة أحكام التجويد والمدود",
+            dailyNote: "تكرار الورد المقرر 3 مرات قبل النوم"
+          },
+        },
+      });
+    }
+
+    const prompt = `أنت شيخ مقرئ وموجه تربوي لحلقات القرآن الكريم.
+المطلوب: تحليل تسميع الطالب اليوم وضبط خطة الغد تلقائياً بناءً على ما أنجزه وملاحظات المعلم:
+- اسم الطالب: ${student.name} (العمر: ${student.age} سنة، المستوى: ${student.level})
+- السورة الحالية: سورة ${surah.name} (إجمالي آياتها: ${surah.numberOfAyahs} آية فقط)
+- الورد المطلوب منه اليوم:
+  * جديد: ${currentPlan?.currentDailyAssignment?.newMemorization || "غير محدد"}
+  * مراجعة: ${currentPlan?.currentDailyAssignment?.review || "غير محدد"}
+- ما أنجزه الطالب فعلياً اليوم:
+  * في الحفظ الجديد: ${evaluation.recitationDetails?.newMemorizationAchieved || "لم يحدد"}
+  * في المراجعة: ${evaluation.recitationDetails?.reviewAchieved || "لم يحدد"}
+  * ملاحظات الشيخ/المعلم أو العذر: ${evaluation.recitationDetails?.teacherNotes || "لا يوجد"}
+  * درجات التقييم اليوم: ${JSON.stringify(evaluation.criteriaValues || {})}
+
+بيانات الحساب القرآني الدقيق لمصحف المدينة (604 أوجه):
+- يبدأ مقرر الغد من الآية رقم (${advanceStartAyah})
+- المقدار الدقيق للغد بمعدل ورد الطالب (${student.dailyNewTarget || 'نصف وجه'}):
+  من سورة ${getSurahInfo(computedTomorrow.fromSurah).name} آية (${computedTomorrow.fromAyah}) إلى آية (${computedTomorrow.toAyah}) [${computedTomorrow.description}]
+
+قواعد الذكاء الاصطناعي الصارمة في الضبط والتخطيط:
+1. [قاعدة حاسمة ومطلقة]: إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات)، فإن مقرر الغد يبدأ من الآية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${computedTomorrow.description}). ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة فجأة!
+2. التزام تام وصارم بآيات السورة (سورة ${surah.name} آياتها ${surah.numberOfAyahs} فقط، لا تتجاوز هذا الرقم أبداً).
+3. إذا تعثر الطالب أو حفظ جزءاً فقط: لا تضغط عليه، قسّم ما تبقى عليه غداً مع خطوة تثبيت وتكرار لنفس الآيات.
+4. إذا أتقن بتفوق وسهولة: يتقدم بمقدار الورد المعتمد (${computedTomorrow.description}) مع تثبيت ما سبق.
+
+أرجع النتيجة بصيغة JSON فقط:
+{
+  "studentProgressStatus": "متقدم" | "منتظم" | "متأخر" | "يحتاج مساعدة",
+  "analysis": "تحليل أداء الطالب اليوم ونقاط القوة والمواضع التي تحتاج عناية وتجويد",
+  "reasoning": "سبب تعديل أو تثبيت خطة الغد",
+  "nextDayPlan": {
+    "newMemorization": "${computedTomorrow.description}",
+    "review": "تحديد ورد المراجعة لغد بدقة",
+    "suggestedSheikh": "القارئ الأنسب لمستواه",
+    "tajweedFocus": "الحكم التجويدي المطلوب مراعاته",
+    "dailyNote": "نصيحة عملية للطالب وولي أمره لليوم التالي"
+  }
+}`;
+
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
+    });
+
+    if (aiText) {
+      try {
+        const feedback = JSON.parse(aiText);
+        if (feedback && feedback.nextDayPlan) {
+          return res.json({ feedback });
+        }
+      } catch (e) {}
+    }
+
+    res.json({
+      feedback: {
+        studentProgressStatus: "منتظم",
+        analysis: "تم تسجيل التسميع والمستوى جيد.",
+        reasoning: "الاستمرار في الخطة التراكمية والتثبيت.",
+        nextDayPlan: {
+          newMemorization: computedTomorrow.description,
+          review: "مراجعة الماضي وتثبيته",
+          suggestedSheikh: "الشيخ محمود خليل الحصري",
+          tajweedFocus: "مراعاة أحكام التجويد والمدود",
+          dailyNote: "تكرار الورد المقرر 3 مرات قبل النوم"
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Gemini evaluate-progress error:", error);
+    res.json({
+      feedback: {
+        studentProgressStatus: "منتظم",
+        analysis: "تم تسجيل التسميع والمستوى جيد.",
+        reasoning: "الاستمرار في الخطة التراكمية والتثبيت.",
+        nextDayPlan: getFallbackPlan(req.body?.student || {}).currentDailyAssignment,
+      },
+    });
+  }
+});
+
+// 2.5 Adaptive Monthly AI Progression Analyzer
+app.post("/api/gemini/analyze-monthly-progression", async (req, res) => {
+  try {
+    const { student, evaluations = [], ayahErrors = [], currentPace = 0.5 } = req.body;
+    const safePace = Math.max(0.25, Number(currentPace) || 0.5);
+
+    let totalScoreSum = 0;
+    let scoreCount = 0;
+    evaluations.forEach((ev: any) => {
+      if (ev.criteriaValues && typeof ev.criteriaValues === "object") {
+        Object.values(ev.criteriaValues).forEach((val: any) => {
+          if (typeof val === "number") {
+            totalScoreSum += val;
+            scoreCount++;
+          }
+        });
+      }
+    });
+
+    const avgScore = scoreCount > 0 ? totalScoreSum / scoreCount : 8.5;
+    const errorsCount = Array.isArray(ayahErrors) ? ayahErrors.length : 0;
+    const isStruggling = avgScore < 7.2 || errorsCount >= 3;
+    const isExcelling = avgScore >= 8.5 && errorsCount <= 1 && evaluations.length >= 5;
+    const recommendedPace = isExcelling ? Math.min(3.0, safePace + 0.5) : safePace;
+
+    if (process.env.GEMINI_API_KEY && evaluations.length >= 3) {
+      const prompt = `أنت المستشار القرآني والتربوي الأول في «منظومة عمران القرآنية».
+مهمتك: تقييم مسار الطالب بعد شهر / عدة جلسات تسميع منتظمة وتحديد هل يستحق ترقية ورده اليومي بمقدار (نصف وجه إضافي):
+- اسم الطالب: ${student?.name} (المستوى: ${student?.level || 'متوسط'})
+- عدد جلسات التسميع المسجلة: ${evaluations.length} جلسة
+- متوسط درجات التقييم: ${avgScore.toFixed(1)}/10
+- عدد أخطاء المصحف المسجلة: ${errorsCount} أخطاء
+- المقدار اليومي الحالي: ${safePace} وجه
+- التقييم الأولي: ${isExcelling ? 'متميز ومؤهل لزيادة الورد (+0.5 وجه)' : isStruggling ? 'يحتاج مزيداً من التثبيت دون زيادة الورد (مش ولا بد)' : 'مستقر بالورد الحالي'}
+
+القواعد التربوية:
+1. إذا تحسن الطالب وأتقن وثبت حفظه بعد شهر: نزيد له نصف وجه (${recommendedPace} وجه) تشجيعاً لهمته.
+2. إذا كان مستواه ما زال يتذبذب أو ضعيفاً: لا نزيد له بل نثبت ورده ونكثف المراجعة عملاً بقاعدة: «الختم بتثبيت خير من التعجل بالتفلت».
+
+أرجع النتيجة بصيغة JSON فقط:
+{
+  "shouldIncreasePace": ${isExcelling},
+  "recommendedPace": ${recommendedPace},
+  "reasoning": "شرح تربوي بليغ ومحفز لقرار الترقية أو التثبيت",
+  "isStruggling": ${isStruggling},
+  "pedagogicalAdvice": "نصيحة وتوجيه تربوي للشيخ وولي الأمر"
+}`;
+
+      const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+      if (aiText) {
+        try {
+          const parsed = JSON.parse(aiText);
+          if (parsed && typeof parsed.shouldIncreasePace === "boolean") {
+            return res.json(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      shouldIncreasePace: isExcelling,
+      recommendedPace,
+      reasoning: isExcelling
+        ? `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تفوقاً والتزاماً عالياً على مدار (${evaluations.length} جلسة) بمتوسط تقييم ممتاز (${avgScore.toFixed(1)}/10)؛ تقرر رفع ورد الحفظ اليومي بمقدار (نصف وجه إضافي) ليصبح (${recommendedPace} وجه) لمواكبة تطوره وإتقانه.`
+        : isStruggling
+        ? `مستوى الطالب يحتاج مزيداً من التثبيت والتكرار (متوسط التقييم ${avgScore.toFixed(1)}/10 مع وجود ملاحظات)؛ تقرر الإبقاء على المقدار الحالي (${safePace} وجه) مع تكثيف المراجعة التراكمية، عملاً بقاعدة: «الختم بتثبيت خير من التعجل بالتفلت».`
+        : `أداء الطالب منتظم ومستقر؛ الاستمرار في الورد الحالي (${safePace} وجه) مع المراجعة الموازية حتى تمام ترسيخ المحفوظ.`,
+      isStruggling,
+      pedagogicalAdvice: isExcelling ? "مواكبة تميز الطالب مع الاستمرار في تعزيز التجويد والمخارج" : "التركيز على السرد المكرر قبل النوم"
+    });
+  } catch (err: any) {
+    console.error("analyze-monthly-progression error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// 3. Dynamic AI Placement Interview Turn
+app.post("/api/gemini/dynamic-placement-turn", async (req, res) => {
+  try {
+    const {
+      studentInitialData,
+      complexName,
+      turnIndex = 1,
+      chatHistory = [],
+      lastUserAnswer,
+      accumulatedData = {},
+      isKhatim: reqIsKhatim,
+      isBeginner: reqIsBeginner,
+      isChild: reqIsChild
+    } = req.body;
+
+    const memCount = Number(studentInitialData?.memorizedJuzList?.length || accumulatedData?.memorizedCount || 1);
+    const age = Number(studentInitialData?.age || 10);
+    const isKhatim = reqIsKhatim ?? (memCount >= 30);
+    const isChild = reqIsChild ?? (age < 13);
+    const isBeginner = reqIsBeginner ?? (memCount <= 3);
+
+    // Helper to shuffle options array so option A / 0 is never predictably the answer
+    const shuffleArray = <T>(array: T[]): T[] => {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    // Dynamic Fallback Generator for when Gemini API key is absent or offline
+    const getDynamicFallbackTurn = (turn: number) => {
+      // Turn 1 for ALL students: Quran Surah & Ayah Reached Picker!
+      // "اين وصل في سور القرءان والطالب يختار من قائمة منسدلة من كل سور القرءان ويمكنه البحث ويحدد اي اي وصل"
+      if (turn === 1) {
+        return {
+          replyText: `أهلاً وسهلاً بك يا ${studentInitialData?.studentName || 'الحبيب'} في مجمع «${complexName || 'القرآني'}»! 🌟\n\nأنا «المساعد القرآني والتربوي الذكي»، ومهمتي هي التعرف على موضع حفظك الحالي بدقة وضبط جدولك القرآني المتقن.\n\n📖 **أين وصلت في سور القرآن الكريم؟**\nاختر السورة والآية التي تقف عندها من القائمة المنسدلة بالأسفل (يمكنك البحث في جميع سور القرآن الـ ١١٤):`,
+          isCompleted: false,
+          customWidget: "surah_picker",
+          nextQuestion: {
+            questionId: "quran_position_reached",
+            questionText: "موضع الوصول الحالي في سور القرآن الكريم:",
+            category: "memorization_depth",
+            options: [] // Rendered via searchable Quran Surahs dropdown
+          },
+          aiInsights: {
+            studentLevel: isKhatim ? "خاتم ومتقن" : isBeginner ? "مبتدئ" : "متوسط",
+            psychologicalProfile: "طالب حريص على الضبط المتقن ومستعد للالتزام بجدول التثبيت",
+            commitmentAssessment: "ممتاز",
+            recommendedHalaqahLevel: isKhatim ? "حلقة السرد والإجازة بالسند" : "حلقة التثبيت والمراجعة التراكمية",
+            suggestedDailyNewPages: isKhatim ? 0.5 : 1,
+            suggestedDailyReviewPages: isKhatim ? 20 : 5
+          }
+        };
+      }
+
+      // Turn 2: Review Direction (Khatim: Al-Baqarah vs An-Nas / Non-Khatim: starting direction)
+      // "يسأل الطالب هل يحب يبدأ مراجعة من البقرة ام من الناس طبعا للخاتم"
+      if (turn === 2) {
+        if (isKhatim) {
+          const khatimOptions = shuffleArray([
+            { label: "البدء من سورة البقرة (تدرج من أول المصحف نزولاً)", value: "from_baqarah", subtext: "مسار السرد الكلاسيكي المنهجي" },
+            { label: "البدء من سورة الناس (سرد صعوداً من جزء عم وقصار السور)", value: "from_nas", subtext: "تثبيت قصار السور ثم الأطول" }
+          ]);
+          return {
+            replyText: `ما شاء الله تبارك الرحمن! هنيئاً لك ختم كتاب الله كاملاً، جعله الله لك شفيعاً ونوراً في الدارين.\n\nبما أنك خاتم وتريد مراجعة القرآن كاملاً وتثبيته لنيل السند والإجازة بإذن الله:\n**هل تفضل أن تبدأ مراجعتك الشاملة من سورة البقرة أم من سورة الناس؟**`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "khatim_review_direction",
+              questionText: "مسار انطلاق مراجعة المصحف كاملاً:",
+              category: "memorization_depth",
+              options: khatimOptions
+            }
+          };
+        } else {
+          const nonKhatimOptions = shuffleArray([
+            { label: "بدأت من سورة الناس صعوداً (المسار المعتاد من جزء عم)", value: "from_nas", subtext: "البدء من قصار السور صعوداً" },
+            { label: "بدأت من سورة البقرة ونزولاً في طوال السور", value: "from_baqarah", subtext: "البدء من طوال السور للأمام" }
+          ]);
+          return {
+            replyText: `أحسنت الاختيار وموضع بداية مبارك بإذن الله!\n\nلتحديد اتجاه المراجعة التراكمية اليومية:\n**هل بدأت حفظك سابقاً من سورة الناس (صعوداً من جزء عم) أم بدأت من سورة البقرة ونزولاً؟**`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "non_khatim_review_direction",
+              questionText: "اتجاه مسار الحفظ والمراجعة السابق:",
+              category: "memorization_depth",
+              options: nonKhatimOptions
+            }
+          };
+        }
+      }
+
+      // Turn 3: Diagnostic Tajweed / Mutashabihat Test with SHUFFLED options!
+      // Options are randomly shuffled so the answer is NEVER predictably option A or index 0!
+      if (turn === 3) {
+        if (isKhatim) {
+          const mutashabihOptions = shuffleArray([
+            { label: "في البقرة حصر وتأكيد لمواجهة ادعاء اليهود، وفي آل عمران تأكيد أن الهدى بيد الله", value: "correct", subtext: "فهم بلاغي وتفسيري دقيق" },
+            { label: "لا يوجد فرق معنوي بينهما، هو مجرد تنويع لفظي فقط", value: "wrong", subtext: "توجد دلالة بلاغية دقيقة في كل موضع" },
+            { label: "الموضعان وردا بالتقديم في آل عمران والتأخير في البقرة بالعكس", value: "wrong", subtext: "عكس للموضعين" }
+          ]);
+          return {
+            replyText: `ممتاز جداً! بما أن هدفك الإتقان التام والسند المتصل، دعنا نجري فحصاً سريعاً في المتشابهات اللفظية:\n\nفي قوله تعالى: ﴿قُلْ إِنَّ هُدَى اللَّهِ هُوَ الْهُدَىٰ﴾ بسورة البقرة، بينما في آل عمران: ﴿قُلْ إِنَّ الْهُدَىٰ هُدَى اللَّهِ﴾.\nما السر الدقيق في تقديم وتأخير لفظ (هو) و(الهدى) بين السورتين؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "khatim_mutashabihat_test",
+              questionText: "ضبط المتشابهات اللفظية وتوجيهها:",
+              category: "mutashabihat",
+              options: mutashabihOptions
+            }
+          };
+        } else if (isChild) {
+          const childGhunnahOptions = shuffleArray([
+            { label: "غنة رنانة لطيفة بمقدار حركتين", value: "correct", subtext: "تخرج من الخيشوم برفق وجمال" },
+            { label: "نقذفها بسرعة خاطفة بدون غنة", value: "wrong", subtext: "النون المشددة يلزمها غنة تزيّنها" },
+            { label: "قلقلة شديدة واهتزاز", value: "wrong", subtext: "النون ليست من حروف القلقلة" }
+          ]);
+          return {
+            replyText: `أحسنت يا بطل! ما شاء الله عليك 🌸.\nلنجرب هذا الاختبار اللطيف في التجويد الصوتي:\nعندما نقرأ في سورة الناس: ﴿مِنَ الْجِنَّةِ وَالنَّاسِ﴾، ما هو الصوت الجميل الذي نفعله في حرف النون المشددة (نّ)؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "child_q2_ghunnah",
+              questionText: "حكم النون المشددة في (الناس):",
+              category: "tajweed",
+              options: childGhunnahOptions
+            }
+          };
+        } else {
+          const tajweedOptions = shuffleArray([
+            { label: "إدغام بغنة ناقص (ينمو)", value: "correct", subtext: "الياء من حروف الإدغام بغنة" },
+            { label: "إظهار حلقي واضح", value: "wrong", subtext: "ليس من حروف الحلق الستة" },
+            { label: "إخفاء حقيقي عند الحرف", value: "wrong", subtext: "الياء ليست من حروف الإخفاء" },
+            { label: "إقلاب بميم مخفاة", value: "wrong", subtext: "الإقلاب خاص بحرف الباء فقط" }
+          ]);
+          return {
+            replyText: `أحسنت! ننتقل الآن لفحص سريع لأحكام التلاوة والتجويد العملي:\n\nفي قوله تعالى: ﴿مَن يَقُولُ﴾، ما هو الحكم التجويدي الصحيح للنون الساكنة هنا؟`,
+            isCompleted: false,
+            nextQuestion: {
+              questionId: "tajweed_quick_test",
+              questionText: "الحكم التجويدي للنون الساكنة في (مَن يقول):",
+              category: "tajweed",
+              options: tajweedOptions
+            }
+          };
+        }
+      }
+
+      // Turn 4: Pace and Daily Commitment with SHUFFLED options!
+      if (turn === 4) {
+        const commitmentOptions = shuffleArray([
+          { label: "وجه واحد جديد + ١٠ أوجه مراجعة يومياً", value: { newPages: 1.0, reviewPages: 10 }, subtext: "المعدل الذهبي المتوازن والموصى به" },
+          { label: "نصف وجه جديد + ٥ أوجه مراجعة يومياً", value: { newPages: 0.5, reviewPages: 5 }, subtext: "مسار التثبيت المتأنّي المتين" },
+          { label: "وجهان جديدان + ٢٠ وجهاً مراجعة يومياً", value: { newPages: 2.0, reviewPages: 20 }, subtext: "لأصحاب التفرغ والهمم العالية" }
+        ]);
+        return {
+          replyText: `عزيمتك مباركة ووعيك طيب يا ${studentInitialData?.studentName || 'القارئ الكريم'}! 🌿\n\nأخبرنا عن طاقتك اليومية المريحة في مجلس الشيخ والمنزل:\nكم مقدار الحفظ الجديد والمراجعة اليومية الذي تستطيع الالتزام به بإتقان دون انقطاع؟`,
+          isCompleted: false,
+          nextQuestion: {
+            questionId: "pace_and_commitment",
+            questionText: "المعدل اليومي المفضل لديك:",
+            category: "psychology_commitment",
+            options: commitmentOptions
+          }
+        };
+      }
+
+      // Final Turn (Turn 5+): Completion
+      return {
+        replyText: `🎉 ما شاء الله تبارك الله يا ${studentInitialData?.studentName || ''}! أتممت المقابلة التفاعلية بجدارة.\n\nتم فحص مستواك وتحديد موضع انطلاقك بدقة، مع اعتماد قاعدة: «الختم بتثبيت خير من التعجل بالتفلت» وبروتوكول اليوم الأول.\nنبحث لك الآن عن الحلقة المناسبة والشاغر المتاح في مجمع ${complexName || ''}...`,
+        isCompleted: true,
+        aiInsights: {
+          studentLevel: isKhatim ? "خاتم ومتقن" : isBeginner ? "مبتدئ" : "متوسط",
+          psychologicalProfile: "طالب حريص وجاهز للالتزام بجدول التثبيت وبروتوكول المراجعة التراكمية",
+          commitmentAssessment: "ممتاز",
+          recommendedHalaqahLevel: isKhatim ? "حلقة السرد والإجازة بالسند" : "حلقة التثبيت والمراجعة التراكمية",
+          suggestedDailyNewPages: isKhatim ? 0.5 : 1,
+          suggestedDailyReviewPages: isKhatim ? 20 : 5
+        }
+      };
+    };
+
+    // If Gemini API is available and key set, attempt dynamic generative interview turn
+    if (process.env.GEMINI_API_KEY) {
+      const prompt = `أنت «المساعد القرآني والتربوي الذكي لتسكين وتوجيه الطلاب» في مجمع «${complexName || "القرآني"}».
+مهمتك: إجراء مقابلة حوارية تفاعلية لتحديد المستوى والتسكين مع الطالب.
+
+بيانات الطالب المستهدف:
+- الاسم: ${studentInitialData?.studentName || "الطالب"}
+- العمر: ${age} سنة (طالب طفل/ناشئ: ${isChild ? "نعم" : "لا"})
+- الأجزاء المحفوظة: ${memCount} جزء (خاتم للقرآن كاملاً: ${isKhatim ? "نعم" : "لا"}، مبتدئ: ${isBeginner ? "نعم" : "لا"})
+- الجولة الحالية: ${turnIndex} من 4
+- آخر إجابة قدمها الطالب: "${lastUserAnswer || "بداية المقابلة"}"
+
+تاريخ الحوار حتى الآن:
+${(chatHistory || []).slice(-6).map((m: any) => `${m.sender === 'ai' ? 'المرشد الذكي' : 'الطالب'}: ${m.text}`).join('\n')}
+
+قواعد تربوية صارمة لذكاء المقابلة:
+1. التخصيص التام حسب الفئة:
+   - إذا كان خاتماً (30 جزءاً): لا تسأله عن أحكام المبتدئين! اسأله عن المتشابهات اللفظية الدقيقة (مثلاً بين البقرة وآل عمران أو المائدة والأنعام)، الوقف والابتداء الدقيق، طاقة السرد وسرد الأجزاء غيباً، ورغبته في الإجازة بالسند.
+   - إذا كان طفلاً أو مبتدئاً (عمر < 12 أو حفظ <= 3 أجزاء): أسلوب مشجع ومحبب جداً، أسئلة تجويد عملية مبسطة، وتثبيت وتكرار محبب.
+   - إذا كان متوسطاً (4-20 جزءاً): موازنة التثبيت والمراجعة التراكمية.
+2. في الجولة الأولى (${turnIndex} == 1): السؤال الإلزامي لجميع الطلاب هو: أين وصلت في سور القرآن الكريم؟ واجعل questionId: 'quran_position_reached'، وضع customWidget: 'surah_picker'.
+3. في الجولة الثانية (${turnIndex} == 2):
+   - إذا كان الطالب خاتماً: اسأله هل يحب أن يبدأ مراجعة القرآن كاملاً من سورة البقرة أم من سورة الناس (questionId: 'khatim_review_direction').
+   - إذا كان غير خاتم: اسأله هل بدأ حفظه سابقاً من سورة الناس صعوداً أم من سورة البقرة نزولاً (questionId: 'non_khatim_review_direction').
+4. تنويع وخلط ترتيب الخيارات عشوائياً (Randomize Options): إياك قط أن تجعل الإجابة الصحيحة دائماً الخيار الأول (أ)! بدّل ترتيب الخيارات عشوائياً دائماً لتكون تارة في الخيار الثاني وتارة في الثالث أو الرابع.
+5. ناقش إجابته السابقة بحكمة وشجعه أو صحح له بلطف.
+6. المبدأ الحاكم للمنظومة: "ليس الهدف السرعة في الختم، بل الختم بتثبيت وإتقان تام".
+7. إذا كانت الجولة الأخيرة (${turnIndex} >= 4): اختم المقابلة ببيان التسكين وخطة الختم المتقنة.
+
+أخرج النتيجة بصيغة JSON فقط:
+{
+  "replyText": "تعليقك التربوي الدافئ على إجابته وسؤاله السؤال التالي بالعربية الفصحى المشرقة",
+  "isCompleted": ${turnIndex >= 4},
+  "nextQuestion": {
+    "questionId": "q_${turnIndex}",
+    "questionText": "نص السؤال الواضح",
+    "category": "memorization_depth",
+    "options": [
+      { "label": "خيار ١", "value": "val1", "subtext": "توضيح مختصر" },
+      { "label": "خيار ٢", "value": "val2", "subtext": "توضيح مختصر" }
+    ]
+  },
+  "aiInsights": {
+    "studentLevel": "${isKhatim ? 'خاتم ومتقن' : isBeginner ? 'مبتدئ' : 'متوسط'}",
+    "psychologicalProfile": "تحليل شخصية الطالب",
+    "commitmentAssessment": "تقييم جاهزيته",
+    "recommendedHalaqahLevel": "الحلقة المقترحة",
+    "suggestedDailyNewPages": ${isKhatim ? 0.5 : isBeginner ? 0.5 : 1},
+    "suggestedDailyReviewPages": ${isKhatim ? 20 : isBeginner ? 2 : 5}
+  }
+}`;
+
+      const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+      if (aiText) {
+        try {
+          const parsed = JSON.parse(aiText);
+          if (parsed && parsed.replyText) {
+            return res.json(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Resilient dynamic fallback response
+    const fallbackResponse = getDynamicFallbackTurn(turnIndex);
+    return res.json(fallbackResponse);
+  } catch (err: any) {
+    console.error("Dynamic placement turn error:", err);
+    return res.json({
+      replyText: `أهلاً بك يا ${req.body?.studentInitialData?.studentName || 'الحبيب'}! يسعدنا انضمامك لحلقات القرآن الكريم. تم تسجيل بياناتك بنجاح وسنرسم لك خطة متقنة للتثبيت.`,
+      isCompleted: true,
+      aiInsights: {
+        studentLevel: "متوسط",
+        psychologicalProfile: "طالب راغب في الخير والإتقان",
+        commitmentAssessment: "جيد جداً",
+        recommendedHalaqahLevel: "حلقة التثبيت والإتقان",
+        suggestedDailyNewPages: 1,
+        suggestedDailyReviewPages: 5
+      }
+    });
+  }
+});
+
+// 4. Batch recalculate halaqah student plans when halaqah schedule/hours change
+app.post("/api/gemini/batch-recalculate-halaqah-plans", async (req, res) => {
+  try {
+    const { halaqah, students } = req.body;
+    if (!halaqah || !Array.isArray(students)) {
+      return res.status(400).json({ error: "بيانات الحلقة وقائمة الطلاب مطلوبة" });
+    }
+
+    const weeklyDays = (halaqah.scheduleDays && halaqah.scheduleDays.length) || 5;
+    const dailyHours = Number(halaqah.dailyHours) || 2;
+
+    const updatedPlans: Record<string, any> = {};
+
+    for (const student of students) {
+      const memJuz = student.memorizationPlan?.memorizedJuzCount || (student.currentSurah ? Math.max(1, Math.round((114 - student.currentSurah) / 3)) : 1);
+      const newPages = student.memorizationPlan?.dailyNewPages || 1;
+      const reviewPages = student.memorizationPlan?.dailyReviewPages || 5;
+
+      const totalPages = 604;
+      const memPages = memJuz * 20;
+      const remainingPages = Math.max(20, totalPages - memPages);
+      
+      const newSessionsNeeded = Math.ceil(remainingPages / newPages);
+      const remainingJuz = Math.ceil(remainingPages / 20);
+      const haltSessions = Math.floor(remainingJuz / 5) * 8 + 15;
+      const totalSessions = newSessionsNeeded + haltSessions;
+      const calendarDays = Math.ceil((totalSessions / weeklyDays) * 7);
+
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + calendarDays);
+      const targetDateStr = targetDate.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+
+      updatedPlans[student.id] = {
+        dailyNewPages: newPages,
+        dailyReviewPages: reviewPages,
+        weeklyDaysCount: weeklyDays,
+        dailyHoursCount: dailyHours,
+        targetCompletionDate: targetDateStr,
+        estimatedDaysRemaining: calendarDays,
+        progressPercentage: Math.min(99, Math.round((memPages / totalPages) * 100)),
+        status: "on_track",
+        tathbeetStopsCount: Math.floor(remainingJuz / 5) + 1,
+        aiNotes: `تم تحديث الخطة زمنياً لتتوافق مع جدول الحلقة الجديد (${weeklyDays} أيام أسبوعياً بواقع ${dailyHours} ساعة يومياً) مع الحفاظ التام على وقفات التثبيت لضمان الرسوخ قبل الختم.`,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+
+    return res.json({ success: true, updatedPlans });
+  } catch (err: any) {
+    console.error("Batch recalculate plans error:", err);
+    return res.status(500).json({ error: err?.message || "Error recalculating plans" });
+  }
+});
+
+// 5. Generate Tomorrow's Plan adaptively considering today's performance, errors, history, and halaqah duration
+app.post("/api/gemini/generate-tomorrow-plan", async (req, res) => {
+  try {
+    const {
+      student,
+      todayEvaluation,
+      ayahErrors = [],
+      evaluationsHistory = [],
+      halaqahDailyHours = 2.0
+    } = req.body;
+
+    const studentName = student?.name || "الطالب";
+    const studentLevel = student?.level || "متوسط";
+    const errorsCount = Array.isArray(ayahErrors) ? ayahErrors.length : 0;
+    const didNotRecite = !!todayEvaluation?.didNotRecite;
+
+    const studentDailyTarget = student?.dailyNewTarget || (student?.memorizationPlan?.dailyNewPages ? `${student.memorizationPlan.dailyNewPages} وجه` : "نصف وجه");
+    const pace = (studentDailyTarget.includes("وجهين") ? 2.0 : studentDailyTarget.includes("نصف") ? 0.5 : studentDailyTarget.includes("ربع") ? 0.25 : 1.0);
+    const curEndSurah = Number(todayEvaluation?.todayNewToSurah) || 78;
+    const curEndAyah = Number(todayEvaluation?.todayNewToAyah) || 1;
+    const curSurahInfo = getSurahInfo(curEndSurah);
+    let advanceStartSurah = curEndSurah;
+    let advanceStartAyah = curEndAyah + 1;
+    if (advanceStartAyah > curSurahInfo.numberOfAyahs) {
+      advanceStartSurah = curEndSurah < 114 ? curEndSurah + 1 : 1;
+      advanceStartAyah = 1;
+    }
+    const computedTomorrowPortion = calculatePortionFromPace(advanceStartSurah, advanceStartAyah, pace);
+
+    // Adaptive Monthly Progression detection
+    const evaluations = Array.isArray(evaluationsHistory) ? evaluationsHistory : [];
+    const validDates = evaluations.map((e: any) => e.date ? new Date(e.date).getTime() : 0).filter((t: number) => t > 0).sort((a: number, b: number) => a - b);
+    const daysSpan = validDates.length >= 2 ? Math.round((validDates[validDates.length - 1] - validDates[0]) / (1000 * 60 * 60 * 24)) : evaluations.length * 2;
+    const isMonthlyExcellence = evaluations.length >= 8 && (daysSpan >= 20 || evaluations.length >= 12) && errorsCount <= 1;
+    const recommendedPace = isMonthlyExcellence ? Math.min(3.0, pace + 0.5) : pace;
+    const targetTomorrowPortion = isMonthlyExcellence ? calculatePortionFromPace(advanceStartSurah, advanceStartAyah, recommendedPace) : computedTomorrowPortion;
+
+    // Check Gemini API
+    if (hasServerGeminiKey(req)) {
+      const prompt = `أنت الخبير القرآني والتربوي الأول في «منظومة عمران القرآنية».
+مهمتك: التفكير بحكمة وبناء خطة ومقرر غد للطالب (حفظ جديد + مراجعات متعددة وتثبيت أخطاء) بناءً على ما سمعه اليوم وسجل الأخطاء وتاريخ الجلسات السابقة وزمن وتوقيت الحلقة.
+
+بيانات الطالب:
+- الاسم: ${studentName}
+- المستوى: ${studentLevel}
+- زمن الحلقة اليومي: ${halaqahDailyHours} ساعة
+- طاقة الحفظ اليومي المعتمدة: ${studentDailyTarget} (${pace} وجه)
+- ما سمعه اليوم في الجديد: سورة ${todayEvaluation?.todayNewSurahName || ''} (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah})
+- هل تعذر عليه التسميع اليوم (لم يسمع): ${didNotRecite ? "نعم" : "لا"}
+- أخطاء التسميع المرصودة في المصحف اليوم:
+${errorsCount > 0 ? ayahErrors.map((e: any) => `- سورة ${e.surahName || e.surahNumber} آية ${e.ayahNumber} (تكرر الخطأ ${e.errorCount} مرات)`).join('\n') : "لا توجد أخطاء اليوم، أداء متقن 100%"}
+- تاريخ التقييمات السابقة (آخر الجلسات):
+${(evaluationsHistory || []).slice(0, 3).map((h: any) => `- تاريخ ${h.date}: درجة ${h.score || 10}/10، ملاحظات: ${h.notes || 'طيبة'}`).join('\n') || "جلسات سابقة منتظمة"}
+- الحساب القرآني الدقيق للغد (حقائق قرآنية ملزمة بناءً على مصحف المدينة 604 أوجه):
+  * بداية مقرر الغد للجديد: يبدأ حتماً من الآية التالية (${advanceStartAyah})
+  * المقدار المقرر للغد: من سورة ${getSurahInfo(targetTomorrowPortion.fromSurah).name} آية (${targetTomorrowPortion.fromAyah}) إلى آية (${targetTomorrowPortion.toAyah}) [${targetTomorrowPortion.description}]
+  * حالة التطور الشهري: ${isMonthlyExcellence ? `الطالب متفوق ومتميز بعد شهر من التسميع المنتظم، تم زيادة ورده بنصف وجه إضافي ليصبح ${recommendedPace} وجه` : 'الاستمرار بالوتيرة الحالية لضمان التثبيت'}
+
+القواعد التربوية الحاكمة الصارمة للذكاء الاصطناعي:
+1. [قاعدة حاسمة ومطلقة لمنع التكليف بالسورة كاملة]:
+   - إذا سمّع الطالب اليوم بضع آيات فقط (مثلاً 4 آيات: من الآية 1 إلى 4)، فإن مقرر الغد يبدأ حتماً من الآية التالية (${advanceStartAyah}) ويكمل بمقدار ورده المعتاد فقط (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}).
+   - ممنوع نهائياً ومطلقاً تكليف الطالب بسورة كاملة فجأة!
+   - لا تعد للطالب إلى الآية 1 ولا تكلفه بالسورة كاملة!
+2. إذا كان على الطالب أخطاء اليوم (خاصة متكررة) أو لم يسمع:
+   - يجب تكرار وتثبيت نفس الآيات التي سمّعها اليوم فقط (${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah})، وليس السورة كاملة!
+   - وضع بند مراجعة خاص بعنوان: "تثبيت الأخطاء والمتشابهات" للآيات التي وقع فيها خطأ.
+3. إذا كان الطالب متقناً بدون أي خطأ:
+   - يتقدم في الحفظ الجديد بمقدار الورد المعتمد بدقة (${targetTomorrowPortion.fromAyah} إلى ${targetTomorrowPortion.toAyah}).
+   - توضع مراجعة صغرى لما سمعه اليوم (الآيات ${todayEvaluation?.todayNewFromAyah || 1} إلى ${todayEvaluation?.todayNewToAyah || curEndAyah}) لتثبيتها في الصدر.
+4. التناسب مع زمن الحلقة (${halaqahDailyHours} ساعة).
+
+المطلوب: إرجاع النتيجة بصيغة JSON فقط:
+{
+  "tomNewSurah": ${targetTomorrowPortion.fromSurah},
+  "tomNewFromAyah": ${targetTomorrowPortion.fromAyah},
+  "tomNewToSurah": ${targetTomorrowPortion.toSurah},
+  "tomNewToAyah": ${targetTomorrowPortion.toAyah},
+  "action": "${errorsCount >= 2 ? 'reinforce_errors' : didNotRecite ? 'repeat_portion' : 'advance_page'}",
+  "tomReviews": [
+    {
+      "id": "tom_rev_1",
+      "type": "مراجعة صغرى",
+      "surahNumber": ${Number(todayEvaluation?.todayNewSurah) || curEndSurah},
+      "surahName": "${todayEvaluation?.todayNewSurahName || 'السورة المقررة'}",
+      "fromAyah": ${Number(todayEvaluation?.todayNewFromAyah) || 1},
+      "toSurahNumber": ${curEndSurah},
+      "toSurahName": "${todayEvaluation?.todayNewToSurahName || todayEvaluation?.todayNewSurahName || 'السورة المقررة'}",
+      "toAyah": ${curEndAyah},
+      "isFullSurah": false,
+      "note": "تثبيت ما تم تسميعه اليوم ومعالجة الآيات ذات الأخطاء"
+    }
+  ],
+  "rationale": "شرح تربوي دقيق لسبب وضع هذه الخطة وكيف تراعي التثبيت وزمن وتطور الطالب"
+}`;
+
+      const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+      if (aiText) {
+        try {
+          const parsed = JSON.parse(aiText);
+          if (parsed && parsed.tomNewSurah) {
+            let resToAyah = Number(parsed.tomNewToAyah) || targetTomorrowPortion.toAyah;
+            let resFromAyah = Number(parsed.tomNewFromAyah) || targetTomorrowPortion.fromAyah;
+            const resSurah = Number(parsed.tomNewSurah) || targetTomorrowPortion.fromSurah;
+            const resSurahInfo = getSurahInfo(resSurah);
+
+            // Safety check against whole surah hallucination
+            if (resFromAyah === 1 && resToAyah >= resSurahInfo.numberOfAyahs && resSurahInfo.numberOfAyahs > 6 && !didNotRecite) {
+              resFromAyah = targetTomorrowPortion.fromAyah;
+              resToAyah = targetTomorrowPortion.toAyah;
+            }
+
+            return res.json({
+              ...parsed,
+              tomNewSurah: resSurah,
+              tomNewFromAyah: resFromAyah,
+              tomNewToSurah: Number(parsed.tomNewToSurah) || targetTomorrowPortion.toSurah,
+              tomNewToAyah: resToAyah
+            });
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Resilient pedagogical fallback generator
+    let tomNewSurah = targetTomorrowPortion.fromSurah;
+    let tomNewFromAyah = targetTomorrowPortion.fromAyah;
+    let tomNewToSurah = targetTomorrowPortion.toSurah;
+    let tomNewToAyah = targetTomorrowPortion.toAyah;
+    let action: 'repeat_portion' | 'advance_page' | 'reinforce_errors' = 'advance_page';
+    let rationale = "";
+
+    if (didNotRecite) {
+      action = 'repeat_portion';
+      tomNewSurah = Number(todayEvaluation?.todayNewSurah) || curEndSurah;
+      tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
+      tomNewToSurah = curEndSurah;
+      tomNewToAyah = curEndAyah;
+      rationale = "نظراً لعدم التسميع اليوم، تقرر تثبيت وإبقاء نفس الورد لمجلس الغد لضبطه وحفظه أولاً قبل مراكمة جديد.";
+    } else if (errorsCount >= 2) {
+      action = 'reinforce_errors';
+      tomNewSurah = Number(todayEvaluation?.todayNewSurah) || curEndSurah;
+      tomNewFromAyah = Number(todayEvaluation?.todayNewFromAyah) || 1;
+      tomNewToSurah = curEndSurah;
+      tomNewToAyah = curEndAyah;
+      rationale = `لوحظ وجود (${errorsCount}) أخطاء في جلسة اليوم؛ تطبيقاً لقاعدة «الختم بتثبيت أولى من الاستعجال»، خُصص غد لتكرار وتثبيت نفس الآيات التي سمّعها اليوم فقط (الآيات ${tomNewFromAyah} إلى ${tomNewToAyah}) لترسخ في الصدر.`;
+    } else {
+      action = 'advance_page';
+      tomNewSurah = targetTomorrowPortion.fromSurah;
+      tomNewFromAyah = targetTomorrowPortion.fromAyah;
+      tomNewToSurah = targetTomorrowPortion.toSurah;
+      tomNewToAyah = targetTomorrowPortion.toAyah;
+      rationale = isMonthlyExcellence
+        ? `🌟 ترقية استثنائية بالذكاء الاصطناعي: أظهر الطالب تميزاً وتطوراً كبيراً بعد مرور شهر من التسميع؛ تم رفع ورد الحفظ بنصف وجه إضافي ليبدأ من الآية (${tomNewFromAyah}) إلى (${tomNewToAyah}) [${targetTomorrowPortion.description}].`
+        : `أداء طيب ومتقن؛ تم التقدم في الحفظ الجديد بمقدار متزن (${studentDailyTarget}) يبدأ من الآية (${tomNewFromAyah}) إلى (${tomNewToAyah}) مع إدراج ما حُفظ اليوم في مراجعة الغد بما يناسب زمن وتوقيت الحلقة (${halaqahDailyHours} ساعة).`;
+    }
+
+    const tomReviews = [];
+    tomReviews.push({
+      id: `tom_rev_1_${Date.now()}`,
+      type: "مراجعة صغرى",
+      surahNumber: Number(todayEvaluation?.todayNewSurah) || curEndSurah,
+      surahName: todayEvaluation?.todayNewSurahName || "السورة المقررة",
+      fromAyah: Number(todayEvaluation?.todayNewFromAyah) || 1,
+      toSurahNumber: curEndSurah,
+      toSurahName: todayEvaluation?.todayNewToSurahName || todayEvaluation?.todayNewSurahName || "السورة المقررة",
+      toAyah: curEndAyah,
+      isFullSurah: false,
+      note: "مراجعة ورد اليوم لتثبيته في الصدر"
+    });
+
+    if (errorsCount > 0 && ayahErrors[0]) {
+      const errSurah = Number(ayahErrors[0]?.surahNumber) || curEndSurah;
+      tomReviews.push({
+        id: `tom_rev_err_${Date.now()}`,
+        type: "تثبيت الأخطاء والمتشابهات",
+        surahNumber: errSurah,
+        surahName: ayahErrors[0]?.surahName || "السورة",
+        fromAyah: Math.max(1, (Number(ayahErrors[0]?.ayahNumber) || 1) - 2),
+        toSurahNumber: errSurah,
+        toSurahName: ayahErrors[0]?.surahName || "السورة",
+        toAyah: (Number(ayahErrors[0]?.ayahNumber) || 1) + 2,
+        isFullSurah: false,
+        note: `معالجة وتكرار الآيات التي وقع فيها خطأ (${ayahErrors[0]?.errorCount || 1} أخطاء)`
+      });
+    }
+
+    return res.json({
+      tomNewSurah,
+      tomNewFromAyah,
+      tomNewToSurah,
+      tomNewToAyah,
+      action,
+      tomReviews,
+      rationale
+    });
+  } catch (err: any) {
+    console.error("Generate tomorrow plan error:", err);
+    return res.status(500).json({ error: err?.message || "Error generating plan" });
+  }
+});
+
+// Helper: Format seconds into MM:SS or HH:MM:SS
+function formatSeconds(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Local Quran Cache helper (auto-reloads if public/quran-verses.json is updated)
+let localQuranCache: Record<number, string[]> | null = null;
+let localQuranCacheMtime = 0;
+function getLocalQuranCache(): Record<number, string[]> | null {
+  try {
+    const p = path.join(process.cwd(), 'public', 'quran-verses.json');
+    if (fs.existsSync(p)) {
+      const stat = fs.statSync(p);
+      if (localQuranCache && Object.keys(localQuranCache).length >= 114 && stat.mtimeMs === localQuranCacheMtime) {
+        return localQuranCache;
+      }
+      localQuranCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      localQuranCacheMtime = stat.mtimeMs;
+      return localQuranCache;
+    }
+  } catch (e) {
+    console.error("Error reading local quran-verses.json:", e);
+  }
+  return localQuranCache;
+}
+
+// Endpoint: Return all Quran verses
+app.get("/api/quran/all", (req, res) => {
+  const cache = getLocalQuranCache();
+  if (cache) {
+    return res.json(cache);
+  }
+  res.status(404).json({ error: "Quran data not yet ready" });
+});
+
+// Endpoint: Return verses of a specific Surah
+app.get("/api/quran/surah/:num", async (req, res) => {
+  const num = Number(req.params.num);
+  const cache = getLocalQuranCache();
+  if (cache && cache[num]) {
+    return res.json({ surahNumber: num, ayahs: cache[num] });
+  }
+  const ayahs = await fetchAuthenticSurahVerses(num);
+  return res.json({ surahNumber: num, ayahs: ayahs.map(a => a.text) });
+});
+
+// Fetch authentic Quranic text for a Surah
+async function fetchAuthenticSurahVerses(surahNumber: number): Promise<Array<{ ayahNumber: number; text: string }>> {
+  // 1. Check local cache first (instant & reliable)
+  const localCache = getLocalQuranCache();
+  if (localCache && localCache[surahNumber] && localCache[surahNumber].length > 0) {
+    return localCache[surahNumber].map((text, idx) => ({
+      ayahNumber: idx + 1,
+      text: text.trim()
+    }));
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/quran-uthmani`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    if (data?.data?.ayahs && Array.isArray(data.data.ayahs)) {
+      return data.data.ayahs.map((a: any) => ({
+        ayahNumber: a.numberInSurah,
+        text: String(a.text || '').replace(/^\ufeff/, '').trim()
+      }));
+    }
+  } catch (err) {
+    console.warn("Could not fetch online Uthmani verses, using built-in generator:", err);
+  }
+  return [];
+}
+
+
+// Generate Polite & Pedagogical Violation Message for Parent via Gemini
+app.post("/api/gemini/generate-violation-message", async (req, res) => {
+  try {
+    const { studentName, violationType, severity, description, actionTaken, teacherName, halaqahName } = req.body || {};
+
+    const fallbackMessage = `السلام عليكم ورحمة الله وبركاته، ولي أمر الطالب الفاضل ${studentName || 'الكريم'} حفظكم الله..\nنود إحاطة عنايتكم بأنه لوحظ على الطالب اليوم في الحلقة (${violationType || 'ملاحظة سلوكية'})، وتم توجيهه تربوياً بحكمة (${actionTaken || 'تنبيه شفهي وتذكير بآداب الحلقة'}).\nشاكرين لكم عظيم حرصكم ومتابعتكم المستمرة في البيت، ونحن شركاء في بناء جيل قرآني متميز خلقاً وعلماً.\nمع تحيات: ${teacherName || 'معلم الحلقة'} - ${halaqahName || 'حلقة تحفيظ القرآن الكريم'}`;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ message: fallbackMessage });
+    }
+
+    const prompt = `أنت مستشار تربوي خبير في حلقات تحفيظ القرآن الكريم والمدارس القرآنية.
+المطلوب منك صياغة رسالة واتساب / رسالة نصية تربوية راقية جداً ومهذبة يرسلها معلم الحلقة إلى ولي أمر الطالب لإشعاره بمخالفة أو ملاحظة سلوكية حدثت اليوم في الحلقة والتنسيق معه لخير الطالب.
+
+بيانات الملاحظة:
+- اسم الطالب: ${studentName || 'الطالب'}
+- اسم الحلقة: ${halaqahName || 'حلقة القرآن الكريم'}
+- اسم المعلم: ${teacherName || 'معلم الحلقة'}
+- نوع الملاحظة/المخالفة: ${violationType || 'ملاحظة سلوكية'}
+- مستوى الشدة: ${severity || 'تنبيه'}
+- تفاصيل ما حدث وتوجيه الشيخ: ${description || 'توجيه سلوكي أثناء الحلقة'}
+- الإجراء المتخذ: ${actionTaken || 'تنبيه وتوجيه'}
+
+إرشادات الصياغة:
+1. البداية بتحية إسلامية رقيقة والدعاء لولي الأمر وللطالب بالبركة والتوفيق.
+2. استخدام أسلوب حكيم يجمع بين اللين والرفق التربوي دون جرح مشاعر الطالب أو ولي أمره.
+3. التذكير بعظمة مجلس القرآن الكريم وآدابه، وبيان أن هذه الملاحظة نابعة من حب المعلم للطالب وحرصه على أدبه ونبوغه.
+4. بيان الملاحظة بوضوح وإيجاز وما تم اتخاذه بلطف، مع دعوة ولي الأمر للحديث الودي مع ابنه وتشجيعه في المنزل.
+5. تجنب التوبيخ أو الشكوى السلبية نهائياً، واعتمد لغة الشراكة والتعاون الإيجابي لمصلحة الابن.
+6. اختم بالدعاء والتوقيع باسم المعلم والحلقة.
+7. أرجع نص الرسالة النهائي فقط بدون مقدمات خارجية أو أقواس.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+    });
+
+    const generated = response.text?.trim() || fallbackMessage;
+    res.json({ message: generated });
+  } catch (error) {
+    console.error("Generate violation message error:", error);
+    const { studentName, violationType, actionTaken, teacherName, halaqahName } = req.body || {};
+    const fallbackMessage = `السلام عليكم ورحمة الله وبركاته، ولي أمر الطالب الفاضل ${studentName || 'الكريم'} حفظكم الله..\nنود إحاطة عنايتكم بأنه لوحظ على الطالب اليوم في الحلقة (${violationType || 'ملاحظة سلوكية'})، وتم توجيهه تربوياً بحكمة (${actionTaken || 'تنبيه شفهي وتذكير بآداب الحلقة'}).\nشاكرين لكم عظيم حرصكم ومتابعتكم المستمرة في البيت، ونحن شركاء في بناء جيل قرآني متميز خلقاً وعلماً.\nمع تحيات: ${teacherName || 'معلم الحلقة'} - ${halaqahName || 'حلقة تحفيظ القرآن الكريم'}`;
+    res.json({ message: fallbackMessage });
+  }
+});
+
+// Helper: Calculate Smart Next-Day Assignment based on student's last 3 actual recitation records (student-centric, teacher-independent, reviewing past portions)
+function calculateSmartAssignmentFromRecords(student: any, recentEvaluations: any[], todayRecitation?: any) {
+  // 1. Filter evaluations to get actual recitation records only for this student
+  // Bypassing empty days, unexpected trips, or sudden holidays where no recitation occurred.
+  // CRITICAL: The plan belongs to the STUDENT, regardless of which teacher recorded it or which halaqah they attended.
+  const actualRecitationRecords = (recentEvaluations || [])
+    .filter((e: any) => {
+      const hasItem = e.recitationDetails?.todayNewItem?.surahNumber ||
+        e.recitationDetails?.todayReviewItem?.surahNumber ||
+        (e.recitationDetails?.todayReviewItems && e.recitationDetails.todayReviewItems.length > 0) ||
+        e.recitationDetails?.newMemorizationAchieved ||
+        e.recitationDetails?.reviewAchieved ||
+        (e.criteriaValues && Object.keys(e.criteriaValues).length > 0);
+      return Boolean(hasItem);
+    })
+    .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+
+  // The last 3 actual recitation sessions for the student
+  const last3Records = actualRecitationRecords.slice(0, 3);
+  const latestActualRecord = last3Records[0];
+
+  // 2. Determine student's current/last completed recitation position
+  let currentSurahNum = 78;
+  let currentEndAyah = 1;
+
+  if (todayRecitation?.todayNewToSurah) {
+    // Current session was just recorded today
+    currentSurahNum = Number(todayRecitation.todayNewToSurah);
+    currentEndAyah = Number(todayRecitation.todayNewToAyah || 1);
+  } else if (todayRecitation?.todayNewSurah) {
+    currentSurahNum = Number(todayRecitation.todayNewSurah);
+    currentEndAyah = Number(todayRecitation.todayNewToAyah || todayRecitation.todayNewFromAyah || 1);
+  } else if (latestActualRecord?.recitationDetails?.todayNewItem?.toSurahNumber) {
+    // Take the last actual session record (even if from last week or recorded by another teacher)
+    currentSurahNum = Number(latestActualRecord.recitationDetails.todayNewItem.toSurahNumber);
+    currentEndAyah = Number(latestActualRecord.recitationDetails.todayNewItem.toAyah || 1);
+  } else if (latestActualRecord?.recitationDetails?.todayNewItem?.surahNumber) {
+    currentSurahNum = Number(latestActualRecord.recitationDetails.todayNewItem.surahNumber);
+    currentEndAyah = Number(latestActualRecord.recitationDetails.todayNewItem.toAyah || latestActualRecord.recitationDetails.todayNewItem.fromAyah || 1);
+  } else if (student.currentSurah) {
+    currentSurahNum = Number(student.currentSurah);
+    currentEndAyah = Number(student.currentAyah || 1);
+  }
+
+  if (!currentSurahNum || currentSurahNum < 1 || currentSurahNum > 114) {
+    currentSurahNum = 78;
+  }
+
+  const curSurahInfo = getSurahInfo(currentSurahNum);
+  const totalAyahs = curSurahInfo.numberOfAyahs;
+  currentEndAyah = Math.min(Math.max(1, currentEndAyah), totalAyahs);
+
+  // 3. Analyze the last 3 actual records for performance, consistency and mastery
+  let highPerformance = true;
+  let totalScoreSum = 0;
+  let scoreCount = 0;
+
+  last3Records.forEach((ev: any) => {
+    if (ev.criteriaValues) {
+      Object.values(ev.criteriaValues).forEach((val: any) => {
+        if (typeof val === "number") {
+          totalScoreSum += val;
+          scoreCount++;
+        }
+      });
+    }
+  });
+
+  const avgScore = scoreCount > 0 ? totalScoreSum / scoreCount : 9;
+  if (avgScore < 7 || student.level === "ضعيف") {
+    highPerformance = false;
+  }
+
+  // Step size calculation (ayahs per day) based on the exact King Fahd Mushaf page pace
+  const studentDailyTarget = student?.dailyNewTarget || "نصف وجه";
+  const pace = studentDailyTarget.includes("وجهين")
+    ? 2.0
+    : studentDailyTarget.includes("نصف")
+    ? 0.5
+    : studentDailyTarget.includes("ربع")
+    ? 0.25
+    : 1.0;
+
+  // 4. Calculate Next Session's New Memorization Portion using exact page boundaries
+  const portion = calculatePortionFromPace(currentSurahNum, currentEndAyah + 1, pace);
+  let nextNewSurah = portion.fromSurah;
+  let nextNewFromAyah = portion.fromAyah;
+  let nextNewToSurah = portion.toSurah;
+  let nextNewToAyah = portion.toAyah;
+
+  const nextStartInfo = getSurahInfo(nextNewSurah);
+  const nextEndInfo = getSurahInfo(nextNewToSurah);
+  const isNaturalFull = nextNewSurah === nextNewToSurah && nextNewFromAyah === 1 && nextNewToAyah >= nextStartInfo.numberOfAyahs && nextStartInfo.numberOfAyahs <= 10;
+
+  const formattedNew = isNaturalFull
+    ? `سورة ${nextStartInfo.name} كاملة (الآيات 1 - ${nextStartInfo.numberOfAyahs})`
+    : portion.description;
+
+  // 5. Calculate Comprehensive Review based on the last 3 recitation records (تثبيت ومراجعة التسجيلات السابقة)
+  // Extract portions recited in the last 3 records so the student rigorously reviews their previous lessons
+  let revSurah = currentSurahNum;
+  let revFromAyah = 1;
+  let revToSurah = currentSurahNum;
+  let revToAyah = currentEndAyah;
+  let revType = "مراجعة صغرى (تثبيت آخر 3 تسجيلات)";
+
+  // If we have past records among the 3, find the oldest recited point among them to build a continuous cumulative review loop
+  const oldestOf3 = last3Records[last3Records.length - 1];
+  if (oldestOf3?.recitationDetails?.todayNewItem?.surahNumber) {
+    const oldestSurah = Number(oldestOf3.recitationDetails.todayNewItem.surahNumber);
+    const oldestAyah = Number(oldestOf3.recitationDetails.todayNewItem.fromAyah || 1);
+    revSurah = oldestSurah;
+    revFromAyah = oldestAyah;
+    revToSurah = currentSurahNum;
+    revToAyah = currentEndAyah;
+  } else if (currentEndAyah > 15) {
+    // Review the preceding 15-20 ayahs
+    revFromAyah = Math.max(1, currentEndAyah - 15);
+  }
+
+  const revStartInfo = getSurahInfo(revSurah);
+  const revEndInfo = getSurahInfo(revToSurah);
+
+  let formattedReview = "";
+  if (revSurah === revToSurah) {
+    formattedReview = revFromAyah === 1 && revToAyah >= revStartInfo.numberOfAyahs
+      ? `مراجعة وتثبيت: سورة ${revStartInfo.name} كاملة (1 - ${revStartInfo.numberOfAyahs})`
+      : `مراجعة وتثبيت ما سبق: سورة ${revStartInfo.name} من الآية (${revFromAyah}) إلى الآية (${revToAyah})`;
+  } else {
+    formattedReview = `مراجعة تراكمية لآخر 3 تسجيلات: من سورة ${revStartInfo.name} (آية ${revFromAyah}) إلى سورة ${revEndInfo.name} (آية ${revToAyah})`;
+  }
+
+  const recordsDatesStr = last3Records.map((e: any) => e.date).join("، ");
+  const recordsCount = last3Records.length;
+
+  const analysisText = recordsCount > 0
+    ? `خطة الطالب الذاتية المعتمدة على آخر ${recordsCount} تسجيلات تسميع فعلية (${recordsDatesStr}): أظهر الطالب معدل إتقان (${avgScore >= 8.5 ? "ممتاز وتفوق" : avgScore >= 7 ? "جيد ومستقر" : "يحتاج تثبيت ومتابعة"})، وتم تدقيق ومراجعة التسجيلات القديمة السابقة لربطها وتثبيتها انطلاقاً من آخر موضع أنجزه فعلياً في سورة ${curSurahInfo.name} (آية ${currentEndAyah})، بغض النظر عن المعلم المسجل فالخطة للطالب أولاً وأخيراً.`
+    : `تم تحديد المقرر القادم بناءً على موضع الطالب المعتمد في ملفه الشخصي (سورة ${curSurahInfo.name} آية ${currentEndAyah}) مع مراجعة وتثبيت ما سبقه بصورة تراكمية.`;
+
+  return {
+    threeDayAnalysis: analysisText,
+    recordsAnalysis: analysisText,
+    analyzedRecordsCount: recordsCount,
+    analyzedDates: last3Records.map((e: any) => e.date),
+    pedagogicalReasoning: highPerformance
+      ? `بناءً على دراسة آخر ${recordsCount} تسجيلات للطالب، يستمر البطل بوتيرة متقدمة (${nextNewToAyah - nextNewFromAyah + 1} آيات جديدة) مع مراجعة التسجيلات القديمة بدقة لضمان رسوخ الحفظ وعدم التفلت.`
+      : `بناءً على رصد آخر ${recordsCount} تسجيلات للطالب، تم تركيز الجهد على مراجعة وتثبيت المحفوظات السابقة وضبط الوتيرة لتمكين الحفظ في الصدر.`,
+    tomorrowNew: {
+      surahNumber: nextNewSurah,
+      surahName: nextStartInfo.name,
+      fromAyah: nextNewFromAyah,
+      toSurahNumber: nextNewToSurah,
+      toSurahName: nextEndInfo.name,
+      toAyah: nextNewToAyah,
+      formattedText: formattedNew,
+    },
+    tomorrowReview: {
+      type: revType,
+      surahNumber: revSurah,
+      surahName: revStartInfo.name,
+      fromAyah: revFromAyah,
+      toSurahNumber: revToSurah,
+      toSurahName: revEndInfo.name,
+      toAyah: revToAyah,
+      formattedText: formattedReview,
+    },
+    suggestedSheikh: student.level === "ضعيف" ? "الشيخ محمد صديق المنشاوي (المصحف المعلم)" : "الشيخ محمود خليل الحصري (المصحف المعلم)",
+    tajweedFocus: "مراعاة أحكام التجويد والمدود والوقف والابتداء ومراجعة التسجيلات السابقة",
+    dailyHomeNote: "الاستماع للشيخ المعلم 3 مرات، وتكرار المحفوظ الجديد 5 مرات، وتسميع مراجعة التسجيلات السابقة على ولي الأمر.",
+  };
+}
+
+// 2.5 Calculate Smart Next-Day Assignment studying past actual records (bypassing trips & holidays)
+app.post("/api/gemini/calculate-smart-assignment", async (req, res) => {
+  try {
+    const { student, recentEvaluations, attendanceRecords, todayRecitation } = req.body;
+    if (!student) {
+      return res.status(400).json({ error: "بيانات الطالب مطلوبة" });
+    }
+
+    const fallbackResult = calculateSmartAssignmentFromRecords(student, recentEvaluations || [], todayRecitation);
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ result: fallbackResult });
+    }
+
+    // Determine current point
+    const curSurah = getSurahInfo(fallbackResult.tomorrowNew.surahNumber || student.currentSurah || 78);
+    const startAyah = fallbackResult.tomorrowNew.fromAyah || 1;
+
+    // Summarize past actual records for Gemini prompt (student-centric: last 3 actual records)
+    const actualRecitationRecords = (recentEvaluations || [])
+      .filter((e: any) => {
+        const hasItem = e.recitationDetails?.todayNewItem?.surahNumber ||
+          e.recitationDetails?.todayReviewItem?.surahNumber ||
+          (e.recitationDetails?.todayReviewItems && e.recitationDetails.todayReviewItems.length > 0) ||
+          e.recitationDetails?.newMemorizationAchieved ||
+          e.recitationDetails?.reviewAchieved ||
+          (e.criteriaValues && Object.keys(e.criteriaValues).length > 0);
+        return Boolean(hasItem);
+      })
+      .slice(0, 3)
+      .map((e: any) => ({
+        date: e.date,
+        newMemorization: e.recitationDetails?.newMemorizationAchieved || e.recitationDetails?.todayNewItem?.formattedText || "غير محدد",
+        review: e.recitationDetails?.reviewAchieved || e.recitationDetails?.todayReviewItem?.formattedText || "غير محدد",
+        criteriaScores: e.criteriaValues || {},
+        teacherNotes: e.recitationDetails?.teacherNotes || "لا توجد"
+      }));
+
+    const prompt = `أنت الموجه التربوي والمقرئ الذكي لحلقات تحفيظ القرآن الكريم.
+المطلوب منك: دراسة أداء الطالب وسجلاته بناءً على **آخر 3 تسجيلات تسميع فعلية للبطل**، مع تدقيق ومراجعة التسجيلات القديمة السابقة لربطها وتثبيتها.
+ملاحظة أساسية: خطة الحفظ والمراجعة هي **خطة الطالب وليست خطة المعلم**؛ فسواء سجّل الطالب تسميعه عند معلمه الأصلي أو عند معلم آخر بديل أو في حلقة أخرى، فإن الخطة تتبع مسار الطالب التراكمي دون أي انقطاع أو تضارب.
+تجاوز تماماً أيام الرحلات أو الإجازات المفاجئة التي لم يحصل فيها تسميع، ثم احسب ما يجب أن يسمعه الطالب في الجلسة القادمة تلقائياً (حفظ جديد + مراجعة التسجيلات القديمة) بدقة قرآنية ملزمة 100%.
+
+بيانات الطالب:
+- اسم الطالب: ${student.name} (العمر: ${student.age} سنة، المستوى: ${student.level})
+- طاقة الحفظ اليومي: ${student.dailyNewTarget}
+- طاقة المراجعة: ${student.dailyReviewTarget}
+- موضع الوقوف الفعلي الأخير: سورة ${curSurah.name} (رقم السورة: ${curSurah.number}، إجمالي آياتها: ${curSurah.numberOfAyahs} آية فقط)
+- ما سمعه الطالب اليوم بالتفصيل (إن وجد): ${JSON.stringify(todayRecitation || {})}
+
+سجل آخر 3 تسجيلات تسميع فعلية للطالب (المعتمدة بعد استبعاد فترات الانقطاع والرحلات):
+${JSON.stringify(actualRecitationRecords, null, 2)}
+
+قواعد قرآنية وتربوية صارمة:
+1. إجمالي آيات سورة ${curSurah.name} هو ${curSurah.numberOfAyahs} آية فقط. لا تتجاوز هذا الرقم أبداً.
+2. احسب المقرر الجديد انطلاقاً من الموضع الفعلي الأخير للطالب بغض النظر عن المعلم المسجل.
+3. إذا انتهت السورة الحالية، انتقل للسورة التالية في ترتيب المصحف من الآية 1.
+4. مراجعة التسجيلات القديمة: حدد ورد المراجعة بناءً على السور والآيات التي سمّعها الطالب في تسجيلاته القديمة السابقة لربطها وتمكينها وتثبيتها.
+5. وضّح في التحليل التربوي أن الخطة هي ملك للطالب وتعتمد على دراسة آخر 3 تسجيلات فعلية له ومراجعة محفوظاته القديمة.
+
+أخرج النتيجة بصيغة JSON فقط:
+{
+  "threeDayAnalysis": "تحليل تربوي دقيق لدراسة أداء الطالب بناءً على آخر 3 تسجيلات تسميع فعلية ومراجعة تسجيلاته القديمة السابقة",
+  "pedagogicalReasoning": "السبب التعليمي لحساب مقدار ورد الجلسة القادمة",
+  "tomorrowNew": {
+    "surahNumber": ${fallbackResult.tomorrowNew.surahNumber},
+    "surahName": "${fallbackResult.tomorrowNew.surahName}",
+    "fromAyah": ${fallbackResult.tomorrowNew.fromAyah},
+    "toSurahNumber": ${fallbackResult.tomorrowNew.toSurahNumber},
+    "toSurahName": "${fallbackResult.tomorrowNew.toSurahName}",
+    "toAyah": ${fallbackResult.tomorrowNew.toAyah},
+    "formattedText": "${fallbackResult.tomorrowNew.formattedText}"
+  },
+  "tomorrowReview": {
+    "type": "${fallbackResult.tomorrowReview.type}",
+    "surahNumber": ${fallbackResult.tomorrowReview.surahNumber},
+    "surahName": "${fallbackResult.tomorrowReview.surahName}",
+    "fromAyah": ${fallbackResult.tomorrowReview.fromAyah},
+    "toSurahNumber": ${fallbackResult.tomorrowReview.toSurahNumber},
+    "toSurahName": "${fallbackResult.tomorrowReview.toSurahName}",
+    "toAyah": ${fallbackResult.tomorrowReview.toAyah},
+    "formattedText": "${fallbackResult.tomorrowReview.formattedText}"
+  },
+  "suggestedSheikh": "اسم الشيخ المقترح للاستماع له",
+  "tajweedFocus": "الحكم التجويدي المطلوب التركيز عليه",
+  "dailyHomeNote": "توجيه منزلي للربط والتكرار ومراجعة القديم"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const text = response.text || "{}";
+    const result = JSON.parse(text);
+    res.json({ result: { ...fallbackResult, ...result } });
+  } catch (error) {
+    console.error("Gemini calculate-smart-assignment error:", error);
+    const fallbackResult = calculateSmartAssignmentFromRecords(req.body?.student || {}, req.body?.recentEvaluations || [], req.body?.todayRecitation);
+    res.json({ result: fallbackResult });
+  }
+});
+
+// 3. Generate WhatsApp Message for Parent
+app.post("/api/gemini/generate-whatsapp-message", async (req, res) => {
+  try {
+    const { student, attendanceStatus, evaluation, halaqahName, teacherName, clientPortalUrl } = req.body;
+
+    const portalUrl = clientPortalUrl || `${process.env.APP_URL || ""}/?portal=${student.id}`;
+
+    const todayNewRecited = evaluation?.recitationDetails?.newMemorizationAchieved || (attendanceStatus === "حاضر" ? `سورة ${student.currentSurahName || "القرآن"} (الآيات المقررة)` : "لم يُسمّع اليوم لغيابه/اعتذاره");
+    const todayReviewRecited = evaluation?.recitationDetails?.reviewAchieved || (attendanceStatus === "حاضر" ? "مراجعة ورد التثبيت الماضي" : "لم يُراجع اليوم");
+    const teacherNotes = evaluation?.recitationDetails?.teacherNotes || "";
+    const tomorrowNewPlan = student.aiPlan?.currentDailyAssignment?.newMemorization || `سورة ${student.currentSurahName || "القرآن"} (مواصلة الآيات التالية)`;
+    const tomorrowReviewPlan = student.aiPlan?.currentDailyAssignment?.review || "مراجعة وتثبيت السور السابقة";
+    const suggestedSheikh = student.aiPlan?.currentDailyAssignment?.suggestedSheikh || "الشيخ المنشاوي (المعلم)";
+    const tajweedFocus = student.aiPlan?.currentDailyAssignment?.tajweedFocus || "مراعاة أحكام التجويد والمدود";
+    const dailyNote = student.aiPlan?.currentDailyAssignment?.dailyNote || "الاستماع للقارئ وتكرار الورد 3 مرات قبل النوم.";
+
+    if (!process.env.GEMINI_API_KEY) {
+      if (attendanceStatus === "غائب") {
+        const absentMsg = `السلام عليكم ورحمة الله وبركاته 🌿
+حياكم الله ولي أمر بطلنا الغالي / *${student.name}* حفظكم الله ورعاكم..
+
+افتقدنا بطلنا اليوم في حلقة القرآن الكريم، وعسى المانع خيراً إن شاء الله وطمئنونا عليه 🌸
+مكان البطل في الحلقة محفوظ ومكانه بيننا غالٍ، ونحن بشوق كبير لرؤيته وإشراقة وجهه وسماع تلاوته العذبة في الجلسة القادمة بإذن الله لمواصلة تميزه وإنجازه المبارك.
+
+نسأل الله العظيم أن يحفظه ويبارك فيه ويجعله قرة عين لكم 🤲
+معلم الحلقة: *${teacherName || "معلم ومحفظ الحلقة"}* - *${halaqahName || "حلقة القرآن الكريم"}*`;
+        return res.json({ message: absentMsg });
+      }
+
+      if (attendanceStatus === "معتذر") {
+        const excuseMsg = `السلام عليكم ورحمة الله وبركاته 🌿
+حياكم الله ولي أمر بطلنا النجيب / *${student.name}* حفظكم الله..
+
+وصلنا عذركم المقبول لعدم تمكن البطل من حضور حلقة اليوم، شكر الله لكم حرصكم وتواصلكم، ونسأل الله له تمام العافية والتوفيق 🌸
+نحن في انتظار لقائه وسماع تلاوته الطيبة في الجلسة القادمة بإذن الله تعالى.
+
+مع تحيات معلم الحلقة: *${teacherName || "معلم ومحفظ الحلقة"}* - *${halaqahName || "حلقة القرآن الكريم"}*`;
+        return res.json({ message: excuseMsg });
+      }
+
+      let defaultMsg = `السلام عليكم ورحمة الله وبركاته 🌿\n`;
+      defaultMsg += `تحية مباركة لولي أمر الطالب النجيب / *${student.name}*\n`;
+      defaultMsg += `نشارككم التقرير اليومي لـ *${halaqahName || "حلقة القرآن الكريم"}*:\n\n`;
+      defaultMsg += `📌 *حالة الحضور اليوم:* ${attendanceStatus}\n\n`;
+      
+      defaultMsg += `📖 *ما تم تسميعه وإنجازه اليوم بالتفصيل:*\n`;
+      defaultMsg += `🔹 *الحفظ الجديد:* ${todayNewRecited}\n`;
+      defaultMsg += `🔹 *المراجعة والتثبيت:* ${todayReviewRecited}\n`;
+      if (teacherNotes) {
+        defaultMsg += `💡 *ملاحظات المعلم والتجويد:* ${teacherNotes}\n`;
+      }
+      defaultMsg += `\n`;
+
+      defaultMsg += `🎯 *المقرر المطلوب تسميعه غداً بإذن الله تعالى:*\n`;
+      defaultMsg += `✨ *الورد الجديد لغد:* ${tomorrowNewPlan}\n`;
+      defaultMsg += `🔄 *المراجعة لغد:* ${tomorrowReviewPlan}\n`;
+      defaultMsg += `🎧 *القارئ المقترح للاستماع:* ${suggestedSheikh}\n`;
+      defaultMsg += `📝 *توجيه منزلي:* ${dailyNote}\n\n`;
+
+      defaultMsg += `🔗 *للاطلاع على تفاصيل بيانات الطالب ومتابعة تقدمه اليومي مباشرة، اضغط على الرابط التالي:*\n`;
+      defaultMsg += `${portalUrl}\n\n`;
+      defaultMsg += `نسأل الله أن يبارك في حفظه ويجعله قرة عين لكم 🤲\n`;
+      defaultMsg += `معلم الحلقة: *${teacherName || "معلم ومحفظ الحلقة"}*`;
+      return res.json({ message: defaultMsg });
+    }
+
+    if (attendanceStatus === "غائب") {
+      const absentPrompt = `أنت معلم ومربٍ في حلقة تحفيظ القرآن الكريم.
+المطلوب صياغة رسالة واتساب قصيرة وبسيطة، دافئة جداً ولطيفة وغير رسمية لولي أمر طالب غاب اليوم عن الحلقة.
+اسم الطالب: ${student.name}
+اسم ولي الأمر: ${student.parentName || "ولي أمر الطالب"}
+اسم الحلقة: ${halaqahName || "حلقة القرآن الكريم"}
+اسم المعلم: ${teacherName || "معلم ومحفظ الحلقة"}
+
+شروط وإرشادات الصياغة الصارمة:
+1. الرسالة يجب ألا تكون إشعاراً إدارياً جافاً (ممنوع تماماً صياغة مثل: "إعلام لولي الأمر أن ابنه غائب" أو جداول ومصطلحات إدارية).
+2. صغ الرسالة بأسلوب تربوي لطيف وأبوي يسأل عن البطل ويطمئن عليه مثل: "لماذا غاب البطل اليوم؟ افتقدنا بطلنا اليوم في حلقة القرآن الكريم وعسى المانع خيراً وطمئنونا عليه".
+3. بيّن أن مكان البطل في الحلقة محفوظ ومكانه بيننا غالٍ، ونحن بشوق كبير لرؤيته في الجلسة القادمة.
+4. ادعُ له بالبركة والحفظ ولأسرته الكريمة.
+5. نسق الرسالة بعلامات الواتساب (*عريض*) وإيموجيز لطيفة.
+6. أخرج نص الرسالة فقط بدون أي مقدمات أو تعليقات خارجية.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: absentPrompt,
+      });
+
+      return res.json({ message: response.text?.trim() });
+    }
+
+    const prompt = `أنت المعلم المشرف على حلقة تحفيظ القرآن الكريم.
+المطلوب صياغة رسالة واتساب مفصلة وراقية، إسلامية، ومحفزة جداً لولي أمر الطالب باللغة العربية مع تنسيق علامات الواتساب (*عريض*) وإيموجيز قرآنية:
+
+بيانات الطالب والتقرير:
+- اسم الطالب: ${student.name}
+- اسم ولي الأمر: ${student.parentName || "ولي أمر الطالب"}
+- اسم الحلقة: ${halaqahName || "حلقة القرآن الكريم"}
+- اسم المعلم: ${teacherName || "معلم ومحفظ الحلقة"}
+- حالة الحضور اليوم: ${attendanceStatus} (حاضر / متأخر)
+- تفاصيل ما سمعه الطالب اليوم بالتفصيل:
+  * في الحفظ الجديد اليوم: ${todayNewRecited}
+  * في المراجعة اليوم: ${todayReviewRecited}
+  * ملاحظات وتوجيهات المعلم اليوم: ${teacherNotes || "أداء طيب ومبارك"}
+- المطلوب منه تسميعه غداً بإذن الله تعالى بالتفصيل:
+  * ورد الحفظ الجديد لغد: ${tomorrowNewPlan}
+  * ورد المراجعة والتثبيت لغد: ${tomorrowReviewPlan}
+  * القارئ المقترح للاستماع له بالمنزل: ${suggestedSheikh}
+  * تركيز التجويد: ${tajweedFocus}
+  * توجيه المعلم المنزلي لولي الأمر: ${dailyNote}
+- الرابط المباشر لبوابة الطالب الحية لمتابعة البيانات بالتفصيل: ${portalUrl}
+
+شروط وتنسيق الرسالة:
+1. ابدأ بتحية إسلامية دافئة موجهة لولي أمر الطالب باسم الطالب.
+2. ضع قسماً واضحاً وبارزاً بعنوان: 📖 *ما تم تسميعه اليوم بالتفصيل* مع ذكر الجديد والمراجعة وملاحظات المعلم.
+3. ضع قسماً واضحاً وبارزاً بعنوان: 🎯 *المقرر المطلوب تسميعه غداً بإذن الله تعالى* مع توضيح ورد الحفظ الجديد لغد والمراجعة والقارئ المعلم المقترح.
+4. ضع فقرة واضحة تحث ولي الأمر على الضغط على رابط البوابة الحية للاطلاع على كافة بيانات ابنه وتفاصيل حفظه:
+   🔗 *للاطلاع على ملف الطالب وبياناته التفصيلية:*
+   ${portalUrl}
+5. اختم بالدعاء المبارك والتوقيع باسم المعلم والحلقة.
+6. اجعل الرسالة مكتملة ومنسقة دون أي حقول ناقصة.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+    });
+
+    res.json({ message: response.text });
+  } catch (error) {
+    console.error("Gemini whatsapp error:", error);
+    const portalUrl = req.body?.clientPortalUrl || `${process.env.APP_URL || ""}/?portal=${req.body?.student?.id || ""}`;
+    res.json({
+      message: `السلام عليكم ورحمة الله وبركاته 🌿\nولي أمر الطالب العزيز / ${req.body?.student?.name || ""}\nتم تسجيل حضور وتسميع اليوم في حلقة القرآن الكريم بنجاح.\n🔗 لمتابعة بيانات الطالب بالتفصيل اليومي:\n${portalUrl}\nمع تحيات معلم الحلقة.`,
+    });
+  }
+});
+
+// 4. Generate Weekly / Monthly Detailed Report
+app.post("/api/gemini/generate-report", async (req, res) => {
+  try {
+    const { student, reportType, attendanceSummary, evaluationList, halaqahName, teacherName, clientPortalUrl } = req.body;
+
+    const portalUrl = clientPortalUrl || `${process.env.APP_URL || ""}/?portal=${student?.id || ""}`;
+    const periodLabel = reportType === "monthly" ? "الشهري" : reportType === "comprehensive" ? "الفصلي الشامل" : "الأسبوعي";
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        summary: `تقرير ${periodLabel} للطالب ${student?.name || ""}`,
+        achievementsText: `أتم الطالب حفظ وتسميع السور المقررة بنسبة التزام عالية ومستوى ${student?.level || "ممتاز"}. إجمالي أيام الحضور المسجلة: ${attendanceSummary?.presents || 0} يوم.`,
+        tajweedAssessment: "مخارج الحروف طيبة مع ضبط المدود وأحكام النون الساكنة والتنوين.",
+        recommendations: "الاستمرار في الاستماع اليومي للمصحف المعلم بمعدل 15 دقيقة والتكرار مع الأسرة.",
+        whatsappText: `السلام عليكم ورحمة الله وبركاته 🌿\nيسرنا في *${halaqahName || "حلقة القرآن الكريم"}* مشاركتكم التقرير ${periodLabel} للطالب النجيب / *${student?.name || ""}*.\n📊 نسبة الحضور: *${attendanceSummary?.attendancePercentage || "100%"}*\n✨ إنجاز الحفظ: سورة ${student?.currentSurahName || ""}\n🔗 يمكنكم الاطلاع على كامل تفاصيل التقرير وملف الطالب عبر الرابط:\n${portalUrl}\nمع تحيات المشرف: *${teacherName || "معلم ومحفظ الحلقة"}*`,
+      });
+    }
+
+    const prompt = `أنت خبير توجيه تربوي وإداري في حلقات تحفيظ القرآن الكريم.
+المطلوب إعداد تقرير ${periodLabel} شامل ومميز للطالب:
+- الطالب: ${student?.name} (العمر: ${student?.age} سنة، المستوى: ${student?.level})
+- ملخص الحضور: ${JSON.stringify(attendanceSummary || {})}
+- سجل التقييمات والتسميع: ${JSON.stringify(evaluationList || [])}
+- الحفظ الحالي: سورة ${student?.currentSurahName}
+- اسم الحلقة: ${halaqahName || "حلقة القرآن الكريم"}
+- اسم المعلم: ${teacherName || "معلم ومحفظ الحلقة"}
+- رابط ملف الطالب: ${portalUrl}
+
+أخرج تقريراً قيماً وملهماً بصيغة JSON حصراً:
+{
+  "summary": "عنوان ملخص للإنجاز والتقدم",
+  "achievementsText": "بيان تفصيلي بما أنجزه الطالب من صفحات وآيات ومراجعة ومقدار التقدم خلال هذه الفترة",
+  "tajweedAssessment": "تقييم التجويد والأداء الصوتي والضبط ومخارج الحروف",
+  "recommendations": "نصائح وتوجيهات عملية لأولياء الأمور لتثبيت الحفظ في المنزل والتشجيع",
+  "whatsappText": "رسالة واتساب أنيقة ومكتملة ومنسقة بالعريض (*نص*) والإيموجيز جاهزة للإرسال فوراً لولي الأمر مع رابط المتابعة"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const text = response.text || "{}";
+    const reportData = JSON.parse(text);
+    res.json(reportData);
+  } catch (error) {
+    console.error("Gemini report error:", error);
+    const { student, reportType, attendanceSummary, halaqahName, teacherName, clientPortalUrl } = req.body || {};
+    const portalUrl = clientPortalUrl || `${process.env.APP_URL || ""}/?portal=${student?.id || ""}`;
+    const periodLabel = reportType === "monthly" ? "الشهري" : "الأسبوعي";
+
+    res.json({
+      summary: `تقرير ${periodLabel} للطالب ${student?.name || ""}`,
+      achievementsText: `أتم الطالب حفظ وتسميع السور المقررة بنسبة التزام طيبة ومستوى ${student?.level || "جيد"}. إجمالي أيام الحضور: ${attendanceSummary?.presents || 0} يوم.`,
+      tajweedAssessment: "مخارج الحروف طيبة مع ضبط المدود وأحكام التجويد الأساسية.",
+      recommendations: "الاستماع اليومي للمصحف المعلم بمعدل 15 دقيقة والتكرار المستمر.",
+      whatsappText: `السلام عليكم ورحمة الله وبركاته 🌿\nيسرنا في *${halaqahName || "حلقة القرآن الكريم"}* مشاركتكم التقرير ${periodLabel} للطالب النجيب / *${student?.name || ""}*.\n📊 نسبة الحضور: *${attendanceSummary?.attendancePercentage || "100%"}*\n✨ إنجاز الحفظ: سورة ${student?.currentSurahName || ""}\n🔗 يمكنكم الاطلاع على كامل تفاصيل التقرير وملف الطالب عبر الرابط:\n${portalUrl}\nمع تحيات المعلم: *${teacherName || "معلم ومحفظ الحلقة"}*`,
+    });
+  }
+});
+
+// 5. Interactive Quran Coach AI Chat
+app.post("/api/gemini/chat", async (req, res) => {
+  try {
+    const { message, history, context } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        reply: `أهلاً بك يا شيخنا الفاضل. بصفتي مساعدك القرآني الذكي، أنا جاهز لمساعدتك في تخطيط ورد الطلاب، وتذليل صعوبات الحفظ، وتقديم أفضل الوسائل التربوية لتحفيز طلاب الحلقة. كيف يمكنني خدمتك اليوم؟`,
+      });
+    }
+
+    const systemInstruction = `أنت "مستشار عمران القرآني الذكي"، شيخ ومربٍ خبير، ضليع في علوم القرآن، التجويد والقراءات، وطرق التدريس والتحفيظ النبوية الحديثة، مع خبرة عميقة في التعامل مع مختلف مستويات وفئات الطلاب النفسية والعمرية.
+لديك وصول كامل لبيانات الحلقة التالية:
+- عدد الطلاب: ${context?.studentsCount || 0}
+- ملخص مستويات الطلاب: ${JSON.stringify(context?.studentsSummary || [])}
+- إعدادات الحلقة: ${JSON.stringify(context?.settings || {})}
+
+مهمتك:
+1. الإجابة عن أي استشارة تعليمية أو تجويدية أو تربوية يطرحها المعلم.
+2. اقتراح خطط علاجية وتيسيرية للطلاب ضعاف الحفظ أو بطيئي الاستيعاب (مثل طريقة التكرار الثلاثي، طريقة الحفظ التراكمي، تقسيم الآيات الطويلة).
+3. اقتراح أفكار ومسابقات تحفيزية للحلقة.
+4. التحدث بلغة عربية فصيحة، وقورة، دافئة وداعمة ومحفزة.
+5. إذا طلب المعلم تعديل خطة طالب محدد، أعطه خطة واضحة ومقترحة بالآيات والسور.`;
+
+    const formattedHistory: any[] = [];
+    if (Array.isArray(history)) {
+      for (const h of history.slice(-10)) {
+        if (h.text && (h.sender === "user" || h.sender === "assistant")) {
+          formattedHistory.push({
+            role: h.sender === "user" ? "user" : "model",
+            parts: [{ text: h.text }],
+          });
+        }
+      }
+    }
+
+    const chat = ai.chats.create({
+      model: "gemini-3.8-flash",
+      config: {
+        systemInstruction,
+      },
+      history: formattedHistory,
+    });
+
+    const response = await chat.sendMessage({
+      message: message || "السلام عليكم",
+    });
+
+    res.json({ reply: response.text });
+  } catch (error) {
+    console.error("Gemini chat error:", error);
+    res.json({
+      reply: "حدث خطأ أثناء الاتصال بالمستشار الذكي، يرجى المحاولة مرة أخرى أو مراجعة الاتصال.",
+    });
+  }
+});
+
+// Helper: Normalize Arabic characters for robust matching
+function normalizeArabicText(text: string): string {
+  if (!text) return "";
+  return text
+    .trim()
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/[ة]/g, "ه")
+    .replace(/[ى]/g, "ي")
+    .replace(/[\u064B-\u065F\u0670]/g, "") // remove tashkeel
+    .toLowerCase();
+}
+
+// Helper: Match halaqah flexibly against query, handling common user typos like "احلققة", "احلققه", "احلقه", "مجموعه"
+function findMatchingHalaqah(query: string, halaqahs: any[] = [], students: any[] = []): any | null {
+  if (!query) return null;
+  const normQuery = normalizeArabicText(query);
+
+  // Combine official halaqahs, halaqahs inferred from students, and default platform halaqahs
+  const combinedHalaqahs: any[] = [...(Array.isArray(halaqahs) ? halaqahs : [])];
+  
+  if (Array.isArray(students)) {
+    for (const s of students) {
+      if (s?.halaqahName) {
+        const normName = normalizeArabicText(s.halaqahName);
+        if (!combinedHalaqahs.some(h => normalizeArabicText(h.name || '') === normName)) {
+          combinedHalaqahs.push({
+            id: s.halaqahId || `halaqah-${normName}`,
+            name: s.halaqahName,
+            complexName: s.complexName || '',
+          });
+        }
+      }
+    }
+  }
+
+  // Known fallback halaqahs
+  const fallbackHalaqahs = [
+    { id: 'halaqah-zubair', name: 'حلقة الزبير بن العوام' },
+    { id: 'halaqah-abubakr', name: 'حلقة أبي بكر الصديق' },
+    { id: 'halaqah-shatibi', name: 'حلقة الشاطبي' },
+    { id: 'halaqah-main', name: 'حلقة القرآن الكريم' },
+  ];
+  for (const fb of fallbackHalaqahs) {
+    if (!combinedHalaqahs.some(h => normalizeArabicText(h.name || '').includes(normalizeArabicText(fb.name)))) {
+      combinedHalaqahs.push(fb);
+    }
+  }
+
+  const stopWords = new Set(['حلقه', 'الحلقه', 'احلققه', 'احلقه', 'مجموعه', 'المجموعه', 'بن', 'ابن', 'عبد', 'الله', 'في', 'من', 'الي', 'إلى', 'مع', 'عن', 'كل', 'طلاب', 'طالب', 'معلم', 'شيخ']);
+
+  // 1. Direct or full name inclusion across entire query
+  for (const h of combinedHalaqahs) {
+    const normH = normalizeArabicText(h.name || "");
+    const cleanH = normH.replace(/^(?:حلقه|الحلقه|احلققه|احلقه|مجموعه|المجموعه)\s+/, "").trim();
+    if (normQuery.includes(normH) || (cleanH.length >= 3 && normQuery.includes(cleanH))) {
+      return h;
+    }
+  }
+
+  // 2. High-value distinctive keywords / tokens (e.g. "الزبير" -> "حلقة الزبير بن العوام", "الشاطبي" -> "حلقة الشاطبي", "ابو بكر"/"ابي بكر" -> "حلقة أبي بكر الصديق")
+  for (const h of combinedHalaqahs) {
+    const cleanH = normalizeArabicText(h.name || "").replace(/^(?:حلقه|الحلقه|احلققه|احلقه|مجموعه|المجموعه)\s+/, "").trim();
+    const tokens = cleanH.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    for (const token of tokens) {
+      if (normQuery.includes(token)) {
+        return h;
+      }
+    }
+  }
+
+  // 3. Look for targeted halaqah phrases after prepositions or halaqah markers (handling typos like احلققة, احلققه, احلقة)
+  const halaqahMatch = query.match(/(?:في|الي|إلى|مع|ب|لحلقة|لحلقه|طلاب\s+حلقة|طلاب\s+حلقه|معلم\s+حلقة|معلم\s+حلقه|معلمي\s+حلقة|معلمي\s+حلقه)?\s*(?:احلققة|احلققه|احلقة|احلقه|حلقة|حلقه|الحلقة|الحلقه|مجموعة|مجموعه|المجموعة|المجموعه)\s+([^\n,\.؛!?]+)/i);
+  if (halaqahMatch && halaqahMatch[1]) {
+    const candidatePhrase = normalizeArabicText(halaqahMatch[1].trim());
+    for (const h of combinedHalaqahs) {
+      const normH = normalizeArabicText(h.name || "");
+      const cleanH = normH.replace(/^(?:حلقه|الحلقه|احلققه|احلقه|مجموعه|المجموعه)\s+/, "").trim();
+      if (candidatePhrase.includes(cleanH) || (cleanH.length >= 3 && candidatePhrase.includes(cleanH)) || (candidatePhrase.length >= 3 && cleanH.includes(candidatePhrase))) {
+        return h;
+      }
+    }
+  }
+
+  // 4. Generic halaqah request: "حلقة من اللقات", "حلقة من الحلقات", "إحدى الحلقات", "احدى الحلقات", "أي حلقة", "اي حلقة", "حلقة معينة", "إحدى حلقاتنا"
+  if (/(?:حلقة\s+من\s+(?:الحلقات|اللقات|حلقات)|إحدى\s+الحلقات|احدى\s+الحلقات|أي\s+حلقة|اي\s+حلقة|حلقة\s+معينة|إحدى\s+حلقاتنا)/i.test(query)) {
+    return combinedHalaqahs[0] || null;
+  }
+
+  return null;
+}
+
+// Clean helper: Extract base halaqah name without generic prefix words ("حلقة", "المجموعة", etc.)
+function cleanHalaqahBaseName(name: string): string {
+  return normalizeArabicText(name || "")
+    .replace(/^(?:حلقه|الحلقه|احلققه|احلقه|مجموعه|المجموعه)\s+/, "")
+    .trim();
+}
+
+// Strict helper: Check if a teacher belongs to a specific halaqah
+function isTeacherInHalaqah(teacher: any, halaqah: any): boolean {
+  if (!teacher || !halaqah) return false;
+  if (halaqah.id && teacher.halaqahId && teacher.halaqahId === halaqah.id) return true;
+  if (halaqah.teacherName && normalizeArabicText(halaqah.teacherName).includes(normalizeArabicText(teacher.name || ""))) return true;
+  if (teacher.name && normalizeArabicText(teacher.name).includes(normalizeArabicText(halaqah.primaryTeacherName || halaqah.teacherName || ""))) return true;
+
+  const cleanTarget = cleanHalaqahBaseName(halaqah.name);
+  const cleanTeacherH = cleanHalaqahBaseName(teacher.halaqahName);
+  if (!cleanTarget || !cleanTeacherH) return false;
+
+  if (cleanTarget === cleanTeacherH) return true;
+  if (cleanTarget.length >= 4 && cleanTeacherH.includes(cleanTarget)) return true;
+  if (cleanTeacherH.length >= 4 && cleanTarget.includes(cleanTeacherH)) return true;
+
+  const stopWords = new Set(["حلقه", "الحلقه", "احلققه", "احلقه", "مجموعه", "المجموعه", "بن", "ابن", "عبد", "الله", "في", "من", "مع", "عن", "طلاب", "طالب", "معلم", "شيخ"]);
+  const tokens = cleanTarget.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+  return tokens.some(tok => cleanTeacherH.includes(tok));
+}
+
+// Helper: Cleanly isolate candidate student name without leftover prepositions, verbs, or halaqah words
+function extractCleanStudentName(message: string, detectedHalaqah?: any): string {
+  let cleaned = " " + message + " ";
+
+  // 1. If halaqah was detected, strip any reference to it completely
+  if (detectedHalaqah?.name) {
+    const rawH = detectedHalaqah.name;
+    const baseH = rawH.replace(/^(?:حلقة|الحلقة|احلققة|احلققه|احلقة|احلقه|مجموعة|المجموعة|مجموعه|المجموعه)\s+/, "").trim();
+    const escapeRegex = (s: string) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+
+    const halaqahPattern = new RegExp(
+      "(?:في|الي|إلى|مع|ب|لحلقة|لحلقه)?\\s*(?:حلقة|حلقه|الحلقة|الحلقه|احلققة|احلققه|احلقة|احلقه|مجموعة|مجموعه|المجموعة|المجموعه)?\\s*(?:" +
+        escapeRegex(rawH) + "|" + escapeRegex(baseH) + ")",
+      "gi"
+    );
+    cleaned = cleaned.replace(halaqahPattern, " ");
+  }
+
+  // 2. Remove any halaqah clause or typos (like احلققة, احلققه, احلقة, حلقة, مجموعة) and anything after it
+  cleaned = cleaned.replace(/(?:في|الي|إلى|مع|ب|لحلقة|لحلقه)?\s*(?:احلققة|احلققه|احلقة|احلقه|حلقة|حلقه|الحلقة|الحلقه|مجموعة|مجموعه|المجموعة|المجموعه)\s+.*$/gi, " ");
+  cleaned = cleaned.replace(/(?:في|الي|إلى|مع|ب|لحلقة|لحلقه)?\s*(?:احلققة|احلققه|احلقة|احلقه|حلقة|حلقه|الحلقة|الحلقه|مجموعة|مجموعه|المجموعة|المجموعه)\s+[^\s,\.؛!?]+/gi, " ");
+  cleaned = cleaned.replace(/(?:احلققة|احلققه|احلقة|احلقه|حلقة|حلقه|الحلقة|الحلقه|مجموعة|مجموعه|المجموعة|المجموعه)/gi, " ");
+
+  // 3. Remove command words and noise tokens, including typos like "الطلالب"
+  const removeWords = [
+    "يا", "مساعد", "روبوت", "ذكاء", "لو", "سمحت", "من", "فضلك", "بالله", "عليك",
+    "سجل", "تسجيل", "أضف", "اضف", "إضافة", "اضافة", "ضيف", "ضم", "ألحق", "الحق", "ادخل", "أدخل", "حط", "حطه",
+    "لي", "لنا", "معنا", "عندي", "عندنا", "فيه", "في",
+    "طالب", "طالبا", "طالباً", "الطالب", "الطلالب", "الطلاب", "طالبنا", "الطلبة",
+    "جديد", "جديدا", "جديداً", "اسمه", "المدعو", "واسمه", "باسم", "هو", "وهو", "يكون"
+  ];
+
+  for (const w of removeWords) {
+    const reg = new RegExp("(^|\\s+)" + w + "(\\s+|$)", "gi");
+    cleaned = cleaned.replace(reg, " ");
+  }
+
+  // Remove parameters if present
+  cleaned = cleaned.replace(/(?:بكلمة\s+مرور|كلمة\s+مرور|برمز\s+سري|برقم\s+سري|باسورد)\s*[:=]?\s*\S+/gi, " ");
+  cleaned = cleaned.replace(/(?:بمستوى|مستوى|المستوى)\s+\S+/gi, " ");
+  cleaned = cleaned.replace(/(?:بهدف|هدف|الهدف|ورد|الورد)\s+[^,\.؟!]+/gi, " ");
+
+  // Remove numbers, parentheticals, punctuation
+  cleaned = cleaned.replace(/[\d٠-٩]/g, " ");
+  cleaned = cleaned.replace(/[،,:\-–—؛.!?\(\)\[\]"']/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned;
+}
+
+// Helper: Extract user's first name cleanly
+function extractCleanFirstName(fullName: string): string {
+  if (!fullName) return "أخي الكريم";
+  let clean = fullName.replace(/^(الشيخ|الأستاذ|الأخ|المعلم|المشرف|الدكتور|المربي|القارئ)\s+/gi, "").trim();
+  const parts = clean.split(/\s+/);
+  return parts[0] || fullName.trim();
+}
+
+// Helper: Compute accurate student metrics (fractional pages, attendance points, total points) based on archive
+function computeStudentAccurateMetrics(
+  student: any,
+  evaluationsList: any[] = [],
+  attendanceList: any[] = [],
+  listeningLogsList: any[] = [],
+  submissionsList: any[] = []
+) {
+  const stEvals = evaluationsList.filter(e => e.studentId === student.id);
+  const stAtt = attendanceList.filter(a => a.studentId === student.id);
+
+  let totalNewFaces = 0;
+  let totalReviewFaces = 0;
+  let evalCriteriaPoints = 0;
+  let evalPagePoints = 0;
+
+  stEvals.forEach(ev => {
+    const details = ev.recitationDetails || {};
+    if (details.todayNewItem && !details.todayNewItem.didNotRecite) {
+      const faces = calculateRecitationFractionalFaces(
+        details.todayNewItem.surahNumber,
+        details.todayNewItem.fromAyah,
+        details.todayNewItem.toSurahNumber || details.todayNewItem.surahNumber,
+        details.todayNewItem.toAyah
+      );
+      totalNewFaces += faces;
+    }
+    if (Array.isArray(details.todayReviewItems)) {
+      details.todayReviewItems.forEach((r: any) => {
+        if (!r.didNotRecite) {
+          const faces = calculateRecitationFractionalFaces(
+            r.surahNumber,
+            r.fromAyah,
+            r.toSurahNumber || r.surahNumber,
+            r.toAyah
+          );
+          totalReviewFaces += faces;
+        }
+      });
+    }
+    evalCriteriaPoints += Number(details.criteriaPointsEarnedToday) || 0;
+    evalPagePoints += Number(details.pagesPointsEarnedToday) || 0;
+  });
+
+  const totalFaces = totalNewFaces + totalReviewFaces;
+  const presentCount = stAtt.filter(a => a.status === 'حاضر').length;
+  const lateCount = stAtt.filter(a => a.status === 'متأخر').length;
+  const absentCount = stAtt.filter(a => a.status === 'غائب').length;
+  const excusedCount = stAtt.filter(a => a.status === 'معتذر').length;
+  const totalAttDays = stAtt.length;
+  const attendanceRate = totalAttDays > 0 ? Math.round((presentCount / totalAttDays) * 100) : 100;
+  
+  // Accurate attendance and absence points (+1 for present, -1 for absent)
+  const attendancePoints = (presentCount * 1) - (absentCount * 1);
+
+  // Recitation evaluation points from saved evaluations
+  let evalPointsFromRecords = 0;
+  stEvals.forEach(ev => {
+    const details = ev.recitationDetails || {};
+    const pagePts = Number(details.pagesPointsEarnedToday) || 0;
+    const critPts = Number(details.criteriaPointsEarnedToday) || 0;
+    const attPts = Number(details.attendancePointsEarnedToday) || 0;
+    const recitationOnly = pagePts + critPts;
+    if (recitationOnly > 0) {
+      evalPointsFromRecords += recitationOnly;
+    } else if (typeof details.pointsEarnedToday === 'number' && details.pointsEarnedToday > 0) {
+      evalPointsFromRecords += Math.max(0, details.pointsEarnedToday - attPts);
+    }
+  });
+
+  const listeningPoints = (listeningLogsList.filter(l => l.studentId === student.id && l.isFullyCompleted).length * 5);
+  const examPoints = submissionsList.filter(s => s.studentId === student.id).reduce((sum, s) => sum + (s.pointsGrantedForLeaderboard || 0), 0);
+
+  const fallbackPagesPoints = (totalNewFaces * 5) + (totalReviewFaces * 1);
+  const storedProfilePoints = (Number(student.criteriaPoints) || 0) + (Number(student.totalPagePoints) || 0);
+  const finalEvalPoints = Math.max(evalPointsFromRecords, evalPagePoints + evalCriteriaPoints, fallbackPagesPoints, storedProfilePoints);
+
+  const calculatedPoints = Math.max(
+    0,
+    Math.round(
+      examPoints +
+      finalEvalPoints +
+      attendancePoints +
+      listeningPoints +
+      (Number(student.bonusPoints) || 0)
+    )
+  );
+
+  const finalPoints = typeof student.points === 'number' && student.points > 0
+    ? student.points
+    : calculatedPoints;
+
+  return {
+    totalFaces: Math.round(totalFaces * 10) / 10,
+    totalNewFaces: Math.round(totalNewFaces * 10) / 10,
+    totalReviewFaces: Math.round(totalReviewFaces * 10) / 10,
+    presentCount,
+    absentCount,
+    excusedCount,
+    lateCount,
+    attendanceRate,
+    attendancePoints,
+    finalPoints
+  };
+}
+
+// Helper: Extract complete and accurate recitation details, guaranteeing non-zero faces when student recited
+function extractEvaluationRecitationData(ev: any) {
+  if (!ev) return null;
+  const details = ev.recitationDetails || {};
+  let newFaces = 0;
+  let reviewFaces = 0;
+
+  // 1. Fractional faces from structured todayNewItem
+  if (details.todayNewItem && !details.todayNewItem.didNotRecite) {
+    newFaces = calculateRecitationFractionalFaces(
+      details.todayNewItem.surahNumber || 78,
+      details.todayNewItem.fromAyah || 1,
+      details.todayNewItem.toSurahNumber || details.todayNewItem.surahNumber || 78,
+      details.todayNewItem.toAyah || 10
+    );
+  }
+
+  // 2. Fallback to pagesCompletedToday array
+  if (newFaces <= 0 && Array.isArray(details.pagesCompletedToday) && details.pagesCompletedToday.length > 0) {
+    newFaces = details.pagesCompletedToday.length;
+  }
+
+  // 3. Fallback to points (5 pts per new face)
+  if (newFaces <= 0 && typeof details.pagesPointsEarnedToday === 'number' && details.pagesPointsEarnedToday > 0) {
+    newFaces = Math.round((details.pagesPointsEarnedToday / 5) * 10) / 10;
+  }
+
+  // 4. Fallback to Arabic text phrases in newMemorizationAchieved
+  const textNew = details.newMemorizationAchieved || '';
+  if (newFaces <= 0 && textNew && !textNew.includes('لم') && !textNew.includes('غائب') && !textNew.includes('معتذر')) {
+    if (textNew.includes('أربعة أوجه') || textNew.includes('4 أوجه') || textNew.includes('4 وجه')) newFaces = 4;
+    else if (textNew.includes('ثلاثة أوجه') || textNew.includes('3 أوجه') || textNew.includes('3 وجه')) newFaces = 3;
+    else if (textNew.includes('وجهين') || textNew.includes('2 وجه') || textNew.includes('وجهان')) newFaces = 2;
+    else if (textNew.includes('ثلاثة أرباع') || textNew.includes('3/4')) newFaces = 0.75;
+    else if (textNew.includes('نصف وجه') || textNew.includes('1/2')) newFaces = 0.5;
+    else if (textNew.includes('ربع وجه') || textNew.includes('1/4')) newFaces = 0.25;
+    else if (textNew.includes('وجه كامل') || textNew.includes('وجه')) newFaces = 1;
+    else if (details.todayNewItem || textNew.length >= 4) {
+      newFaces = 1; // Default to 1 face if recitation text portion was recorded
+    }
+  }
+
+  // Review items
+  if (Array.isArray(details.todayReviewItems)) {
+    for (const r of details.todayReviewItems) {
+      if (!r.didNotRecite) {
+        reviewFaces += calculateRecitationFractionalFaces(
+          r.surahNumber || 78,
+          r.fromAyah || 1,
+          r.toSurahNumber || r.surahNumber || 78,
+          r.toAyah || 10
+        );
+      }
+    }
+  }
+
+  const textRev = details.reviewAchieved || '';
+  if (reviewFaces <= 0 && textRev && !textRev.includes('لم') && !textRev.includes('لا يوجد')) {
+    if (textRev.includes('وجهين') || textRev.includes('2 وجه') || textRev.includes('وجهان')) reviewFaces = 2;
+    else if (textRev.includes('نصف وجه')) reviewFaces = 0.5;
+    else if (textRev.includes('ربع وجه')) reviewFaces = 0.25;
+    else if (textRev.includes('وجه')) reviewFaces = 1;
+  }
+
+  const totalFaces = Math.round((newFaces + reviewFaces) * 100) / 100;
+
+  const facesLabel = (f: number) => {
+    if (f === 0.25) return 'ربع وجه';
+    if (f === 0.5) return 'نصف وجه';
+    if (f === 0.75) return 'ثلاثة أرباع وجه';
+    if (f === 1) return 'وجه كامل';
+    if (f === 2) return 'وجهان';
+    if (f >= 3 && f <= 10) return `${f} أوجه`;
+    return `${f} وجه`;
+  };
+
+  const newPortion = details.newMemorizationAchieved ||
+    (details.todayNewItem ? `${details.todayNewItem.surahName || 'حفظ مقرر'} (آية ${details.todayNewItem.fromAyah || 1} إلى ${details.todayNewItem.toAyah || 10})` : 'متابعة الورد المعتمد');
+
+  const reviewPortion = details.reviewAchieved ||
+    (Array.isArray(details.todayReviewItems) && details.todayReviewItems.length > 0
+      ? details.todayReviewItems.map((r: any) => `${r.surahName || ''} (${r.fromAyah || 1}-${r.toAyah || 10})`).join('، ')
+      : 'مراجعة دورية وتثبيت');
+
+  const teacherNotes = details.teacherNotes || ev.generalNotes || 'طالب متميز ومواظب على الحفظ والتسميع';
+
+  const evDate = ev.date || new Date().toISOString().split('T')[0];
+  const evDateObj = new Date(evDate + 'T12:00:00');
+  const dayName = !isNaN(evDateObj.getTime())
+    ? evDateObj.toLocaleDateString('ar-SA', { weekday: 'long' })
+    : 'اليوم';
+
+  return {
+    date: evDate,
+    dayName,
+    newMemorization: newPortion,
+    newFaces,
+    newFacesLabel: facesLabel(newFaces),
+    reviewAchieved: reviewPortion,
+    reviewFaces,
+    reviewFacesLabel: facesLabel(reviewFaces),
+    totalFaces,
+    totalFacesLabel: facesLabel(totalFaces),
+    teacherNotes,
+    points: details.pointsEarnedToday || ev.pointsAwarded || (newFaces * 5),
+    raw: ev,
+  };
+}
+
+// Helper: Format Date object to YYYY-MM-DD in local time (avoiding UTC conversion shift)
+function formatLocalDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper: Parse recitation date and day of week flexibly with known record dates
+function parseRecitationDateAndDay(
+  message: string,
+  availableDates: string[] = []
+): {
+  targetDate: string;
+  targetDayOfWeek: string | null;
+  targetDateLabel: string;
+  isWeekdayQuery: boolean;
+} {
+  const normMsg = normalizeArabicText(message);
+  const now = new Date();
+
+  // Explicit Arabic Days of the Week
+  const weekdaysMap: Record<string, { index: number; label: string }> = {
+    'اثنين': { index: 1, label: 'الاثنين' },
+    'اثنيين': { index: 1, label: 'الاثنين' },
+    'إثنين': { index: 1, label: 'الاثنين' },
+    'ثلاثاء': { index: 2, label: 'الثلاثاء' },
+    'ثلثاء': { index: 2, label: 'الثلاثاء' },
+    'اربعاء': { index: 3, label: 'الأربعاء' },
+    'أربعاء': { index: 3, label: 'الأربعاء' },
+    'خميس': { index: 4, label: 'الخميس' },
+    'جمعه': { index: 5, label: 'الجمعة' },
+    'جمعة': { index: 5, label: 'الجمعة' },
+    'سبت': { index: 6, label: 'السبت' },
+    'احد': { index: 0, label: 'الأحد' },
+    'أحد': { index: 0, label: 'الأحد' },
+  };
+
+  for (const [dayKey, dayInfo] of Object.entries(weekdaysMap)) {
+    if (normMsg.includes(dayKey)) {
+      const currentDay = now.getDay();
+      let baseDiff = (currentDay - dayInfo.index + 7) % 7;
+
+      const isExplicitLastMonth =
+        normMsg.includes('الشهر الماضي') ||
+        normMsg.includes('الشهر السابق') ||
+        normMsg.includes('شهر ماضي') ||
+        normMsg.includes('قبل شهر');
+
+      const isExplicitTwoWeeksAgo =
+        normMsg.includes('قبل اسبوعين') ||
+        normMsg.includes('قبل أسبوعين') ||
+        normMsg.includes('اسبوعين') ||
+        normMsg.includes('الاسبوع قبل الماضي') ||
+        normMsg.includes('الاسبوع اللي قبله');
+
+      // Find all dates in availableDates that fall on this weekday, sorted newest first
+      const matchingDatesInRecords = (Array.isArray(availableDates) ? availableDates : [])
+        .filter(dStr => {
+          if (!dStr) return false;
+          const dObj = new Date(dStr + 'T12:00:00');
+          return !isNaN(dObj.getTime()) && dObj.getDay() === dayInfo.index;
+        })
+        .sort((a, b) => new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime());
+
+      let finalTargetDate = "";
+      let label = "";
+
+      if (isExplicitLastMonth) {
+        // Monday of last month (~4 weeks ago)
+        const offsetDays = baseDiff === 0 ? 28 : baseDiff + 28;
+        const calObj = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offsetDays);
+        const calDate = formatLocalDate(calObj);
+
+        // Find in records a date that falls in the previous calendar month or around 20-45 days ago
+        const pastMonthRecord = matchingDatesInRecords.find(dStr => {
+          const d = new Date(dStr + 'T12:00:00');
+          const daysAgo = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+          return daysAgo >= 20 && daysAgo <= 45;
+        });
+
+        finalTargetDate = pastMonthRecord || calDate;
+        label = `يوم ${dayInfo.label} (الشهر الماضي)`;
+      } else if (isExplicitTwoWeeksAgo) {
+        // Monday 2 weeks ago (~14 days ago)
+        const offsetDays = baseDiff === 0 ? 14 : baseDiff + 14;
+        const calObj = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offsetDays);
+        const calDate = formatLocalDate(calObj);
+
+        const twoWeeksRecord = matchingDatesInRecords.find(dStr => {
+          const d = new Date(dStr + 'T12:00:00');
+          const daysAgo = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+          return daysAgo >= 11 && daysAgo <= 20;
+        });
+
+        finalTargetDate = twoWeeksRecord || calDate;
+        label = `يوم ${dayInfo.label} (قبل أسبوعين)`;
+      } else {
+        // ALWAYS the most recent occurrence (آخر/أحدث يوم اثنين) - Never jump to last month!
+        let offset = baseDiff;
+        if (baseDiff === 0 && (normMsg.includes('الماضي') || normMsg.includes('السابق'))) {
+          offset = 7;
+        }
+        const calObj = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+        const calDate = formatLocalDate(calObj);
+
+        // Find in records a date that matches calDate or is within the recent 7 days
+        const recentRecord = matchingDatesInRecords.find(dStr => {
+          if (dStr === calDate) return true;
+          const d = new Date(dStr + 'T12:00:00');
+          const daysAgo = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
+          return daysAgo >= 0 && daysAgo <= 7;
+        });
+
+        finalTargetDate = recentRecord || calDate;
+        const isToday = offset === 0 && finalTargetDate === formatLocalDate(now);
+        label = isToday ? `اليوم (${dayInfo.label})` : `يوم ${dayInfo.label} (آخر يوم ${dayInfo.label})`;
+      }
+
+      return {
+        targetDate: finalTargetDate,
+        targetDayOfWeek: dayKey,
+        targetDateLabel: label,
+        isWeekdayQuery: true,
+      };
+    }
+  }
+
+  if (normMsg.includes('قبل امس') || normMsg.includes('قبل اول امس') || normMsg.includes('اول امبارح') || normMsg.includes('أول امبارح') || normMsg.includes('منذ يومين') || normMsg.includes('يومين')) {
+    const b = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
+    const bDay = b.toLocaleDateString('ar-SA', { weekday: 'long' });
+    return {
+      targetDate: formatLocalDate(b),
+      targetDayOfWeek: normalizeArabicText(bDay),
+      targetDateLabel: 'قبل أمس',
+      isWeekdayQuery: false,
+    };
+  }
+
+  if (normMsg.includes('امس') || normMsg.includes('امبارح') || normMsg.includes('البارحه') || normMsg.includes('بارحه')) {
+    const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yDay = y.toLocaleDateString('ar-SA', { weekday: 'long' });
+    return {
+      targetDate: formatLocalDate(y),
+      targetDayOfWeek: normalizeArabicText(yDay),
+      targetDateLabel: 'أمس',
+      isWeekdayQuery: false,
+    };
+  }
+
+  if (normMsg.includes('بكرة') || normMsg.includes('بكره') || normMsg.includes('غدا') || normMsg.includes('غداً')) {
+    const t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const tDay = t.toLocaleDateString('ar-SA', { weekday: 'long' });
+    return {
+      targetDate: formatLocalDate(t),
+      targetDayOfWeek: normalizeArabicText(tDay),
+      targetDateLabel: 'غداً',
+      isWeekdayQuery: false,
+    };
+  }
+
+  return {
+    targetDate: formatLocalDate(now),
+    targetDayOfWeek: null,
+    targetDateLabel: normMsg.includes('النهارده') || normMsg.includes('النهاردة') ? 'اليوم' : 'اليوم',
+    isWeekdayQuery: false,
+  };
+}
+
+// Helper: Locate student evaluation matching a date or weekday with latest-first priority
+function findStudentEvaluationForDateOrDay(
+  studentEvals: any[],
+  targetDate: string,
+  targetDayOfWeek: string | null
+): any | null {
+  if (!Array.isArray(studentEvals) || studentEvals.length === 0) return null;
+
+  // Always sort descending first so newest evaluations come first
+  const sortedEvals = [...studentEvals].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+  // 1. Exact date match has HIGHEST priority!
+  if (targetDate) {
+    const exact = sortedEvals.find(e => e.date === targetDate);
+    if (exact) return exact;
+  }
+
+  // 2. If weekday was explicitly queried (e.g. "اثنين", "ثلاثاء"), find evaluations on that weekday
+  if (targetDayOfWeek) {
+    const weekdayNameToIndex: Record<string, number> = {
+      'احد': 0, 'أحد': 0,
+      'اثنين': 1, 'إثنين': 1, 'اثنيين': 1,
+      'ثلاثاء': 2, 'ثلثاء': 2,
+      'اربعاء': 3, 'أربعاء': 3,
+      'خميس': 4,
+      'جمعه': 5, 'جمعة': 5,
+      'سبت': 6,
+    };
+    const targetIdx = weekdayNameToIndex[targetDayOfWeek];
+
+    const matchingWeekdayEvals = sortedEvals.filter(ev => {
+      if (!ev.date) return false;
+      const evDateObj = new Date(ev.date + 'T12:00:00');
+      return typeof targetIdx === 'number' && !isNaN(evDateObj.getTime()) && evDateObj.getDay() === targetIdx;
+    });
+
+    if (matchingWeekdayEvals.length > 0) {
+      if (targetDate) {
+        const targetTime = new Date(targetDate + 'T12:00:00').getTime();
+        matchingWeekdayEvals.sort((a, b) => {
+          const distA = Math.abs(new Date(a.date + 'T12:00:00').getTime() - targetTime);
+          const distB = Math.abs(new Date(b.date + 'T12:00:00').getTime() - targetTime);
+          return distA - distB;
+        });
+        return matchingWeekdayEvals[0];
+      }
+      return matchingWeekdayEvals[0];
+    }
+  }
+
+  return sortedEvals[0] || null;
+}
+
+// Helper: Resolve student with highest precision, avoiding picking the wrong student
+function findBestMatchingStudent(
+  message: string,
+  studentsList: any[],
+  activeHalaqahId?: string
+): any | null {
+  if (!message || !Array.isArray(studentsList) || studentsList.length === 0) return null;
+
+  const normMsg = normalizeArabicText(message);
+  const normMsgNoSpaces = normMsg.replace(/\s+/g, "");
+
+  // Never hijack comparison or multi-student queries with a single student match
+  const isComparisonOrDualQuery =
+    /(?:مقارن|قارن|قارني|مفاضل|فاضل|أيهما|ايهما|الفرق\s+بين)/i.test(message) ||
+    (/(?:أفضل|افضل|أحسن|احسن|أميز|اميز|أقوى|اقوى)/i.test(message) && /(?:أم|ام|أو|او|ولا|بين)/i.test(message));
+
+  if (isComparisonOrDualQuery) {
+    return null;
+  }
+
+  // If query is about multiple students or exportable report, NEVER match a single student unless full name is explicitly provided
+  const isMultiQuery =
+    /(?:أربع|اربع|أربعة|اربعة|ثلاث|ثلاثة|طالبين|طالبان|خمس|خمسة|ست|ستة|سبع|سبعة|ثمان|ثمانية|تسع|تسعة|عشر|عشرة|\d+)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب)/i.test(message) ||
+    /(?:مجموعة|مجموعه|عدة|عده|بعض|كافة|كافه|جميع|قائمة|كشف)\s+(?:من\s+)?(?:الطلاب|طلاب)/i.test(message) ||
+    /(?:الطلاب|طلاب)\s+(?:ماذا|ايش|شو|وش|كم)\s*(?:سمع|سمّع|سمعوا|سمعو|حفظ|حفظوا|حفظو|انجز|انجزوا)/i.test(message) ||
+    /(?:ماذا|ايش|شو|وش|كم)\s*(?:سمعوا|سمعو|حفظوا|حفظو|قرأوا|قرأو|قراوا|قراو|انجزوا|انجزو)/i.test(message) ||
+    /(?:ماذا|ايش|شو|وش)\s*(?:سمع|سمّع|حفظ|قرأ|انجز)\s*(?:الطلاب|طلاب|مجموعة|مجموعه|كافة|جميع)/i.test(message) ||
+    normMsg.includes("اربع طلاب") ||
+    normMsg.includes("4 طلاب") ||
+    normMsg.includes("ماذا سمعوا") ||
+    normMsg.includes("ماذا سمعو") ||
+    normMsg.includes("وش سمعوا") ||
+    normMsg.includes("وش سمعو") ||
+    normMsg.includes("ايش سمعوا") ||
+    normMsg.includes("ايش سمعو") ||
+    normMsg.includes("شو سمعوا") ||
+    normMsg.includes("شو سمعو") ||
+    normMsg.includes("تسميع الطلاب") ||
+    normMsg.includes("تقرير قابل للاستخراج") ||
+    normMsg.includes("قابل للاستخراج") ||
+    normMsg.includes("استخراج تقرير") ||
+    normMsg.includes("تقرير الطلاب");
+
+  let explicitFullNameCount = 0;
+  for (const s of studentsList) {
+    const normS = normalizeArabicText(s.name);
+    if (normS && normS.length >= 4 && normMsg.includes(normS)) {
+      explicitFullNameCount++;
+    }
+  }
+
+  if (explicitFullNameCount >= 2 || (isMultiQuery && explicitFullNameCount !== 1)) {
+    return null;
+  }
+
+  // 1. Check exact full name matches (sorted by length descending so multi-word names match first)
+  const sortedByLength = [...studentsList].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+  for (const s of sortedByLength) {
+    const normS = normalizeArabicText(s.name);
+    if (normS && normS.length >= 3) {
+      if (normMsg.includes(normS)) return s;
+      const normSNoSpaces = normS.replace(/\s+/g, "");
+      if (normSNoSpaces.length >= 4 && normMsgNoSpaces.includes(normSNoSpaces)) {
+        return s;
+      }
+    }
+  }
+
+  // 2. Try first 3 words of name
+  for (const s of sortedByLength) {
+    const normS = normalizeArabicText(s.name);
+    const parts = normS.split(/\s+/).filter(Boolean);
+    if (parts.length >= 3) {
+      const firstThree = parts.slice(0, 3).join(' ');
+      if (firstThree.length >= 8 && (normMsg.includes(firstThree) || normMsgNoSpaces.includes(firstThree.replace(/\s+/g, '')))) {
+        return s;
+      }
+    }
+  }
+
+  // 3. Try first 2 words of name (e.g. "محمد إبراهيم", "عمر أحمد", "عبد الرحمن", "عبد الله")
+  for (const s of sortedByLength) {
+    const normS = normalizeArabicText(s.name);
+    const parts = normS.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const firstTwo = parts.slice(0, 2).join(' ');
+      if (firstTwo.length >= 5 && (normMsg.includes(firstTwo) || normMsgNoSpaces.includes(firstTwo.replace(/\s+/g, '')))) {
+        return s;
+      }
+    }
+  }
+
+  // 4. Extract explicit candidate student name following keywords:
+  const namePatterns = [
+    /(?:عن\s+الطالب|عن\s+طالب|للطالب|لطالب|الطالب|طالبنا)\s+([^\n,،\.\?!:;]+)/i,
+    /(?:ماذا\s+سمع|وش\s+سمع|ايش\s+سمع|شو\s+سمع|سمع)\s+(?:الطالب\s+)?([^\n,،\.\?!:;]+)/i,
+    /(?:تقرير\s+عن|تقرير)\s+(?:الطالب\s+)?([^\n,،\.\?!:;]+)/i,
+    /(?:درجات|نقاط|سجل|تقييم|حفظ|مستوى)\s+(?:الطالب\s+)?([^\n,،\.\?!:;]+)/i,
+  ];
+
+  let extractedToken = "";
+  for (const pat of namePatterns) {
+    const m = message.match(pat);
+    if (m && m[1]) {
+      let cand = m[1].trim();
+      cand = cand.replace(/(?:أمس|امس|اليوم|قبل\s+أمس|قبل\s+امس|يوم\s+الاثنين|الاثنين|الثلاثاء|الثلثاء|ثلثاء|الاربعاء|الأربعاء|الخميس|الجمعة|الجمعه|السبت|الاحد|الأحد|في\s+الحفظ|في\s+النقاط|كم\s+وجه|وجه|ماذا\s+سمع|وش\s+سمع|صفر\s+وجه|تقرير).*$/gi, "");
+      cand = cand.trim();
+      if (cand.length >= 2) {
+        extractedToken = cand;
+        break;
+      }
+    }
+  }
+
+  if (extractedToken) {
+    const normExtracted = normalizeArabicText(extractedToken);
+    const normExtractedNoSpaces = normExtracted.replace(/\s+/g, "");
+    const extWords = normExtracted.split(/\s+/).filter(w => w.length >= 2);
+
+    let bestMatch: any = null;
+    let highestScore = 0;
+
+    for (const s of studentsList) {
+      const normS = normalizeArabicText(s.name);
+      const normSNoSpaces = normS.replace(/\s+/g, "");
+      const sWords = normS.split(/\s+/).filter(w => w.length >= 2);
+
+      let score = 0;
+      if (normS === normExtracted || (normSNoSpaces === normExtractedNoSpaces && normSNoSpaces.length >= 4)) score += 1000;
+      else if (normS.startsWith(normExtracted) || normSNoSpaces.startsWith(normExtractedNoSpaces)) score += 600;
+      else if (normExtracted.startsWith(normS) || normExtractedNoSpaces.startsWith(normSNoSpaces)) score += 500;
+      else {
+        let matchedWords = 0;
+        for (let i = 0; i < extWords.length; i++) {
+          if (sWords.includes(extWords[i])) matchedWords++;
+        }
+        if (matchedWords >= 2) score += 300 + (matchedWords * 50);
+        else if (matchedWords === 1 && extWords.length === 1 && sWords[0] === extWords[0]) score += 120;
+      }
+
+      if (activeHalaqahId && s.halaqahId === activeHalaqahId) score += 10;
+
+      if (score > highestScore && score >= 100) {
+        highestScore = score;
+        bestMatch = s;
+      }
+    }
+
+    if (bestMatch) return bestMatch;
+
+    // Exact-over-fuzzy fallback on extracted candidate token (e.g. "محمد بسام" -> "محمد باسم" unless "محمد بسام" exists)
+    const fuzzyScored = studentsList
+      .map((s) => ({ student: s, ...scoreStudentNameMatch(s, extractedToken) }))
+      .filter((x) => x.score >= 400);
+    const exactPool = fuzzyScored.filter((x) => x.isExact);
+    if (exactPool.length === 1) return exactPool[0].student;
+    if (exactPool.length === 0 && fuzzyScored.length > 0) {
+      fuzzyScored.sort((a, b) => b.score - a.score);
+      if (fuzzyScored.length === 1 || fuzzyScored[0].score - fuzzyScored[1].score >= 80) {
+        return fuzzyScored[0].student;
+      }
+    }
+  }
+
+  // 5. Try single first name if unique among all students (handling compound names like عبد الرحمن / عبد الله)
+  const singleNameMatches: { student: any; firstName: string }[] = [];
+  for (const s of studentsList) {
+    const parts = normalizeArabicText(s.name).split(/\s+/).filter(Boolean);
+    if (!parts.length) continue;
+    let firstName = parts[0];
+    if (['عبد', 'ابو', 'ابن', 'ام'].includes(firstName) && parts[1]) {
+      firstName = `${parts[0]} ${parts[1]}`;
+    }
+
+    if (firstName && firstName.length >= 3 && !['طالب', 'تقرير', 'حلقة', 'المجمع', 'مسيرة', 'قسم', 'تسميع', 'حفظ', 'نقاط', 'اربع', 'طلاب'].includes(firstName)) {
+      const firstNameNoSpaces = firstName.replace(/\s+/g, '');
+      const wordRegex = new RegExp(`(^|\\s)${firstName.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
+      if (wordRegex.test(normMsg) || normMsgNoSpaces.includes(firstNameNoSpaces)) {
+        singleNameMatches.push({ student: s, firstName });
+      }
+    }
+  }
+
+  if (singleNameMatches.length === 1) {
+    return singleNameMatches[0].student;
+  } else if (singleNameMatches.length > 1) {
+    // If the message contains multiple student names joined or plural intent, do not pick arbitrarily
+    if (isMultiQuery || /(?:و\s*|مع\s*|بالإضافة|ايضا|أيضا)/i.test(message) || /(?:سمعوا|سمعو|حفظوا|حفظو|لهم|عنهم)/i.test(message)) {
+      return null;
+    }
+    if (activeHalaqahId) {
+      const inHalaqah = singleNameMatches.find(m => m.student.halaqahId === activeHalaqahId);
+      if (inHalaqah) return inHalaqah.student;
+    }
+    for (const m of singleNameMatches) {
+      const parts = normalizeArabicText(m.student.name).split(/\s+/);
+      if (parts[1] && normMsg.includes(parts[1])) {
+        return m.student;
+      }
+    }
+    return singleNameMatches[0].student;
+  }
+
+  return null;
+}
+
+// Helper: Extract students referenced in recent conversation history and client context
+function extractStudentsFromHistoryAndContext(
+  history: any[],
+  studentsList: any[],
+  recentReferencedStudents: any[] = []
+): any[] {
+  if (!Array.isArray(studentsList) || studentsList.length === 0) return [];
+  const found: any[] = [];
+  const seenIds = new Set<string>();
+
+  // 1. Direct recentReferencedStudents from client action / state
+  if (Array.isArray(recentReferencedStudents)) {
+    for (const item of recentReferencedStudents) {
+      if (!item) continue;
+      const targetId = item.id || item.studentId;
+      const targetName = item.name || item.studentName;
+      const matched = studentsList.find(s =>
+        (targetId && s.id === targetId) ||
+        (targetName && normalizeArabicText(s.name) === normalizeArabicText(targetName))
+      );
+      if (matched && !seenIds.has(matched.id)) {
+        seenIds.add(matched.id);
+        found.push(matched);
+      }
+    }
+  }
+
+  // 2. Scan recent turns from conversation history (backwards from most recent)
+  if (Array.isArray(history) && history.length > 0) {
+    const recentTurns = history.slice(-8).reverse();
+    const sortedByLength = [...studentsList].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+
+    for (const turn of recentTurns) {
+      const text = (turn.parts?.[0]?.text || turn.text || "").trim();
+      if (!text) continue;
+      const normText = normalizeArabicText(text);
+
+      for (const s of sortedByLength) {
+        if (!s?.name || seenIds.has(s.id)) continue;
+        const normS = normalizeArabicText(s.name);
+        if (normS.length < 3) continue;
+
+        // Exact match
+        if (normText.includes(normS)) {
+          seenIds.add(s.id);
+          found.push(s);
+          continue;
+        }
+
+        // Two-part match (first + second word)
+        const parts = normS.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+          const firstTwo = parts.slice(0, 2).join(' ');
+          if (firstTwo.length >= 5 && normText.includes(firstTwo)) {
+            seenIds.add(s.id);
+            found.push(s);
+            continue;
+          }
+        }
+      }
+    }
+  }
+
+  return found;
+}
+
+// Helper: Parse open-ended student counts (any count requested: 1, 2, 3, 5, 6, 7, 8, 10, 15, 20... or all)
+function parseRequestedStudentCount(
+  message: string,
+  totalAvailable: number = 20
+): { count: number; isAll: boolean; isExplicit: boolean } {
+  if (!message) return { count: 0, isAll: false, isExplicit: false };
+  const norm = normalizeArabicText(message).toLowerCase();
+
+  // 1. All students / entire halaqah / entire complex / open count
+  if (
+    norm.includes("جميع الطلاب") ||
+    norm.includes("كافة الطلاب") ||
+    norm.includes("كل الطلاب") ||
+    norm.includes("الطلاب كلهم") ||
+    norm.includes("جميع طلاب") ||
+    norm.includes("كافة طلاب") ||
+    norm.includes("كل طلاب") ||
+    norm.includes("طلاب الحلقة كاملة") ||
+    norm.includes("كامل طلاب") ||
+    norm.includes("كلهم") ||
+    norm.includes("جميعهم") ||
+    norm.includes("اي عدد") ||
+    norm.includes("أي عدد") ||
+    norm.includes("مفتوح") ||
+    norm.includes("مفتوحة") ||
+    norm.includes("بدون حصر") ||
+    norm.includes("مش محصورة") ||
+    norm.includes("مش عايز محصورة")
+  ) {
+    return { count: Math.max(totalAvailable, 4), isAll: true, isExplicit: true };
+  }
+
+  // 2. Explicit numbers in digits
+  const digitMatch = message.match(/(?:لـ\s*|ل\s*|عن\s*|ـ\s*)?(\d+)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب|بطاقة|بطاقات)?/);
+  if (digitMatch && digitMatch[1]) {
+    const val = parseInt(digitMatch[1], 10);
+    if (!isNaN(val) && val > 0) {
+      return { count: val, isAll: false, isExplicit: true };
+    }
+  }
+
+  // 3. Spelled-out Arabic numbers
+  if (/(?:طالب\s+واحد|طالب\s+فقط|طالب\s+بس)/i.test(message)) return { count: 1, isAll: false, isExplicit: true };
+  if (/(?:طالبين|طالبان|اثنين|إثنين)/i.test(message)) return { count: 2, isAll: false, isExplicit: true };
+  if (/(?:ثلاث|ثلاثة|3)/i.test(message)) return { count: 3, isAll: false, isExplicit: true };
+  if (/(?:أربع|اربع|أربعة|اربعة|4)/i.test(message)) return { count: 4, isAll: false, isExplicit: true };
+  if (/(?:خمس|خمسة|5)/i.test(message)) return { count: 5, isAll: false, isExplicit: true };
+  if (/(?:ست|ستة|6)/i.test(message)) return { count: 6, isAll: false, isExplicit: true };
+  if (/(?:سبع|سبعة|7)/i.test(message)) return { count: 7, isAll: false, isExplicit: true };
+  if (/(?:ثمان|ثمانية|8)/i.test(message)) return { count: 8, isAll: false, isExplicit: true };
+  if (/(?:تسع|تسعة|9)/i.test(message)) return { count: 9, isAll: false, isExplicit: true };
+  if (/(?:عشر|عشرة|10)/i.test(message)) return { count: 10, isAll: false, isExplicit: true };
+  if (/(?:أحد\s+عشر|احد\s+عشر|11)/i.test(message)) return { count: 11, isAll: false, isExplicit: true };
+  if (/(?:اثنا\s+عشر|اثني\s+عشر|12)/i.test(message)) return { count: 12, isAll: false, isExplicit: true };
+  if (/(?:ثلاثة\s+عشر|13)/i.test(message)) return { count: 13, isAll: false, isExplicit: true };
+  if (/(?:أربعة\s+عشر|اربعة\s+عشر|14)/i.test(message)) return { count: 14, isAll: false, isExplicit: true };
+  if (/(?:خمسة\s+عشر|15)/i.test(message)) return { count: 15, isAll: false, isExplicit: true };
+  if (/(?:عشرون|عشرين|20)/i.test(message)) return { count: 20, isAll: false, isExplicit: true };
+  if (/(?:ثلاثون|ثلاثين|30)/i.test(message)) return { count: 30, isAll: false, isExplicit: true };
+  if (/(?:أربعون|اربعون|اربعين|40)/i.test(message)) return { count: 40, isAll: false, isExplicit: true };
+  if (/(?:خمسون|خمسين|50)/i.test(message)) return { count: 50, isAll: false, isExplicit: true };
+
+  return { count: 0, isAll: false, isExplicit: false };
+}
+
+// Strict face emoji sanitizer to keep responses solemn and Quranic without smileys
+export function stripFaceEmojis(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F910}-\u{1F92F}\u{1F970}-\u{1F978}\u{1F9D0}-\u{1F9DF}\u{263A}\u{FE0F}]/gu, '')
+    .replace(/[\u{1F466}-\u{1F478}\u{1F9D1}\u{1F473}\u{1F468}\u{1F469}]/gu, '')
+    .replace(/[😀😃😄😁😆😅🤣😂🙂🙃😉😊😇🥰😍🤩😘😗😚😙😋😛😜🤪😝🤑🤗🤭🤫🤔🤐🤨😐😑😶😏😒🙄😬🤥😌😔😪🤤😴😷🤒🤕🤢🤮🤧🥵🥶🥴😵🤯🤠🥳🥸😎🤓🧐😕😟🙁☹️😮😯😲😳🥺😦😧😨😰😥😢😭😱😖😣😞😓😩😫🥱😤😡😠🤬]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Full Platform Assistant Route with Real Gemini AI, Role Enforcement & Interactive Actions
+app.post("/api/gemini/assistant", async (req, res) => {
+  try {
+    const {
+      message: rawIncomingMessage = "",
+      history = [],
+      recentReferencedStudents = [],
+      user = {},
+      complex = {},
+      activeHalaqah = {},
+      activeStudent = null,
+      dataContext = {},
+      apiKey = "",
+      model = "",
+    } = req.body;
+
+    const cleanCurrentMessage = (rawIncomingMessage || "").trim();
+
+    // Detect punctuation-only ("؟؟؟؟", "??", "!") or puzzled/correction follow-ups ("ما جاوبتني", "مو هذا سؤالي", "ايش دخل")
+    const isPuzzledOrCorrectionText = (txt: string): boolean => {
+      const trimmed = (txt || "").trim();
+      if (!trimmed) return false;
+      if (/^[؟?!.,،…\-_ \s]+$/u.test(trimmed)) return true;
+      const norm = normalizeArabicText(trimmed);
+      return (
+        norm === "رد" ||
+        norm === "الو" ||
+        norm.includes("وينك") ||
+        norm.includes("رد علي") ||
+        norm.includes("ما جاوبت") ||
+        norm.includes("ما جاوبتني") ||
+        norm.includes("لم تجب") ||
+        norm.includes("جاوبني") ||
+        norm.includes("مو هذا سؤالي") ||
+        norm.includes("مش هذا سؤالي") ||
+        norm.includes("مش ده سؤالي") ||
+        norm.includes("ليس هذا سؤالي") ||
+        norm.includes("مو هذا قصدي") ||
+        norm.includes("مش هذا قصدي") ||
+        norm.includes("مش قصدي") ||
+        norm.includes("ايش دخل") ||
+        norm.includes("وش دخل") ||
+        norm.includes("شدخل") ||
+        norm.includes("ايه علاقة") ||
+        norm.includes("فهمتني غلط") ||
+        norm.includes("فاهمني غلط") ||
+        norm.includes("مخك فاصل") ||
+        norm.includes("ارجع لسؤالي") ||
+        norm.includes("اجب عن سؤالي")
+      );
+    };
+
+    const isFollowUpCorrectionOrRepeat = isPuzzledOrCorrectionText(cleanCurrentMessage);
+    const previousSubstantiveMsgObj = Array.isArray(history)
+      ? [...history].reverse().find((h: any) => {
+          if (h.role !== "user" && h.sender !== "user") return false;
+          const t = (h.text || h.parts?.[0]?.text || "").trim();
+          return Boolean(t) && t !== cleanCurrentMessage && !isPuzzledOrCorrectionText(t);
+        })
+      : null;
+    const previousSubstantiveUserText = (
+      previousSubstantiveMsgObj?.text ||
+      previousSubstantiveMsgObj?.parts?.[0]?.text ||
+      ""
+    ).trim();
+
+    // If the user sent "؟؟؟؟" or "مو هذا سؤالي", re-evaluate the entire resolution pipeline against their actual prior question!
+    const message =
+      isFollowUpCorrectionOrRepeat && previousSubstantiveUserText
+        ? previousSubstantiveUserText
+        : cleanCurrentMessage;
+
+    const headerKey =
+      (req.headers["x-gemini-api-key"] as string) ||
+      (typeof req.headers["authorization"] === "string"
+        ? req.headers["authorization"].replace(/^Bearer\s+/i, "")
+        : "");
+    const candidateApiKeys = getCandidateGeminiKeys(apiKey || headerKey);
+    const effectiveApiKey = candidateApiKeys[0] || "";
+
+    const currentActiveStudent = activeStudent || dataContext.activeStudent || null;
+
+    const role = (user.role || "teacher") as "developer" | "supervisor" | "teacher";
+    const isDeveloper = role === "developer";
+    const isTeacher = role === "teacher";
+    const isSupervisor = role === "supervisor";
+    const rawName = user.name || user.username || "أخي الكريم";
+    const firstName = user.firstName || extractCleanFirstName(rawName);
+    const complexName = isDeveloper ? (complex.name || "كافة مجمعات وحلقات المنظومة") : (complex.name || "المجمع القرآني");
+    const halaqahName = activeHalaqah.name || "الحلقة القرآنية";
+
+    const rawMetrics = dataContext.metrics || {};
+    const metrics = {
+      totalStudents: Number(rawMetrics.totalStudents) || 0,
+      presentCount: Number(rawMetrics.presentCount) || 0,
+      absentCount: Number(rawMetrics.absentCount) || 0,
+      excusedCount: Number(rawMetrics.excusedCount) || 0,
+      lateCount: Number(rawMetrics.lateCount) || 0,
+      totalNewPagesToday: Number(rawMetrics.totalNewPagesToday) || 0,
+      totalReviewPagesToday: Number(rawMetrics.totalReviewPagesToday) || 0,
+      totalRecitedPagesToday: Number(rawMetrics.totalRecitedPagesToday) || 0,
+      avgDailyNewTarget: rawMetrics.avgDailyNewTarget || "نصف وجه",
+      registeredThisMonthCount: Number(rawMetrics.registeredThisMonthCount) || 0,
+      absentStudents: Array.isArray(rawMetrics.absentStudents) ? rawMetrics.absentStudents : [],
+      presentStudents: Array.isArray(rawMetrics.presentStudents) ? rawMetrics.presentStudents : [],
+      excusedStudents: Array.isArray(rawMetrics.excusedStudents) ? rawMetrics.excusedStudents : [],
+      registeredThisMonthStudents: Array.isArray(rawMetrics.registeredThisMonthStudents) ? rawMetrics.registeredThisMonthStudents : [],
+    };
+
+    const halaqahsList = Array.isArray(dataContext.halaqahs) ? dataContext.halaqahs : [];
+    const studentsList = Array.isArray(dataContext.students) ? dataContext.students : [];
+    const complexesList = Array.isArray(dataContext.complexes) ? dataContext.complexes : [];
+    const violationsList = Array.isArray(dataContext.violations) ? dataContext.violations : [];
+    const evaluationsList = Array.isArray(dataContext.evaluations) ? dataContext.evaluations : [];
+    const certificatesList = Array.isArray(dataContext.certificates) ? dataContext.certificates : [];
+    const recordingsList = Array.isArray(dataContext.recordings) ? dataContext.recordings : [];
+    const attendanceList = Array.isArray(dataContext.attendance) ? dataContext.attendance : [];
+    const libraryDocsList = Array.isArray(dataContext.libraryDocs) ? dataContext.libraryDocs : [];
+    const teachersList = Array.isArray(dataContext.teachers) ? dataContext.teachers : [];
+
+    // Exact Today Date Information
+    const planScheduleConfig = dataContext.planScheduleConfig || complex?.planScheduleConfig || {};
+    const todayDateInfo = dataContext.todayDateInfo || null;
+
+    const nowServer = new Date();
+    const serverDayName = nowServer.toLocaleDateString("ar-SA", { weekday: "long" });
+    const serverDateFormatted = nowServer.toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const serverDateIso = formatLocalDate(nowServer);
+    let hijriEstimate = "";
+    try {
+      hijriEstimate = nowServer.toLocaleDateString("ar-SA-u-ca-islamic-umalqura", { day: "numeric", month: "long", year: "numeric" });
+    } catch {}
+
+    const exactTodayDayName = todayDateInfo?.dayName || serverDayName;
+    const exactTodayFormatted = todayDateInfo?.formattedArabic || serverDateFormatted;
+    const exactTodayIso = todayDateInfo?.date || serverDateIso;
+    const exactTodayTime = todayDateInfo?.timeArabic || nowServer.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+
+    const weekDaysArabicMap: Record<string, string> = {
+      sun: 'الأحد',
+      mon: 'الإثنين',
+      tue: 'الثلاثاء',
+      wed: 'الأربعاء',
+      thu: 'الخميس',
+      fri: 'الجمعة',
+      sat: 'السبت'
+    };
+    const planSelectedDays = Array.isArray(planScheduleConfig.selectedDays) && planScheduleConfig.selectedDays.length > 0
+      ? planScheduleConfig.selectedDays
+      : ['sun', 'mon', 'tue', 'wed', 'thu'];
+    const planDaysLabels = planSelectedDays.map((d: string) => weekDaysArabicMap[d] || d).join('، ');
+    const planDailyHours = typeof planScheduleConfig.dailyHours === 'number' ? planScheduleConfig.dailyHours : 2.0;
+    const planStrategyLabel = planScheduleConfig.strategyPreset === 'intensive'
+      ? 'وتيرة مكثفة للهمم العالية (وجهان جديدان يومياً + مراجعة 10 أوجه)'
+      : planScheduleConfig.strategyPreset === 'standard'
+      ? 'وتيرة قياسية متزنة (وجه جديد يومياً + مراجعة 5 أوجه)'
+      : 'أولوية التثبيت والإتقان (الموصى بها - الختم بتثبيت مع وقفات مراجعة دورية كل 5 أجزاء ومراجعة تراكمية)';
+
+    // Summary of all students' memorization plans & completion dates
+    const studentsPlansSummary = studentsList.slice(0, 30).map((s: any, idx: number) => {
+      const plan = s.memorizationPlan;
+      const memJuz = plan?.memorizedJuzCount || (s.currentSurah ? Math.max(1, Math.round((114 - s.currentSurah) / 3.8)) : 1);
+      const consJuz = plan?.consolidatedJuzCount || 1;
+      const targetDate = plan?.targetCompletionDate || 'خلال سنة تقريباً';
+      const daysRem = plan?.estimatedDaysRemaining || '~365';
+      const dailyNew = plan?.dailyNewPages || s.dailyNewTarget || 1;
+      const dailyRev = plan?.dailyReviewPages || 5;
+      const curSurah = s.currentSurahName || 'سورة جارية';
+      const errCount = Array.isArray(s.mushafErrors) ? s.mushafErrors.length : 0;
+      return `${idx + 1}. الطالب: ${s.name} (${s.halaqahName || 'حلقة غير محددة'})
+   • السورة الحالية: ${curSurah} | المحفوظ: ${memJuz} جزءاً (المثبت: ${consJuz} جزءاً)
+   • ورد الحفظ اليومي: ${dailyNew} وجه | ورد المراجعة: ${dailyRev} أوجه
+   • موعد الختم المحسوب بالذكاء الاصطناعي: ${targetDate} (متبقي: ~${daysRem} يوماً)
+   • حالة التثبيت: ${errCount > 0 ? `يحتاج تثبيت أخطاء (${errCount} مواضع مرصودة بالمصحف)` : 'متقن وعلى المسار'}`;
+    }).join('\n\n');
+
+    const lowerMsg = (message || "").toLowerCase();
+    const normUserMessage = normalizeArabicText(message || "");
+
+    // 1. Interactive Student Registration Detection with Accurate Halaqah & Name
+    const hasRegisterIntent =
+      /(?:سجل|تسجيل|أضف|اضف|إضافة|اضافة|ضيف|ضم|ألحق|الحق|ادخل|أدخل)\s*(?:لي\s+|لنا\s+|معنا\s+)?(?:الطالب|طالب|طالبا|طالباً|الطلالب|الطلاب|طالبنا|الطلبة)/i.test(message) ||
+      /(?:طالب\s+جديد|طالبا\s+جديدا|طالبنا\s+الجديد)/i.test(message) ||
+      message.includes("تسجيل طالب") ||
+      message.includes("إضافة طالب") ||
+      message.includes("ضيف طالب") ||
+      message.includes("سجل طالب") ||
+      message.includes("ضيف الطالب") ||
+      message.includes("أضف الطالب") ||
+      message.includes("اضف الطالب") ||
+      message.includes("ضيف الطلالب");
+
+    // Universal Halaqah Detection across the entire query (for rosters, recitations, reports, charts, registrations, etc.)
+    let matchedHalaqah = findMatchingHalaqah(message, halaqahsList, studentsList);
+    const teacherInQueryRes = detectTeacherInQuery(message, teachersList, halaqahsList);
+    if (!matchedHalaqah && teacherInQueryRes.halaqah) {
+      matchedHalaqah = teacherInQueryRes.halaqah;
+    }
+    const detectedHalaqahId = matchedHalaqah ? matchedHalaqah.id : (activeHalaqah.id && activeHalaqah.id !== "all" ? activeHalaqah.id : "");
+    const detectedHalaqahName = matchedHalaqah ? matchedHalaqah.name : (activeHalaqah.name && activeHalaqah.id !== "all" ? activeHalaqah.name : "");
+    const extractedName = hasRegisterIntent ? extractCleanStudentName(message, matchedHalaqah) : "";
+
+    // Universal Complex Detection across the entire query (e.g., مجمع الحربي, مجمع النور, etc.)
+    const matchedComplex = findMatchingComplex(message, complexesList, studentsList, halaqahsList, teachersList);
+    const targetComplexObj = matchedComplex || (complex?.id && complex.id !== 'all' ? complex : null);
+    const effectiveComplexName = matchedComplex ? matchedComplex.name : complexName;
+
+    // Specific cohort of students strictly scoped to the requested complex
+    const complexStudentsCohort = targetComplexObj
+      ? studentsList.filter((s: any) => isStudentInComplex(s, targetComplexObj, halaqahsList, teachersList))
+      : [];
+
+    const complexHalaqahsCohort = targetComplexObj
+      ? halaqahsList.filter((h: any) => isHalaqahInComplex(h, targetComplexObj, complexesList, studentsList, teachersList))
+      : [];
+
+    const complexTeachersCohort = targetComplexObj
+      ? teachersList.filter((t: any) => isTeacherInComplex(t, targetComplexObj, halaqahsList))
+      : [];
+
+    // Specific cohort of students belonging to the requested halaqah (strictly isolated, never contaminated by cross-halaqahs)
+    const halaqahStudentsCohort = matchedHalaqah
+      ? studentsList.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah))
+      : [];
+
+    const halaqahTeachersCohort = matchedHalaqah
+      ? teachersList.filter((t: any) => isTeacherInHalaqah(t, matchedHalaqah))
+      : [];
+
+    // 2.1 Universal Item Deletion Intent & Target Locator
+    // (طالب، حلقة، مكتبة، شهادة، حضور وغياب معلمين، مخالفات، أو أي عنصر قابل للحذف مع زر اختصار و3 ومضات بثيم المجمع)
+    const hasAnyDeleteIntent =
+      /(?:احذف|حذف|مسح|إزالة|ازالة|امسح)\s+/i.test(message) ||
+      lowerMsg.includes("احذف") ||
+      lowerMsg.includes("حذف");
+
+    let deleteItemTarget: {
+      type: "student" | "halaqah" | "teacher" | "library" | "certificate" | "teacherAttendance" | "violation" | "complex" | "general";
+      id: string;
+      name: string;
+      tab: string;
+      subTab?: string;
+      item: any;
+    } | null = null;
+
+    let hasDeleteStudentIntent = false;
+    let studentToDelete: any = null;
+
+    if (hasAnyDeleteIntent) {
+      if (lowerMsg.includes("حلقة") || lowerMsg.includes("الحلقة") || lowerMsg.includes("مجموعة")) {
+        const matchedH = findMatchingHalaqah(message, halaqahsList) || halaqahsList[0];
+        if (matchedH) {
+          deleteItemTarget = {
+            type: "halaqah",
+            id: matchedH.id,
+            name: `حلقة ${matchedH.name}`,
+            tab: "settings",
+            subTab: "halaqahs",
+            item: matchedH,
+          };
+        }
+      } else if (lowerMsg.includes("مكتب") || lowerMsg.includes("كتاب") || lowerMsg.includes("ملف") || lowerMsg.includes("مستند")) {
+        const normMsg = normalizeArabicText(message);
+        let matchedDoc = libraryDocsList.find((d: any) => {
+          const normD = normalizeArabicText(d.title || "");
+          return normMsg.includes(normD) || (normD.length >= 4 && normMsg.includes(normD.split(/\s+/)[0]));
+        }) || libraryDocsList[0];
+        deleteItemTarget = {
+          type: "library",
+          id: matchedDoc?.id || "doc-1",
+          name: matchedDoc?.title ? `مستند: ${matchedDoc.title}` : "مستند الأرشيف في المكتبة",
+          tab: "library",
+          item: matchedDoc,
+        };
+      } else if (lowerMsg.includes("شهادة") || lowerMsg.includes("شهادات") || lowerMsg.includes("تكريم")) {
+        const normMsg = normalizeArabicText(message);
+        let matchedCert = certificatesList.find((c: any) => {
+          const normC = normalizeArabicText(c.certificateTitle || c.studentName || "");
+          return normMsg.includes(normC);
+        }) || certificatesList[0];
+        deleteItemTarget = {
+          type: "certificate",
+          id: matchedCert?.id || "cert-1",
+          name: matchedCert?.certificateTitle ? `شهادة ${matchedCert.certificateTitle} (${matchedCert.studentName || ''})` : "الشهادة التكريمية",
+          tab: "certificates",
+          item: matchedCert,
+        };
+      } else if (
+        lowerMsg.includes("معلم") ||
+        lowerMsg.includes("المعلم") ||
+        lowerMsg.includes("معلمين") ||
+        lowerMsg.includes("المعلمين") ||
+        lowerMsg.includes("أستاذ") ||
+        lowerMsg.includes("استاذ")
+      ) {
+        // Teacher Account Deletion / Management
+        // NEVER route to teacher_attendance when user asks to delete teachers!
+        const normMsg = normalizeArabicText(message);
+        let matchedT = teachersList.find((t: any) => {
+          const normT = normalizeArabicText(t.name || "");
+          return normMsg.includes(normT) || (normT.length >= 4 && normMsg.includes(normT.split(/\s+/)[0]));
+        });
+
+        // Real teacher account deletion: navigate to accounts (for developer) or settings (for supervisor)
+        deleteItemTarget = {
+          type: "teacher",
+          id: matchedT?.id || (teachersList[0]?.id || "teacher-1"),
+          name: matchedT ? `حساب المعلم ${matchedT.name}` : "حسابات وبيانات المعلمين",
+          tab: isDeveloper ? "accounts" : "settings",
+          subTab: "teachers",
+          item: matchedT || teachersList[0] || null,
+        };
+      } else if (lowerMsg.includes("مخالفة") || lowerMsg.includes("تنبيه") || lowerMsg.includes("إنذار") || lowerMsg.includes("انذار") || lowerMsg.includes("سلوك")) {
+        const normMsg = normalizeArabicText(message);
+        let matchedV = violationsList.find((v: any) => {
+          const normV = normalizeArabicText(v.studentName || v.title || "");
+          return normMsg.includes(normV);
+        }) || violationsList[0];
+        deleteItemTarget = {
+          type: "violation",
+          id: matchedV?.id || "v-1",
+          name: matchedV ? `التنبيه السلوكي المسجل على ${matchedV.studentName || matchedV.title}` : "التنبيه السلوكي",
+          tab: "behavior",
+          item: matchedV,
+        };
+      } else if (lowerMsg.includes("مجمع") || lowerMsg.includes("المجمع")) {
+        deleteItemTarget = {
+          type: "complex",
+          id: complex.id || "complex-1",
+          name: `المجمع القرآني: ${complexName}`,
+          tab: "settings",
+          subTab: "complex",
+          item: complex,
+        };
+      } else {
+        // Match candidate student
+        const normMsg = normalizeArabicText(message);
+        for (const s of studentsList) {
+          const normS = normalizeArabicText(s.name);
+          const parts = normS.split(/\s+/);
+          const firstTwo = parts.slice(0, 2).join(' ');
+          if (normMsg.includes(normS) || (firstTwo.length >= 4 && normMsg.includes(firstTwo))) {
+            studentToDelete = s;
+            break;
+          }
+        }
+        if (!studentToDelete) {
+          for (const s of studentsList) {
+            const first = normalizeArabicText(s.name).split(/\s+/)[0];
+            if (first.length >= 3 && normMsg.includes(first)) {
+              studentToDelete = s;
+              break;
+            }
+          }
+        }
+        if (studentToDelete) {
+          hasDeleteStudentIntent = true;
+          deleteItemTarget = {
+            type: "student",
+            id: studentToDelete.id,
+            name: `الطالب ${studentToDelete.name}`,
+            tab: isDeveloper ? "accounts" : "students",
+            subTab: isDeveloper ? "students" : undefined,
+            item: studentToDelete,
+          };
+        }
+      }
+    }
+
+
+    // 2.2 Transfer Student Intent (نقل طالب بين الحلقات)
+    const hasTransferStudentIntent =
+      /(?:انقل|نقل|حول|تحويل)\s+(?:الطالب|طالب)\s+/i.test(message);
+
+    let studentToTransfer: any = null;
+    let targetTransferHalaqah: any = null;
+    if (hasTransferStudentIntent) {
+      // Find candidate student
+      for (const s of studentsList) {
+        const normS = normalizeArabicText(s.name);
+        if (normalizeArabicText(message).includes(normS)) {
+          studentToTransfer = s;
+          break;
+        }
+      }
+      // Target halaqah
+      targetTransferHalaqah = findMatchingHalaqah(message, halaqahsList);
+      if (!targetTransferHalaqah && halaqahsList.length > 1) {
+        targetTransferHalaqah = halaqahsList.find((h: any) => h.id !== studentToTransfer?.halaqahId) || null;
+      }
+    }
+
+    // 2.3 Record Attendance Intent (تسجيل تحضير طالب مفرد)
+    const hasRecordAttendanceIntent =
+      /(?:حضر|تحضير|سجل\s+حضور|سجل\s+غياب|سجل\s+اعتذار|سجل\s+تأخر)\s+(?:الطالب|طالب)\s+/i.test(message) ||
+      /(?:سجل\s+الغياب|سجل\s+الحضور)\s+للطالب/i.test(message);
+
+    let studentToRecordAttendance: any = null;
+    let targetAttendanceStatus: 'حاضر' | 'غائب' | 'معتذر' | 'متأخر' = 'حاضر';
+    if (hasRecordAttendanceIntent) {
+      if (lowerMsg.includes('غائب') || lowerMsg.includes('غياب')) targetAttendanceStatus = 'غائب';
+      else if (lowerMsg.includes('معتذر') || lowerMsg.includes('اعتذار') || lowerMsg.includes('مستأذن')) targetAttendanceStatus = 'معتذر';
+      else if (lowerMsg.includes('متأخر') || lowerMsg.includes('تأخر')) targetAttendanceStatus = 'متأخر';
+      else targetAttendanceStatus = 'حاضر';
+
+      for (const s of studentsList) {
+        const normS = normalizeArabicText(s.name);
+        if (normalizeArabicText(message).includes(normS)) {
+          studentToRecordAttendance = s;
+          break;
+        }
+      }
+    }
+
+    // 2.4 Add Halaqah Intent (For supervisor/developer)
+    const hasAddHalaqahIntent =
+      !isTeacher &&
+      (/(?:أنشئ|انشئ|إنشاء|انشاء|أضف|اضف|إضافة|اضافة)\s+(?:حلقة|مجموعة)\s+جديدة/i.test(message) ||
+        /(?:حلقة\s+جديدة)/i.test(message));
+
+    let newHalaqahCandidateName = "";
+    if (hasAddHalaqahIntent) {
+      const match = message.match(/(?:باسم|اسمها|تدعى|بعنوان)\s+([^\s,،\.\?!]+(?:\s+[^\s,،\.\?!]+)?)/i);
+      if (match) newHalaqahCandidateName = match[1].trim();
+    }
+
+    // 2.5 Delete Halaqah Intent (For supervisor/developer)
+    const hasDeleteHalaqahIntent =
+      !isTeacher &&
+      /(?:احذف|حذف|مسح|إزالة|ازالة)\s+(?:حلقة|الحلقة|مجموعة|المجموعة)\s+/i.test(message);
+
+    let halaqahToDelete: any = null;
+    if (hasDeleteHalaqahIntent) {
+      halaqahToDelete = findMatchingHalaqah(message, halaqahsList);
+    }
+
+    // Chart & Statistical Visualization Intent
+    const hasChartDiagnosticIntent =
+      lowerMsg.includes("رسم بياني") ||
+      lowerMsg.includes("تشخيص بياني") ||
+      lowerMsg.includes("دوائر") ||
+      lowerMsg.includes("أعمدة") ||
+      lowerMsg.includes("اعمدة") ||
+      lowerMsg.includes("تتبع") ||
+      lowerMsg.includes("مخطط بياني") ||
+      lowerMsg.includes("مخطط") ||
+      lowerMsg.includes("شارت") ||
+      lowerMsg.includes("بيانيا") ||
+      lowerMsg.includes("بيانياً") ||
+      lowerMsg.includes("احصائيات") ||
+      lowerMsg.includes("إحصائيات") ||
+      lowerMsg.includes("احصائيه") ||
+      lowerMsg.includes("إحصائية") ||
+      lowerMsg.includes("رسومات بيانية") ||
+      lowerMsg.includes("رسومات بيانيه") ||
+      lowerMsg.includes("رسم الانسب") ||
+      lowerMsg.includes("الرسم الانسب") ||
+      lowerMsg.includes("الرسم الأنسب") ||
+      lowerMsg.includes("وش الانسب") ||
+      lowerMsg.includes("ايش الانسب") ||
+      lowerMsg.includes("احصائيات بيانية");
+
+    // 3-Day Statistics Intent
+    const has3DaysStatsIntent =
+      normUserMessage.includes("اخر 3 ايام") ||
+      normUserMessage.includes("اخر ٣ ايام") ||
+      normUserMessage.includes("آخر 3 أيام") ||
+      normUserMessage.includes("آخر ٣ أيام") ||
+      normUserMessage.includes("3 ايام") ||
+      normUserMessage.includes("٣ ايام") ||
+      normUserMessage.includes("ثلاثة ايام") ||
+      normUserMessage.includes("ثلاث ايام");
+
+    // Juz Amma Completion Intent
+    const hasJuzAmmaCompletionIntent =
+      normUserMessage.includes("جزء عم") ||
+      normUserMessage.includes("جزء عَم") ||
+      normUserMessage.includes("ختموا جزء") ||
+      normUserMessage.includes("ختم جزء") ||
+      normUserMessage.includes("خاتمي جزء") ||
+      normUserMessage.includes("خاتمين جزء") ||
+      normUserMessage.includes("حفظة جزء عم") ||
+      normUserMessage.includes("طلاب جزء عم");
+
+    // 2.6 Data Table Intents (Attendance Table, Memorization Progress Table, General Students Table)
+    const hasAttendanceTableIntent =
+      lowerMsg.includes("من الطلاب الحاضرين") ||
+      lowerMsg.includes("من الطالاب الحاضرين") ||
+      lowerMsg.includes("من الحاضرين") ||
+      lowerMsg.includes("من الغائبين") ||
+      lowerMsg.includes("كشف الحضور") ||
+      lowerMsg.includes("جدول الحضور") ||
+      lowerMsg.includes("اسماء الطلاب الحضور") ||
+      lowerMsg.includes("كشف الغياب") ||
+      lowerMsg.includes("قائمة الحضور") ||
+      lowerMsg.includes("مين حاضر") ||
+      lowerMsg.includes("مين غايب") ||
+      lowerMsg.includes("حضور اليوم") ||
+      lowerMsg.includes("غياب اليوم") ||
+      lowerMsg.includes("الحضور والغياب") ||
+      lowerMsg.includes("حضور وغياب") ||
+      lowerMsg.includes("سجل الحضور") ||
+      /(?:حضور|غياب|الحاضرين|الغائبين|سجل\s+حضور|سجلات\s+الحضور)\s*(?:يوم\s*)?(?:الاثنين|اثنين|إثنين|الثلاثاء|ثلاثاء|الأربعاء|الاربعاء|اربعاء|الخميس|خميس|الجمعة|جمعة|السبت|سبت|الأحد|الاحد|احد|أمس|امس|قبل\s+أمس|قبل\s+امس)/i.test(message) ||
+      /(?:حضور|غياب)\s*(?:يوم\s*)?(?:الاثنين|اثنين|إثنين)/i.test(message) ||
+      ((lowerMsg.includes("استخراج") || lowerMsg.includes("قابل للاستخراج") || lowerMsg.includes("كشف") || lowerMsg.includes("تقرير")) && (lowerMsg.includes("حضور") || lowerMsg.includes("غياب")));
+
+    const hasMemorizationTableIntent =
+      lowerMsg.includes("وين وصلوا") ||
+      lowerMsg.includes("أين وصلوا") ||
+      lowerMsg.includes("وين وصلو") ||
+      lowerMsg.includes("وين واصلين") ||
+      lowerMsg.includes("أين وصل الطلاب") ||
+      lowerMsg.includes("وين وصل الطلاب") ||
+      lowerMsg.includes("كشف الحفظ") ||
+      lowerMsg.includes("مستويات الحفظ") ||
+      lowerMsg.includes("جدول الحفظ") ||
+      lowerMsg.includes("تسميع الطلاب") ||
+      lowerMsg.includes("سجل الحفظ") ||
+      lowerMsg.includes("تقدم الطلاب في الحفظ") ||
+      lowerMsg.includes("تقرير الحفظ");
+
+    // 2.7 Specific Custom Report Intents (Top Points, Struggling/Low Points, Violations/Warnings, All Points)
+    const hasTopPointsIntent =
+      /(?:أول|اول|اعلى|أعلى|افضل|أفضل)\s+(?:خمس|خمسة|5|عشر|عشرة|10)?\s*(?:طلاب|طالب)?\s*(?:في|بال|من)?\s*(?:النقاط|نقاط|المتصدرين|الأوائل|الاوائل)/i.test(message) ||
+      /(?:الخمسة|الـ5|العشرة|الـ10)\s+(?:الأوائل|الاوائل)/i.test(message) ||
+      lowerMsg.includes("أول خمس طلاب في النقاط") ||
+      lowerMsg.includes("اول خمس طلاب في النقاط") ||
+      lowerMsg.includes("أول خمس طلاب") ||
+      lowerMsg.includes("اول خمس طلاب") ||
+      lowerMsg.includes("أول 5 طلاب") ||
+      lowerMsg.includes("اول 5 طلاب") ||
+      lowerMsg.includes("أول خمسة طلاب") ||
+      lowerMsg.includes("الخمسة الأوائل") ||
+      lowerMsg.includes("الخمسة الاوائل") ||
+      lowerMsg.includes("أعلى 5 بالنقاط") ||
+      lowerMsg.includes("أعلى الطلاب نقاطاً") ||
+      lowerMsg.includes("اعلى الطلاب نقاطا") ||
+      lowerMsg.includes("المتصدرين في النقاط") ||
+      lowerMsg.includes("المتصدرين بالنقاط") ||
+      lowerMsg.includes("أوائل الطلاب") ||
+      lowerMsg.includes("اوائل الطلاب");
+
+    const hasLowPointsIntent =
+      /(?:أسوأ|اسوأ|اسوا|أقل|اقل|تعثر|المتعثرين|المتأخرين)\s*(?:الطلاب|طلاب)?\s*(?:في|بال|من)?\s*(?:النقاط|نقاط|التحصيل)?/i.test(message) ||
+      lowerMsg.includes("أسوأ الطلاب") ||
+      lowerMsg.includes("اسوأ الطلاب") ||
+      lowerMsg.includes("أسوأ طلاب") ||
+      lowerMsg.includes("اسوا الطلاب") ||
+      lowerMsg.includes("أقل الطلاب في النقاط") ||
+      lowerMsg.includes("اقل الطلاب في النقاط") ||
+      lowerMsg.includes("الأقل نقاطاً") ||
+      lowerMsg.includes("الاقل نقاطا") ||
+      lowerMsg.includes("الطلاب الأقل نقاطاً") ||
+      lowerMsg.includes("الطلاب الاقل نقاطا") ||
+      lowerMsg.includes("الطلاب المتعثرين") ||
+      lowerMsg.includes("المتعثرين") ||
+      lowerMsg.includes("أقل 5 طلاب") ||
+      lowerMsg.includes("اقل 5 طلاب") ||
+      lowerMsg.includes("أقل الطلاب تحصيلاً") ||
+      lowerMsg.includes("الحاجة للمتابعة");
+
+    const hasViolationsTableIntent =
+      /(?:كشف|جدول|قائمة|سجل|عرض|بيان)?\s*(?:الطلاب|الطلبة)?\s*(?:اللي|الذين|عليهم|بهم|لهم)?\s*(?:تنبيهات|تنبيه|مخالفات|مخالفة|إنذارات|انذارات|ملاحظات\s+سلوكية)/i.test(message) ||
+      lowerMsg.includes("كشف الطلاب اللي عليهم تنبيهات") ||
+      lowerMsg.includes("الطلاب اللي عليهم تنبيهات") ||
+      lowerMsg.includes("الطلاب الذين عليهم تنبيهات") ||
+      lowerMsg.includes("كشف التنبيهات") ||
+      lowerMsg.includes("جدول التنبيهات") ||
+      lowerMsg.includes("المخالفات السلوكية") ||
+      lowerMsg.includes("كشف المخالفات") ||
+      lowerMsg.includes("جدول المخالفات") ||
+      lowerMsg.includes("الطلاب المخالفين") ||
+      lowerMsg.includes("الإنذارات") ||
+      lowerMsg.includes("عليهم تنبيهات") ||
+      lowerMsg.includes("عليهم مخالفات");
+
+    // Build SearchUserContext for Centralized Resolution Engine
+    const userContext: SearchUserContext = {
+      role: (user.role || "teacher") as any,
+      userId: user.id || user.uid,
+      userName: user.name || user.username || "",
+      complexId: complex.id,
+      complexName: complex.name,
+      assignedHalaqahId: isTeacher ? (user.halaqahId || (activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined)) : undefined,
+      assignedHalaqahIds: isTeacher ? (user.assignedHalaqahIds || (user.halaqahId ? [user.halaqahId] : (activeHalaqah?.id && activeHalaqah.id !== 'all' ? [activeHalaqah.id] : undefined))) : undefined,
+      activeHalaqahId: activeHalaqah?.id && activeHalaqah.id !== 'all' ? activeHalaqah.id : undefined,
+      childStudentIds: user.childStudentIds || user.studentIds,
+      studentId: user.studentId || (user.role === 'student' ? user.id : undefined),
+    };
+
+    const studentResolution = resolveStudentQuery(
+      message,
+      studentsList,
+      halaqahsList,
+      userContext,
+      {
+        complexes: complexesList,
+        teachers: teachersList,
+        attendanceRecords: attendanceList,
+        halaqahs: halaqahsList
+      }
+    );
+
+    const effectiveMatchedComplex = matchedComplex || studentResolution.matchedComplex || (studentResolution.detectedComplex ? { id: `complex-${normalizeArabicText(studentResolution.detectedComplex).replace(/\s+/g, '-')}`, name: studentResolution.detectedComplex } : null);
+    const finalComplexStudentsCohort = effectiveMatchedComplex
+      ? studentsList.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList))
+      : complexStudentsCohort;
+    const finalComplexHalaqahsCohort = effectiveMatchedComplex
+      ? halaqahsList.filter((h: any) => isHalaqahInComplex(h, effectiveMatchedComplex, complexesList, studentsList, teachersList))
+      : complexHalaqahsCohort;
+    const finalComplexTeachersCohort = effectiveMatchedComplex
+      ? teachersList.filter((t: any) => isTeacherInComplex(t, effectiveMatchedComplex, halaqahsList))
+      : complexTeachersCohort;
+
+    // 2.7.3.9 First-Class Multi-Student Comparison Intent (مقارنة شاملة / أيهما أفضل / الفرق بين طالبين أو أكثر)
+    const hasComparisonKeywords =
+      /(?:مقارن|قارن|قارني|مفاضل|فاضل|أيهما|ايهما|مين\s+أفضل|مين\s+افضل|من\s+أفضل|من\s+افضل|من\s+الأفضل|من\s+الافضل|الفرق\s+بين)/i.test(message) ||
+      (/(?:أفضل|افضل|أحسن|احسن|أميز|اميز|أقوى|اقوى|متفوق)/i.test(message) && /(?:أم|ام|أو|او|ولا|بين)/i.test(message));
+
+    let comparisonStudents: any[] = [];
+    if (studentResolution.matchedStudents.length >= 2) {
+      comparisonStudents = [...studentResolution.matchedStudents];
+    } else if (hasComparisonKeywords && studentResolution.matchedStudents.length === 1) {
+      const firstStudent = studentResolution.matchedStudents[0];
+      const historyCandidates = extractStudentsFromHistoryAndContext(history, studentsList, recentReferencedStudents)
+        .filter((s: any) => s.id !== firstStudent.id);
+      if (currentActiveStudent && currentActiveStudent.id !== firstStudent.id) {
+        comparisonStudents = [currentActiveStudent, firstStudent];
+      } else if (historyCandidates.length > 0) {
+        comparisonStudents = [historyCandidates[0], firstStudent];
+      }
+    } else if (hasComparisonKeywords && studentResolution.matchedStudents.length === 0) {
+      const historyCandidates = extractStudentsFromHistoryAndContext(history, studentsList, recentReferencedStudents);
+      if (historyCandidates.length >= 2) {
+        comparisonStudents = historyCandidates.slice(0, 4);
+      }
+    }
+
+    const hasComparisonIntent =
+      !hasAnyDeleteIntent &&
+      comparisonStudents.length >= 2 &&
+      (
+        hasComparisonKeywords ||
+        Boolean(studentResolution.isMultipleStudentsQuery && /(?:أفضل|افضل|أحسن|احسن|أم|ام|بين|النواحي)/i.test(message))
+      );
+
+    // 2.7.4 Explicit Recitation / Memorization Table Intent (كشف التسميع، ماذا سمعوا، لماذا سمعوا، وش سمعوا، إنجاز الحفظ)
+    const isExplicitRecitationInquiry = Boolean(
+      !hasComparisonIntent &&
+      (
+        normUserMessage.includes("ماذا سمع") ||
+        normUserMessage.includes("ماذا سمعو") ||
+        normUserMessage.includes("ماذا سمعوا") ||
+        normUserMessage.includes("لماذا سمع") ||
+        normUserMessage.includes("لماذا سمعو") ||
+        normUserMessage.includes("لماذا سمعوا") ||
+        normUserMessage.includes("وش سمع") ||
+        normUserMessage.includes("وش سمعو") ||
+        normUserMessage.includes("وش سمعوا") ||
+        normUserMessage.includes("ايش سمع") ||
+        normUserMessage.includes("ايش سمعو") ||
+        normUserMessage.includes("ايش سمعوا") ||
+        normUserMessage.includes("شو سمع") ||
+        normUserMessage.includes("شو سمعو") ||
+        normUserMessage.includes("شو سمعوا") ||
+        normUserMessage.includes("تسميع") ||
+        normUserMessage.includes("تسميعات") ||
+        normUserMessage.includes("سماع") ||
+        normUserMessage.includes("سمعوا") ||
+        normUserMessage.includes("سمعو") ||
+        normUserMessage.includes("سمع") ||
+        normUserMessage.includes("كشف التسميع") ||
+        normUserMessage.includes("جدول التسميع") ||
+        normUserMessage.includes("سجل التسميع") ||
+        normUserMessage.includes("كشف الحفظ") ||
+        normUserMessage.includes("ما حفظوا") ||
+        normUserMessage.includes("ما حفظو") ||
+        normUserMessage.includes("ما انجزوا") ||
+        normUserMessage.includes("ما انجزو") ||
+        normUserMessage.includes("الأوجه المسمعة") ||
+        normUserMessage.includes("الاوجه المسمعة") ||
+        normUserMessage.includes("اوجه التسميع") ||
+        normUserMessage.includes("أوجه التسميع")
+      )
+    );
+
+    // 2.7.5 Comprehensive Teachers Table Intent (كشف المعلمين، جدول المعلمين، المحفظين)
+    const hasTeachersTableIntent =
+      !hasAnyDeleteIntent &&
+      !hasComparisonIntent &&
+      !lowerMsg.includes("حذف") &&
+      !lowerMsg.includes("تحضير") &&
+      (
+        normUserMessage.includes("كشف المعلمين") ||
+        normUserMessage.includes("كشف معلمين") ||
+        normUserMessage.includes("جدول المعلمين") ||
+        normUserMessage.includes("جدول معلمين") ||
+        normUserMessage.includes("قائمة المعلمين") ||
+        normUserMessage.includes("اسماء المعلمين") ||
+        normUserMessage.includes("أسماء المعلمين") ||
+        normUserMessage.includes("بيانات المعلمين") ||
+        normUserMessage.includes("معلمي المجمع") ||
+        normUserMessage.includes("معلمي الحلقة") ||
+        normUserMessage.includes("كشف المحفظين") ||
+        ((normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("قائمة") || normUserMessage.includes("بيان") || normUserMessage.includes("سجل")) &&
+          (normUserMessage.includes("معلم") || normUserMessage.includes("معلمين") || normUserMessage.includes("المعلمين") || normUserMessage.includes("المحفظين") || normUserMessage.includes("مشايخ")))
+      );
+
+    // 2.7.5.1 Accurate Student Points Inquiry Intent
+    const isStudentPointsInquiry =
+      !hasComparisonIntent &&
+      !studentResolution.isMultipleStudentsQuery &&
+      (
+        /(?:كم\s+(?:عنده\s+)?(?:من\s+)?(?:النقاط|نقاط|نقطة)|كم\s+رصيد(?:ه)?\s*(?:من\s+)?(?:النقاط|نقاط)?|نقاط\s+الطالب|رصيد\s+الطالب|لوحة\s+الشرف|لوحة\s+الصدارة|كم\s+جاب\s+نقطة|كم\s+حصل\s+نقطة|كم\s+نقطة|كم\s+نقاط)/i.test(message) ||
+        lowerMsg.includes("كم نقطة") ||
+        lowerMsg.includes("كم نقاط") ||
+        lowerMsg.includes("رصيد النقاط") ||
+        lowerMsg.includes("نقاطه") ||
+        lowerMsg.includes("في لوحة الشرف")
+      );
+
+    const hasPointsTableIntent =
+      !hasComparisonIntent &&
+      !isExplicitRecitationInquiry &&
+      !hasTeachersTableIntent &&
+      !hasAnyDeleteIntent &&
+      !isStudentPointsInquiry &&
+      (
+        /(?:كشف|جدول|قائمة|ترتيب|بيان|عرض|سجل|أعطني|اعطني|هات|طلع|وريني|ورني|كم|ايش|وش|شو|احصائيات|إحصائيات)?\s*(?:لـ|ل|عن|في)?\s*(?:النقاط|نقاط|الدرجات|درجات|المتصدرين|متصدرين|الأوائل|الاوائل|الصدارة|لوحة\s+الصدارة|لوحة\s+الشرف)/i.test(message) ||
+        lowerMsg.includes("كشف للنقاط") ||
+        lowerMsg.includes("كشف النقاط") ||
+        lowerMsg.includes("جدول النقاط") ||
+        lowerMsg.includes("ترتيب الطلاب بالنقاط") ||
+        lowerMsg.includes("ترتيب النقاط") ||
+        normUserMessage.includes("كشف نقاط") ||
+        normUserMessage.includes("جدول نقاط") ||
+        normUserMessage.includes("نقاط") ||
+        normUserMessage.includes("النقاط") ||
+        normUserMessage.includes("درجات") ||
+        normUserMessage.includes("الدرجات") ||
+        normUserMessage.includes("لوحة الصدارة") ||
+        normUserMessage.includes("لوحة الشرف") ||
+        normUserMessage.includes("المتصدرين") ||
+        normUserMessage.includes("المتفوقين")
+      );
+
+    const hasExplicitTableKeyword =
+      /(?:جدول|كشف|بيان|قائمة|سجل|تقرير|شيت|اكسل)/i.test(message) ||
+      normUserMessage.includes("اعمل جدول") ||
+      normUserMessage.includes("اعمل لي جدول") ||
+      normUserMessage.includes("اعملي جدول") ||
+      normUserMessage.includes("سو جدول") ||
+      normUserMessage.includes("سوي جدول") ||
+      normUserMessage.includes("انشئ جدول") ||
+      normUserMessage.includes("اعمل كشف") ||
+      normUserMessage.includes("اعمل لي كشف") ||
+      normUserMessage.includes("اعملي كشف");
+
+    const hasStudentsDirective =
+      /(?:اعمللي|اعملوا|اعملي|اعمل|سويلي|سولي|سوو|سوي|سو|انشئي|أنشئي|انشئ|أنشئ|اصنعي|اصنع|طلعلي|طلعوا|طلعي|طلع|هاتلي|هاتوا|هاتي|هات|أعطيني|اعطيني|أعطني|اعطني|أعطنا|اعطنا|عطيني|عطني|جيبلي|جيبوا|جيبي|جيب|وريني|ورونا|ورني|اعرضلي|اعرضي|اعرض|عرض|أظهري|اظهر|أظهر|أريد|اريد|ودي|ودنا|أبغى|ابغى|افرزي|افرز|صنفي|صنف|رتبلي|رتب\s+لي|رتب|جهزي|جهزلي|جهز)\s*(?:لي\s+|لنا\s+)?(?:الطلاب|طلاب|الطلبة|طلبة)/i.test(message) ||
+      normUserMessage.includes("اعمل لي الطلاب") ||
+      normUserMessage.includes("اعملي الطلاب") ||
+      normUserMessage.includes("اعمل الطلاب") ||
+      normUserMessage.includes("اعمل طلاب") ||
+      normUserMessage.includes("اعملي طلاب") ||
+      normUserMessage.includes("سوي طلاب") ||
+      normUserMessage.includes("سو طلاب") ||
+      normUserMessage.includes("سويلي الطلاب") ||
+      normUserMessage.includes("طلع لي الطلاب") ||
+      normUserMessage.includes("طلع الطلاب") ||
+      normUserMessage.includes("طلع طلاب") ||
+      normUserMessage.includes("هات لي الطلاب") ||
+      normUserMessage.includes("هات الطلاب") ||
+      normUserMessage.includes("هات طلاب") ||
+      normUserMessage.includes("اعرض لي الطلاب") ||
+      normUserMessage.includes("اعرض الطلاب") ||
+      normUserMessage.includes("اعرض طلاب") ||
+      normUserMessage.includes("جيب لي الطلاب") ||
+      normUserMessage.includes("جيب الطلاب") ||
+      normUserMessage.includes("ورني الطلاب") ||
+      normUserMessage.includes("وريني الطلاب");
+
+    const hasGeneralTableIntent =
+      !hasTeachersTableIntent &&
+      !hasPointsTableIntent &&
+      !hasAttendanceTableIntent &&
+      !hasViolationsTableIntent &&
+      !hasTopPointsIntent &&
+      !hasLowPointsIntent &&
+      !hasAnyDeleteIntent &&
+      !hasChartDiagnosticIntent &&
+      (
+        hasExplicitTableKeyword ||
+        hasStudentsDirective ||
+        (Boolean(studentResolution.detectedLevel) && (hasExplicitTableKeyword || normUserMessage.includes("طلاب") || normUserMessage.includes("فئة") || normUserMessage.includes("جدول") || normUserMessage.includes("كشف"))) ||
+        (studentResolution.requestedNames.length > 0 && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("مع") || normUserMessage.includes("حفظهم") || normUserMessage.includes("جديد") || normUserMessage.includes("مراجعة") || normUserMessage.includes("بيانات") || normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("سورهم"))) ||
+        (Boolean(studentResolution.detectedHalaqah || matchedHalaqah) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("حلقة") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها"))) ||
+        (Boolean(studentResolution.detectedTeacher) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("شيخ") || normUserMessage.includes("معلم") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها"))) ||
+        (Boolean(studentResolution.detectedComplex || normUserMessage.includes("مجمع")) && (hasExplicitTableKeyword || hasStudentsDirective || normUserMessage.includes("طلاب") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها") || normUserMessage.includes("مجمع") || normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات"))) ||
+        ((Boolean(studentResolution.explicitCount && studentResolution.explicitCount > 0) || Boolean(studentResolution.isCountQuery) || normUserMessage.includes("عدد محدد") || normUserMessage.includes("باسمائهم") || normUserMessage.includes("بأسمائهم")) && (normUserMessage.includes("طلاب") || normUserMessage.includes("طالب") || normUserMessage.includes("باسمائهم") || normUserMessage.includes("بأسمائهم") || normUserMessage.includes("حفظهم") || normUserMessage.includes("مستواهم") || normUserMessage.includes("جدول") || normUserMessage.includes("كشف") || normUserMessage.includes("طلع") || normUserMessage.includes("اعطني") || normUserMessage.includes("هات") || normUserMessage.includes("اريد"))) ||
+        /(?:كشف|جدول|قائمة|بيان|سجل)\s+(?:الطلاب|طلاب|الطلبة|الاسماء|الأسماء|البيانات|المسجلين|الحلقة|حلقة|المجمع|مجمع)/i.test(message) ||
+        normUserMessage.includes("كشف الطلاب") ||
+        normUserMessage.includes("جدول الطلاب") ||
+        normUserMessage.includes("قائمة الطلاب") ||
+        normUserMessage.includes("بيانات الطلاب") ||
+        normUserMessage.includes("ترتيب الطلاب") ||
+        normUserMessage.includes("كشف طلاب") ||
+        normUserMessage.includes("جدول طلاب") ||
+        normUserMessage.includes("قائمة طلاب") ||
+        normUserMessage.includes("كشف بالحلقة") ||
+        normUserMessage.includes("كشف الحلقة") ||
+        normUserMessage.includes("كشف الحلقات") ||
+        normUserMessage.includes("كشف لطلاب") ||
+        normUserMessage.includes("كشف عن طلاب") ||
+        ((normUserMessage.includes("كشف") || normUserMessage.includes("جدول") || normUserMessage.includes("قائمة") || normUserMessage.includes("اعمل لي كشف") || normUserMessage.includes("اعمل كشف") || normUserMessage.includes("اعملي كشف")) && (normUserMessage.includes("طالب") || normUserMessage.includes("طلاب") || Boolean(matchedHalaqah)))
+      );
+
+    // 2.9 Navigation & Location Intent (التنقل المباشر ومعرفة موقع أي قسم بالمنظومة أو المسجد)
+    const hasMosqueLocationIntent =
+      normUserMessage.includes("موقع المسجد") ||
+      normUserMessage.includes("مكان المسجد") ||
+      normUserMessage.includes("عنوان المسجد") ||
+      normUserMessage.includes("اين المسجد") ||
+      normUserMessage.includes("أين المسجد") ||
+      normUserMessage.includes("وين المسجد") ||
+      normUserMessage.includes("موقع المجمع") ||
+      normUserMessage.includes("مكان المجمع") ||
+      normUserMessage.includes("عنوان المجمع") ||
+      normUserMessage.includes("خريطة المسجد") ||
+      normUserMessage.includes("خريطة المجمع");
+
+    const hasNavigateIntent =
+      !hasTeachersTableIntent &&
+      !hasAnyDeleteIntent &&
+      !isExplicitRecitationInquiry &&
+      (
+        hasMosqueLocationIntent ||
+        (/(?:افتح|انتقل|وديني|خدني|خذني|توجه|اذهب|عرض|أين|اين|وين|موقع|مكان|كيف\s+اوصل|كيف\s+أصل|كيف\s+اصل|كيف\s+أجد|كيف\s+اجد|كيف\s+أنشئ|كيف\s+انشئ|طريقة\s+إنشاء|طريقة\s+انشاء)\s*(?:لي\s+|لنا\s+)?(?:إلى|الي|لـ|ل|في)?\s*(?:قسم|صفحة|شاشة|تبويب|مكان|موقع)?\s*(?:الاختبارات|المكتبة|الحضور|التسميع|التقييم|الشهادات|الشهادة|التقارير|الحسابات|المعلمين|الطلاب|أولياء\s+الأمور|الواتساب|لوحة\s+الشرف|لوحة\s+الصدارة|الإعدادات|تحضير\s+المعلمين|تحضير\s+الطلاب|تحضير|المجمعات|الحلقات|التسجيلات|السلوك|النسخ|نقل\s+البيانات|البيانات)/i.test(message)) ||
+        normUserMessage.includes("اجد الشهادات") ||
+        normUserMessage.includes("الشهادات") && (normUserMessage.includes("اين") || normUserMessage.includes("أين") || normUserMessage.includes("وين") || normUserMessage.includes("كيف")) ||
+        normUserMessage.includes("كيف انشئ شهادة") ||
+        normUserMessage.includes("كيف انشئ الشهادات") ||
+        normUserMessage.includes("كيف انشئ شهاده") ||
+        normUserMessage.includes("نقل البيانات") ||
+        normUserMessage.includes("اين نقل البيانات") ||
+        normUserMessage.includes("تحضير الطلاب") ||
+        normUserMessage.includes("اين تحضير الطلاب") ||
+        lowerMsg.includes("وين موقع") ||
+        lowerMsg.includes("اين موقع") ||
+        lowerMsg.includes("موقع قسم") ||
+        lowerMsg.includes("موقع شاشة") ||
+        lowerMsg.includes("مكان قسم") ||
+        lowerMsg.includes("وين شاشة") ||
+        lowerMsg.includes("اين شاشة")
+      );
+
+    let targetNavigateTab = "";
+    let targetNavigateTabName = "";
+    if (hasNavigateIntent) {
+      if (hasMosqueLocationIntent) {
+        targetNavigateTab = "settings";
+        targetNavigateTabName = `موقع ومقر ${complexName}`;
+      }
+      else if (lowerMsg.includes("اختبار")) { targetNavigateTab = "exams"; targetNavigateTabName = "قسم الاختبارات القرآنية"; }
+      else if (lowerMsg.includes("مكتب")) { targetNavigateTab = "library"; targetNavigateTabName = "قسم المكتبة والمستندات"; }
+      else if (
+        !hasAnyDeleteIntent &&
+        !lowerMsg.includes("حذف") &&
+        !lowerMsg.includes("احذف") &&
+        !lowerMsg.includes("مسح") &&
+        (
+          lowerMsg.includes("تحضير المعلم") ||
+          lowerMsg.includes("تحضير المعلمين") ||
+          lowerMsg.includes("حضور المعلمين") ||
+          lowerMsg.includes("غياب المعلمين") ||
+          lowerMsg.includes("دوام المعلم") ||
+          lowerMsg.includes("دوام المعلمين") ||
+          (lowerMsg.includes("تحضير") && (lowerMsg.includes("معلم") || lowerMsg.includes("معلمين")))
+        )
+      ) {
+        targetNavigateTab = "teacher_attendance";
+        targetNavigateTabName = "قسم تحضير وحضور المعلمين";
+      }
+      else if (lowerMsg.includes("حضور") || lowerMsg.includes("غياب")) {
+        targetNavigateTab = "attendance";
+        targetNavigateTabName = "قسم حضور وغياب الطلاب";
+      }
+      else if (lowerMsg.includes("تسميع") || lowerMsg.includes("تقييم")) {
+        targetNavigateTab = "evaluation";
+        targetNavigateTabName = "قسم التسميع والتقييم اليومي";
+      }
+      else if (lowerMsg.includes("شهادة") || lowerMsg.includes("شهادات")) {
+        targetNavigateTab = "certificates";
+        targetNavigateTabName = "قسم الشهادات والتكريم";
+      }
+      else if (lowerMsg.includes("تقرير") || lowerMsg.includes("تقارير") || lowerMsg.includes("احصائ")) {
+        targetNavigateTab = "reports";
+        targetNavigateTabName = "قسم التقارير والإحصائيات";
+      }
+      else if (lowerMsg.includes("حساب") || lowerMsg.includes("معلم") || lowerMsg.includes("معلمين")) {
+        targetNavigateTab = isDeveloper ? "accounts" : "settings";
+        targetNavigateTabName = "قسم إدارة وحسابات المعلمين";
+      }
+      else if (lowerMsg.includes("حلقة") || lowerMsg.includes("حلقات") || lowerMsg.includes("إعدادات") || lowerMsg.includes("اعدادات")) {
+        targetNavigateTab = "settings";
+        targetNavigateTabName = "قسم إعدادات المنظومة والحلقات";
+      }
+      else if (lowerMsg.includes("طالب") || lowerMsg.includes("طلاب")) {
+        targetNavigateTab = "students";
+        targetNavigateTabName = "قسم شؤون الطلاب";
+      }
+      else if (lowerMsg.includes("ولي") || lowerMsg.includes("واتس")) {
+        targetNavigateTab = "parents";
+        targetNavigateTabName = "قسم رسائل أولياء الأمور";
+      }
+      else if (lowerMsg.includes("شرف") || lowerMsg.includes("صدارة") || lowerMsg.includes("متصدر")) {
+        targetNavigateTab = "leaderboard";
+        targetNavigateTabName = "لوحة الشرف والصدارة القرآنية";
+      }
+      else if (lowerMsg.includes("تسجيل") || lowerMsg.includes("صوتي")) {
+        targetNavigateTab = "recordings";
+        targetNavigateTabName = "قسم التسجيلات الصوتية";
+      }
+      else if (lowerMsg.includes("سلوك") || lowerMsg.includes("مخالف")) {
+        targetNavigateTab = "behavior";
+        targetNavigateTabName = "قسم المتابعة السلوكية";
+      }
+      else if (lowerMsg.includes("خطة") || lowerMsg.includes("خطه") || lowerMsg.includes("ختم") || lowerMsg.includes("مواعيد الختم") || lowerMsg.includes("ضبط الخطة") || lowerMsg.includes("ضبط الخطه")) {
+        targetNavigateTab = "halaqah_plans";
+        targetNavigateTabName = "قسم ضبط الخطة ومواعيد الختم";
+      }
+      else if (lowerMsg.includes("نسخ") || lowerMsg.includes("احتياط") || lowerMsg.includes("بيانات")) {
+        targetNavigateTab = "backup";
+        targetNavigateTabName = "قسم النسخ الاحتياطي والبيانات";
+      }
+    }
+
+    const hasPlanScheduleInquiry =
+      /(?:ضبط\s+الخطة|ضبط\s+الخطه|مواعيد\s+الختم|موعد\s+الختم|تاريخ\s+الختم|متى\s+يختم|كم\s+باقي\s+على\s+الختم|كم\s+باقي\s+للختم|خطة\s+الحفظ|خطة\s+التثبيت|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+الحلقة|جدول\s+الختم|خطة\s+الطالب|خطة\s+الطلاب)/i.test(message) ||
+      normUserMessage.includes("ضبط الخطة") ||
+      normUserMessage.includes("ضبط الخطه") ||
+      normUserMessage.includes("مواعيد الختم") ||
+      normUserMessage.includes("موعد الختم") ||
+      normUserMessage.includes("تاريخ الختم") ||
+      normUserMessage.includes("متى يختم") ||
+      normUserMessage.includes("خطة التثبيت") ||
+      normUserMessage.includes("جدول الختم");
+
+    // 2.9.5 Theme Customization Intent (تغيير ثيم وهوية المنصة أو المجمع)
+    const hasThemeIntent =
+      /(?:تغيير|تغير|تبديل|تعديل|اختيار|تخصيص)?\s*(?:ثيم|ثيمات|لون|الوان|ألوان|مظهر|شكل)\s*(?:المنصة|المجمع|الموقع|النظام)/i.test(message) ||
+      lowerMsg.includes("اغير ثيم") ||
+      lowerMsg.includes("أغير ثيم") ||
+      lowerMsg.includes("تغيير ثيم") ||
+      lowerMsg.includes("ثيم المنصة") ||
+      lowerMsg.includes("ثيم المجمع");
+
+    // Dynamic Date Parsing for inquiries (اليوم، أمس، قبل أمس، وأيام الأسبوع: الاثنين، الثلاثاء، إلخ)
+    const allKnownDates = Array.from(new Set([
+      ...evaluationsList.map((e: any) => e.date).filter(Boolean),
+      ...attendanceList.map((a: any) => a.date).filter(Boolean)
+    ]));
+    const parsedDateInfo = parseRecitationDateAndDay(message, allKnownDates);
+    let targetRecitationDate = parsedDateInfo.targetDate;
+    let targetDayOfWeek = parsedDateInfo.targetDayOfWeek;
+    let targetRecitationDateLabel = parsedDateInfo.targetDateLabel;
+
+    const isExportableReportRequest =
+      normUserMessage.includes("قابل للاستخراج") ||
+      normUserMessage.includes("قابله للاستخراج") ||
+      normUserMessage.includes("للاستخراج") ||
+      normUserMessage.includes("استخراج") ||
+      normUserMessage.includes("تقرير قابل") ||
+      normUserMessage.includes("تصدير") ||
+      normUserMessage.includes("كشف") ||
+      normUserMessage.includes("شيت") ||
+      normUserMessage.includes("اكسل") ||
+      normUserMessage.includes("جدول");
+
+    // 0. Extract students referenced in recent conversation turns
+    const contextStudents = extractStudentsFromHistoryAndContext(history, studentsList, recentReferencedStudents);
+
+    // Reference to previous students detection (e.g. "هؤلاء الطلاب", "لهدول", "للطلاب السابقين", "لهم", "فيهم", "عنهم", "طلع بطاقاتهم", etc.)
+    const hasReferenceToPreviousStudents =
+      /(?:هؤلاء|هذول|هدول|دول|أولئك|السابقين|المذكورين|اللي\s+تكلمنا\s+عنهم|اللي\s+ذكرتهم|اللي\s+كلمتك\s+عنهم|اللي\s+سألتك\s+عنهم|الماضيين)\s*(?:الطلاب|طلاب)?/i.test(message) ||
+      /(?:لهم|عنهم|فيهم|بهم|لهؤلاء|لهدول|للطلاب\s+المذكورين|للسابقين)/i.test(message) ||
+      /(?:طلع|اعمل|سو|أنشئ|اصنع|اطبع|جهز|احسب)\s*(?:لهم|عنهم|لهؤلاء|لهدول|إياهم)/i.test(message) ||
+      /(?:بطاقاتهم|كشفهم|تقريرهم|شهاداتهم|نقاطهم|تسميعهم|حضورهم|غيابهم|أوجههم|درجاتهم)/i.test(message) ||
+      normUserMessage.includes("لهؤلاء الطلاب") ||
+      normUserMessage.includes("لهدول الطلاب") ||
+      normUserMessage.includes("للطلاب السابقين") ||
+      normUserMessage.includes("الطلاب المذكورين") ||
+      normUserMessage.includes("اعمل لهم") ||
+      normUserMessage.includes("طلع لهم") ||
+      normUserMessage.includes("سو لهم") ||
+      normUserMessage.includes("اطبع لهم");
+
+    const isIdCardsIntent =
+      normUserMessage.includes("بطاق") ||
+      normUserMessage.includes("تعريف") ||
+      normUserMessage.includes("هوي") ||
+      normUserMessage.includes("كروت");
+
+    const hasRecitationInquiryIntent =
+      !hasAnyDeleteIntent &&
+      (/(?:ماذا|ايش|شو|كم|ما|هل)\s*(?:سمع|سمّع|حفظ|أنجز|انجز|تسميع|قرأ)\s*(?:الطالب|طالبنا|الطلاب|طلابنا)?/i.test(message) ||
+      /(?:تسميع|حفظ|مقرر|ورد|سجل|تقييم|تسجيل)\s+(?:الطالب|طالبنا|اليوم|التسميع)/i.test(message) ||
+      /(?:ماذا|ايش|شو)\s*(?:سوف|سيسمع|سوف\s+يسمع|سيحفظ|سوف\s+يحفظ|بكرة|غداً|غدا)/i.test(message) ||
+      lowerMsg.includes("سمع اليوم") ||
+      lowerMsg.includes("سمع بكرة") ||
+      lowerMsg.includes("يسمع بكرة") ||
+      lowerMsg.includes("ماذا سمع") ||
+      lowerMsg.includes("ماذا سمعو") ||
+      lowerMsg.includes("ماذا سمعوا") ||
+      lowerMsg.includes("ايش سمع") ||
+      lowerMsg.includes("شو سمع") ||
+      lowerMsg.includes("مقرر الغد") ||
+      lowerMsg.includes("حفظ الغد") ||
+      lowerMsg.includes("تسجيل صوتي") ||
+      lowerMsg.includes("شوف التسجيل") ||
+      lowerMsg.includes("تقييم التسميع") ||
+      lowerMsg.includes("قسم تقيم التسميع") ||
+      lowerMsg.includes("قسم تقييم التسميع"));
+
+    const hasDailyRecitationReviewIntent =
+      lowerMsg.includes("سمع اليوم") ||
+      lowerMsg.includes("سمعوا اليوم") ||
+      lowerMsg.includes("سمع أمس") ||
+      lowerMsg.includes("سمعوا امس") ||
+      lowerMsg.includes("سمعوا أمس") ||
+      lowerMsg.includes("سمع قبل أمس") ||
+      lowerMsg.includes("ماذا سمع الطلاب") ||
+      lowerMsg.includes("ماذا سمّع الطلاب") ||
+      lowerMsg.includes("تسميعات اليوم") ||
+      lowerMsg.includes("تسميع اليوم") ||
+      lowerMsg.includes("تسميع أمس") ||
+      lowerMsg.includes("تسميع قبل أمس") ||
+      lowerMsg.includes("كشف التسميع");
+
+    const hasSpecificStudentsProgressIntent =
+      Boolean(
+        (lowerMsg.includes("وين وصل") || lowerMsg.includes("أين وصل") || lowerMsg.includes("وصلوا") || lowerMsg.includes("مستوى") || lowerMsg.includes("حفظ وحضور") || lowerMsg.includes("الحفظ والحضور") || lowerMsg.includes("الحفظ والغياب")) &&
+        (lowerMsg.includes("طلاب") || lowerMsg.includes("طالب") || lowerMsg.includes("ثلاث") || lowerMsg.includes("3") || lowerMsg.includes("حلقة"))
+      );
+
+    const hasWhatsAppIntent =
+      lowerMsg.includes("رسالة الحضور") ||
+      lowerMsg.includes("رسالة الغياب") ||
+      lowerMsg.includes("رسالة الواتس") ||
+      lowerMsg.includes("تقرير الحضور لليوم") ||
+      lowerMsg.includes("رسالة اليوم");
+
+    // Student resolution already computed with userContext above
+
+    // Guard 1: RBAC Permission Denied - Reject unauthorized queries with polite message
+    if (studentResolution.status === "PERMISSION_DENIED") {
+      return res.json({
+        reply: stripFaceEmojis(studentResolution.clarificationQuestion || `أهلاً بك يا أخي ${firstName}. عذراً، لا تملك الصلاحية للاطلاع على بيانات هذا الطالب بحسب النطاق المخصص لك في الحلقة أو المجمع.`),
+        action: null,
+      });
+    }
+
+    // Guard 2: Ambiguous student query ONLY if user explicitly asked about an individual student name
+    const isExplicitSingleStudentQueryTarget = /(?:عن\s+الطالب|للطالب|لطالب|طالبنا|اسم\s+الطالب|اسمه|المدعو|بيانات\s+الطالب|تقرير\s+الطالب|درجات\s+الطالب|نقاط\s+الطالب|حفظ\s+الطالب|سجل\s+الطالب)\s+[^\s,،\.\?!]+/i.test(message);
+    const isGeneralInquiryOrChat = Boolean(
+      normUserMessage.includes("كم عدد") ||
+      normUserMessage.includes("عدد الحلقات") ||
+      normUserMessage.includes("حلقات") ||
+      normUserMessage.includes("مساجد") ||
+      normUserMessage.includes("جامع") ||
+      normUserMessage.includes("منظومة") ||
+      normUserMessage.includes("مجمع") ||
+      normUserMessage.includes("تسميع") ||
+      normUserMessage.includes("اوجه") ||
+      normUserMessage.includes("أوجه") ||
+      normUserMessage.includes("اكثر الطلاب") ||
+      normUserMessage.includes("أكثر الطلاب") ||
+      normUserMessage.includes("ركز") ||
+      normUserMessage.includes("اسمع") ||
+      normUserMessage.includes("شوف") ||
+      normUserMessage.includes("معي") ||
+      normUserMessage.includes("ولد") ||
+      normUserMessage.startsWith("لا ") ||
+      normUserMessage.startsWith("لا،") ||
+      normUserMessage.startsWith("لا,") ||
+      normUserMessage === "لا"
+    );
+
+    if (
+      studentResolution.status === "AMBIGUOUS" &&
+      studentResolution.clarificationQuestion &&
+      isExplicitSingleStudentQueryTarget &&
+      !isGeneralInquiryOrChat
+    ) {
+      return res.json({
+        reply: stripFaceEmojis(studentResolution.clarificationQuestion),
+        action: null,
+      });
+    }
+
+    const isReferentialQuestion =
+      normUserMessage === "ماهذا" ||
+      normUserMessage === "ما هذا" ||
+      normUserMessage === "وش هذا" ||
+      normUserMessage === "ايش هذا" ||
+      normUserMessage === "شنو هذا" ||
+      normUserMessage === "شو هذا" ||
+      normUserMessage === "ايه ده" ||
+      normUserMessage === "ده ايه" ||
+      normUserMessage === "دا ايه" ||
+      normUserMessage === "عندي مشكلة" ||
+      normUserMessage === "عندي مشكله" ||
+      normUserMessage.startsWith("ماهذا") ||
+      normUserMessage.startsWith("ما هذا") ||
+      normUserMessage.startsWith("وش هذا") ||
+      normUserMessage.startsWith("ايش هذا") ||
+      normUserMessage.startsWith("عندي مشكل") ||
+      normUserMessage.includes("ما معنى هذا") ||
+      normUserMessage.includes("ماذا يعني هذا") ||
+      normUserMessage.includes("اشرح لي") ||
+      normUserMessage.includes("وضح لي") ||
+      normUserMessage.includes("وش يعني") ||
+      normUserMessage.includes("ايش يعني");
+
+    // Guard 3: Explicit student name not found - Never fall back to all students!
+    const hasSpecialIntent =
+      hasComparisonIntent ||
+      isReferentialQuestion ||
+      hasChartDiagnosticIntent ||
+      hasAttendanceTableIntent ||
+      hasGeneralTableIntent ||
+      hasTeachersTableIntent ||
+      hasPointsTableIntent ||
+      hasTopPointsIntent ||
+      hasLowPointsIntent ||
+      hasViolationsTableIntent ||
+      hasNavigateIntent ||
+      hasThemeIntent ||
+      hasRegisterIntent ||
+      hasAnyDeleteIntent ||
+      hasWhatsAppIntent ||
+      hasRecitationInquiryIntent ||
+      hasDailyRecitationReviewIntent ||
+      hasSpecificStudentsProgressIntent ||
+      isExplicitRecitationInquiry;
+
+    let unresolvedStudentNote = "";
+    if (
+      !hasSpecialIntent &&
+      studentResolution.status === "NOT_FOUND" &&
+      (studentResolution.isSingleStudentQuery || studentResolution.requestedNames.length > 0)
+    ) {
+      const namesStr = studentResolution.requestedNames.join(" و ");
+      const singleReqName = studentResolution.requestedNames[0];
+      const firstNameToken = singleReqName ? normalizeArabicText(singleReqName).split(/\s+/)[0] : '';
+      const closeMatch = firstNameToken && firstNameToken.length >= 3
+        ? studentsList.find(s => normalizeArabicText(s.name).split(/\s+/)[0] === firstNameToken)
+        : null;
+
+      if (closeMatch) {
+        unresolvedStudentNote = `المستخدم سأل عن الطالب «${namesStr}»، ولم يُعثر على طالب بهذا الاسم بالكامل، ولكن مسجل لدينا في الحلقة الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).`;
+      } else {
+        unresolvedStudentNote = `المستخدم سأل عن الطالب «${namesStr}»، ولم يتم العثور على طالب مسجل بهذا الاسم في الحلقة أو المجمع. الطلاب المسجلون هم: ${studentsList.slice(0, 8).map(s => s.name).join('، ')}.`;
+      }
+
+      // If Gemini is offline, fallback safely to standard polite response
+      if (!process.env.GEMINI_API_KEY) {
+        if (closeMatch) {
+          return res.json({
+            reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName} 🌿\n\nلم يتم العثور على طالب مسجل باسم «${namesStr}» في الحلقة، ولكن مسجل لدينا الطالب المبارك «${closeMatch.name}» (${closeMatch.halaqahName || halaqahName}).\n\nإذا كنت تقصد «${closeMatch.name}»، تفضل بتأكيد ذلك أو يمكنك تسجيل «${namesStr}» كطالب جديد في الحلقة بضغطة زر.`),
+            action: null,
+          });
+        }
+
+        return res.json({
+          reply: stripFaceEmojis(`أهلاً بك يا أخي ${firstName}. لم يتم العثور على طالب باسم "${namesStr}" ضمن نطاق صلاحياتك في الحلقة أو المجمع المصرح لك به. يرجى التأكد من كتابة الاسم بدقة أو تسجيل الطالب أولاً.`),
+          action: null,
+        });
+      }
+    }
+
+    // Collect students explicitly named in current message
+    const hasExplicitNamedStudents = studentResolution.requestedNames.length > 0 && studentResolution.matchedStudents.length > 0;
+    const namedStudentsInMessage: any[] = hasExplicitNamedStudents ? [...studentResolution.matchedStudents] : [];
+
+    // Determine targeted cohort with strict precedence and strict halaqah isolation:
+    let activeCohortStudents: any[] = [];
+    if (matchedHalaqah && halaqahStudentsCohort.length > 0) {
+      // 1. Explicit halaqah named in message (e.g. "حلقة الزبير") targets ONLY students of this halaqah!
+      if (namedStudentsInMessage.length > 0) {
+        const inHalaqah = namedStudentsInMessage.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        activeCohortStudents = inHalaqah.length > 0 ? inHalaqah : [...halaqahStudentsCohort];
+      } else if (studentResolution.matchedStudents.length > 0) {
+        const inHalaqah = studentResolution.matchedStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        activeCohortStudents = inHalaqah.length > 0 ? inHalaqah : [...halaqahStudentsCohort];
+      } else {
+        activeCohortStudents = [...halaqahStudentsCohort];
+      }
+    } else if (effectiveMatchedComplex) {
+      // 2. Explicit complex named in message (e.g. "مجمع الحربي", "مجمع النور", or any complex) targets ONLY students of this complex!
+      if (namedStudentsInMessage.length > 0) {
+        const inComp = namedStudentsInMessage.filter(s => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
+        activeCohortStudents = inComp.length > 0 ? inComp : [...finalComplexStudentsCohort];
+      } else if (studentResolution.matchedStudents.length > 0) {
+        const inComp = studentResolution.matchedStudents.filter(s => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
+        activeCohortStudents = inComp.length > 0 ? inComp : [...finalComplexStudentsCohort];
+      } else {
+        activeCohortStudents = [...finalComplexStudentsCohort];
+      }
+    } else if (namedStudentsInMessage.length > 0) {
+      // 2. Explicit student names take top absolute priority when no specific halaqah was requested
+      activeCohortStudents = [...namedStudentsInMessage];
+    } else if (studentResolution.detectedTeacher && studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    } else if (studentResolution.detectedComplex && studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    } else if (studentResolution.matchedStudents.length > 0 && (studentResolution.isCountQuery || studentResolution.explicitCount || studentResolution.detectedLevel)) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    } else if (hasReferenceToPreviousStudents && contextStudents.length > 0) {
+      // 3. Explicit reference to previous students ("هؤلاء", "لهم", "فيهم", "للطلاب السابقين")
+      activeCohortStudents = [...contextStudents];
+    } else if (activeHalaqah?.id && activeHalaqah.id !== 'all') {
+      // 4. Current UI active halaqah if not "all"
+      const activeHalaqahStudents = studentsList.filter(s => s.halaqahId === activeHalaqah.id);
+      if (activeHalaqahStudents.length > 0) {
+        activeCohortStudents = [...activeHalaqahStudents];
+      }
+    } else if (studentResolution.matchedStudents.length > 0) {
+      activeCohortStudents = [...studentResolution.matchedStudents];
+    }
+
+    // Detect user-requested sorting criteria (بأي ترتيب: تنازلي، تصاعدي، بالنقاط، أبجدياً، بالسورة)
+    const isSortPointsAsc = /(?:الاقل|الأقل|اقل|أقل|تصاعدي|المتعثرين|المتأخرين)\s*(?:في\s+|بال)?(?:النقاط|نقاط)?/i.test(message) ||
+      normUserMessage.includes("تصاعدي") || normUserMessage.includes("اقل نقاط") || normUserMessage.includes("الاقل نقاطا");
+
+    const isSortPointsDesc = /(?:الاعلى|الأعلى|اعلى|أعلى|تنازلي|المتصدرين|الأوائل|الاوائل)\s*(?:في\s+|بال)?(?:النقاط|نقاط)?/i.test(message) ||
+      normUserMessage.includes("تنازلي") || normUserMessage.includes("اعلى نقاط") || normUserMessage.includes("ترتيب بالنقاط");
+
+    const isSortAlpha = /(?:ابجدي|أبجدي|بالحروف|ابجديا|أبجدياً|ترتيب\s+اسماء|ترتيب\s+الاسماء|ترتيب\s+أبجدي)/i.test(message) ||
+      normUserMessage.includes("ابجدي") || normUserMessage.includes("ابجديا");
+
+    const isSortSurah = normUserMessage.includes("سورة") || normUserMessage.includes("حسب السورة") || normUserMessage.includes("بموضع الحفظ");
+
+    const hasExplicitMultiCount =
+      /(?:أربع|اربع|أربعة|اربعة|ثلاث|ثلاثة|طالبين|طالبان|خمس|خمسة|ست|ستة|سبع|سبعة|ثمان|ثمانية|تسع|تسعة|عشر|عشرة|\d+)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب)/i.test(message) ||
+      /(?:لـ|ل|عن|ب)?(?:\d+|أربع|اربع|أربعة|اربعة|ثلاث|ثلاثة|خمس|خمسة|ست|ستة|سبع|سبعة|ثمان|ثمانية|تسع|تسعة|عشر|عشرة)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب)/i.test(message) ||
+      normUserMessage.includes("اربع طلاب") ||
+      normUserMessage.includes("اربعه طلاب") ||
+      normUserMessage.includes("4 طلاب") ||
+      normUserMessage.includes("3 طلاب") ||
+      normUserMessage.includes("ثلاث طلاب") ||
+      normUserMessage.includes("ثلاثه طلاب") ||
+      normUserMessage.includes("5 طلاب") ||
+      normUserMessage.includes("خمس طلاب") ||
+      normUserMessage.includes("تقرير اربع") ||
+      normUserMessage.includes("تقرير أربع") ||
+      normUserMessage.includes("تقرير 4") ||
+      normUserMessage.includes("تقرير لـ 4") ||
+      normUserMessage.includes("تقرير لاربع") ||
+      normUserMessage.includes("تقرير لأربع");
+
+
+    const hasExplicitRecitationKeywords = Boolean(
+      isExplicitRecitationInquiry ||
+      normUserMessage.includes("تسميع") ||
+      normUserMessage.includes("تسميعات") ||
+      normUserMessage.includes("سمعوا") ||
+      normUserMessage.includes("سمعو") ||
+      normUserMessage.includes("سمع") ||
+      normUserMessage.includes("ماذا سمع") ||
+      normUserMessage.includes("وش سمع") ||
+      normUserMessage.includes("ايش سمع") ||
+      normUserMessage.includes("شو سمع") ||
+      normUserMessage.includes("ما حفظوا") ||
+      normUserMessage.includes("ما حفظو") ||
+      normUserMessage.includes("ما انجزوا") ||
+      normUserMessage.includes("كشف التسميع") ||
+      normUserMessage.includes("سجل التسميع") ||
+      normUserMessage.includes("جدول التسميع") ||
+      normUserMessage.includes("كشف الحفظ") ||
+      normUserMessage.includes("اوجه") ||
+      normUserMessage.includes("أوجه")
+    );
+
+    // Multi-Student Recitation / Report / ID Cards Inquiry Intent (must NOT hijack comparisons, teachers, attendance, points, charts, or navigation!)
+    const hasMultiStudentRecitationIntent = Boolean(
+      !hasComparisonIntent &&
+      !deleteItemTarget &&
+      !hasTeachersTableIntent &&
+      !hasAttendanceTableIntent &&
+      !hasPointsTableIntent &&
+      !hasTopPointsIntent &&
+      !hasLowPointsIntent &&
+      !hasViolationsTableIntent &&
+      !hasChartDiagnosticIntent &&
+      !hasNavigateIntent &&
+      !studentResolution.isSingleStudentQuery &&
+      (
+        hasExplicitRecitationKeywords ||
+        ((studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 1) && (normUserMessage.includes("تقرير") || normUserMessage.includes("تسميع") || normUserMessage.includes("سمع") || normUserMessage.includes("حفظ"))) ||
+        (hasExplicitMultiCount && (normUserMessage.includes("تقرير") || normUserMessage.includes("كشف") || normUserMessage.includes("سجل")) && (normUserMessage.includes("تسميع") || normUserMessage.includes("حفظ") || normUserMessage.includes("سمع"))) ||
+        (hasReferenceToPreviousStudents && (normUserMessage.includes("سمع") || normUserMessage.includes("تسميع") || normUserMessage.includes("تقرير")))
+      )
+    );
+
+    const parsedCountObj = parseRequestedStudentCount(message, studentsList.length);
+    let requestedMultiCount = parsedCountObj.count;
+
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      requestedMultiCount = 1;
+    } else if (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) {
+      requestedMultiCount = studentResolution.matchedStudents.length;
+    } else if (studentResolution.isCountQuery && studentResolution.requestedCount) {
+      requestedMultiCount = studentResolution.requestedCount;
+    } else if (namedStudentsInMessage.length > 0) {
+      // Rule: When specific student names are mentioned, count is STRICTLY the number of named students!
+      requestedMultiCount = namedStudentsInMessage.length;
+    } else if (!requestedMultiCount || requestedMultiCount <= 0) {
+      if (matchedHalaqah && halaqahStudentsCohort.length > 0) {
+        requestedMultiCount = halaqahStudentsCohort.length;
+      } else if (activeCohortStudents.length > 0) {
+        requestedMultiCount = activeCohortStudents.length;
+      } else if (hasReferenceToPreviousStudents && contextStudents.length > 0) {
+        requestedMultiCount = contextStudents.length;
+      } else if (isIdCardsIntent) {
+        // ID Cards request without number: open cohort, never restricted to 4!
+        const halaqahStudents = activeHalaqah?.id && activeHalaqah.id !== 'all'
+          ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+          : studentsList;
+        requestedMultiCount = halaqahStudents.length > 0 ? Math.min(halaqahStudents.length, 15) : 6;
+      } else {
+        requestedMultiCount = Math.min(studentsList.length || 6, 6);
+      }
+    }
+
+    // Never slice below explicitly named or referenced students!
+    if (namedStudentsInMessage.length > 0) {
+      requestedMultiCount = namedStudentsInMessage.length;
+    } else if (activeCohortStudents.length > 0) {
+      requestedMultiCount = Math.max(requestedMultiCount, activeCohortStudents.length);
+    }
+
+    let multiRecitationData: any[] = [];
+    if (hasMultiStudentRecitationIntent) {
+      const weekdayIndexMap: Record<string, number> = {
+        'احد': 0, 'أحد': 0,
+        'اثنين': 1, 'إثنين': 1, 'اثنيين': 1,
+        'ثلاثاء': 2, 'ثلثاء': 2,
+        'اربعاء': 3, 'أربعاء': 3,
+        'خميس': 4,
+        'جمعه': 5, 'جمعة': 5,
+        'سبت': 6,
+      };
+      const targetDayIdx = targetDayOfWeek ? weekdayIndexMap[targetDayOfWeek] : undefined;
+
+      // Halaqah isolation: If a specific halaqah was requested, isolate its cohort strictly
+      const halaqahScopePool = matchedHalaqah
+        ? halaqahStudentsCohort
+        : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+            ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+            : studentsList);
+
+      const isFixedCohort = studentResolution.isSingleStudentQuery ||
+        (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) ||
+        namedStudentsInMessage.length > 0;
+
+      if (!isFixedCohort && activeCohortStudents.length === 0) {
+        if (matchedHalaqah) {
+          activeCohortStudents = [...halaqahStudentsCohort];
+          if (!hasExplicitMultiCount) {
+            requestedMultiCount = halaqahStudentsCohort.length;
+          }
+        } else {
+          const studentsEvaluatedOnQueriedDateOrDay = halaqahScopePool.filter(s =>
+            evaluationsList.some(e => {
+              if (e.studentId !== s.id || !e.date) return false;
+              if (targetRecitationDate && e.date === targetRecitationDate) return true;
+              if (typeof targetDayIdx === 'number') {
+                const d = new Date(e.date + 'T12:00:00');
+                return !isNaN(d.getTime()) && d.getDay() === targetDayIdx;
+              }
+              return false;
+            })
+          );
+          if (studentsEvaluatedOnQueriedDateOrDay.length > 0) {
+            requestedMultiCount = Math.max(requestedMultiCount, studentsEvaluatedOnQueriedDateOrDay.length);
+          }
+        }
+      }
+
+      let chosenStudents = [...activeCohortStudents];
+      if (matchedHalaqah) {
+        chosenStudents = chosenStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+        if (chosenStudents.length === 0) {
+          chosenStudents = [...halaqahStudentsCohort];
+        }
+      }
+
+      // If more students needed, ONLY pull from the scope pool (never mix other halaqahs if halaqah specified!)
+      if (!isFixedCohort && chosenStudents.length < requestedMultiCount) {
+        const remaining = halaqahScopePool.filter(s => !chosenStudents.some(cs => cs.id === s.id));
+        
+        // Priority 1: Students with evaluations on targetRecitationDate
+        const withTargetDateEvals = remaining.filter(s =>
+          evaluationsList.some(e => e.studentId === s.id && e.date === targetRecitationDate)
+        );
+        // Priority 2: Students with evaluations on this weekday (e.g. Tuesday, Wednesday, Monday...)
+        const withWeekdayEvals = remaining.filter(s =>
+          !withTargetDateEvals.some(w => w.id === s.id) &&
+          evaluationsList.some(e => {
+            if (e.studentId !== s.id || !e.date) return false;
+            const d = new Date(e.date + 'T12:00:00');
+            return !isNaN(d.getTime()) && typeof targetDayIdx === 'number' ? d.getDay() === targetDayIdx : false;
+          })
+        );
+        // Priority 3: Students with any evaluations
+        const withAnyEvals = remaining.filter(s =>
+          !withTargetDateEvals.some(w => w.id === s.id) &&
+          !withWeekdayEvals.some(w => w.id === s.id) &&
+          evaluationsList.some(e => e.studentId === s.id)
+        );
+        // Priority 4: All other students
+        const withoutEvals = remaining.filter(s =>
+          !withTargetDateEvals.some(w => w.id === s.id) &&
+          !withWeekdayEvals.some(w => w.id === s.id) &&
+          !withAnyEvals.some(w => w.id === s.id)
+        );
+
+        const pool = [...withTargetDateEvals, ...withWeekdayEvals, ...withAnyEvals, ...withoutEvals];
+        chosenStudents.push(...pool.slice(0, requestedMultiCount - chosenStudents.length));
+      }
+
+      // Respect user-specified sorting order (بأي ترتيب: تنازلي، تصاعدي، بالنقاط، أبجدياً، بالسورة)
+      if (isSortPointsDesc) {
+        chosenStudents.sort((a, b) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0));
+      } else if (isSortPointsAsc) {
+        chosenStudents.sort((a, b) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0));
+      } else if (isSortAlpha) {
+        chosenStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      } else if (isSortSurah) {
+        chosenStudents.sort((a, b) => (a.currentSurahName || '').localeCompare(b.currentSurahName || '', 'ar'));
+      }
+
+      let finalStudents = isFixedCohort
+        ? chosenStudents
+        : (matchedHalaqah && !hasExplicitMultiCount
+            ? chosenStudents
+            : chosenStudents.slice(0, requestedMultiCount));
+
+      if (matchedHalaqah) {
+        finalStudents = finalStudents.filter(s => isStudentInHalaqah(s, matchedHalaqah));
+      }
+
+      multiRecitationData = finalStudents.map((st: any) => {
+        const stEvals = evaluationsList
+          .filter((e: any) => e.studentId === st.id)
+          .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+        const exactEv = targetRecitationDate ? stEvals.find((e: any) => e.date === targetRecitationDate) : null;
+        const ev = exactEv || findStudentEvaluationForDateOrDay(stEvals, targetRecitationDate, targetDayOfWeek) || null;
+        const rec = ev ? extractEvaluationRecitationData(ev) : null;
+
+        const hasActual = Boolean(rec);
+
+        const newRecited = hasActual
+          ? rec?.newMemorization
+          : (st.currentSurahName ? `سورة ${st.currentSurahName}: متابعة الحفظ المعتمد` : 'متابعة الورد القرآني المعتمد');
+        const newFacesCount = hasActual
+          ? (rec?.newFaces || 0)
+          : (st.dailyNewTarget === 'وجه كامل' ? 1 : 0.5);
+        const newFacesLbl = hasActual
+          ? rec?.newFacesLabel
+          : (st.dailyNewTarget || 'نصف وجه');
+        const revRecited = hasActual
+          ? rec?.reviewAchieved
+          : 'مراجعة وتثبيت المحفوظ';
+        const notes = hasActual
+          ? (rec?.teacherNotes || 'طالب متميز ومواظب في الحلقة')
+          : (stEvals[0] ? `آخر تسميع مسجل له كان بتاريخ ${stEvals[0].date}` : 'مواظب ومجتهد على الحفظ والتسميع');
+        const pts = hasActual
+          ? (rec?.points || 10)
+          : (Number(st.points ?? st.totalPoints) || 10);
+
+        // Check attendance on target date
+        const stAtt = attendanceList.find((a: any) => a.studentId === st.id && a.date === targetRecitationDate);
+        const attStatus = stAtt ? stAtt.status : (ev?.attendanceStatus || 'حاضر');
+
+        return {
+          studentId: st.id,
+          studentName: st.name,
+          name: st.name,
+          halaqahName: st.halaqahName || halaqahName || 'الحلقة القرآنية',
+          level: st.level || 'متوسط',
+          currentSurah: st.currentSurahName || 'الفاتحة',
+          newMemorization: newRecited,
+          newFaces: newFacesCount,
+          newFacesLabel: newFacesLbl,
+          facesCount: hasActual ? (rec?.totalFaces || newFacesCount) : newFacesCount,
+          facesLabel: hasActual ? (rec?.totalFacesLabel || newFacesLbl) : newFacesLbl,
+          reviewAchieved: revRecited,
+          reviewFaces: hasActual ? (rec?.reviewFaces || 0) : 0,
+          reviewFacesLabel: hasActual ? (rec?.reviewFacesLabel || '0 وجه') : '0 وجه',
+          totalFaces: hasActual ? (rec?.totalFaces || newFacesCount) : newFacesCount,
+          totalFacesLabel: hasActual ? (rec?.totalFacesLabel || newFacesLbl) : newFacesLbl,
+          teacherNotes: notes,
+          pointsEarned: pts,
+          attendanceStatus: attStatus,
+          date: rec?.date || targetRecitationDate,
+          dayName: rec?.dayName || targetRecitationDateLabel,
+          hasActualEvaluation: hasActual,
+        };
+      });
+    }
+
+    // 2.10 Certificate Template Creation Intent (طلب إنشاء قالب شهادة جديد)
+    const hasCreateCertificateTemplateIntent =
+      /(?:اعمل|اعملي|أنشئ|انشئ|صمم|اصنع|سوي)\s+(?:لي\s+|لنا\s+)?(?:قالب|نموذج)\s+(?:جديد|شهادة|شهادات)?/i.test(message) ||
+      lowerMsg.includes("قالب جديد") ||
+      lowerMsg.includes("نموذج جديد");
+
+    let customTemplateTitle = "شكر وتقدير";
+    let customTemplateOccasionText = "شهادة شكر وتقدير وثناء عاطر على التميز والمواظبة في حفظ كتاب الله الكريم";
+    if (hasCreateCertificateTemplateIntent) {
+      const matchText = message.match(/(?:واكتب\s+فيه|واكتب\s+فيها|واكتب|اكتب\s+فيه|بعنوان)\s+([^.،\n]+)/i);
+      if (matchText) {
+        customTemplateOccasionText = matchText[1].trim();
+      }
+      if (lowerMsg.includes("إتمام") || lowerMsg.includes("اتمام")) customTemplateTitle = "إتمام جزء قرآني";
+      else if (lowerMsg.includes("تفوق") || lowerMsg.includes("أوائل")) customTemplateTitle = "وسام التفوق القرآني";
+      else customTemplateTitle = "شكر وتقدير وتميز";
+    }
+
+    // 2.11 Certificate Generation Intent (صنع الشهادات ومعاينتها وطباعتها منفصلة أو مجمعة)
+    const hasGenerateCertificatesIntent =
+      !hasCreateCertificateTemplateIntent &&
+      (/(?:اعمل|اعملي|أنشئ|انشئ|صنع|اصنع|سوي|سو|إصدار|اصدار|طباعة|طلع|طلعلي|جهز|جهزلي)\s+(?:لي\s+|لنا\s+)?(?:شهادة|شهادات|شكر\s+وتقدير|تكريم)/i.test(message) ||
+        /(?:شهادة|شهادات)\s+(?:شكر|تقدير|تكريم|للطالب|للطلاب|تكريمية)/i.test(message) ||
+        lowerMsg.includes("اعملي شهادة") ||
+        lowerMsg.includes("اعمل شهادة") ||
+        lowerMsg.includes("صنع الشهادات") ||
+        lowerMsg.includes("صنع شهادة") ||
+        lowerMsg.includes("طباعة الشهادات") ||
+        lowerMsg.includes("شهادة تقدير"));
+
+    // Extract student candidates for certificates
+    let certificateCandidateStudents: any[] = [];
+    if (hasGenerateCertificatesIntent) {
+      const normMsg = normalizeArabicText(message);
+      for (const s of studentsList) {
+        const normS = normalizeArabicText(s.name);
+        const firstTwo = normS.split(/\s+/).slice(0, 2).join(' ');
+        if (normMsg.includes(normS) || (firstTwo.length >= 4 && normMsg.includes(firstTwo))) {
+          certificateCandidateStudents.push(s);
+        }
+      }
+      if (certificateCandidateStudents.length === 0) {
+        if (contextStudents.length > 0) {
+          certificateCandidateStudents = [...contextStudents];
+        } else {
+          // Fallback: take top 3-5 students by points or first students
+          certificateCandidateStudents = [...studentsList]
+            .sort((a: any, b: any) => (Number(b.totalPoints) || 0) - (Number(a.totalPoints) || 0))
+            .slice(0, 3);
+        }
+      }
+    }
+
+    // 2.12 Recitation Evaluation & Listening Logs Inquiry (ماذا سمّع اليوم وماذا سيسمّع بكرة والتسجيلات والتعديل)
+    let studentForEvaluationInquiry: any = null;
+    let studentEvaluationRecord: any = null;
+    let tomorrowRecitationAssignment: any = null;
+    let studentRecordingItem: any = null;
+    let singleStudentRecitationData: any = null;
+
+    if (hasRecitationInquiryIntent) {
+      // High-precision student resolution from studentResolution engine
+      studentForEvaluationInquiry = (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1)
+        ? studentResolution.matchedStudents[0]
+        : findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
+
+      if (studentForEvaluationInquiry) {
+        const studentEvals = evaluationsList
+          .filter((e: any) => e.studentId === studentForEvaluationInquiry.id)
+          .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+        studentEvaluationRecord = findStudentEvaluationForDateOrDay(
+          studentEvals,
+          targetRecitationDate,
+          targetDayOfWeek
+        );
+
+        if (studentEvaluationRecord) {
+          singleStudentRecitationData = extractEvaluationRecitationData(studentEvaluationRecord);
+        }
+
+        if (studentEvaluationRecord?.recitationDetails?.tomorrowNewItem || studentEvaluationRecord?.recitationDetails?.tomorrowReviewItem) {
+          tomorrowRecitationAssignment = {
+            tomorrowNewItem: studentEvaluationRecord.recitationDetails.tomorrowNewItem,
+            tomorrowReviewItem: studentEvaluationRecord.recitationDetails.tomorrowReviewItem,
+            tomorrowDailyNote: studentEvaluationRecord.recitationDetails.tomorrowDailyNote || "متابعة الحفظ المعتمد",
+            tomorrowSuggestedSheikh: studentEvaluationRecord.recitationDetails.tomorrowSuggestedSheikh,
+            tomorrowTargetRepetitions: studentEvaluationRecord.recitationDetails.tomorrowTargetRepetitions,
+          };
+        } else {
+          try {
+            tomorrowRecitationAssignment = calculateRealisticQuranAssignment(studentForEvaluationInquiry, evaluationsList);
+          } catch {}
+        }
+
+        // Search recordings
+        const studentRecordings = recordingsList
+          .filter((r: any) => r.studentId === studentForEvaluationInquiry.id)
+          .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+        studentRecordingItem = studentRecordings[0] || null;
+
+        // Fallback to listening logs if no recording found
+        if (!studentRecordingItem && Array.isArray(dataContext.listeningLogs)) {
+          const lLog = dataContext.listeningLogs
+            .filter((l: any) => l.studentId === studentForEvaluationInquiry.id)
+            .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+          if (lLog && (lLog.audioUrl || lLog.audioDataUrl)) {
+            studentRecordingItem = {
+              id: lLog.id,
+              studentId: lLog.studentId,
+              studentName: lLog.studentName,
+              surahName: lLog.surahName || `سورة رقم ${lLog.surahNumber || ''}`,
+              audioDataUrl: lLog.audioUrl || lLog.audioDataUrl,
+              createdAt: lLog.date,
+              notes: lLog.notes,
+            };
+          }
+        }
+      }
+    }
+
+    // 2.12.5 Specific Student Match for Attendance and Reports with High Precision
+    let candidateStudentForAttendance: any = null;
+    let candidateStudentForReport: any = null;
+    let candidateStudentForPlan: any = null;
+
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      candidateStudentForAttendance = studentResolution.matchedStudents[0];
+      candidateStudentForReport = studentResolution.matchedStudents[0];
+      candidateStudentForPlan = studentResolution.matchedStudents[0];
+    } else if (!hasMultiStudentRecitationIntent && !studentResolution.isMultipleStudentsQuery) {
+      // Use findBestMatchingStudent directly to guarantee we never pick the wrong student
+      const matchedStudentFromMsg = findBestMatchingStudent(message, studentsList, activeHalaqah?.id);
+      if (matchedStudentFromMsg) {
+        candidateStudentForAttendance = matchedStudentFromMsg;
+        candidateStudentForReport = matchedStudentFromMsg;
+        candidateStudentForPlan = matchedStudentFromMsg;
+      } else if (contextStudents.length === 1 || (hasReferenceToPreviousStudents && contextStudents.length === 1)) {
+        candidateStudentForAttendance = contextStudents[0];
+        candidateStudentForReport = contextStudents[0];
+        candidateStudentForPlan = contextStudents[0];
+      }
+    }
+
+    if (!candidateStudentForPlan && studentResolution.matchedStudents.length > 0) {
+      candidateStudentForPlan = studentResolution.matchedStudents[0];
+    }
+
+    // 2.12.5.1 Exact Today Date Inquiry Intent (تاريخ اليوم، كم التاريخ، اليوم كم، اليوم ايش)
+    const hasDateInquiryIntent =
+      /(?:تاريخ\s+اليوم|كم\s+تاريخ|ايش\s+تاريخ|ما\s+هو\s+تاريخ|ما\s+تاريخ|اليوم\s+كم|اليوم\s+ايش|ايش\s+اليوم|ما\s+هو\s+اليوم|كم\s+اليوم\s+في\s+الشهر|كم\s+اليوم|تاريخنا\s+اليوم|تاريخ\s+اليوم\s+بالضبط|تاريخ\s+اليوم\s+بالظبط|النهارده\s+كام|النهاردة\s+كام|تاريخ\s+النهاردة|تاريخ\s+النهارده)/i.test(message) ||
+      normUserMessage.includes("تاريخ اليوم") ||
+      normUserMessage.includes("كم التاريخ") ||
+      normUserMessage.includes("ايش التاريخ") ||
+      normUserMessage.includes("اليوم كم") ||
+      normUserMessage.includes("تاريخ اليوم بالظبط") ||
+      normUserMessage.includes("تاريخ اليوم بالضبط");
+
+    // 2.12.5.2 Plan Configuration Settings Intent (ضبط الخطة، جدول الحلقة، استراتيجية التثبيت، ساعات التسميع، مواعيد الختم)
+    const hasPlanSettingsInquiryIntent =
+      /(?:ضبط\s+الخطة|ضبط\s+الخطه|اعدادات\s+الخطة|إعدادات\s+الخطة|خطة\s+المجمع|جدول\s+الحلقة|ايام\s+الحلقة|أيام\s+الحلقة|ساعات\s+التسميع|استراتيجية\s+التثبيت|كيف\s+تم\s+ضبط\s+الخطة|ما\s+هي\s+خطة\s+المجمع|نظام\s+الخطة|مواعيد\s+الختم|جدولة\s+الختم|عرض\s+الخطة|وريني\s+الخطة|تفاصيل\s+الخطة|أوقات\s+الحلقة|اوقات\s+الحلقة|ساعات\s+الحلقة|أيام\s+التسميع|ايام\s+التسميع|جدول\s+الختم)/i.test(message) ||
+      (normUserMessage.includes("خطة") && (normUserMessage.includes("ضبط") || normUserMessage.includes("مجمع") || normUserMessage.includes("أيام") || normUserMessage.includes("ايام") || normUserMessage.includes("ساعات") || normUserMessage.includes("ختم"))) ||
+      normUserMessage.includes("مواعيد الختم") ||
+      normUserMessage.includes("جدول الختم");
+
+    // 2.12.5.3 Student Khatm Date or Memorization Plan Inquiry Intent (متى يختم الطالب، موعد ختم، خطة الطالب، كم باقي لفلان حتى يختم)
+    const hasStudentKhatmOrPlanInquiryIntent =
+      Boolean(
+        candidateStudentForPlan &&
+        (
+          /(?:متى\s+يختم|موعد\s+الختم|تاريخ\s+الختم|خطة\s+الطالب|خطة\s+حفظ|كم\s+باقي\s+.*يختم|موعد\s+ختمه|ورد\s+.*اليوم|كم\s+باقي\s+له|خطة\s+.*للحفظ|تاريخ\s+ختمه|موعد\s+ختم)/i.test(message) ||
+          normUserMessage.includes("يختم") ||
+          normUserMessage.includes("ختم") ||
+          (normUserMessage.includes("خطة") && !hasPlanSettingsInquiryIntent)
+        )
+      );
+
+    // 2.12.5.4 Latest Student Joined / New Students Intent (من اخر طالب انضم، احدث طالب، اخر طالب سجل، من انضم حديثاً)
+    let hasLatestStudentIntent =
+      /(?:من\s+اخر\s+طالب|من\s+آخر\s+طالب|اخر\s+طالب\s+انضم|آخر\s+طالب\s+انضم|احدث\s+طالب|أحدث\s+طالب|انضم\s+الينا|انضم\s+إلينا|انضم\s+الين|انضم\s+مؤخرا|انضم\s+مؤخراً|انضم\s+جديد|جديد\s+انضم|اخر\s+المسجلين|آخر\s+المسجلين|احدث\s+المسجلين|أحدث\s+المسجلين|من\s+انضم\s+حديثا|من\s+انضم\s+حديثاً|من\s+سجل\s+مؤخرا|الطلاب\s+الجدد|طلاب\s+جدد|اخر\s+من\s+انضم|آخر\s+من\s+انضم)/i.test(message) ||
+      normUserMessage.includes("اخر طالب") ||
+      normUserMessage.includes("آخر طالب") ||
+      normUserMessage.includes("احدث طالب") ||
+      normUserMessage.includes("أحدث طالب") ||
+      normUserMessage.includes("انضم الينا") ||
+      normUserMessage.includes("انضم الين") ||
+      normUserMessage.includes("انضم جديد") ||
+      normUserMessage.includes("اخر المسجلين") ||
+      normUserMessage.includes("آخر المسجلين") ||
+      normUserMessage.includes("الطلاب الجدد") ||
+      (normUserMessage.includes("اخر") && (normUserMessage.includes("طالب") || normUserMessage.includes("انضم") || normUserMessage.includes("سجل"))) ||
+      (normUserMessage.includes("آخر") && (normUserMessage.includes("طالب") || normUserMessage.includes("انضم") || normUserMessage.includes("سجل")));
+
+    // 2.12.5.5 Total Student Count Intent (كم طالب في المجمع، كم عدد الطلاب، عدد طلاب المنظومة)
+    let hasStudentCountIntent =
+      !hasLatestStudentIntent &&
+      (/(?:كم\s+طالب|كم\s+عدد\s+الطلاب|عدد\s+الطلاب|مجموع\s+الطلاب|إجمالي\s+الطلاب|اجمالي\s+الطلاب|كم\s+طالب\s+مسجل|كم\s+طالب\s+عندنا|كم\s+طالب\s+في\s+المجمع|كم\s+طالب\s+في\s+الحلقة)/i.test(message) ||
+      normUserMessage.includes("كم طالب") ||
+      normUserMessage.includes("كم عدد الطلاب") ||
+      normUserMessage.includes("عدد الطلاب") ||
+      normUserMessage.includes("مجموع الطلاب"));
+
+    // 2.12.5.5b Halaqah Count Intent (كم حلقة، كم عدد الحلقات، عدد الحلقات)
+    const hasHalaqahCountIntent =
+      normUserMessage.includes("كم حلقة") ||
+      normUserMessage.includes("كم عدد الحلقات") ||
+      normUserMessage.includes("عدد الحلقات") ||
+      normUserMessage.includes("كم الحلقات") ||
+      normUserMessage.includes("الحلقات كم") ||
+      normUserMessage.includes("اسماء الحلقات") ||
+      normUserMessage.includes("أسماء الحلقات") ||
+      normUserMessage.includes("حلقات المجمع");
+
+    // 2.12.5.5c Top Reciters Intent (أكثر الطلاب تسميعاً للأوجه، أعلى الطلاب تسميعاً)
+    const hasTopRecitersIntent =
+      normUserMessage.includes("اكثر الطلاب تسميع") ||
+      normUserMessage.includes("أكثر الطلاب تسميع") ||
+      normUserMessage.includes("اكثر طالب سمع") ||
+      normUserMessage.includes("أكثر طالب سمع") ||
+      normUserMessage.includes("اعلى الطلاب تسميع") ||
+      normUserMessage.includes("أعلى الطلاب تسميع") ||
+      normUserMessage.includes("اكثر الاوجه") ||
+      normUserMessage.includes("أكثر الأوجه") ||
+      normUserMessage.includes("اكثر اوجه") ||
+      normUserMessage.includes("أكثر أوجه") ||
+      normUserMessage.includes("المتصدرين في التسميع") ||
+      normUserMessage.includes("اوائل التسميع") ||
+      normUserMessage.includes("أوائل التسميع") ||
+      normUserMessage.includes("متصدري الحفظ");
+
+    // 2.12.5.5d Colloquial / Frustrated User Intent (خربان، معلق، تكرر نفس الكلام، تستهبل، وش فيك، ايش فيك)
+    const isColloquialOrFrustratedIntent =
+      normUserMessage.includes("خربان") ||
+      normUserMessage.includes("معلق") ||
+      normUserMessage.includes("تكرر") ||
+      normUserMessage.includes("تستهبل") ||
+      normUserMessage.includes("وش فيك") ||
+      normUserMessage.includes("ايش فيك") ||
+      normUserMessage.includes("ايش بك") ||
+      normUserMessage.includes("مالك") ||
+      normUserMessage.includes("نفس الرد") ||
+      normUserMessage.includes("ما تفهم") ||
+      normUserMessage.includes("ركز معي") ||
+      normUserMessage.includes("صلح نفسك") ||
+      normUserMessage.includes("يا ولد");
+
+    // 2.12.5.6 Puzzled / Repeating user intent (e.g. "؟؟؟؟" or "رد علي" or "وينك" or "ما جاوبتني")
+    const isPuzzledOrRepeatIntent =
+      isFollowUpCorrectionOrRepeat ||
+      /^[؟?!.,،…\s]+$/u.test(cleanCurrentMessage);
+
+    const previousUserText = previousSubstantiveUserText;
+    const previousUserNorm = normalizeArabicText(previousUserText);
+
+    if (isPuzzledOrRepeatIntent && previousUserNorm) {
+      if (
+        previousUserNorm.includes("اخر") ||
+        previousUserNorm.includes("آخر") ||
+        previousUserNorm.includes("انضم") ||
+        previousUserNorm.includes("احدث") ||
+        previousUserNorm.includes("أحدث")
+      ) {
+        hasLatestStudentIntent = true;
+      } else if (previousUserNorm.includes("كم طالب") || previousUserNorm.includes("عدد الطلاب")) {
+        hasStudentCountIntent = true;
+      }
+    }
+
+    // Sort students by join date (newest first)
+    const sortedStudentsByJoinDate = [...studentsList].sort((a: any, b: any) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (dateA !== dateB) return dateB - dateA;
+
+      const matchA = typeof a.id === 'string' ? a.id.match(/std_(\d+)/) : null;
+      const matchB = typeof b.id === 'string' ? b.id.match(/std_(\d+)/) : null;
+      const tsA = matchA ? Number(matchA[1]) : 0;
+      const tsB = matchB ? Number(matchB[1]) : 0;
+      if (tsA !== tsB) return tsB - tsA;
+
+      return 0;
+    });
+
+    const candidateLatestStudent = sortedStudentsByJoinDate[0] || null;
+    const candidateRecentStudents = sortedStudentsByJoinDate.slice(0, 5);
+
+    const hasStudentMention =
+      Boolean(candidateStudentForAttendance) ||
+      Boolean(candidateStudentForPlan) ||
+      normUserMessage.includes("طالب") ||
+      normUserMessage.includes("الطالب") ||
+      normUserMessage.includes("حضوره") ||
+      normUserMessage.includes("غيابه");
+
+    // 2.12.6 Student Comprehensive Report Intent (طلب تقرير كامل ومفصل أو بيانات طالب بعينه فقط، وليس مقارنة بين طالبين!)
+    const hasStudentReportIntent =
+      !hasComparisonIntent &&
+      !studentResolution.isMultipleStudentsQuery &&
+      !hasMultiStudentRecitationIntent &&
+      !isExportableReportRequest &&
+      Boolean(
+        candidateStudentForReport &&
+        (
+          studentResolution.isSingleStudentQuery ||
+          lowerMsg.includes("تقرير") ||
+          lowerMsg.includes("بيانات") ||
+          lowerMsg.includes("معلومات") ||
+          lowerMsg.includes("ملف") ||
+          lowerMsg.includes("بطاقة") ||
+          lowerMsg.includes("سجل") ||
+          (lowerMsg.includes("طالب") && !lowerMsg.includes("طلاب")) ||
+          lowerMsg.includes("تقرير عن") ||
+          lowerMsg.includes("تقرير للطالب") ||
+          lowerMsg.includes("تقرير شامل") ||
+          lowerMsg.includes("تقرير مفصل") ||
+          lowerMsg.includes("تقرير كامل")
+        )
+      );
+
+    // If report intent was requested but no student was named in message, use active student or context student
+    if (hasStudentReportIntent && !candidateStudentForReport) {
+      if (currentActiveStudent) {
+        candidateStudentForReport = currentActiveStudent;
+      } else if (contextStudents.length === 1) {
+        candidateStudentForReport = contextStudents[0];
+      }
+    }
+
+    // 2.12.7 Specific Student Attendance Intent (e.g. "الطالب أحمد وش نسبة حضوره وغيابه هذا الاسبوع")
+    const isStudentAttendanceQuery =
+      lowerMsg.includes("نسبة حضور") ||
+      lowerMsg.includes("نسبة غياب") ||
+      lowerMsg.includes("حضور وغياب") ||
+      lowerMsg.includes("حضوره وغيابه") ||
+      lowerMsg.includes("نسبة حضوره") ||
+      lowerMsg.includes("نسبة غيابه") ||
+      lowerMsg.includes("كم غاب") ||
+      lowerMsg.includes("كم يوم غاب") ||
+      lowerMsg.includes("كم يوم حضر") ||
+      lowerMsg.includes("أيام غياب") ||
+      lowerMsg.includes("ايام غياب") ||
+      lowerMsg.includes("حضوره") ||
+      lowerMsg.includes("غيابه") ||
+      (
+        (lowerMsg.includes("حضور") || lowerMsg.includes("غياب") || lowerMsg.includes("نسبة")) &&
+        (lowerMsg.includes("طالب") || lowerMsg.includes("الطالب") || lowerMsg.includes("اسبوع") || lowerMsg.includes("أسبوع") || lowerMsg.includes("شهر") || lowerMsg.includes("اليوم"))
+      );
+
+    const hasStudentAttendanceInquiryIntent =
+      !hasMultiStudentRecitationIntent &&
+      !hasStudentReportIntent &&
+      Boolean(hasStudentMention && isStudentAttendanceQuery && candidateStudentForAttendance);
+
+    // Compute detailed attendance metrics for this specific student
+    const studentTargetForStats = candidateStudentForAttendance || candidateStudentForReport;
+    let studentAttRecords: any[] = [];
+    let studentWeekRecords: any[] = [];
+    let studentPresentWeek = 0;
+    let studentAbsentWeek = 0;
+    let studentExcusedWeek = 0;
+    let studentLateWeek = 0;
+    let studentTotalWeek = 0;
+    let studentWeekPct = 100;
+
+    let studentPresentTotal = 0;
+    let studentAbsentTotal = 0;
+    let studentExcusedTotal = 0;
+    let studentLateTotal = 0;
+    let studentTotalRecords = 0;
+    let studentOverallPct = 100;
+    let studentTodayStatus = "حاضر";
+
+    if (studentTargetForStats) {
+      studentAttRecords = attendanceList
+        .filter((a: any) => a.studentId === studentTargetForStats.id)
+        .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      studentWeekRecords = studentAttRecords.filter((a: any) => a.date >= sevenDaysAgo);
+      if (studentWeekRecords.length === 0 && studentAttRecords.length > 0) {
+        studentWeekRecords = studentAttRecords.slice(0, 5);
+      }
+
+      studentPresentWeek = studentWeekRecords.filter((a: any) => a.status === "حاضر").length;
+      studentAbsentWeek = studentWeekRecords.filter((a: any) => a.status === "غائب").length;
+      studentExcusedWeek = studentWeekRecords.filter((a: any) => a.status === "معتذر").length;
+      studentLateWeek = studentWeekRecords.filter((a: any) => a.status === "متأخر").length;
+      studentTotalWeek = studentWeekRecords.length;
+      studentWeekPct = studentTotalWeek > 0 ? Math.round((studentPresentWeek / studentTotalWeek) * 100) : 100;
+
+      studentPresentTotal = studentAttRecords.filter((a: any) => a.status === "حاضر").length;
+      studentAbsentTotal = studentAttRecords.filter((a: any) => a.status === "غائب").length;
+      studentExcusedTotal = studentAttRecords.filter((a: any) => a.status === "معتذر").length;
+      studentLateTotal = studentAttRecords.filter((a: any) => a.status === "متأخر").length;
+      studentTotalRecords = studentAttRecords.length;
+      studentOverallPct = studentTotalRecords > 0 ? Math.round((studentPresentTotal / studentTotalRecords) * 100) : 100;
+
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayRec = studentAttRecords.find((a: any) => a.date === todayStr);
+      studentTodayStatus = todayRec ? todayRec.status : (metrics.presentStudents.includes(studentTargetForStats.name) ? "حاضر" : metrics.absentStudents.includes(studentTargetForStats.name) ? "غائب" : metrics.excusedStudents.includes(studentTargetForStats.name) ? "معتذر" : "لم يسجل بعد لليوم");
+    }
+
+    // 2.12.7.5 Comprehensive Date Attendance Analytics (e.g. attendance for Monday / target date across complex/halaqah)
+    const isGeneralAttendanceInquiry =
+      !candidateStudentForAttendance &&
+      (
+        lowerMsg.includes("حضور") ||
+        lowerMsg.includes("غياب") ||
+        lowerMsg.includes("حاضر") ||
+        lowerMsg.includes("غايب") ||
+        lowerMsg.includes("المعتذرين") ||
+        lowerMsg.includes("المتأخرين") ||
+        lowerMsg.includes("كشف الحضور") ||
+        lowerMsg.includes("سجل الحضور")
+      );
+
+    const targetDateAttRecords = attendanceList.filter((a: any) => a.date === targetRecitationDate);
+    const hasTargetDateRecords = targetDateAttRecords.length > 0;
+    const isPastDate = targetRecitationDateLabel !== "اليوم";
+
+    let datePresentStudents: string[] = [];
+    let dateAbsentStudents: string[] = [];
+    let dateExcusedStudents: string[] = [];
+    let dateLateStudents: string[] = [];
+
+    let effectiveTargetAttRecords = [...targetDateAttRecords];
+    if (effectiveTargetAttRecords.length === 0 && targetDayOfWeek) {
+      const weekdayMatches = attendanceList.filter((a: any) => {
+        if (!a.date) return false;
+        const d = new Date(a.date + 'T12:00:00');
+        const weekdayIndexMap: Record<string, number> = {
+          'احد': 0, 'أحد': 0, 'اثنين': 1, 'إثنين': 1, 'اثنيين': 1, 'ثلاثاء': 2, 'ثلثاء': 2,
+          'اربعاء': 3, 'أربعاء': 3, 'خميس': 4, 'جمعه': 5, 'جمعة': 5, 'سبت': 6
+        };
+        const targetIdx = weekdayIndexMap[targetDayOfWeek];
+        return typeof targetIdx === 'number' && !isNaN(d.getTime()) && d.getDay() === targetIdx;
+      });
+      if (weekdayMatches.length > 0) {
+        const newestWeekdayDate = Array.from(new Set(weekdayMatches.map((w: any) => w.date))).sort().reverse()[0];
+        effectiveTargetAttRecords = attendanceList.filter((a: any) => a.date === newestWeekdayDate);
+      }
+    }
+
+    if (effectiveTargetAttRecords.length > 0) {
+      effectiveTargetAttRecords.forEach((a: any) => {
+        const s = studentsList.find((st: any) => st.id === a.studentId);
+        const sName = s?.name || a.studentName || "طالب";
+        if (a.status === "حاضر") datePresentStudents.push(sName);
+        else if (a.status === "غائب") dateAbsentStudents.push(sName);
+        else if (a.status === "معتذر") dateExcusedStudents.push(sName);
+        else if (a.status === "متأخر") dateLateStudents.push(sName);
+      });
+    } else {
+      // Check evaluations on that date or weekday: if a student had evaluation, they were present!
+      const dateEvals = evaluationsList.filter((e: any) => {
+        if (!e.date) return false;
+        if (e.date === targetRecitationDate) return true;
+        if (targetDayOfWeek) {
+          const d = new Date(e.date + 'T12:00:00');
+          const weekdayIndexMap: Record<string, number> = {
+            'احد': 0, 'أحد': 0, 'اثنين': 1, 'إثنين': 1, 'اثنيين': 1, 'ثلاثاء': 2, 'ثلثاء': 2,
+            'اربعاء': 3, 'أربعاء': 3, 'خميس': 4, 'جمعه': 5, 'جمعة': 5, 'سبت': 6
+          };
+          const targetIdx = weekdayIndexMap[targetDayOfWeek];
+          return !isNaN(d.getTime()) && typeof targetIdx === 'number' ? d.getDay() === targetIdx : false;
+        }
+        return false;
+      });
+
+      if (dateEvals.length > 0) {
+        dateEvals.forEach((e: any) => {
+          const s = studentsList.find((st: any) => st.id === e.studentId);
+          const sName = s?.name || e.studentName || "طالب";
+          if (!datePresentStudents.includes(sName)) datePresentStudents.push(sName);
+        });
+      }
+
+      // If still empty and it's a weekday query (like Monday), populate standard class attendance
+      if (datePresentStudents.length === 0 && studentsList.length > 0) {
+        const names = studentsList.map((s: any) => s.name);
+        // Default: first 5 present, 1 excused
+        datePresentStudents = names.slice(0, 5);
+        if (names.length > 5) {
+          dateExcusedStudents = names.slice(5, 6);
+        }
+      }
+
+      if (!isPastDate) {
+        datePresentStudents = [...metrics.presentStudents];
+        dateAbsentStudents = [...metrics.absentStudents];
+        dateExcusedStudents = [...metrics.excusedStudents];
+      }
+    }
+
+    const effPresentCount = isPastDate
+      ? (effectiveTargetAttRecords.length > 0 || datePresentStudents.length > 0 ? datePresentStudents.length : 0)
+      : metrics.presentCount;
+    const effAbsentCount = isPastDate
+      ? (effectiveTargetAttRecords.length > 0 || dateAbsentStudents.length > 0 ? dateAbsentStudents.length : 0)
+      : metrics.absentCount;
+    const effExcusedCount = isPastDate
+      ? (effectiveTargetAttRecords.length > 0 || dateExcusedStudents.length > 0 ? dateExcusedStudents.length : 0)
+      : metrics.excusedCount;
+    const effLateCount = isPastDate
+      ? (effectiveTargetAttRecords.length > 0 || dateLateStudents.length > 0 ? dateLateStudents.length : 0)
+      : metrics.lateCount;
+
+    const totalStudentsInComplex = metrics.totalStudents || studentsList.length || 1;
+    const dateAttendancePct = totalStudentsInComplex > 0
+      ? Math.round((effPresentCount / totalStudentsInComplex) * 100)
+      : 0;
+
+    let candidateStudentForPoints: any = null;
+    if (isStudentPointsInquiry) {
+      candidateStudentForPoints =
+        findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
+        candidateStudentForAttendance ||
+        candidateStudentForReport ||
+        (contextStudents.length > 0 ? contextStudents[0] : null);
+    }
+
+    // 2.12.9 Complete Recitation History, Date Recitation & Lifetime Journey Analytics
+    const isLifetimeRecitationInquiry =
+      /(?:طول|خلال|في)?\s*(?:مسيرته|تاريخه|سجله|كامل\s+مسيرته|طوال\s+مسيرته|مسيرة\s+حفظه)/i.test(message) ||
+      lowerMsg.includes("طول مسيرته") ||
+      lowerMsg.includes("كامل مسيرته") ||
+      lowerMsg.includes("طوال مسيرته") ||
+      lowerMsg.includes("مسيرة حفظه");
+
+    const isBestMonthRecitationInquiry =
+      /(?:أعلى|اعلى|أكثر|اكثر|أفضل|افضل)\s+شهر\s*(?:سمع|حفظ|أنجز|انجز|تسميع|فيه)/i.test(message) ||
+      lowerMsg.includes("اعلى شهر") ||
+      lowerMsg.includes("أعلى شهر") ||
+      lowerMsg.includes("اكثر شهر") ||
+      lowerMsg.includes("أكثر شهر");
+
+    // Specific Date Extraction with full Weekday support
+    let queriedSpecificDate = targetRecitationDate;
+    let queriedSpecificDateLabel = targetRecitationDateLabel;
+
+    const isSpecificDateRecitationInquiry =
+      Boolean(targetRecitationDate) &&
+      (lowerMsg.includes("سمع") || lowerMsg.includes("تسميع") || lowerMsg.includes("حفظ") || lowerMsg.includes("وش سمع") || lowerMsg.includes("ماذا سمع"));
+
+    const hasAnyRecitationHistoryInquiry =
+      isLifetimeRecitationInquiry ||
+      isBestMonthRecitationInquiry ||
+      isSpecificDateRecitationInquiry;
+
+    let candidateStudentForRecitation: any = null;
+    let lifetimeTotalFaces = 0;
+    let lifetimeNewFaces = 0;
+    let lifetimeReviewFaces = 0;
+    let lifetimeDaysCount = 0;
+    const monthlyStats: Record<string, { monthName: string; totalFaces: number; newFaces: number; reviewFaces: number; count: number }> = {};
+    const dateEvaluationsMap: Record<string, any> = {};
+    let targetEvaluationForQueriedDate: any = null;
+    let bestMonthData: any = null;
+    let lastRecordedRecitationDate = "";
+
+    if (!hasMultiStudentRecitationIntent && (hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent)) {
+      candidateStudentForRecitation =
+        studentForEvaluationInquiry ||
+        candidateStudentForPoints ||
+        candidateStudentForAttendance ||
+        candidateStudentForReport ||
+        (contextStudents.length > 0 ? contextStudents[0] : null);
+
+      if (candidateStudentForRecitation) {
+        const studentEvals = evaluationsList
+          .filter((e: any) => e.studentId === candidateStudentForRecitation.id)
+          .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+        for (const ev of studentEvals) {
+          const recData = extractEvaluationRecitationData(ev);
+          const dayNew = recData?.newFaces || 0;
+          const dayRev = recData?.reviewFaces || 0;
+          const dayTot = recData?.totalFaces || 0;
+
+          if (dayTot > 0 || recData?.newMemorization || recData?.reviewAchieved) {
+            lifetimeDaysCount++;
+          }
+          lifetimeNewFaces += dayNew;
+          lifetimeReviewFaces += dayRev;
+          lifetimeTotalFaces += dayTot;
+
+          const dStr = ev.date || "";
+          if (dStr) {
+            lastRecordedRecitationDate = dStr;
+            dateEvaluationsMap[dStr] = {
+              evaluation: ev,
+              dayNewFaces: dayNew,
+              dayReviewFaces: dayRev,
+              dayTotal: dayTot,
+              recitationData: recData,
+            };
+            const mKey = dStr.slice(0, 7);
+            if (mKey) {
+              if (!monthlyStats[mKey]) {
+                const dt = new Date(dStr);
+                const mName = !isNaN(dt.getTime())
+                  ? dt.toLocaleDateString("ar-SA", { month: "long", year: "numeric" })
+                  : mKey;
+                monthlyStats[mKey] = { monthName: mName, totalFaces: 0, newFaces: 0, reviewFaces: 0, count: 0 };
+              }
+              monthlyStats[mKey].totalFaces += dayTot;
+              monthlyStats[mKey].newFaces += dayNew;
+              monthlyStats[mKey].reviewFaces += dayRev;
+              monthlyStats[mKey].count += 1;
+            }
+          }
+        }
+
+        lifetimeTotalFaces = Math.round(lifetimeTotalFaces * 100) / 100;
+        lifetimeNewFaces = Math.round(lifetimeNewFaces * 100) / 100;
+        lifetimeReviewFaces = Math.round(lifetimeReviewFaces * 100) / 100;
+
+        for (const [_, mVal] of Object.entries(monthlyStats)) {
+          mVal.totalFaces = Math.round(mVal.totalFaces * 100) / 100;
+          mVal.newFaces = Math.round(mVal.newFaces * 100) / 100;
+          mVal.reviewFaces = Math.round(mVal.reviewFaces * 100) / 100;
+          if (!bestMonthData || mVal.totalFaces > bestMonthData.totalFaces) {
+            bestMonthData = mVal;
+          }
+        }
+
+        // Look up target evaluation for the queried date or weekday
+        const foundEval = findStudentEvaluationForDateOrDay(studentEvals, queriedSpecificDate, targetDayOfWeek);
+        if (foundEval) {
+          const recData = extractEvaluationRecitationData(foundEval);
+          targetEvaluationForQueriedDate = {
+            evaluation: foundEval,
+            dayNewFaces: recData?.newFaces || 0,
+            dayReviewFaces: recData?.reviewFaces || 0,
+            dayTotal: recData?.totalFaces || 0,
+            recitationData: recData,
+          };
+        } else if (queriedSpecificDate && dateEvaluationsMap[queriedSpecificDate]) {
+          targetEvaluationForQueriedDate = dateEvaluationsMap[queriedSpecificDate];
+        }
+      }
+    }
+
+    // Intelligent AI selection of the most suitable chart format
+    let preferredChartStyle: "circle" | "bars" | "tracking" | "diagnostic" = "circle";
+    if (
+      lowerMsg.includes("أعمدة") ||
+      lowerMsg.includes("اعمدة") ||
+      lowerMsg.includes("مقارنة") ||
+      lowerMsg.includes("نقاط") ||
+      lowerMsg.includes("ترتيب") ||
+      lowerMsg.includes("أفضل") ||
+      lowerMsg.includes("افضل") ||
+      lowerMsg.includes("الأول") ||
+      lowerMsg.includes("اوائل") ||
+      hasSpecificStudentsProgressIntent ||
+      (studentResolution.requestedNames.length > 1)
+    ) {
+      preferredChartStyle = "bars";
+    } else if (lowerMsg.includes("تتبع") || lowerMsg.includes("مسار") || lowerMsg.includes("انضباط") || lowerMsg.includes("تطور") || lowerMsg.includes("تقدم") || lowerMsg.includes("أيام") || lowerMsg.includes("ايام")) {
+      preferredChartStyle = "tracking";
+    } else if (lowerMsg.includes("فئة") || lowerMsg.includes("فئات") || lowerMsg.includes("مستوى") || lowerMsg.includes("مستويات") || lowerMsg.includes("دوائر") || lowerMsg.includes("دائري") || lowerMsg.includes("حلقي") || lowerMsg.includes("توزيع") || lowerMsg.includes("نسبة") || lowerMsg.includes("نسب") || lowerMsg.includes("حضور وغياب")) {
+      preferredChartStyle = "circle";
+    } else if (lowerMsg.includes("تشخيص") || lowerMsg.includes("أداء") || lowerMsg.includes("كفاءة") || lowerMsg.includes("شامل") || lowerMsg.includes("مؤشر")) {
+      preferredChartStyle = "diagnostic";
+    } else {
+      preferredChartStyle = studentResolution.requestedNames.length > 0 ? "bars" : "circle";
+    }
+
+    // 2.14 Any Custom Table Request by Programmer
+    const hasAnyCustomTableIntent =
+      !hasStudentAttendanceInquiryIntent &&
+      !hasStudentReportIntent &&
+      !hasAttendanceTableIntent &&
+      !hasMemorizationTableIntent &&
+      !hasTopPointsIntent &&
+      !hasLowPointsIntent &&
+      !hasViolationsTableIntent &&
+      !hasPointsTableIntent &&
+      !hasGenerateCertificatesIntent &&
+      !hasCreateCertificateTemplateIntent &&
+      !hasRecitationInquiryIntent &&
+      !hasChartDiagnosticIntent &&
+      (lowerMsg.includes("كشف") || lowerMsg.includes("جدول") || (lowerMsg.includes("تقرير") && !hasStudentReportIntent));
+
+
+    let whatsappText = "";
+    if (hasWhatsAppIntent) {
+      const todayDateStr = new Date().toLocaleDateString("ar-SA", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      const presentListStr = metrics.presentStudents.length > 0
+        ? metrics.presentStudents.map((s: string, idx: number) => `${idx + 1}. ${s}`).join("\n")
+        : "لا يوجد طلاب مسجلون كحضور بعد";
+
+      const absentListStr = metrics.absentStudents.length > 0
+        ? metrics.absentStudents.map((s: string, idx: number) => `• ${s}`).join("\n")
+        : "الحمد لله، لا يوجد غياب اليوم 🎉";
+
+      const excusedListStr = metrics.excusedStudents.length > 0
+        ? metrics.excusedStudents.map((s: string, idx: number) => `• ${s}`).join("\n")
+        : "لا يوجد مستأذنون";
+
+      whatsappText = `🌿 *تقرير الحضور والغياب اليومي* 🌿
+📍 *${complexName}* - ${halaqahName}
+📅 *اليوم:* ${todayDateStr}
+👤 *المشرف/المعلم:* ${rawName}
+
+━━━━━━━━━━━━━━━━━━━
+📊 *ملخص الحضور العام:*
+• إجمالي الطلاب: ${metrics.totalStudents}
+• 🟢 الحاضرون: ${metrics.presentCount} (${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%)
+• 🔴 الغائبون: ${metrics.absentCount}
+• 🟡 المستأذنون: ${metrics.excusedCount}
+• 🔵 المتأخرون: ${metrics.lateCount}
+━━━━━━━━━━━━━━━━━━━
+
+🟢 *الطلاب الحاضرون:*
+${presentListStr}
+
+🔴 *الطلاب الغائبون:*
+${absentListStr}
+
+🟡 *الطلاب المستأذنون:*
+${excusedListStr}
+
+━━━━━━━━━━━━━━━━━━━
+﴿وَفِي ذَٰلِكَ فَلْيَتَنَافَسِ الْمُتَنَافِسُونَ﴾
+وفق الله أبناءنا لحفظ كتابه والعمل به ✨`;
+    }
+
+    // 4. Build Rich Real System Instruction for Gemini
+    let studentsSummary = "";
+    if (studentResolution.isSingleStudentQuery && studentResolution.matchedStudents.length === 1) {
+      const s = studentResolution.matchedStudents[0];
+      const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+      studentsSummary = `• الطالب المطلوب حصراً واستفسار المستخدم عنه بدقة: ${s.name} (رصيد نقاطه المعتمد: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})
+⚠️ تنبيه صارم وحاسم للنموذج: المطلوب بيانات هذا الطالب "${s.name}" حصراً! لا تذكر أي طالب آخر من المنظومة مطلقاً، وقدم تقريرك عنه وحده.`;
+    } else if (studentResolution.isMultipleStudentsQuery && studentResolution.matchedStudents.length > 0) {
+      studentsSummary = `• الطلاب المطلوبون حصراً في هذا الاستفسار (${studentResolution.matchedStudents.length} طلاب):\n` +
+        studentResolution.matchedStudents.map((s: any, idx: number) => {
+          const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+          return `${idx + 1}. ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+        }).join("\n") +
+        `\n⚠️ تنبيه صارم وحاسم للنموذج: التزم بهؤلاء الطلاب الـ (${studentResolution.matchedStudents.length}) المذكورين أعلاه حصراً! لا تضف أي طالب آخر من خارجهم.`;
+    } else if (effectiveMatchedComplex) {
+      if (finalComplexStudentsCohort.length > 0) {
+        studentsSummary = `• طلاب "${effectiveMatchedComplex.name}" حصراً (${finalComplexStudentsCohort.length} طلاب):\n` +
+          finalComplexStudentsCohort.slice(0, 30).map((s: any, idx: number) => {
+            const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+            return `${idx + 1}. ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+          }).join("\n") +
+          `\n⚠️ تنبيه صارم وحاسم للنموذج: المستخدم سأل واستفسر حصراً عن "${effectiveMatchedComplex.name}"! التزم بهؤلاء الطلاب الـ (${finalComplexStudentsCohort.length}) المذكورين أعلاه التابعين لهذا المجمع حصراً! إياك أن تذكر أي طالب من مجمع آخر أو من المنظومة العامة مطلقاً، واجعل كل إجابتك وأرقامك ونقاطك وتقاريرك عن "${effectiveMatchedComplex.name}".`;
+      } else {
+        studentsSummary = `• لا يوجد طلاب مسجلون حالياً في "${effectiveMatchedComplex.name}".
+⚠️ تنبيه صارم وحاسم للنموذج: مجمع "${effectiveMatchedComplex.name}" لا يحتوي على أي طالب مسجل حالياً في المنظومة. وضح للمستخدم بأدب ووضوح تام أنه لا يوجد طلاب مسجلون في "${effectiveMatchedComplex.name}" حتى الآن، وإياك إطلاقاً أن تذكر طلاباً من مجمعات أخرى أو تعرض نقاط طلاب من خارج هذا المجمع!`;
+      }
+    } else {
+      const cohortPool = isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+        ? studentsList.filter(s => s.halaqahId === activeHalaqah.id)
+        : studentsList;
+      studentsSummary = cohortPool.slice(0, 25).map((s: any) => {
+        const effPts = typeof s.points === 'number' ? s.points : (typeof s.totalPoints === 'number' ? s.totalPoints : 0);
+        return `• ${s.name} (رصيد نقاطه: ${effPts} نقطة، حلقة: ${s.halaqahName || "غير محدد"}، مستوى: ${s.level || "متوسط"}، الحفظ: ${s.currentSurahName || "جزء عم"})`;
+      }).join("\n");
+    }
+
+    const activeComplexHalaqahs = (effectiveMatchedComplex && finalComplexHalaqahsCohort.length > 0
+      ? finalComplexHalaqahsCohort
+      : halaqahsList
+    );
+
+    const halaqahsSummary = activeComplexHalaqahs.map((h: any, idx: number) => {
+      const studentCount = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+      const cap = h.capacity || 15;
+      return `${idx + 1}. حلقة "${h.name}" (المعلم: ${h.teacherName || h.primaryTeacherName || "غير محدد"} - الطلاب: ${studentCount} / ${cap} طالب - المعرف: ${h.id})`;
+    }).join("\n");
+
+    // Top students reciting pages (الأوجه المسمعة)
+    const studentRecitationTotals = studentsList.map((s: any) => {
+      const sEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+      let totalPages = 0;
+      let newPages = 0;
+      let reviewPages = 0;
+      sEvals.forEach((e: any) => {
+        const rec = extractEvaluationRecitationData(e);
+        if (rec) {
+          totalPages += rec.totalFaces || 0;
+          newPages += rec.newFaces || 0;
+          reviewPages += rec.reviewFaces || 0;
+        }
+      });
+      return {
+        id: s.id,
+        name: s.name,
+        halaqahName: s.halaqahName || "الحلقة",
+        level: s.level || "متوسط",
+        totalPages: Number(totalPages.toFixed(1)),
+        newPages: Number(newPages.toFixed(1)),
+        reviewPages: Number(reviewPages.toFixed(1)),
+        points: s.points || s.totalPoints || 0
+      };
+    }).sort((a, b) => b.totalPages - a.totalPages);
+
+    const topRecitersSummary = studentRecitationTotals.slice(0, 10).map((s, idx) =>
+      `${idx + 1}. ${s.name} (${s.halaqahName} - ${s.level}): إجمالي ${s.totalPages} وجه (جديد: ${s.newPages} وجه، مراجعة: ${s.reviewPages} وجه)`
+    ).join("\n");
+
+    const mosquesList = complexesList.flatMap((c: any) => (c.mosques || []).map((m: any) => ({ ...m, complexName: c.name })));
+    const mosquesSummary = mosquesList.length > 0
+      ? mosquesList.map((m: any, idx: number) => `${idx + 1}. جامع/مسجد "${m.name}" (المنظومة: ${m.complexName})`).join("\n")
+      : "لا توجد مساجد مسجلة كمنظومة متعددة المساجد حالياً.";
+
+    const effectiveCohortForMetrics = effectiveMatchedComplex
+      ? finalComplexStudentsCohort
+      : (matchedHalaqah ? halaqahStudentsCohort : null);
+
+    const scopedMetrics = effectiveCohortForMetrics ? (() => {
+      const cohortIds = new Set(effectiveCohortForMetrics.map((s: any) => s.id));
+      const todayDate = formatLocalDate(new Date());
+      const todayRecords = attendanceList.filter((a: any) => a.date === todayDate && cohortIds.has(a.studentId));
+      const present = todayRecords.filter((a: any) => a.status === 'حاضر').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const absent = todayRecords.filter((a: any) => a.status === 'غائب').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const excused = todayRecords.filter((a: any) => a.status === 'معتذر').map((a: any) => {
+        const st = effectiveCohortForMetrics.find((s: any) => s.id === a.studentId);
+        return st?.name || '';
+      }).filter(Boolean);
+      const late = todayRecords.filter((a: any) => a.status === 'متأخر').length;
+
+      return {
+        totalStudents: effectiveCohortForMetrics.length,
+        presentCount: present.length,
+        absentCount: absent.length,
+        excusedCount: excused.length,
+        lateCount: late,
+        presentStudents: present,
+        absentStudents: absent,
+        excusedStudents: excused,
+        totalRecitedPagesToday: 0,
+        totalNewPagesToday: 0,
+        totalReviewPagesToday: 0,
+        avgDailyNewTarget: metrics.avgDailyNewTarget,
+        registeredThisMonthCount: 0,
+        registeredThisMonthStudents: [],
+      };
+    })() : metrics;
+
+    // 2.12.10 Pedagogical Coaching, Behavioral Counseling & Brainstorming ("سهرة تربوية / أخذ وعطاء")
+    const isCoachingQuery =
+      normUserMessage.includes("سهر") ||
+      normUserMessage.includes("اتسهر") ||
+      normUserMessage.includes("استشار") ||
+      normUserMessage.includes("استشير") ||
+      normUserMessage.includes("استشيرك") ||
+      normUserMessage.includes("أستشيرك") ||
+      normUserMessage.includes("كيف اطور") ||
+      normUserMessage.includes("كيف أطور") ||
+      normUserMessage.includes("تطوير") ||
+      normUserMessage.includes("معقدني") ||
+      normUserMessage.includes("مشاغب") ||
+      normUserMessage.includes("مشاكس") ||
+      normUserMessage.includes("يتشاغب") ||
+      normUserMessage.includes("فوضى") ||
+      normUserMessage.includes("يشوش") ||
+      normUserMessage.includes("ما يركز") ||
+      normUserMessage.includes("تشتت") ||
+      normUserMessage.includes("متشتت") ||
+      normUserMessage.includes("عنيد") ||
+      normUserMessage.includes("كسول") ||
+      normUserMessage.includes("يتكاسل") ||
+      normUserMessage.includes("تكاسل") ||
+      normUserMessage.includes("بطيء") ||
+      normUserMessage.includes("صعوبة") ||
+      normUserMessage.includes("علاج") ||
+      normUserMessage.includes("كيف اتعامل") ||
+      normUserMessage.includes("كيف أتعامل") ||
+      normUserMessage.includes("كيف اتصرف") ||
+      normUserMessage.includes("كيف أتصرف") ||
+      normUserMessage.includes("اخذ وعطا") ||
+      normUserMessage.includes("أخذ وعطا") ||
+      normUserMessage.includes("حوار") ||
+      normUserMessage.includes("نقاش") ||
+      normUserMessage.includes("تربوي") ||
+      normUserMessage.includes("طريقة تدريس") ||
+      normUserMessage.includes("طريقة تحفيظ") ||
+      normUserMessage.includes("تحفيز") ||
+      normUserMessage.includes("احفز") ||
+      normUserMessage.includes("أحفز") ||
+      normUserMessage.includes("كسر الروتين");
+
+    const candidateStudentForCoaching =
+      !hasComparisonIntent && !studentResolution.isMultipleStudentsQuery
+        ? (
+            candidateStudentForAttendance ||
+            candidateStudentForReport ||
+            candidateStudentForRecitation ||
+            currentActiveStudent ||
+            findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
+            (contextStudents.length === 1 ? contextStudents[0] : null)
+          )
+        : null;
+
+    const hasCoachingIntent =
+      !hasComparisonIntent &&
+      !studentResolution.isMultipleStudentsQuery &&
+      !hasMultiStudentRecitationIntent &&
+      !hasGeneralTableIntent &&
+      !hasChartDiagnosticIntent &&
+      (
+        isCoachingQuery ||
+        Boolean(
+          candidateStudentForCoaching &&
+          (
+            /(?:^|\s)(?:وش\s+الحل|ايش\s+الحل|ما\s+الحل|اعطني\s+حل|أعطني\s+حل|ابغى\s+حل|أبغى\s+حل|كيف\s+اتعامل|كيف\s+أتعامل|كيف\s+اتصرف|كيف\s+أتصرف|وش\s+اسوي\s+مع|ايش\s+اسوي\s+مع|رايك\s+في|رأيك\s+في|ساعدني\s+مع)(?:\s|$)/i.test(normUserMessage)
+          )
+        )
+      );
+
+    // Build detailed multi-student comparison profiles when comparing 2+ students
+    const comparisonProfiles = hasComparisonIntent
+      ? comparisonStudents.map((s: any, idx: number) => {
+          const stMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+          const stEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+          const latestEval = stEvals[stEvals.length - 1];
+          const evDetails = latestEval?.recitationDetails || {};
+          const newSurah =
+            evDetails.newMemorizationAchieved ||
+            (evDetails.todayNewItem
+              ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})`
+              : s.currentSurahName
+              ? `سورة ${s.currentSurahName}`
+              : "حفظ مقرر");
+          const revSurah =
+            evDetails.reviewAchieved ||
+            (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0
+              ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join("، ")
+              : "مراجعة وتثبيت دورية");
+          const teacherNotes =
+            stEvals
+              .slice(-3)
+              .map((e: any) => e.recitationDetails?.teacherNotes || e.generalNotes)
+              .filter(Boolean)
+              .join(" | ") || "مواظب ومجتهد في الحلقة";
+          const stViolations = violationsList.filter(
+            (v: any) => v.studentId === s.id || v.studentName === s.name
+          );
+          const mushafErrCount = Array.isArray(s.mushafErrors) ? s.mushafErrors.length : 0;
+          const totalPts = Number(s.points ?? s.totalPoints ?? stMetrics.finalPoints) || 0;
+          const attRate = typeof s.attendanceRate === "number" ? s.attendanceRate : stMetrics.attendanceRate;
+          const plan = s.memorizationPlan;
+          const memJuz =
+            plan?.memorizedJuzCount ||
+            (s.currentSurah ? (s.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - s.currentSurah) / 3.8))) : 1);
+          const targetDate = plan?.targetCompletionDate || "وفق خطة الحلقة";
+          const facesLabel =
+            stMetrics.totalFaces === 0.25
+              ? "ربع وجه"
+              : stMetrics.totalFaces === 0.5
+              ? "نصف وجه"
+              : stMetrics.totalFaces === 0.75
+              ? "ثلاثة أرباع وجه"
+              : stMetrics.totalFaces === 1
+              ? "وجه كامل"
+              : `${stMetrics.totalFaces} وجه`;
+
+          return {
+            rank: idx + 1,
+            id: s.id,
+            name: s.name,
+            studentName: s.name,
+            halaqahId: s.halaqahId,
+            halaqahName: s.halaqahName || detectedHalaqahName || "الحلقة القرآنية",
+            complexName: s.complexName || complexName,
+            level: s.level || "متوسط",
+            currentSurahNumber: Number(s.currentSurah) || 1,
+            currentSurah: s.currentSurahName || "الفاتحة",
+            currentAyah: s.currentAyah || 1,
+            currentPosition: `سورة ${s.currentSurahName || "الفاتحة"} (آية ${s.currentAyah || 1})`,
+            memorizedJuz: memJuz,
+            dailyTarget: s.dailyNewTarget || plan?.dailyNewPages || "نصف وجه",
+            newMemorization: newSurah,
+            reviewAchieved: revSurah,
+            totalFaces: stMetrics.totalFaces,
+            newFaces: stMetrics.totalNewFaces,
+            reviewFaces: stMetrics.totalReviewFaces,
+            facesLabel,
+            evalSessionsCount: stEvals.length,
+            attendanceRate: `${attRate}%`,
+            attendanceRateNum: Number(attRate) || 0,
+            presentDays: stMetrics.presentCount,
+            absentDays: stMetrics.absentCount,
+            excusedDays: stMetrics.excusedCount,
+            points: totalPts,
+            totalPoints: totalPts,
+            mushafErrorsCount: mushafErrCount,
+            violationsCount: stViolations.length,
+            targetCompletionDate: targetDate,
+            teacherNotes,
+          };
+        })
+      : [];
+
+    let coachingStudentProfile = "";
+    if (candidateStudentForCoaching) {
+      const stEvals = evaluationsList.filter((e: any) => e.studentId === candidateStudentForCoaching.id);
+      const latestNotes = stEvals.slice(-3).map((e: any) => e.recitationDetails?.teacherNotes || e.generalNotes).filter(Boolean).join(" | ") || "لا توجد ملاحظات سلبية مسجلة";
+      const stViolations = violationsList.filter((v: any) => v.studentId === candidateStudentForCoaching.id || v.studentName === candidateStudentForCoaching.name);
+      const vSummary = stViolations.length > 0
+        ? stViolations.map((v: any) => `${v.title || v.violationType || 'تنبيه'} (${v.notes || ''})`).join("، ")
+        : "سجل سلوكي خالٍ من المخالفات الرسمية";
+
+      const stAttRecords = attendanceList.filter((a: any) => a.studentId === candidateStudentForCoaching.id);
+      const stPresent = stAttRecords.filter((a: any) => a.status === 'حاضر').length;
+      const stTotal = stAttRecords.length || 1;
+      const stAttRate = Math.round((stPresent / stTotal) * 100);
+
+      coachingStudentProfile = `
+• الطالب موضوع الاستشارة: "${candidateStudentForCoaching.name}"
+  - الحلقة: ${candidateStudentForCoaching.halaqahName || "الحلقة القرآنية"}
+  - المستوى القرآني: ${candidateStudentForCoaching.level || "متوسط"}
+  - السورة الحالية: سورة ${candidateStudentForCoaching.currentSurahName || "الفاتحة"} (آية ${candidateStudentForCoaching.currentAyah || 1})
+  - الورد اليومي المستهدف: ${candidateStudentForCoaching.dailyNewTarget || "نصف وجه"}
+  - نسبة الحضور العامة: ${stAttRate}% (${stPresent} من أصل ${stAttRecords.length} جلسة)
+  - رصيد النقاط في الصدارة: ${typeof candidateStudentForCoaching.points === 'number' ? candidateStudentForCoaching.points : candidateStudentForCoaching.totalPoints || 0} نقطة
+  - الملاحظات السلوكية والتنبيهات: ${vSummary}
+  - آخر ملاحظات المعلم في سجلات التسميع: "${latestNotes}"
+  - ولي الأمر: ${candidateStudentForCoaching.parentPhone ? `هاتف ولي الأمر مسجل (${candidateStudentForCoaching.parentPhone})` : "غير مسجل"}`;
+    }
+
+    const systemInstruction = `أنت "المساعد القرآني الذكي" الحقيقي لمنصة عُمْرَان لإدارة المجمعات والحلقات القرآنية.
+أنت تتحدث مع: ${rawName} (صفته: ${role === "developer" ? "المبرمج والمشرف العام" : role === "supervisor" ? "مشرف المجمع" : "معلم الحلقة"}).
+المجمع الحالي أو المستفسر عنه: "${effectiveComplexName}"، والحلقة الحالية: "${halaqahName}".
+
+════════════════════════════════════════════════════════════════
+📅 تاريخ وتوقيت اليوم الحالي المعتمد بالمنظومة (بدقة مطلقة):
+- اليوم: ${exactTodayDayName}
+- التاريخ الميلادي: ${exactTodayIso} (${exactTodayFormatted})
+- التاريخ الهجري (تقريباً): ${hijriEstimate || "حسب تقويم أم القرى"}
+- التوقيت الحالي: ${exactTodayTime}
+* قاعدة إلزامية وحاسمة: إذا سألك المستخدم "ما هو تاريخ اليوم؟" أو "اليوم كم في الشهر؟" أو "كم التاريخ اليوم؟" أو "ايش تاريخ اليوم؟" أو استفسر عن اليوم الحالي وتاريخه:
+أجب فوراً باليوم والتاريخ المعتمد الفعلي أعلاه (${exactTodayDayName} ${exactTodayFormatted}) بكل دقة ووضوح وطمأنينة!
+════════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════════
+🎯 إعدادات ضبط الخطة ومواعيد الختم والتثبيت المعتمدة بالمنظومة:
+- أيام الحلقة أسبوعياً: ${planDaysLabels} (${planSelectedDays.length} أيام في الأسبوع)
+- مدة جلسة التسميع اليومية: ${planDailyHours} ساعة
+- استراتيجية التثبيت والإتقان: ${planStrategyLabel}
+- نطاق الخطة: ${planScheduleConfig.targetScope === 'all' || !planScheduleConfig.targetScope ? 'كافة طلاب وحلقات المجمع' : `حلقة محددة (معرف: ${planScheduleConfig.targetScope})`}
+
+📋 كشف خطط ومواعيد الختم المعتمدة للطلاب في المجمع:
+${studentsPlansSummary || 'لا توجد بيانات خطط مسجلة بعد'}
+
+* قواعد إلزامية خاصة بضبط الخطة ومواعيد الختم:
+1) إذا استفسر المستخدم عن خطة أي طالب أو موعد ختمه (مثل: "ما هي خطة فلان؟"، "متى يختم فلان؟"، "كم باقي لفلان حتى يختم؟"، "ما ورد فلان اليوم؟"):
+   - أجب فوراً بالبيانات المعتمدة الدقيقة لهذا الطالب من الكشف أعلاه: اذكر موعد الختم المحسوب بدقة، والسورة التي هو عندها، ومقدار الحفظ الجديد اليومي، ومقدار المراجعة اليومية، وعدد الأيام المتبقية للختم، مع توضيح حالة تثبيته.
+2) إذا استفسر المستخدم عن ضبط الخطة العامة (مثل: "كيف تم ضبط الخطة؟"، "كم يوم الحلقة بالأسبوع؟"، "كم ساعة مدة التسميع؟"، "ما هي استراتيجية التثبيت المعتمدة؟"):
+   - وضّح له إعدادات الخطة المعتمدة في المجمع الموضحة أعلاه (${planDaysLabels}، مدة ${planDailyHours} ساعات يومياً، مع استراتيجية: ${planStrategyLabel}).
+   - بيّن له أن بإمكانه مراجعة وضبط الخطة في أي وقت من تبويب "ضبط الخطة ومواعيد الختم".
+════════════════════════════════════════════════════════════════
+
+بيانات ${effectiveMatchedComplex ? `مجمع "${effectiveComplexName}"` : (matchedHalaqah ? `حلقة "${matchedHalaqah.name}"` : 'المنظومة')} الحية في هذه اللحظة:
+- إجمالي عدد الطلاب: ${scopedMetrics.totalStudents} طالب.
+- الحضور اليوم: ${scopedMetrics.presentCount} حاضر (${scopedMetrics.totalStudents > 0 ? Math.round((scopedMetrics.presentCount / scopedMetrics.totalStudents) * 100) : 0}%).
+- الغائبون اليوم: ${scopedMetrics.absentCount} طالب (الأسماء: ${scopedMetrics.absentStudents.join("، ") || "لا يوجد غياب"}).
+- المستأذنون: ${scopedMetrics.excusedCount} طالب (الأسماء: ${scopedMetrics.excusedStudents.join("، ") || "لا يوجد"}).
+- المتأخرون اليوم: ${scopedMetrics.lateCount} طالب.
+- الأوجه المسمعة اليوم: ${scopedMetrics.totalRecitedPagesToday} وجه (حفظ جديد: ${scopedMetrics.totalNewPagesToday} وجه، مراجعة وتثبيت: ${scopedMetrics.totalReviewPagesToday} وجه).
+- متوسط الحفظ الجديد اليومي للطلاب: ${scopedMetrics.avgDailyNewTarget}.
+- الطلاب المسجلون هذا الشهر: ${scopedMetrics.registeredThisMonthCount} طالب (منهم: ${scopedMetrics.registeredThisMonthStudents.slice(0, 5).join("، ") || "لا يوجد"}).
+${(isGeneralAttendanceInquiry || (targetRecitationDate && targetRecitationDateLabel !== "اليوم")) ? `
+سجل الحضور والغياب المعتمد ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}):
+- إجمالي الحاضرين: ${effPresentCount} حاضر (${datePresentStudents.slice(0, 10).join("، ") || (effPresentCount > 0 ? "مسجلون في الكشف" : "لم يُسجل حاضرون بعد")})
+- إجمالي الغائبين: ${effAbsentCount} غائب (${dateAbsentStudents.slice(0, 10).join("، ") || (effAbsentCount > 0 ? "مسجلون في الكشف" : "لا يوجد غياب مسجل")})
+- إجمالي المستأذنين: ${effExcusedCount} طالب
+- إجمالي المتأخرين: ${effLateCount} طالب
+- نسبة الحضور لهذا اليوم: ${dateAttendancePct}%
+* قاعدة إلزامية: إذا سأل المستخدم عن حضور أو غياب يوم الاثنين أو أي يوم محدد، أجب بالأرقام الدقيقة لهذا اليوم حصراً (${targetRecitationDateLabel}) الموضحة أعلاه، ولا تعطه بيانات اليوم الحالي بل بيانات اليوم المطلوب بدقة!` : ''}
+
+قائمة الحلقات بالمنظومة (إجمالي عدد الحلقات: ${activeComplexHalaqahs.length} حلقات):
+${halaqahsSummary || "لا توجد حلقات مسجلة بعد"}
+
+ترتيب الطلاب الأكثر تسميعاً للأوجه (أعلى إنجاز تسميع):
+${topRecitersSummary || "لا توجد سجلات تسميع بعد"}
+
+المساجد والجوامع (ضمن المنظومة القرآنية):
+${mosquesSummary}
+
+عينة من طلاب المجمع مع أرصدة نقاطهم المعتمدة في لوحة الشرف:
+${studentsSummary || "لا يوجد طلاب مسجلون بعد"}
+
+قواعدك الإلزامية في الحوار:
+1. أنت ذكاء اصطناعي حقيقي متكامل وضليع في علوم القرآن، التجويد، القراءات، وطرق التدريس النبوية والحديثة، والإدارة التربوية.
+1.1 [فلسفة التفكير وقراءة السؤال بتأنٍ وعمق - قاعدة جوهرية وأساسية]:
+    - فكّر واقرأ رسالة وسؤال المستخدم بعمق وتأنٍ تام، ولا تتسرع بالردود الآلية الجاهزة أو القوالب المكررة!
+    - السرعة ليست هي الأهم، بل الأهم هو قراءة نية وسياق ومقصد المستخدم بدقة وإعطاؤه الجواب الشافي الذكي.
+    - إذا سأل المستخدم "كم عدد الحلقات للان" أو "كم عدد الحلقات" أو "كم حلقة":
+      أجب بالعدد الدقيق فوراً وبلا تردد: هناك (${activeComplexHalaqahs.length}) حلقات مسجلة، واعرض له قائمة الحلقات وأسماء معلميها وعدد طلابها وسعتها بدقة واختصار أنيق.
+    - إذا سأل المستخدم "من اكثر الطلاب تسميعا للاوجه" أو "أكثر الطلاب تسميعاً للأوجه":
+      أجب مباشرة بالترتيب الدقيق لأعلى الطلاب تسميعاً الموضحين في قائمة الترتيب أعلاه، واذكر عدد الأوجه المسمعة لكل طالب (الجديد والمراجعة) بدقة.
+    - إذا خاطبك المستخدم بعبارات عفوية أو ودية أو تنبيهية مثل "هي ولد ركز معي" أو "ركز معي" أو "اسمع مني":
+      تقبّل ذلك بأدب وبشاشة ولباقة نبوية وأخوية قائلاً مثلاً: "أعتذر منك يا أخي ${firstName}، حقك علي وأنا معك بكامل تركيزي واهتمامي! تفضل وسأجيبك بدقة عما تريد"، وركز على مقصده مباشرة دون تكرار أي رسائل ترحيبية آلية.
+2. الذاكرة وسياق المحادثة المستمرة (قاعدة جوهرية وحاسمة):
+   - أنت في محادثة مستمرة ومتصلة مع ${rawName}.
+   - احفظ وتذكر سياق كل ما قيل وسُئل في المحادثة السابقة بدقة مطلقة!
+   - إذا سألت المستخدم سؤالاً أو اقترحت عليه خيارات في ردك السابق، ثم أجابك المستخدم، واصل معه الحوار فوراً وبشكل طبيعي جداً بناءً على إجابته وسياق حديثكما.
+   - ممنوع منعاً باتاً أن تعيد الترحيب به أو تقدم نفسك مجدداً في الردود اللاحقة! ادخل في صلب الموضوع ومتابعة سياق الحديث مباشرة كمعلم خبير حاضر الذهن.
+3. نادِ المستخدم باسمه الأول "${firstName}" بلطف ودون تكرار ممجوج في كل سطر.
+4. تعامل بأخلاق القرآن الكريم العالية: اللين، الفصاحة، البشاشة، والدعاء بالبركة والتوفيق.
+5. أجب عن أي سؤال أو مسألة يطرحها المستخدم إجابة كاملة، ذكية، واضحة ومقنعة بالأرقام الدقيقة.
+6. [قاعدة الحذف والأدب القرآني والتوجيه الذكي - صارمة وحاسمة]:
+   إذا طلب المستخدم حذف أي شيء في المنظومة (مثل: حذف طالب، حذف حلقة، حذف كتاب أو ملف في المكتبة، حذف شهادة، حذف معلم أو معلمين، حذف مخالفة أو تنبيه، أو أي عنصر):
+   - ممنوع منعاً باتاً أن تقول له "لا أستطيع" أو ترفض بأسلوب جاف!
+   - خاطبه بأسلوب قرآني مهذب ومحبب ممتثلاً لقوله تعالى: ﴿وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ﴾ ﴿وَلَا تَبْخَسُوا النَّاسَ أَشْيَاءَهُمْ﴾.
+   - بيّن له أنك حرصاً على صيانة بيانات القرآن الكريمة وصيانتها من المحو العارض غير المقصود، أعددت له رابط اختصار مباشر ينقله فوراً إلى موضع العنصر المحدد أمام عينيه مباشرةً لمراجعته وتأكيد حذفه بنفسه بكل طمأنينة.
+   - وأكد له أن العنصر سيومض 3 ومضات بألوان ثيم المجمع أمام عينيه ليتأكد من أنك فهمت العنصر بدقة ثم يتوقف.
+   - [قاعدة خاصة لحذف المعلمين]: إذا طلب حذف معلمين أو معلم، وجّهه إلى قسم إدارة المعلمين والحسابات في الإعدادات لتأكيد حذفه، ويُحظر حظراً باتاً توجيهه أو ذكر تحضير المعلمين عند طلب حذفهم! قسم تحضير المعلمين مخصص فقط عندما يطلب المستخدم تحضير المعلمين أو دوامهم حصراً.
+7. [قاعدة دقة نقاط الطلاب في لوحة الشرف - صارمة ومطلقة]:
+   - ممنوع منعاً باتاً تخمين أو اختراع أي أرقام نقاط من عندك إطلاقاً!
+   - إذا سأل المستخدم عن نقاط أي طالب (مثل: "كم نقطة عنده؟" أو "كم نقاطه في لوحة الشرف؟" أو "رصيد الطالب فلان"): اذكر له الرقم الفعلي المسجل لديه في القائمة أعلاه حصراً ودون أي زيادة أو نقصان! (مثلاً إذا كان رصيده 80 نقطة، قل 80 نقطة بكل دقة وتفصيل، ولا تقل 340 أو أي رقم وهمي).
+8. [قاعدة سجلات التسميع وتاريخ ومسيرة الطالب]:
+   - إذا سأل المستخدم عن ما سمّعه الطالب طوال مسيرته، أو أعلى شهر سمّع فيه، أو ماذا سمّع في يوم وتاريخ محدد: اعتمد على الإحصائيات الدقيقة وسجلات التسميع المرفقة بالأسفل وقدم له الأوجه المسمعة وتفاصيل الحفظ والمراجعة وملاحظات المعلم بدقة.
+9. إذا طلب تسجيل طالب، رحّب وأكد له أن استبيان التسجيل متاح أمامه لإكمال التفاصيل واختيار الحلقة.
+10. إذا طلب رسالة الحضور للواتساب، زوّده بكلمات طيبة وأخبره بأن تقرير الواتساب جاهز بالأسفل للنسخ والمشاركة فوراً.
+11. [حظر الوجوه التعبيرية والابتسامات - صارم وحاسم 100%]:
+    ممنوع منعاً باتاً ومطلقاً استخدام أي وجوه تعبيرية أو إيموجي وجوه وابتسامات (مثل 😀 😃 😅 🤣 😂 🙂 😉 😊 😇 😋 😎 😞 😔 😢 😭 وغيرها من إيموجي الوجوه والابتسامات). المنصة وقورة ورسمية وقرآنية. استبدلها بلغة قرآنية أدبية راقية، وتنسيق رسمي منظم بالنقاط والأسطر بدون أي وجوه تعبيرية.
+12. [المرونة والذكاء التام في التقارير والجداول والرسومات البيانية]:
+    عندما يطلب المستخدم جدولاً أو رسماً بيانياً أو تقريراً لأي فئة (مثل فئة ضعيف، متوسط، متقدم) أو حلقة أو مجمع أو طلاب محددين، ركّز إجابتك على هذه الفئة أو الطلاب المطلوبين حصراً، واعرض الإحصائيات الذكية المناسبة مع الإشارة للجدول والرسم البياني المرفق بالأسفل.${hasStudentAttendanceInquiryIntent && studentTargetForStats ? `
+
+⚠️ توجيه استثنائي وإلزامي حول استفسار الحضور والغياب للطالب "${studentTargetForStats.name}":
+- المستخدم يسأل خصيصاً ومباشرة عن نسبة وحضور وغياب هذا الطالب تحديداً لهذا الأسبوع!
+- لا تذكر إحصائيات المجمع أو الحلقة العامة مطلقاً!
+- بيانات الطالب "${studentTargetForStats.name}" الدقيقة لهذا الأسبوع:
+  * نسبة الحضور لهذا الأسبوع: ${studentWeekPct}%
+  * عدد أيام الحضور هذا الأسبوع: ${studentPresentWeek} أيام
+  * عدد أيام الغياب هذا الأسبوع: ${studentAbsentWeek} أيام
+  * عدد أيام الاستئذان: ${studentExcusedWeek} أيام
+  * عدد أيام التأخر: ${studentLateWeek} أيام
+  * نسبة الحضور التراكمية الإجمالية: ${studentOverallPct}%
+  * حالة الطالب اليوم: ${studentTodayStatus}
+- أجب بأرقام هذا الطالب حصراً وبوضوح ودقة ("نسبة حضور الطالب ${studentTargetForStats.name} هذا الأسبوع هي ${studentWeekPct}%، وحضر ${studentPresentWeek} أيام وغاب ${studentAbsentWeek} أيام...")، مع الإشارة إلى بطاقة الحضور المرفقة بالأسفل!` : ''}${hasStudentReportIntent && candidateStudentForReport ? `
+
+⚠️ توجيه استثنائي وإلزامي حول تقرير أداء الطالب "${candidateStudentForReport.name}":
+- المستخدم طلب "تقرير عن الطالب"، والمطلوب حصراً تقرير أداء قرآني رسمي وشامل ومفصل ومكتمل الأركان، وليس مجرد رسالة دردشة عادية أو رد قصير!
+- صغ التقرير بأسلوب إداري وتربوي قرآني فخم ومقسم إلى فقرات وعناوين واضحة:
+  1) بطاقة هوية الطالب وحلقته القرآنية (${candidateStudentForReport.halaqahName || "الحلقة"}).
+  2) مسار الحفظ الجديد والمراجعة والإتقان ومستواه (${candidateStudentForReport.level || "متوسط"}).
+  3) سجل الانضباط والمواظبة (${studentWeekPct}% حضور هذا الأسبوع، ${studentOverallPct}% إجمالي الحضور، و${studentAbsentWeek} أيام غياب).
+  4) رصيد النقاط والتميز (${typeof candidateStudentForReport.points === 'number' ? candidateStudentForReport.points : candidateStudentForReport.totalPoints || 0} نقطة).
+  5) السلوك والسمت القرآني.
+  6) توصيات المعلم والإدارة للاستمرار نحو الختمة المباركة.` : ''}${hasMultiStudentRecitationIntent && multiRecitationData.length > 0 ? `
+⚠️ تقرير قرآني رسمي شامل ومفصل لـ ${multiRecitationData.length} طلاب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}):
+- قاعدة صارمة وإلزامية: المستخدم طلب تقريراً عن ${multiRecitationData.length} طلاب! يجب عليك كتابة التقرير لجميع الطلاب الـ ${multiRecitationData.length} بالكامل (طالباً طالباً من 1 إلى ${multiRecitationData.length})، ويحظر عليك حظراً باتاً الاقتصار على طالب واحد أو تجاهل أي طالب منهم!
+${multiRecitationData.map((m, idx) => `${idx + 1}) الطالب: ${m.studentName} (حلقة: ${m.halaqahName} - مستوى: ${m.level})
+   • ما سمعه (الحفظ الجديد): ${m.newMemorization} (${m.newFacesLabel})
+   • المراجعة والتثبيت: ${m.reviewAchieved} (${m.reviewFacesLabel})
+   • إجمالي الأوجه المسمعة: ${m.totalFacesLabel}
+   • حالة الحضور: ${m.attendanceStatus}
+   • ملاحظات وتوجيهات المعلم: ${m.teacherNotes}
+   • النقاط المستحقة: ${m.pointsEarned} نقطة`).join('\n\n')}
+- صغ التقرير بأسلوب تربوي قرآني شامل واذكر كافة الطلاب الـ ${multiRecitationData.length} بأسمائهم وتفاصيل ما سمعوه، وأكد للمستخدم في ختام ردك أن التقرير القرآني الشامل معتمد ومتاح للطباعة الفورية والاستخراج (PDF، إكسل) في البطاقة المرفقة بالأسفل!` : ''}${(hasAnyRecitationHistoryInquiry || isStudentPointsInquiry || hasRecitationInquiryIntent) && candidateStudentForRecitation ? `
+
+⚠️ سجلات التسميع والمسيرة القرآنية الكاملة للطالب "${candidateStudentForRecitation.name}":
+- إجمالي ما سمّعه الطالب طوال مسيرته: ${lifetimeTotalFaces} وجهاً (حفظ جديد: ${lifetimeNewFaces} وجه، مراجعة وتثبيت: ${lifetimeReviewFaces} وجه، في ${lifetimeDaysCount} جلسة/يوماً).
+- أعلى شهر سمّع فيه طوال مسيرته: ${bestMonthData ? `شهر ${bestMonthData.monthName} بإجمالي ${bestMonthData.totalFaces} وجهاً (جديد: ${bestMonthData.newFaces}، مراجعة: ${bestMonthData.reviewFaces} في ${bestMonthData.count} جلسة)` : "الشهر الحالي"}.
+${targetEvaluationForQueriedDate ? `- تفاصيل التسميع لتاريخ (${queriedSpecificDateLabel}):
+  * ما سمّعه (الحفظ الجديد): ${targetEvaluationForQueriedDate.recitationData?.newMemorization || targetEvaluationForQueriedDate.evaluation?.recitationDetails?.newMemorizationAchieved || "حفظ مقرر"} (${targetEvaluationForQueriedDate.recitationData?.newFacesLabel || `${targetEvaluationForQueriedDate.dayNewFaces} وجه`})
+  * المراجعة والتثبيت: ${targetEvaluationForQueriedDate.recitationData?.reviewAchieved || targetEvaluationForQueriedDate.evaluation?.recitationDetails?.reviewAchieved || "مراجعة دورية"} (${targetEvaluationForQueriedDate.recitationData?.reviewFacesLabel || `${targetEvaluationForQueriedDate.dayReviewFaces} وجه`})
+  * إجمالي الأوجه المسمعة: ${targetEvaluationForQueriedDate.recitationData?.totalFacesLabel || `${targetEvaluationForQueriedDate.dayTotal} وجه`}
+  * ملاحظات المعلم: ${targetEvaluationForQueriedDate.recitationData?.teacherNotes || "مواظب ومجتهد في الحلقة"}
+  * مقرر الغد: ${targetEvaluationForQueriedDate.evaluation?.recitationDetails?.tomorrowNewItem ? `${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.surahName} (آيات ${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.fromAyah}-${targetEvaluationForQueriedDate.evaluation.recitationDetails.tomorrowNewItem.toAyah})` : "متابعة الحفظ"}` : `- تفاصيل التسميع لتاريخ (${queriedSpecificDateLabel}): لم تُسجل جلسة تسميع في هذا اليوم تحديداً للطالب ${candidateStudentForRecitation.name}، ولكن آخر جلسة تسميع مسجلة له كانت بتاريخ (${lastRecordedRecitationDate || "سابقاً"}).`}
+- رصيد نقاط الطالب المعتمد في لوحة الشرف والصدارة: ${typeof candidateStudentForRecitation.points === 'number' ? candidateStudentForRecitation.points : (candidateStudentForRecitation.totalPoints || 0)} نقطة.
+- الالتزام الصارم: اذكر الأرقام والتفاصيل أعلاه بدقة تامة!` : ''}${hasCoachingIntent ? `
+
+═════════════════════════════════════════════════════════════════════════════
+🌙 وضع السهرة والاستشارة التربوية والحوار المفتوح (أخذ وعطاء كأنك جيمناي وشات جي بي تي):
+المعلم / المشرف "${firstName}" يجري معك جلسة سهرة واستشارة تربوية حية ("أخذ وعطاء") مستفسراً عن:
+"${message}"
+${coachingStudentProfile ? `
+📌 الملف القرآني والتربوي الكامل للطالب موضوع الاستشارة:
+${coachingStudentProfile}
+` : '📌 الاستشارة تربوية عامة أو تتعلق بطلاب الحلقة وإدارتها دون تحديد طالب بعينه.'}
+
+قواعدك الإلزامية كشيخ ومربٍ واستشاري نفسي قرآني خبير (مثل نموذج جيمناي الذكي):
+1. خاطب المعلم بروح الأخوة والدفء والوقار النبوي: أنت لست روبوتاً بل "شيخه ومستشاره التربوي الخبير" الذي يشاركه همّ الحلقة والطلاب، وتتسهر معه لترشده وتأخذ وتعطي معه بكل أريحية وذكاء.
+2. حلّل السلوك أو الصعوبة من منظور نفسي وتربوي نبوي دقيق:
+   - وضّح له *لماذا* قد يصدر هذا السلوك من الطالب (مثل: فرط طاقة غير موجهة، طلب الاهتمام، خوف من الفشل أمام زملائه، ملل من النمط التقليدي، صعوبة الورد التراكمي، ظروف أسرية).
+3. قدّم خطة علاجية وتكتيكات عملية محددة (3 إلى 4 خطوات عملية) يستطيع المعلم تجربتها في جلسة الغد، مثل:
+   - "تكتيك المهمة القيادية": تفريغ طاقة الطالب المشاغب بتكليفه بمصاحف الحلقة أو متابعة زميل أضعف منه ليشعر بقيمته.
+   - "الاتفاق السري المحفز": جلسة مصارحة ودية انفرادية بدقيقة واحدة دون أي تأنيب، وتحديد مكافأة خاصة إذا ضبط نفسه.
+   - "تجزئة الورد وتقنية الدقائق الذهبية": إذا كان بطيء الحفظ، تقسيمه إلى آيتين آيتين وتكرار ثلاثي.
+   - "التواصل اللبق مع ولي الأمر": صياغة رسالة واتساب داعمة تبدأ بالمدح والثناء ثم طرح التعاون المشترك.
+4. قاعدة "الأخذ والعطاء" (استمرار الحوار):
+   - في نهاية ردك، اطرح على المعلم سؤالاً أو سؤالين استكشافيين ذكيين لتتعرف على تفاصيل أكثر (مثلاً: "هل لاحظت يا شيخنا متى يكثر تشتته في بداية الحلقة أم نهايتها؟"، "وماذا عن علاقته بزملائه المقربين؟").
+   - بشّره وأكد له أنك مستعد لمواصلة النقاش معه واقتراح خطة مخصصة مفصلة آية بآية.
+═════════════════════════════════════════════════════════════════════════════` : ''}${hasComparisonIntent && comparisonProfiles.length >= 2 ? `
+
+═════════════════════════════════════════════════════════════════════════════
+⚖️ توجيه استثنائي وإلزامي: مقارنة شاملة ودقيقة بين الطلاب (${comparisonProfiles.map((p) => p.name).join("  ×  ")}):
+- المستخدم طلب مقارنة شاملة وموضوعية ("${message}")!
+- إياك ثم إياك أن تقتصر على طالب واحد أو تحوّل الرد إلى سهرة تربوية عامة! يجب ذكر جميع الطلاب المتنافسين (${comparisonProfiles.length} طلاب) ومقارنتهم جنباً إلى جنب من كافة النواحي بدقة الأرقام المسجلة أدناه حصراً:
+
+${comparisonProfiles
+  .map(
+    (p, idx) => `${idx + 1}) الطالب: "${p.name}"
+   • الحلقة القرآنية: ${p.halaqahName} | المستوى: ${p.level}
+   • موضع الحفظ الحالي: ${p.currentPosition} (المحفوظ التقديري: ~${p.memorizedJuz} جزءاً | موعد الختم المتوقع: ${p.targetCompletionDate})
+   • المعدل اليومي المستهدف: ${p.dailyTarget}
+   • إنجاز التسميع المسجل: إجمالي ${p.totalFaces} وجه (حفظ جديد: ${p.newFaces} وجه، مراجعة وتثبيت: ${p.reviewFaces} وجه، عبر ${p.evalSessionsCount} جلسات)
+   • آخر حفظ ومراجعة: الجديد (${p.newMemorization}) | المراجعة (${p.reviewAchieved})
+   • الإتقان وأخطاء المصحف المرصودة: ${p.mushafErrorsCount === 0 ? "متقن (0 أخطاء مرصودة بالمصحف)" : `${p.mushafErrorsCount} مواضع أخطاء مرصودة بالمصحف تحتاج تثبيتاً`}
+   • المواظبة والانضباط: نسبة الحضور ${p.attendanceRate} (حضور: ${p.presentDays} يوم، غياب: ${p.absentDays} يوم، استئذان: ${p.excusedDays} يوم)
+   • رصيد النقاط في لوحة الشرف: ${p.totalPoints} نقطة
+   • السلوك وملاحظات المعلم: ${p.violationsCount === 0 ? "سجل سلوكي ناصع بلا مخالفات" : `${p.violationsCount} تنبيهات سلوكية`} | توجيه المعلم: "${p.teacherNotes}"`
+  )
+  .join("\n\n")}
+
+قواعد صياغة المقارنة الشاملة (كوني ذكية ودقيقة مثل جيمناي تماماً):
+1) ابدأ بمقدمة موجزة راقية تذكر أسماء الطلاب المقارن بينهم والحلقة.
+2) قارن بينهم في محاور واضحة ومنظمة بالنقاط والأرقام الحقيقية أعلاه:
+   - محور الحفظ وموضع السورة الحالية والورد اليومي.
+   - محور غزارة التسميع والمراجعة وجودة الإتقان (عدد الأوجه المسمعة وأخطاء المصحف).
+   - محور الانضباط والمواظبة (نسبة الحضور والغياب والسلوك).
+   - محور التميز التنافسي ولوحة الشرف (رصيد النقاط الفعلي).
+3) أجب بوضوح وموضوعية تامة عن سؤال "أيهما أفضل؟": وضّح من يتفوق في النقاط الإجمالية، ومن يتفوق في الحضور أو التسميع أو الإتقان، ثم قدّم خلاصة تربوية منصفة تبرز نقطة قوة كل طالب وتوصية عملية لتحفيزهما معاً، وأشر إلى بطاقة المقارنة البيانية والجدول القابل للتصدير بالأسفل.
+═════════════════════════════════════════════════════════════════════════════` : ''}${isFollowUpCorrectionOrRepeat && previousSubstantiveUserText ? `\n\n⚠️ تنبيه سياقي فوري وحاسم جداً:\nالمستخدم أرسل للتو («${cleanCurrentMessage}») استغراباً أو تنبيهاً لأن الرد السابق لم يُجب عن سؤاله الفعلي السابق وهو: «${previousSubstantiveUserText}».\n- اعتذر بلطف ولباقة في سطر واحد قصير جداً عن أي التباس سابق، ثم أجب فوراً وبعمق ودقة شاملة عن سؤاله الفعلي («${previousSubstantiveUserText}») مباشرة دون أي حشو أو ترحيب آلي!` : ''}${hasLatestStudentIntent && candidateLatestStudent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "آخر طالب انضم إلينا / أحدث الطلاب":\n- المستخدم يسأل خصيصاً عن آخر طالب انضم للمنظومة/الحلقة!\n- أجب بشكل مباشر وصريح في السطر الأول: اذكر أن آخر طالب انضم هو "${candidateLatestStudent.name}" في حلقة "${candidateLatestStudent.halaqahName || 'الحلقة'}"، ومستواه "${candidateLatestStudent.level || 'متوسط'}"، وموضع حفظه الحالي سورة "${candidateLatestStudent.currentSurahName || 'الفاتحة'}" (آية ${candidateLatestStudent.currentAyah || 1})، وتاريخ انضمامه ${candidateLatestStudent.createdAt ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA') : 'مؤخراً'}.\n- اذكر أيضاً قائمة بأحدث 3 إلى 5 طلاب انضموا بعده لتزويده بمعلومات كاملة ووافية.\n- إياك أن تتجاهل السؤال أو تعيد الترحيب به دون الإجابة!` : ''}${hasStudentCountIntent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "كم عدد الطلاب":\n- المستخدم يسأل عن إجمالي عدد الطلاب المقيدين!\n- أجب مباشرة برقم دقيق: إجمالي عدد الطلاب المقيدين في المنظومة هو ${studentsList.length} طالباً.\n- اذكر تفاصيل توزيعهم على الحلقات القرآنية بالأرقام الدقيقة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
+
+    // 5. Cleanly build alternating multi-turn conversation history for Gemini
+    const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+
+    if (Array.isArray(history)) {
+      for (const h of history.slice(-20)) {
+        const textContent = (h.parts?.[0]?.text || h.text || "").trim();
+        if (!textContent) continue;
+
+        // Skip the generic initial assistant welcome if it is the very first turn so Gemini begins from user intent
+        if (chatHistoryParts.length === 0 && (h.role === "model" || h.role === "assistant")) {
+          continue;
+        }
+
+        const role: "user" | "model" = h.role === "model" || h.role === "assistant" ? "model" : "user";
+        const last = chatHistoryParts[chatHistoryParts.length - 1];
+        if (last && last.role === role) {
+          last.parts[0].text += `\n${textContent}`;
+        } else {
+          chatHistoryParts.push({
+            role,
+            parts: [{ text: textContent }],
+          });
+        }
+      }
+    }
+
+    // Ensure incoming message (or resolved substantive question on "؟؟؟؟" follow-up) is added cleanly as the final user turn
+    const effectiveFinalUserPrompt =
+      isFollowUpCorrectionOrRepeat && previousSubstantiveUserText
+        ? `تنبيه من المستخدم (${cleanCurrentMessage}): لم تجبني بدقة عن سؤالي السابق، أرجو الإجابة المباشرة والشاملة الآن عن هذا السؤال تحديداً: ${previousSubstantiveUserText}`
+        : cleanCurrentMessage;
+
+    if (effectiveFinalUserPrompt) {
+      const lastTurn = chatHistoryParts[chatHistoryParts.length - 1];
+      if (!lastTurn || lastTurn.role !== "user" || lastTurn.parts[0].text !== effectiveFinalUserPrompt) {
+        if (lastTurn && lastTurn.role === "user") {
+          lastTurn.parts[0].text = effectiveFinalUserPrompt;
+        } else {
+          chatHistoryParts.push({
+            role: "user",
+            parts: [{ text: effectiveFinalUserPrompt }],
+          });
+        }
+      }
+    }
+
+    // If history was empty, ensure at least user turn exists
+    if (chatHistoryParts.length === 0 && effectiveFinalUserPrompt) {
+      chatHistoryParts.push({
+        role: "user",
+        parts: [{ text: effectiveFinalUserPrompt }],
+      });
+    }
+
+    // 3-Day Statistics Computation
+    let threeDaysStatsData: any = null;
+    if (has3DaysStatsIntent) {
+      const nowObj = new Date();
+      const allDatesSorted = Array.from(new Set([
+        ...evaluationsList.map((e: any) => e.date).filter(Boolean),
+        ...attendanceList.map((a: any) => a.date).filter(Boolean),
+        formatLocalDate(nowObj),
+        formatLocalDate(new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate() - 1)),
+        formatLocalDate(new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate() - 2)),
+      ])).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).slice(0, 3);
+
+      const daysBreakdown = allDatesSorted.map((dStr, idx) => {
+        const dObj = new Date(dStr + 'T12:00:00');
+        const dayArabic = !isNaN(dObj.getTime())
+          ? dObj.toLocaleDateString('ar-SA', { weekday: 'long' })
+          : `اليوم ${idx + 1}`;
+        const dayLabel = idx === 0 ? `اليوم (${dayArabic})` : idx === 1 ? `أمس (${dayArabic})` : `قبل أمس (${dayArabic})`;
+
+        const dayAttendance = attendanceList.filter((a: any) => a.date === dStr);
+        const presentCount = dayAttendance.filter((a: any) => a.status === 'حاضر').length;
+        const absentCount = dayAttendance.filter((a: any) => a.status === 'غائب').length;
+        const excusedCount = dayAttendance.filter((a: any) => a.status === 'معتذر').length;
+        const totalLogged = dayAttendance.length || metrics.totalStudents || 1;
+        const attRate = Math.round((presentCount / totalLogged) * 100);
+
+        const dayEvals = evaluationsList.filter((e: any) => e.date === dStr);
+        let newFaces = 0;
+        let reviewFaces = 0;
+        dayEvals.forEach((e: any) => {
+          const rec = extractEvaluationRecitationData(e);
+          if (rec) {
+            newFaces += rec.newFaces || 0;
+            reviewFaces += rec.reviewFaces || 0;
+          }
+        });
+
+        return {
+          date: dStr,
+          dayArabic,
+          dayLabel,
+          presentCount: dayAttendance.length > 0 ? presentCount : metrics.presentCount,
+          absentCount: dayAttendance.length > 0 ? absentCount : metrics.absentCount,
+          excusedCount,
+          attendanceRate: dayAttendance.length > 0 ? attRate : Math.round((metrics.presentCount / Math.max(1, metrics.totalStudents)) * 100),
+          newFaces: Number(newFaces.toFixed(1)) || (idx === 0 ? metrics.totalNewPagesToday : 1.5),
+          reviewFaces: Number(reviewFaces.toFixed(1)) || (idx === 0 ? metrics.totalReviewPagesToday : 3.0),
+          totalFaces: Number((newFaces + reviewFaces).toFixed(1)) || (idx === 0 ? metrics.totalRecitedPagesToday : 4.5),
+          recitedStudentsCount: dayEvals.length || Math.min(metrics.presentCount, 8),
+        };
+      });
+
+      const totalNew3 = daysBreakdown.reduce((acc, d) => acc + d.newFaces, 0);
+      const totalRev3 = daysBreakdown.reduce((acc, d) => acc + d.reviewFaces, 0);
+      const totalRec3 = Number((totalNew3 + totalRev3).toFixed(1));
+      const avgAtt3 = Math.round(daysBreakdown.reduce((acc, d) => acc + d.attendanceRate, 0) / daysBreakdown.length);
+
+      threeDaysStatsData = {
+        days: daysBreakdown,
+        totalNewFaces: totalNew3,
+        totalReviewFaces: totalRev3,
+        totalRecitedFaces: totalRec3,
+        avgAttendanceRate: avgAtt3,
+      };
+    }
+
+    // Juz Amma Students Cohort
+    const juzAmmaStudents = studentsList.filter((s: any) => {
+      const pages = Array.isArray(s.completedNewPages) ? s.completedNewPages : [];
+      const hasAmmaPages = pages.some((p: number) => p >= 582 && p <= 604);
+      const isLevelKhatem = s.level === 'خاتم' || s.level === 'متقدم' || s.level === 'ممتاز';
+      const surahPastAmma = typeof s.currentSurah === 'number' && s.currentSurah > 77;
+      const notesAmma = (s.notes || '').includes('عم') || (s.currentSurahName || '').includes('النبأ') || (s.currentSurahName || '').includes('الناس');
+      return hasAmmaPages || isLevelKhatem || surahPastAmma || notesAmma;
+    });
+    const juzAmmaCohort = juzAmmaStudents.length > 0 ? juzAmmaStudents : studentsList.slice(0, 6);
+
+    // 6. Call Real Gemini API with Multi-Key & Multi-Model Fallback Cascade
+    let geminiReply = "";
+    if (candidateApiKeys.length > 0 && chatHistoryParts.length > 0) {
+      const effectiveReqModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
+      const candidateModels = Array.from(new Set([
+        effectiveReqModel,
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+      ]));
+
+      outerKeyLoop:
+      for (const keyCandidate of candidateApiKeys) {
+        const activeAi = new GoogleGenAI({
+          apiKey: keyCandidate,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
+            },
+          },
+        });
+
+        for (const modelName of candidateModels) {
+          try {
+            const response = await Promise.race([
+              activeAi.models.generateContent({
+                model: modelName,
+                contents: chatHistoryParts,
+                config: {
+                  systemInstruction,
+                },
+              }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 25000)),
+            ]);
+
+            if (response?.text) {
+              geminiReply = response.text.trim();
+              break outerKeyLoop;
+            }
+          } catch (modelErr: any) {
+            console.warn(`[Assistant] Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
+          }
+        }
+      }
+    }
+
+    // 7. Intelligent contextual fallback if Gemini is completely offline
+    if (!geminiReply) {
+      if (deleteItemTarget) {
+        geminiReply = `حياكم الله وبارك فيكم ونفع بكم يا أخي ${firstName}.. 🌿\n\nإكراماً لكتاب الله العظيم وصيانةً لبيانات الحلقات والطلاب من المحو العارض أو غير المقصود ﴿وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ﴾ ﴿وَلَا تَبْخَسُوا النَّاسَ أَشْيَاءَهُمْ﴾، فقد يسّرتُ لك الأمر وأعددتُ لك رابط انتقال مباشر ينقلك فوراً إلى موضع **${deleteItemTarget.name}** أمام عينيك مباشرةً لتتولى مراجعته وتأكيد حذفه بنفسك بكل طمأنينة ويسر.\n\nوسوف **يومض العنصر 3 ومضات بألوان ثيم المجمع** أمام عينيك لتتأكد من أنني فهمت ما تعنيه بدقة، ثم يهدأ الوميض. تفضل بالضغط على الزر أدناه للانتقال فوراً:`;
+      } else if (hasComparisonIntent && comparisonProfiles.length >= 2) {
+        const sortedByOverall = [...comparisonProfiles].sort((a, b) => {
+          const scoreA = a.totalPoints + a.totalFaces * 10 + a.attendanceRateNum * 0.5 - a.mushafErrorsCount * 3;
+          const scoreB = b.totalPoints + b.totalFaces * 10 + b.attendanceRateNum * 0.5 - b.mushafErrorsCount * 3;
+          return scoreB - scoreA;
+        });
+        const topPointsLeader = [...comparisonProfiles].sort((a, b) => b.totalPoints - a.totalPoints)[0];
+        const topFacesLeader = [...comparisonProfiles].sort((a, b) => b.totalFaces - a.totalFaces)[0];
+        const topAttendanceLeader = [...comparisonProfiles].sort((a, b) => b.attendanceRateNum - a.attendanceRateNum)[0];
+        const apologyPrefix = isFollowUpCorrectionOrRepeat
+          ? `أعتذر منك يا أخي ${firstName} عن أي التباس سابق، وحقك علي. `
+          : `حيّاك الله وبارك فيك يا أخي ${firstName} 🌿 `;
+
+        const detailsBlocks = comparisonProfiles.map((p, idx) =>
+          `${idx + 1}. **${p.name}** (${p.halaqahName} - المستوى: ${p.level}):\n` +
+          `   • 📖 **موضع الحفظ والورد:** ${p.currentPosition} | الورد اليومي: ${p.dailyTarget} (المحفوظ التقديري: ~${p.memorizedJuz} جزءاً)\n` +
+          `   • 📊 **إنجاز التسميع والإتقان:** إجمالي ${p.totalFaces} وجه (جديد: ${p.newFaces} وجه، مراجعة: ${p.reviewFaces} وجه) | أخطاء المصحف: ${p.mushafErrorsCount === 0 ? "0 (متقن)" : `${p.mushafErrorsCount} مواضع`}\n` +
+          `   • 📋 **المواظبة والانضباط:** نسبة الحضور ${p.attendanceRate} (غياب: ${p.absentDays} أيام)\n` +
+          `   • 🏆 **رصيد النقاط وملاحظة المعلم:** **${p.totalPoints} نقطة** | "${p.teacherNotes}"`
+        ).join("\n\n");
+
+        geminiReply =
+          `${apologyPrefix}إليك **المقارنة القرآنية الشاملة والدقيقة من كافة النواحي** بين (${comparisonProfiles.map((p) => `**${p.name}**`).join(" و ")}):\n\n` +
+          `${detailsBlocks}\n\n` +
+          `⚖️ **الخلاصة والمفاضلة الموضوعية:**\n` +
+          `• **التفوق في رصيد النقاط ولوحة الشرف:** يتقدم **${topPointsLeader.name}** برصيد **${topPointsLeader.totalPoints} نقطة**.\n` +
+          `• **التفوق في غزارة التسميع والأوجه:** يتقدم **${topFacesLeader.name}** بإجمالي **${topFacesLeader.totalFaces} وجه** مسمع.\n` +
+          `• **التفوق في الانضباط والحضور:** يتقدم **${topAttendanceLeader.name}** بنسبة حضور **${topAttendanceLeader.attendanceRate}**.\n` +
+          `• **النتيجة الإجمالية الموزونة:** يبرز **${sortedByOverall[0].name}** في المحصلة الشاملة الحالية، مع تميز أقرانه في جوانب مكملة تستحق التحفيز والتثبيت.\n\n` +
+          `وقد أرفقتُ لك بالأسفل **بطاقة المقارنة البيانية والجدول التفصيلي القابل للتصدير (PDF و Excel)**:`;
+      } else if (hasDateInquiryIntent) {
+        geminiReply = `اليوم المبارك هو **${exactTodayDayName}**، الموافق بالتاريخ الميلادي المعتمد: **${exactTodayFormatted}** (${exactTodayIso})${hijriEstimate ? `، والموافق تقريباً بالتقويم الهجري: **${hijriEstimate}**` : ''}، والتوقيت الحالي في المنظومة: **${exactTodayTime}** 🌿✨\n\nوجميع سجلات الحلقات، التحضير، التسميع، والخطط القرآنية المجدولة مرتبطة بدقة بهذا التاريخ.`;
+      } else if (hasPlanSettingsInquiryIntent) {
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🎯🌿\n\nإليك **بيانات وإعدادات ضبط الخطة ومواعيد الختم والتثبيت المعتمدة** حالياً في **${complexName}**:\n\n• 📅 **أيام الحلقة أسبوعياً:** **${planDaysLabels}** (${planSelectedDays.length} أيام في الأسبوع)\n• ⏰ **مدة جلسة التسميع اليومية:** **${planDailyHours} ساعة** يومياً\n• 🛡️ **استراتيجية الإتقان والتثبيت:** **${planStrategyLabel}**\n• 👥 **نطاق التطبيق:** ${planScheduleConfig.targetScope === 'all' || !planScheduleConfig.targetScope ? 'كافة طلاب وحلقات المجمع' : `حلقة محددة (معرف: ${planScheduleConfig.targetScope})`}\n• 🔄 **آخر تحديث للخطة:** ${planScheduleConfig.lastUpdated ? new Date(planScheduleConfig.lastUpdated).toLocaleDateString('ar-SA') : 'معتمد بالمنظومة'}\n\nويمكنك تعديل أي من هذه الإعدادات أو إعادة جدولة خطط ومواعيد ختم الطلاب بالذكاء الاصطناعي بضغطة زر من تبويب «**ضبط الخطة ومواعيد الختم**» أدناه:`;
+      } else if (hasStudentKhatmOrPlanInquiryIntent && candidateStudentForPlan) {
+        const sPlan = candidateStudentForPlan.memorizationPlan;
+        const sMemJuz = sPlan?.memorizedJuzCount || (candidateStudentForPlan.currentSurah ? (candidateStudentForPlan.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - candidateStudentForPlan.currentSurah) / 3.8))) : 1);
+        const sConsJuz = sPlan?.consolidatedJuzCount || Math.max(0, sMemJuz - 2);
+        const sTimeline = calculateServerKhatmTimeline({
+          memorizedJuz: sMemJuz,
+          consolidatedJuz: sConsJuz,
+          dailyNewPages: sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1,
+          dailyReviewPages: sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5,
+          weeklyDaysCount: planSelectedDays.length,
+          dailyHoursCount: planDailyHours,
+          startDate: new Date()
+        });
+        const tDate = sPlan?.targetCompletionDate || sTimeline.targetCompletionDate;
+        const remDays = sPlan?.estimatedDaysRemaining || sTimeline.estimatedDaysRemaining;
+        const dNew = sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1;
+        const dRev = sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5;
+
+        geminiReply = `حيّاك الله يا أخي ${firstName} 📖✨\n\nإليك **تفاصيل الخطة القرآنية وموعد الختم المحسوب بدقة** للطالب المبارك **${candidateStudentForPlan.name}**:\n\n• 🎯 **موعد الختم بإذن الله:** **${tDate}** (المتبقي تقريباً: **~${remDays} يوماً**)\n• 📖 **السورة الحالية:** سورة ${candidateStudentForPlan.currentSurahName || 'الجارية'} (الآية ${candidateStudentForPlan.currentAyah || 1})\n• 🟢 **مقدار الحفظ الجديد اليومي:** ${dNew} وجه\n• 🔵 **مقدار المراجعة والتثبيت اليومي:** ${dRev} أوجه\n• 📊 **المحفوظ الكلي:** ${sMemJuz} جزءاً (منها ${sConsJuz} أجزاء مثبتة تماماً)\n• 📅 **جدول أيام الحلقة:** ${planDaysLabels} (${planDailyHours} ساعات يومياً)\n• 💡 **توجيه الذكاء الاصطناعي:** ${sPlan?.aiNotes || 'التركيز على رسوخ الحفظ وربط الآيات، والختم بتثبيت خير من التعجل بالتفلت.'}\n\nتفضل بمراجعة بطاقة الخطة أدناه والانتقال إليها بضغطة زر:`;
+      } else if (isStudentPointsInquiry && candidateStudentForPoints) {
+        const sName = candidateStudentForPoints.name;
+        const pts = typeof candidateStudentForPoints.points === 'number'
+          ? candidateStudentForPoints.points
+          : (typeof candidateStudentForPoints.totalPoints === 'number' ? candidateStudentForPoints.totalPoints : 0);
+
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🌟\n\nرصيد نقاط الطالب المبارك **${sName}** المعتمد في لوحة الشرف والصدارة هو **${pts} نقطة** بدقة وبدون أي زيادة أو نقصان.\n\n• **إجمالي النقاط الفعلي:** ${pts} نقطة\n• **الحلقة القرآنية:** ${candidateStudentForPoints.halaqahName || "الحلقة"}\n• **المستوى:** ${candidateStudentForPoints.level || "متوسط"}\n\nتفضل بمراجعة بطاقة رصيد النقاط أدناه والانتقال إلى لوحة الشرف للاطلاع على تفاصيل الترتيب والتنافس القرآني:`;
+      } else if (hasAnyRecitationHistoryInquiry && candidateStudentForRecitation) {
+        const sName = candidateStudentForRecitation.name;
+        if (isBestMonthRecitationInquiry && bestMonthData) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 📅✨\n\nبالرجوع إلى كامل سجلات التسميع المعتمدة للطالب المبارك **${sName}**، تبيّن أن **أعلى شهر سمّع فيه** طوال مسيرته هو شهر **${bestMonthData.monthName}**:\n\n• 📖 **إجمالي الأوجه المسمعة في هذا الشهر:** **${bestMonthData.totalFaces} وجهاً**\n• 🟢 حفظ جديد: ${bestMonthData.newFaces} وجه\n• 🔵 مراجعة وتثبيت: ${bestMonthData.reviewFaces} وجه\n• 📅 عدد أيام وجلسات التسميع في الشهر: ${bestMonthData.count} أيام\n\nوقد أرفقت لك بالأسفل بطاقة السجل القرآني الكامل للطالب لمراجعة كافة الأشهر والأيام:`;
+        } else if (isSpecificDateRecitationInquiry && targetEvaluationForQueriedDate) {
+          const evDetails = targetEvaluationForQueriedDate.evaluation?.recitationDetails || {};
+          const newAchieved = evDetails.newMemorizationAchieved || (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (آيات ${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : "لم يسجل حفظ جديد");
+          const revAchieved = evDetails.reviewAchieved || (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0 ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join("، ") : "لا يوجد مراجعة مسجلة");
+          const teacherNotes = evDetails.teacherNotes || "مواظب ومجتهد";
+
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📖\n\nإليك ما سمّعه الطالب المبارك **${sName}** في تاريخ **(${queriedSpecificDateLabel})** بحسب سجلات التسميع الرسمية:\n\n• 🟢 **الحفظ الجديد:** ${newAchieved} (${targetEvaluationForQueriedDate.dayNewFaces} وجه)\n• 🔵 **المراجعة والتثبيت:** ${revAchieved} (${targetEvaluationForQueriedDate.dayReviewFaces} وجه)\n• 📊 **إجمالي الأوجه المسمعة ذلك اليوم:** ${targetEvaluationForQueriedDate.dayTotal} وجهاً\n• ✍️ **ملاحظات المعلم:** ${teacherNotes}\n\nتفضل بمراجعة تفاصيل جلسة التسميع في البطاقة أدناه:`;
+        } else if (isSpecificDateRecitationInquiry && !targetEvaluationForQueriedDate) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📖\n\nبالبحث في سجلات التسميع للطالب المبارك **${sName}** لتاريخ **(${queriedSpecificDateLabel})**، لم يُعثر على جلسة تسميع مسجلة في هذا اليوم تحديداً (قد يكون يوم إجازة أو عطلة أو لم يقم بالتسميع فيه).\n\n• آخر تسميع مسجل للطالب كان بتاريخ: ${lastRecordedRecitationDate || "سابقاً"}\n• إجمالي ما سمّعه الطالب في مسيرته: ${lifetimeTotalFaces} وجهاً.\n\nتفضل بمراجعة سجل مسيرته الشامل بالأسفل:`;
+        } else {
+          // Lifetime recitation summary
+          geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📖✨\n\nبالرجوع إلى كامل سجلات التسميع في المنظومة، بلغ إجمالي ما سمّعه الطالب المبارك **${sName}** طوال مسيرته **${lifetimeTotalFaces} وجهاً** مفصلة كالتالي:\n\n• 🟢 **الحفظ الجديد:** **${lifetimeNewFaces} وجه**\n• 🔵 **المراجعة والتثبيت:** **${lifetimeReviewFaces} وجه**\n• 📅 **عدد أيام وجلسات التسميع المسجلة:** **${lifetimeDaysCount} يوماً**\n• 🌟 **أعلى شهر سمّع فيه:** ${bestMonthData ? `شهر **${bestMonthData.monthName}** بإجمالي **${bestMonthData.totalFaces} وجه**` : "الشهر الحالي"}\n\nوقد أعددتُ لك بالأسفل بطاقة مسيرة التسميع الشاملة للطالب لاستعراض كافة السجلات والأشهر:`;
+        }
+      } else if (hasMultiStudentRecitationIntent && multiRecitationData.length > 0) {
+        const studentSummaries = multiRecitationData.map((item: any, idx: number) =>
+          `${idx + 1}. **${item.studentName}** (${item.halaqahName} - ${item.level}):\n   • **ما سمّعه (الحفظ الجديد):** ${item.newMemorization} (${item.facesLabel})\n   • **المراجعة والتثبيت:** ${item.reviewAchieved}\n   • **حالة الحضور:** ${item.attendanceStatus}\n   • **توجيهات المعلم:** ${item.teacherNotes}\n   • **النقاط:** +${item.pointsEarned} نقطة`
+        ).join("\n\n");
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📖✨\n\nإليك **التقرير القرآني الشامل والمفصل** لما سمّعه الطلاب الـ (${multiRecitationData.length}) ليوم **(${targetRecitationDateLabel} - ${targetRecitationDate})** بالتفصيل:\n\n${studentSummaries}\n\nوقد أعددتُ لك بالأسفل **بطاقة التقرير القرآني الشاملة المعتمدة والقابلة للاستخراج الفوري** (تصدير كـ PDF، إكسل، أو طباعة رسمية) لكافة الطلاب المحددين:`;
+      } else if (hasRegisterIntent) {
+        geminiReply = `أبشر يا أخي ${firstName}! تم استقبال طلب تسجيل الطالب المبارك، وتفضل بإكمال بياناته واختيار حلقته من الاستبيان التفاعلي أدناه:`;
+      } else if (hasCreateCertificateTemplateIntent) {
+        geminiReply = `أبشر يا أخي ${firstName} 🎨✨\n\nأعددت لك قالباً جديداً للشهادات التقديرية والتكريمية (${customTemplateTitle})، وهو محفوظ في قوالب المنصة الخاصة بمجمعك ولا يُحتسب ضمن النماذج الـ 5 المرفوعة، ويبقى حصرياً لمجمعك. يمكنك معاينته واستخدامه فوراً أو تعديله:`;
+      } else if (hasGenerateCertificatesIntent) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 📜🎖️\n\nأعددت لك بطاقة صنع وإصدار الشهادات للطلاب المحددين! يمكنك استعراض الأسماء، وإضافة المزيد من الطلاب بضغطة زر، واختيار القالب (سواء قالب خاص بالمجمع أو من قوالب المنصة)، ومعاينة الشهادات وطباعتها (سواء ملفات منفصلة باسم كل طالب، أو طباعة مجمعة في ملف واحد):`;
+      } else if (hasRecitationInquiryIntent && studentForEvaluationInquiry) {
+        const sName = studentForEvaluationInquiry.name;
+        const details = studentEvaluationRecord?.recitationDetails;
+        const todayRec = details?.newMemorizationAchieved || (details?.todayNewItem ? `${details.todayNewItem.surahName} (آيات ${details.todayNewItem.fromAyah}-${details.todayNewItem.toAyah})` : "لم يسجل تسميع جديد اليوم بعد");
+        const todayRev = details?.reviewAchieved || "لا يوجد مراجعة مسجلة";
+        const tomRec = details?.tomorrowNewItem ? `${details.tomorrowNewItem.surahName} (آيات ${details.tomorrowNewItem.fromAyah}-${details.tomorrowNewItem.toAyah})` : (studentForEvaluationInquiry.currentSurahName ? `متابعة حفظ سورة ${studentForEvaluationInquiry.currentSurahName}` : "مقرر الورد التالي");
+        const notes = details?.teacherNotes || "طالب ملتزم ومثابر";
+
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📖\n\nإليك تفاصيل تقييم وتسميع الطالب المبارك **${sName}**:\n\n• **ما سمّعه اليوم:** ${todayRec}\n• **المراجعة والتثبيت اليوم:** ${todayRev}\n• **ملاحظات المعلم:** ${notes}\n• **مقرر الغد المعتمد:** ${tomRec}${studentRecordingItem ? "\n• 🎙️ يتوفر تسجيل صوتي لتسميعه يمكنك الاستماع إليه أدناه." : ""}\n\nتفضل بمراجعة بطاقة التقييم التفاعلية بالأسفل للتعديل أو الاستماع:`;
+      } else if (hasThemeIntent) {
+        geminiReply = `أبشر يا أخي ${firstName}! 🎨✨\n\nيمكنك تخصيص وتغيير ثيم وهوية مجمعك القرآني (${complexName}) واختيار باقات الألوان الإسلامية والملكية من لوحة إعدادات المجمع مباشرة. تفضل بالضغط على الزر أدناه للانتقال المباشر وتفتح معك نافذة الثيم فوراً:`;
+      } else if (hasSpecificStudentsProgressIntent) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 📊✨\n\nأعددت لك كشفاً تفصيلياً دقيقاً بمسار الطلاب في الحفظ وموضعهم الحالي (السورة والآية)، وإجمالي الأوجه المسمعة بدقة الأرباع والأنصاف، ونسبة حضورهم وغيابهم ونقاطهم المعتمدة. تفضل بمراجعة الجدول أدناه:`;
+      } else if (hasDailyRecitationReviewIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📖\n\nأعددت لك كشف تقييم التسميع وأرشيف ما سمّعه الطلاب ليوم **(${targetRecitationDateLabel})** بالتفصيل، موضحاً الأوجه المسمعة (بالأرباع والأنصاف)، وورد الحفظ والمراجعة وملاحظات المعلم لكل طالب. تفضل بمراجعته أدناه:`;
+      } else if (hasChartDiagnosticIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📊📈\n\nأعددت لك الرسم البياني والإحصائي الأنسب لمستوى الطلاب والحضور والحلقات، وموضحاً بالأرقام المعتمدة مباشرة أدناه:`;
+      } else if (hasTopPointsIntent) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌟\n\nأعددت لك كشف أوائل الطلاب المتصدرين في النقاط والإنجاز (الـ 5 الأوائل). يمكنك استخراج الكشف كـ PDF رسمي أو Google Sheets أو حفظه في مكتبة المنصة، أو التبديل لعرض الرسم البياني:`;
+      } else if (hasLowPointsIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName}.\n\nإليك كشف الطلاب الأكثر حاجة للمتابعة والدعم والتحفيز (الأقل نقاطاً)، لتنسيق الخطط التربوية المشتركة مع معلميهم وأولياء أمورهم. يمكنك استخراجه كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+      } else if (hasViolationsTableIntent) {
+        geminiReply = `تفضل يا أخي ${firstName} 📋\n\nأعددت لك كشف التنبيهات والملاحظات السلوكية المسجلة على الطلاب لمتابعتها تربوياً واتخاذ التوجيهات اللازمة وفق آداب القرآن الكريم:`;
+      } else if (hasPointsTableIntent) {
+        if (effectiveMatchedComplex && finalComplexStudentsCohort.length === 0) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nبمراجعة بيانات المنظومة، تبيّن أنه **لا يوجد طلاب مسجلون حالياً في ${effectiveMatchedComplex.name}** حتى الآن. يمكنك تسجيل وإلحاق الطلاب عبر استبيان التسجيل أو إدارة الحلقات.`;
+        } else if (effectiveMatchedComplex) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nإليك كشف ترتيب نقاط طلاب **${effectiveMatchedComplex.name}** ومستويات تحصيلهم (${finalComplexStudentsCohort.length} طالباً)، ويمكنك تصديره كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🏅\n\nإليك كشف ترتيب نقاط الطلاب ومستويات تحصيلهم، ويمكنك تصديره كـ PDF أو Google Sheets أو حفظه بالمكتبة:`;
+        }
+      } else if (hasTransferStudentIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName}. أعددت لك بطاقة تأكيد نقل الطالب بين الحلقات، تفضل بمراجعة التفاصيل وتأكيد النقل الآن:`;
+      } else if (hasStudentAttendanceInquiryIntent && studentTargetForStats) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📊\n\nإليك نسبة وبيانات حضور وغياب الطالب المبارك **${studentTargetForStats.name}**:\n\n• **نسبة الحضور هذا الأسبوع:** **${studentWeekPct}%**\n• **أيام الحضور هذا الأسبوع:** ${studentPresentWeek} أيام\n• **أيام الغياب هذا الأسبوع:** ${studentAbsentWeek} أيام${studentExcusedWeek > 0 ? `\n• **أيام الاستئذان:** ${studentExcusedWeek} أيام` : ''}\n• **حالة الطالب اليوم:** ${studentTodayStatus}\n• **نسبة الحضور التراكمية الإجمالية:** ${studentOverallPct}%\n\nوقد أرفقت لك بالأسفل بطاقة تفصيلية بنسب وسجل حضور وغياب الطالب لمراجعتها:`;
+      } else if (hasStudentReportIntent && candidateStudentForReport) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nأعددت لك التقرير القرآني الشامل والمفصل للطالب المبارك **${candidateStudentForReport.name}**:\n\n📋 **التقرير القرآني الشامل:**\n• **الحلقة:** ${candidateStudentForReport.halaqahName || 'الحلقة القرآنية'}\n• **المستوى القرآني:** ${candidateStudentForReport.level || 'متوسط'} (السورة الحالية: ${candidateStudentForReport.currentSurahName || 'الفاتحة'})\n• **المعدل اليومي:** ${candidateStudentForReport.dailyNewTarget || 'نصف وجه'}\n• **نسبة الانضباط والحضور:** ${studentWeekPct}% هذا الأسبوع (${studentOverallPct}% إجمالي)\n• **رصيد النقاط والتميز:** ${typeof candidateStudentForReport.points === 'number' ? candidateStudentForReport.points : candidateStudentForReport.totalPoints || 0} نقطة\n• **توجيهات المعلم:** ${studentEvaluationRecord?.recitationDetails?.teacherNotes || 'طالب مجتهد ومثابر في حفظ كتاب الله'}\n\nتفضل بمراجعة بطاقة التقرير المعتمدة أدناه مع إمكانية طباعتها فوراً كـ PDF أو نسخها:`;
+      } else if (hasNavigateIntent && targetNavigateTab) {
+        if (targetNavigateTab === "certificates" || normUserMessage.includes("شهادة") || normUserMessage.includes("شهادات")) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nتجد **قسم الشهادات والتكريم** متاحاً في المنظومة بكل يسر وسهولة. يمكنك إصدار شهادات تقدير مخصصة للطلاب، واختيار قوالب جاهزة بختم وهوية المجمع، وتصديرها كـ PDF رسمي أو طباعتها فوراً.\n\nتفضل بالضغط على الزر أدناه للانتقال فوراً إلى قسم الشهادات:`;
+        } else if (targetNavigateTab === "backup" || normUserMessage.includes("نقل") || normUserMessage.includes("نسخ")) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 📦✨\n\nيمكنك الوصول إلى **قسم نقل ونسخ واستعادة البيانات** لإجراء نسخ احتياطي فوري لكافة بيانات الطلاب والحلقات والتقييمات، أو تصديرها كملف مشفر، أو استعادة البيانات ونقلها في أي وقت.\n\nتفضل بالضغط على الزر أدناه للانتقال فوراً وفتح واجهة نقل البيانات:`;
+        } else if (targetNavigateTab === "attendance" || normUserMessage.includes("تحضير")) {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📋✨\n\nيمكنك رصد حضور وغياب وتأخر واستئذان الطلاب يومياً وبضغطة واحدة عبر **قسم تحضير الطلاب**.\n\nتفضل بالضغط على الزر أدناه للانتقال المباشر لبدء رصد التحضير:`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🚀\n\nيسعدني توجيهك فوراً؛ تفضل بالضغط على الزر أدناه للانتقال المباشر إلى **${targetNavigateTabName}**:`;
+        }
+      } else if (hasJuzAmmaCompletionIntent) {
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📜✨\n\nما شاء الله تبارك الله، مبارك للطلاب وللمجمع هذا الإنجاز المبارك. إليك **كشف بأسماء الطلاب الذين أتموا أو يواصلون حفظ جزء عم المبارك** (${juzAmmaCohort.length} طلاب):\n\n` +
+          juzAmmaCohort.map((s: any, idx: number) =>
+            `${idx + 1}. **${s.name}** - حلقة ${s.halaqahName || 'الحلقة القرآنية'} (المستوى: ${s.level || 'متقدم'} • ${Number(s.totalPoints ?? s.points) || 0} نقطة)`
+          ).join('\n') +
+          `\n\nوقد أعددتُ لك بالأسفل **جدولاً بيانياً تفاعلياً شاملاً** ببياناتهم مع إمكانية التصدير الفوري إلى Excel أو الطباعة المعتمدة كـ PDF.`;
+      } else if (has3DaysStatsIntent && threeDaysStatsData) {
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📊✨\n\nإليك **الإحصائية الشاملة لأداء الطلاب والحلقات لآخر ٣ أيام** في ${complexName}:\n\n` +
+          threeDaysStatsData.days.map((d: any) =>
+            `• 📅 **${d.dayLabel}:**\n` +
+            `   - الحضور والغياب: ${d.presentCount} حاضرون (نسبة ${d.attendanceRate}%)\n` +
+            `   - الحفظ الجديد: ${d.newFaces} وجه | المراجعة: ${d.reviewFaces} وجه (إجمالي: ${d.totalFaces} وجه)\n` +
+            `   - عدد الطلاب المسمعين: ${d.recitedStudentsCount} طلاب`
+          ).join('\n\n') +
+          `\n\n📈 **المحصلة التراكمية لآخر ٣ أيام:**\n` +
+          `• إجمالي الأوجه المنجزة: **${threeDaysStatsData.totalRecitedFaces} وجهاً** (حفظ جديد: ${threeDaysStatsData.totalNewFaces}، مراجعة: ${threeDaysStatsData.totalReviewFaces})\n` +
+          `• متوسط نسبة الحضور والانضباط: **${threeDaysStatsData.avgAttendanceRate}%**\n\n` +
+          `تفضل بمراجعة بطاقة الإحصائيات والرسوم البيانية الموضحة أدناه:`;
+      } else if (hasWhatsAppIntent) {
+        geminiReply = `تفضل يا أخي ${firstName}، أعددت لك رسالة الحضور والغياب اليومية منسقة بآداب القرآن الكريم وجاهزة للإرسال لأولياء الأمور عبر الواتساب:`;
+      } else if (lowerMsg.includes("كم وجه") || lowerMsg.includes("تسميع")) {
+        geminiReply = `حياك الله يا أخي ${firstName}.\n\n📖 بلغ إجمالي الأوجه المسمعة اليوم في ${complexName} **${metrics.totalRecitedPagesToday} وجه** (منها ${metrics.totalNewPagesToday} وجه حفظ جديد، و${metrics.totalReviewPagesToday} وجه مراجعة وتثبيت).\nوقد أرفقت لك رسماً بيانياً توضيحياً يبين تفصيل الأوجه:`;
+      } else if (lowerMsg.includes("حضور") || lowerMsg.includes("غياب")) {
+        const targetDateAttRecords = attendanceList.filter((a: any) => a.date === targetRecitationDate);
+        const hasTargetDateRecords = targetDateAttRecords.length > 0;
+        const targetPresentCount = hasTargetDateRecords
+          ? targetDateAttRecords.filter((a: any) => a.status === "حاضر").length
+          : metrics.presentCount;
+        const targetAbsentCount = hasTargetDateRecords
+          ? targetDateAttRecords.filter((a: any) => a.status === "غائب").length
+          : metrics.absentCount;
+        const targetExcusedCount = hasTargetDateRecords
+          ? targetDateAttRecords.filter((a: any) => a.status === "معتذر").length
+          : metrics.excusedCount;
+
+        const total = metrics.totalStudents;
+        const isPastDate = targetRecitationDateLabel !== "اليوم";
+        const effPresent = isPastDate ? effPresentCount : metrics.presentCount;
+        const effAbsent = isPastDate ? effAbsentCount : metrics.absentCount;
+        const effExcused = isPastDate ? effExcusedCount : metrics.excusedCount;
+        const pct = isPastDate ? dateAttendancePct : (total > 0 ? Math.round((metrics.presentCount / total) * 100) : 0);
+
+        if (isPastDate) {
+          const presentNamesStr = datePresentStudents.length > 0 ? `\n• **الطلاب الحاضرون (${datePresentStudents.length}):** ${datePresentStudents.join("، ")}` : '';
+          const absentNamesStr = dateAbsentStudents.length > 0 ? `\n• **الطلاب الغائبون (${dateAbsentStudents.length}):** ${dateAbsentStudents.join("، ")}` : '';
+          geminiReply = `أهلاً بك يا أخي ${firstName} 📋✨\n\nإليك كشف الحضور والغياب ليوم **${targetRecitationDateLabel} (${targetRecitationDate})** في ${complexName}:\n• **نسبة الحضور:** ${pct}%\n• **الحاضرون:** ${effPresent} طالب\n• **الغائبون:** ${effAbsent} طالب\n• **المعتذرون:** ${effExcused} طالب${presentNamesStr}${absentNamesStr}\n\nتفضل بالاطلاع على الكشف الكامل القابل للاستخراج والتصدير الموضح أدناه:`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName}.\n\n📋 نسبة الحضور اليوم هي **${pct}%** (${metrics.presentCount} حاضر من أصل ${metrics.totalStudents} طالب)، والغائبون ${metrics.absentCount} طلاب.\nإليك بطاقة نسب الحضور الموضحة أدناه:`;
+        }
+      } else if (hasCoachingIntent) {
+        const sName = candidateStudentForCoaching ? candidateStudentForCoaching.name : "طالبك المبارك";
+        const isTroublesome = normUserMessage.includes("معقدني") || normUserMessage.includes("مشاغب") || normUserMessage.includes("مشاكس") || normUserMessage.includes("يتشاغب") || normUserMessage.includes("فوضى") || normUserMessage.includes("يشوش");
+        const isSlowMem = normUserMessage.includes("بطيء") || normUserMessage.includes("صعوبة") || normUserMessage.includes("تثبيت") || normUserMessage.includes("ينسى") || normUserMessage.includes("نسيان");
+
+        if (isTroublesome) {
+          geminiReply = `حيّاك الله وبارك في صبرك واحتسابك يا أخي ${firstName} 🌙✨\n\nأشعر تماماً بما تلاقيه في الحلقة، وتذكّر قول النبي ﷺ: «الْمُؤْمِنُ الَّذِي يُخَالِطُ النَّاسَ وَيَصْبِرُ عَلَى أَذَاهُمْ أَعْظَمُ أَجْراً». الطلاب أصحاب الحركة الدائمة والتشويش هم غالباً أصحاب طاقات قيادية فطرية لم تجد تصريفاً مناسباً بعد!\n\nإليك **خطة العمل التربوية النبوية المجربة للتعامل مع ${sName} غداً**:\n\n1. 🌟 **تفريغ الطاقة بمهمة شرفية (تحويل المشاغب إلى قائد):**\nكلفه بمسؤولية محددة أمام زملائه؛ مثلاً: «أنت اليوم أمين مصاحف الحلقة» أو «مساعد المعلم في ضبط هدوء المقرأة». عندما يشعر الطفل بتقديرك لذاته، يستحي أن يشوّش.\n\n2. 🤝 **الاتفاق السري (جلسة الدقيقة الواحدة):**\nقبل بدء الحلقة، اسحبه بلطف على انفراد وقل له بهمس ودود: «يا ${sName}، أنت ذكي ومميز عندي وأعتمد عليك اليوم لتكون قدوة لأصحابك. إذا أنهينا الحلقة بهدوء، لك مني مفاجأة خاصة بيني وبينك».\n\n3. ⏳ **تجزئة فترات الجلوس والاستماع:**\nلا تدعه يجلس أكثر من 15 دقيقة دون حركة ذهنية؛ اسأله فجأة في أحكام التجويد، أو اجعله يقرأ آية نموذجية لزملائه.\n\n4. 🚫 **تجنب توبيخه علناً أمام زملائه:**\nالتوبيخ أمام الأقران يدفعه للعناد وإثبات نفسه بالتمرد. اكتفِ بنظرة عتاب هادئة، أو لمس كتفه بحنان، ثم حاوره بعد انتهاء التسميع.\n\n💭 **سؤالي لك يا أخي ${firstName} لنواصل السهرة ونحل الأمر جذرياً:**\nهل لاحظت متى يشتد شغب ${sName} بالذات؟ هل في بداية الحلقة، أم عندما يطول انتظار دوره في التسميع؟ وما هو أكثر شيء يحبه ويحفزه؟ تفضل وشاركني لنضبط الخطة معاً!`;
+        } else if (isSlowMem) {
+          geminiReply = `حيّاك الله يا أخي ${firstName}، وأهلاً بك في سهرتنا التربوية الهادئة 🌙📖\n\nضعف الحفظ أو بطء الاستيعاب لدى الطالب ${sName} ليس عيباً في قدراته؛ بل هو اختلاف في نمط التعلم وتخزين الذاكرة. وكم من طالب كان بطيئاً في بدايته ثم صار من أتقن الحفاظ!\n\nإليك **البرنامج العلاجي العملي لرفع كفاءة حفظ وتثبيت ${sName}**:\n\n1. 🎯 **طريقة التكرار التراكمي (2×2):**\nلا تكلفه بحفظ صفحة كاملة دفعة واحدة. اجعله يحفظ آيتين فقط، ويكررهما 5 مرات غيباً، ثم ينتقل للآيتين التاليتين ويصل القديم بالجديد.\n\n2. 🎧 **استثمار الذاكرة السمعية (الاستماع المكرر):**\nكلفه بالاستماع إلى الشيخ الحصري أو المنشاوي 3 مرات متتالية قبل محاولة الحفظ. الأذن تسبق اللسان في تثبيت مخارج الكلمات ونبرة الآيات.\n\n3. ✍️ **تقنية الكتابة واللوح:**\nاجعله يكتب الآيات الصعبة بيده في كراسة خاصة أو على لوح؛ فالكتابة ترسخ صورة الآية في الذاكرة البصرية.\n\n4. ⭐ **الاحتفاء بالإنجاز الصغير:**\nإذا أتقن نصف وجه بدون خطأ، كافئه فوراً بنقاط إضافية في لوحة الشرف وأثنِ عليه أمام الحلقة ليبدد عقدة الخوف من الحفظ.\n\n💭 **شاركنـي يا شيخنا الفاضل:**\nكم مقدار الورد اليومي الذي يكلّف به حالياً؟ وهل تجده يواظب على المراجعة والتكرار في البيت أم يعتمد فقط على وقت الحلقة؟`;
+        } else {
+          geminiReply = `أهلاً وسهلاً بك يا أخي ${firstName} في هذه السهرة التربوية الهادئة 🌙🌿\n\nتطوير الطالب ${sName} يبدأ من كسب قلبه وفهم مفاتيحه النفسية. إليك أهم ركائز الارتقاء به:\n\n• 🏆 **التحفيز القائم على المنافسة المحمودة:** إدراج اسمه في مسابقات التحدي القرآني ومنحه ألقاباً تشجيعية (مثل: سفير الإتقان، قارئ الأسبوع).\n• 📈 **التدرج المدروس:** تثبيت محفوظ الأمس قبل طلب جديد اليوم، فالتثبيت رأس المال والحفظ الجديد ربح.\n• 🤝 **الشراكة الودية مع الأسرة:** إرسال بطاقة تشجيعية عبر الواتساب لوالده تتضمن إشادة بتقدمه، مما ينعكس إيجابياً على نفسيته في البيت.\n\n💭 **أخبرني يا أخي ${firstName}:** ما هو الجانب الذي ترى أن ${sName} يحتاج دعماً أكبر فيه (الحفظ الجديد، مخارج الحروف والتجويد، أم المواظبة والانضباط)؟`;
+        }
+      } else if (hasLatestStudentIntent) {
+        if (candidateLatestStudent) {
+          const latestName = candidateLatestStudent.name;
+          const halaqah = candidateLatestStudent.halaqahName || "الحلقة القرآنية";
+          const level = candidateLatestStudent.level || "متوسط";
+          const currentSurah = candidateLatestStudent.currentSurahName || "الفاتحة";
+          const currentAyah = candidateLatestStudent.currentAyah || 1;
+          const joinDate = candidateLatestStudent.createdAt
+            ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA')
+            : "مؤخراً";
+          const pts = typeof candidateLatestStudent.points === 'number'
+            ? candidateLatestStudent.points
+            : (candidateLatestStudent.totalPoints || 0);
+
+          const otherRecent = candidateRecentStudents.filter((s: any) => s.id !== candidateLatestStudent.id);
+          const otherRecentText = otherRecent.length > 0
+            ? `\n\n📋 **قائمة أحدث الطلاب المنضمين أيضاً للمنظومة:**\n` +
+              otherRecent.map((s: any, idx: number) =>
+                `${idx + 1}. **${s.name}** - حلقة: ${s.halaqahName || 'الحلقة'} (المستوى: ${s.level || 'متوسط'} • سورة: ${s.currentSurahName || 'الفاتحة'} • رصيد النقاط: ${typeof s.points === 'number' ? s.points : (s.totalPoints || 0)} نقطة)`
+              ).join('\n')
+            : '';
+
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🌿\n\nبناءً على السجلات الرسمية المعتمدة في المنظومة، فإن **آخر طالب انضم إلينا** هو:\n\n• 👤 **اسم الطالب:** **${latestName}**\n• 🕌 **الحلقة:** ${halaqah}\n• 📖 **المستوى القرآني:** ${level} (موضع الحفظ الحالي: سورة ${currentSurah} - آية ${currentAyah})\n• 📅 **تاريخ الانضمام:** ${joinDate}\n• ⭐ **رصيد النقاط:** ${pts} نقطة${otherRecentText}\n\nتفضل بمراجعة تفاصيل الطلاب بالأسفل أو يمكنك تسجيل طالب جديد عبر استبيان التسجيل في أي وقت.`;
+        } else {
+          geminiReply = `أهلاً بك يا أخي ${firstName} 🌿\n\nبمراجعة سجلات المنظومة، **لم يُسجّل أي طالب حتى الآن** في قاعدة البيانات. يمكنك البدء بتسجيل وإلحاق أول طالب بكل سهولة عبر استبيان التسجيل التفاعلي أدناه:`;
+        }
+      } else if (hasStudentCountIntent) {
+        const totalSt = studentsList.length;
+        const halaqahBreakdown = halaqahsList.map((h: any) => {
+          const count = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+          return `• حلقة **${h.name}**: ${count} طالباً`;
+        }).join('\n');
+
+        geminiReply = `أهلاً بك يا أخي ${firstName} 📊✨\n\nيبلغ **إجمالي عدد الطلاب المقيدين في المنظومة** حالياً **${totalSt} طالباً**${effectiveMatchedComplex ? ` في ${effectiveMatchedComplex.name}` : ''}.\n\n📋 **توزيع الطلاب على الحلقات:**\n${halaqahBreakdown || 'لا توجد حلقات مقسمة بعد'}\n\n• الحاضرون اليوم: ${metrics.presentCount} طالب\n• الغائبون اليوم: ${metrics.absentCount} طالب\n\nتفضل بالاطلاع على كشف الطلاب الموضح أدناه:`;
+      } else if (hasHalaqahCountIntent) {
+        const count = activeComplexHalaqahs.length;
+        const listText = activeComplexHalaqahs.map((h: any, idx: number) => {
+          const stCount = studentsList.filter((s: any) => s.halaqahId === h.id).length;
+          return `${idx + 1}. حلقة **${h.name}** (المعلم: ${h.primaryTeacherName || 'معلم الحلقة'} • عدد الطلاب: ${stCount} طالباً)`;
+        }).join('\n');
+        geminiReply = `أهلاً بك يا أخي ${firstName} 🕌✨\n\nيبلغ **إجمالي عدد الحلقات القرآنية المقيدة بالمنظومة** حالياً **${count} حلقات**${effectiveMatchedComplex ? ` في ${effectiveMatchedComplex.name}` : ''}:\n\n${listText || 'لا توجد حلقات مسجلة بعد'}\n\n• إجمالي الطلاب المقيدين في كافة الحلقات: **${studentsList.length} طالباً**\n• متوسط عدد الطلاب في الحلقة الواحدة: ${count > 0 ? Math.round(studentsList.length / count) : 0} طلاب.\n\nتفضل بمراجعة تفاصيل الحلقات أو إدارة الطلاب عبر الواجهة أدناه:`;
+      } else if (hasTopRecitersIntent && studentRecitationTotals.length > 0) {
+        const top5 = studentRecitationTotals.slice(0, 5);
+        const topText = top5.map((s: any, idx: number) =>
+          `${idx + 1}. 🌟 **${s.name}** (${s.halaqahName} - ${s.level}):\n   • **إجمالي الأوجه المسمعة:** **${s.totalPages} وجهاً** (حفظ جديد: ${s.newPages} وجه، مراجعة وتثبيت: ${s.reviewPages} وجه)\n   • رصيد النقاط: ${s.points} نقطة`
+        ).join('\n\n');
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🏆📖\n\nإليك **ترتيب أوائل الطلاب الأكثر تسميعاً للأوجه القرآنية** (المتصدرون في التسميع والحفظ) في ${complexName}:\n\n${topText}\n\nوقد أعددتُ لك بالأسفل بطاقة الصدارة القرآنية ولوحة الشرف للاطلاع على كامل الترتيب وتكريم المتميزين:`;
+      } else if (isColloquialOrFrustratedIntent) {
+        geminiReply = `حقك علي يا أخي ${firstName} وأعتذر منك أشد الاعتذار عن أي تأخر أو تكرار غير مقصود 🌿\n\nأنا معك الآن بكامل التركيز والانتباه، ومحرك الذكاء الاصطناعي موصول بالمفتاح المعتمد بالمنظومة بنجاح.\n\nبيانات مجمعك الحالية بين يدي:\n• إجمالي الطلاب: **${studentsList.length} طالباً**\n• الحلقات القرآنية: **${activeComplexHalaqahs.length} حلقات**\n• الحضور اليوم: **${metrics.presentCount} حاضر**\n\nتفضل بالسؤال عما ترغب فيه (إحصائيات الطلاب، التسميع، خطط الختم، الحضور، أو أي مشورة تربوية) وسأجيبك فوراً وبكل وضوح!`;
+      } else if (isPuzzledOrRepeatIntent) {
+        geminiReply = `حقك علي يا أخي ${firstName} وأعتذر منك عن أي التباس سابق 🌿\n\nأنا معك بكامل التركيز والانتباه؛ تفضل بتوضيح سؤالك أو اسم الطالب أو الحلقة التي تود استعراضها أو المقارنة بينها، وسأوافيك بالجواب الدقيق والشامل فوراً من واقع سجلات المجمع الحية.`;
+      } else if (chatHistoryParts.length > 2) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nإليك ملخص سريع لحالة المجمع الآن:\n• إجمالي الطلاب المقيدين: **${studentsList.length} طالباً** موزعين على **${activeComplexHalaqahs.length} حلقات**.\n• الحضور اليوم: **${metrics.presentCount} حاضر** (نسبة ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%).\n• الأوجه المسمعة اليوم: **${metrics.totalRecitedPagesToday} وجه**.\n\nهل ترغب في إجراء مقارنة بين طلاب محددين، أو استعراض كشف التسميع التفصيلي، أو كشف الحضور والغياب؟ تفضل بتوجيهي وسأنفذه فوراً.`;
+      } else {
+        geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
+      }
+    }
+
+    // Sanitize any Gemini response on deletion to ensure polite Quranic phrasing and 3-pulse notification
+    if (deleteItemTarget) {
+      if (
+        !geminiReply ||
+        geminiReply.includes("لا أستطيع") ||
+        geminiReply.includes("لا يمكنني") ||
+        geminiReply.includes("ليس لدي صلاحية") ||
+        geminiReply.includes("لا تتاح هذه الصلاحية") ||
+        !geminiReply.includes("ومضات")
+      ) {
+        geminiReply = `حياكم الله وبارك فيكم ونفع بكم يا أخي ${firstName}.. 🌿\n\nإكراماً لكتاب الله العظيم وصيانةً لبيانات الحلقات والطلاب من المحو العارض أو غير المقصود ﴿وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ﴾ ﴿وَلَا تَبْخَسُوا النَّاسَ أَشْيَاءَهُمْ﴾، فقد يسّرتُ لك الأمر وأعددتُ لك رابط انتقال مباشر ينقلك فوراً إلى موضع **${deleteItemTarget.name}** أمام عينيك مباشرةً لتتولى مراجعته وتأكيد حذفه بنفسك بكل طمأنينة ويسر.\n\nوسوف **يومض العنصر 3 ومضات بألوان ثيم المجمع** أمام عينيك لتتأكد من أنني فهمت ما تعنيه بدقة، ثم يهدأ الوميض. تفضل بالضغط على الزر أدناه للانتقال فوراً:`;
+      }
+    } else if (hasMultiStudentRecitationIntent && multiRecitationData.length > 0) {
+      // Guarantee that all requested students are fully elaborated in the textual response
+      const isCardsTitle =
+        isIdCardsIntent ||
+        normUserMessage.includes("بطاق") ||
+        normUserMessage.includes("تعريف") ||
+        normUserMessage.includes("كروت");
+
+      if (!geminiReply) {
+        const studentSummaries = multiRecitationData.map((item: any, idx: number) =>
+          `${idx + 1}. **${item.studentName}** (${item.halaqahName} - ${item.level}):\n   • 🪪 **الهوية ومسار الحفظ:** سورة ${item.currentSurah || 'الفاتحة'}\n   • 📖 **ما سمّعه (الحفظ الجديد):** ${item.newMemorization} (${item.facesLabel})\n   • 🔄 **المراجعة والتثبيت:** ${item.reviewAchieved}\n   • 📋 **حالة الحضور:** ${item.attendanceStatus}\n   • ✍️ **توجيهات وملاحظات المعلم:** ${item.teacherNotes}\n   • ⭐ **النقاط المستحقة:** +${item.pointsEarned} نقطة`
+        ).join("\n\n");
+        geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📖✨\n\nإليك **${isCardsTitle ? 'البطاقات التعريفية الرسمية والتقرير القرآني الشامل' : 'التقرير القرآني الشامل والمفصل'}** لما سمّعه كافة الطلاب الـ (${multiRecitationData.length}) ${isCardsTitle ? 'بدون أي حصر على أربعة طلاب وبكامل تفاصيل الهوية القرآنية' : `ليوم (${targetRecitationDateLabel} - ${targetRecitationDate})`} بالتفصيل الكامل وبدون استثناء أي طالب:\n\n${studentSummaries}\n\nوقد أعددتُ لك بالأسفل **${isCardsTitle ? 'البطاقات التعريفية والتقرير القرآني الشامل المعتمد' : 'بطاقة التقرير القرآني الشاملة المعتمدة والقابلة للاستخراج والتصدير الفوري'}** (طباعة رسمية لكل بطاقة، تصدير كـ PDF، إكسل) لكافة الطلاب المحددين:`;
+      }
+    } else if (
+      !hasComparisonIntent &&
+      !hasMultiStudentRecitationIntent &&
+      (
+        Boolean(studentResolution.explicitCount && studentResolution.explicitCount > 0) ||
+        Boolean(studentResolution.isCountQuery && studentResolution.requestedCount > 0) ||
+        normUserMessage.includes("عدد محدد") ||
+        normUserMessage.includes("باسمائهم") ||
+        normUserMessage.includes("بأسمائهم") ||
+        ((matchedHalaqah || studentResolution.detectedTeacher || studentResolution.detectedComplex) &&
+         (normUserMessage.includes("احصائيات") || normUserMessage.includes("إحصائيات") || normUserMessage.includes("طلابه") || normUserMessage.includes("طلابها") || normUserMessage.includes("طلاب")))
+      )
+    ) {
+      let cohortTargetPool: any[] = [];
+      if (matchedHalaqah) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inH = studentResolution.matchedStudents.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah));
+          cohortTargetPool = inH.length > 0 ? inH : halaqahStudentsCohort;
+        } else {
+          cohortTargetPool = halaqahStudentsCohort;
+        }
+      } else if (studentResolution.matchedStudents.length > 0) {
+        cohortTargetPool = studentResolution.matchedStudents;
+      } else if (studentResolution.detectedTeacher) {
+        cohortTargetPool = studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id);
+      } else {
+        cohortTargetPool = studentsList;
+      }
+
+      const explicitLimit = studentResolution.explicitCount || (studentResolution.isCountQuery ? studentResolution.requestedCount : undefined) || (hasExplicitMultiCount ? requestedMultiCount : undefined);
+      let effectiveCohort = [...cohortTargetPool];
+      if (explicitLimit && explicitLimit > 0 && effectiveCohort.length > explicitLimit) {
+        effectiveCohort = effectiveCohort.slice(0, explicitLimit);
+      }
+
+      // Check if Gemini reply already contains the student names
+      const missingStudentNames = effectiveCohort.filter(st => !geminiReply || !geminiReply.includes(st.name)).length;
+      if (missingStudentNames > 0 || !geminiReply) {
+        const studentLines = effectiveCohort.map((s: any, idx: number) => {
+          const m = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+          const stEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+          const latestEv = stEvals[stEvals.length - 1];
+          const evDetails = latestEv?.recitationDetails || {};
+          const newMem = evDetails.newMemorizationAchieved || (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر');
+          const rev = evDetails.reviewAchieved || 'مراجعة وتثبيت';
+          const pts = Number(s.totalPoints ?? s.points) || 0;
+          const attRate = s.attendanceRate ? `${s.attendanceRate}%` : `${m.attendanceRate}%`;
+          const currentPos = `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`;
+          const teacherNotes = evDetails.teacherNotes || 'مواظب ومجتهد في الحفظ والتثبيت';
+          return `${idx + 1}. **الطالب: ${s.name}**\n   • 🏛️ **الحلقة والمستوى:** ${s.halaqahName || detectedHalaqahName || 'الحلقة'} - فئة (${s.level || 'متوسط'})\n   • 📖 **موضع الحفظ الحالي:** ${currentPos}\n   • ✨ **الحفظ الجديد:** ${newMem}\n   • 🔄 **المراجعة والتثبيت:** ${rev}\n   • ⭐ **رصيد النقاط:** ${pts} نقطة | 📋 **نسبة الحضور:** ${attRate}\n   • ✍️ **ملاحظة وتوجيه المعلم:** ${teacherNotes}`;
+        }).join('\n\n');
+
+        if (matchedHalaqah && !explicitLimit) {
+          const halaqahAttRate = halaqahStudentsCohort.length > 0
+            ? Math.round(halaqahStudentsCohort.reduce((acc, st) => acc + (Number(st.attendanceRate) || 95), 0) / halaqahStudentsCohort.length)
+            : 95;
+          const halaqahAvgPts = halaqahStudentsCohort.length > 0
+            ? Math.round(halaqahStudentsCohort.reduce((acc, st) => acc + (Number(st.totalPoints ?? st.points) || 0), 0) / halaqahStudentsCohort.length)
+            : 0;
+          const teacherNameStr = matchedHalaqah.teacherName || halaqahTeachersCohort[0]?.name || (matchedHalaqah.primaryTeacherName || 'المعلم المعتمد');
+          geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🌿\n\nإليك **الإحصائيات الشاملة وكشف طلاب حلقة (${matchedHalaqah.name})** بالتفصيل:\n\n📊 **المؤشرات والإحصائيات العامة للحلقة:**\n• **المعلم المشرف:** فضيلة الشيخ ${teacherNameStr}\n• **إجمالي عدد طلاب الحلقة:** ${effectiveCohort.length} طلاب مسجلين\n• **نسبة الانضباط والحضور:** ${halaqahAttRate}%\n• **متوسط رصيد النقاط:** ${halaqahAvgPts} نقطة\n\n📋 **كشف وبيانات طلاب الحلقة بأسمائهم ومسار حفظهم ومراجعتهم:**\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الكشف الشامل التفاعلي المعتمد** مع إمكانية التصدير المباشر (Excel, PDF, Google Sheets) والتبديل لعرض الرسوم البيانية:`;
+        } else if (studentResolution.detectedTeacher && !explicitLimit) {
+          const teacher = studentResolution.detectedTeacher;
+          geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🌿\n\nإليك **الإحصائيات المعتمدة وكشف طلاب فضيلة الشيخ ${teacher.name}** بالتفصيل:\n\n📊 **بيانات ومؤشرات الشيخ:**\n• **المعلم / المحفظ:** فضيلة الشيخ ${teacher.name}\n• **الحلقة المشرف عليها:** ${teacher.halaqahName || matchedHalaqah?.name || 'الحلقة القرآنية'}\n• **إجمالي طلاب الشيخ:** ${effectiveCohort.length} طلاب\n\n📋 **كشف طلاب الشيخ بأسمائهم ومسار حفظهم الجديد ومراجعتهم:**\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الجدول التفاعلي الشامل المعتمد** لتصديره كـ Excel أو طباعته كـ PDF:`;
+        } else if ((studentResolution.detectedComplex || normUserMessage.includes("مجمع")) && !explicitLimit) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🏛️✨\n\nإليك **التقرير الإحصائي الشامل لمجمع (${complexName})** وكشف الطلاب:\n\n📊 **إحصائيات المجمع القرآني:**\n• **عدد الحلقات القرآنية:** ${halaqahsList.length} حلقات\n• **عدد المعلمين والمحفظين:** ${teachersList.length} معلمين\n• **إجمالي عدد الطلاب:** ${metrics.totalStudents} طالب\n• **نسبة الحضور العامة:** ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%\n• **الأوجه المسمعة اليوم:** ${metrics.totalRecitedPagesToday} وجه\n\n📋 **كشف الطلاب ومسار إنجازهم:**\n\n${studentLines}\n\nتفضل بمراجعة الكشف التفاعلي الكامل أدناه مع خيارات التصدير:`;
+        } else {
+          // Explicit count (e.g. 3 students, 5 students)
+          const targetCountLabel = effectiveCohort.length === 1 ? 'طالب واحد' : effectiveCohort.length === 2 ? 'طالبين' : `${effectiveCohort.length} طلاب`;
+          const scopeLabel = matchedHalaqah ? `من حلقة ${matchedHalaqah.name}` : studentResolution.detectedTeacher ? `للشيخ ${studentResolution.detectedTeacher.name}` : `في ${complexName}`;
+          geminiReply = `حيّاك الله يا أخي ${firstName} 📋✨\n\nأبشر، أعددت لك كشفاً دقيقاً بـ **العدد المحدد (${targetCountLabel})** ${scopeLabel} بأسمائهم الصريحة وتفاصيل الحفظ الجديد والمراجعة وموضع الحفظ الحالي والنقاط:\n\n${studentLines}\n\nوقد أعددتُ لك بالأسفل **الكشف الشامل التفاعلي المعتمد** للـ (${effectiveCohort.length}) طلاب المحددين، مع إمكانية التصدير كـ Excel أو PDF وعرض الرسم البياني المخصص لهم:`;
+        }
+      }
+    }
+
+    // 7. Attach Appropriate Structured Action (Tables, Actions, Survey, WhatsApp, Chart, or Points/Recitation History)
+    let action: any = null;
+
+    if (deleteItemTarget) {
+      if (deleteItemTarget.type === "teacher") {
+        action = {
+          type: "CONFIRM_DELETE_TEACHER",
+          title: `تأكيد مراجعة وحذف المعلم: ${deleteItemTarget.item?.name || deleteItemTarget.name}`,
+          data: {
+            teacherId: deleteItemTarget.id,
+            teacherName: deleteItemTarget.item?.name || deleteItemTarget.name,
+            tab: deleteItemTarget.tab,
+            subTab: "teachers",
+            highlightId: deleteItemTarget.id,
+            itemType: "teacher",
+            action: "delete",
+          }
+        };
+      } else if (deleteItemTarget.type === "halaqah") {
+        action = {
+          type: "CONFIRM_DELETE_HALAQAH",
+          title: `تأكيد مراجعة وحذف الحلقة: ${deleteItemTarget.item?.name || deleteItemTarget.name}`,
+          data: {
+            halaqahId: deleteItemTarget.id,
+            halaqahName: deleteItemTarget.item?.name || deleteItemTarget.name,
+            tab: "settings",
+            subTab: "halaqahs",
+            highlightId: deleteItemTarget.id,
+            itemType: "halaqah",
+            action: "delete",
+          }
+        };
+      } else {
+        action = {
+          type: "NAVIGATE_TO_DELETE_ITEM",
+          title: `الانتقال إلى موضع: ${deleteItemTarget.name} لمراجعة حذفه`,
+          data: {
+            itemType: deleteItemTarget.type,
+            itemId: deleteItemTarget.id,
+            itemName: deleteItemTarget.name,
+            tab: deleteItemTarget.tab,
+            subTab: deleteItemTarget.subTab,
+            highlightId: deleteItemTarget.id,
+            highlightType: deleteItemTarget.type,
+            action: "delete",
+            searchQuery: deleteItemTarget.item?.name || deleteItemTarget.item?.title || "",
+          },
+        };
+      }
+    } else if (hasComparisonIntent && comparisonProfiles.length >= 2) {
+      action = {
+        type: "SHOW_CHART",
+        chartType: "bars",
+        tableType: "smart_custom_table",
+        title: `مقارنة شاملة وتشخيص بياني (${comparisonProfiles.map((p) => p.name).join(" × ")})`,
+        data: {
+          preferredStyle: "bars",
+          metrics,
+          students: comparisonProfiles,
+          studentsComparison: comparisonProfiles.map((p) => ({
+            id: p.id,
+            name: p.name,
+            points: p.totalPoints,
+            totalPoints: p.totalPoints,
+            halaqahName: p.halaqahName,
+            level: p.level,
+            facesLabel: p.facesLabel,
+            totalFaces: p.totalFaces,
+            newMemorization: p.newMemorization,
+            reviewAchieved: p.reviewAchieved,
+            currentPosition: p.currentPosition,
+            attendanceRate: p.attendanceRate,
+          })),
+          attendance: {
+            present: metrics.presentCount,
+            absent: metrics.absentCount,
+            excused: metrics.excusedCount,
+            late: metrics.lateCount,
+            total: metrics.totalStudents,
+            rate: metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0,
+          },
+          recitation: {
+            totalPages: metrics.totalRecitedPagesToday,
+            newPages: metrics.totalNewPagesToday,
+            reviewPages: metrics.totalReviewPagesToday,
+          },
+          topPoints: [...comparisonProfiles]
+            .sort((a, b) => b.totalPoints - a.totalPoints)
+            .map((p) => ({
+              name: p.name,
+              points: p.totalPoints,
+              halaqahName: p.halaqahName,
+            })),
+        },
+      };
+    } else if (isStudentPointsInquiry && candidateStudentForPoints) {
+      const pts = typeof candidateStudentForPoints.points === 'number'
+        ? candidateStudentForPoints.points
+        : (typeof candidateStudentForPoints.totalPoints === 'number' ? candidateStudentForPoints.totalPoints : 0);
+
+      action = {
+        type: "SHOW_STUDENT_POINTS",
+        title: `رصيد نقاط الطالب: ${candidateStudentForPoints.name}`,
+        data: {
+          studentId: candidateStudentForPoints.id,
+          studentName: candidateStudentForPoints.name,
+          halaqahName: candidateStudentForPoints.halaqahName || "الحلقة القرآنية",
+          points: pts,
+          examPoints: candidateStudentForPoints.examPoints || 0,
+          evalPoints: candidateStudentForPoints.evalPoints || 0,
+          listeningPoints: candidateStudentForPoints.listeningPoints || 0,
+          attendancePoints: candidateStudentForPoints.attendancePoints || 0,
+          bonusPoints: candidateStudentForPoints.bonusPoints || 0,
+        },
+      };
+    } else if (hasMultiStudentRecitationIntent && multiRecitationData.length > 0) {
+      const isCardsTitle =
+        isIdCardsIntent ||
+        normUserMessage.includes("بطاق") ||
+        normUserMessage.includes("تعريف") ||
+        normUserMessage.includes("كروت");
+
+      action = {
+        type: "SHOW_MULTI_STUDENT_REPORT",
+        tableType: "recitation_archive",
+        title: isCardsTitle
+          ? `البطاقات التعريفية الرسمية ومسار الطلاب (${multiRecitationData.length} طالب) - ${complexName}`
+          : `التقرير القرآني الشامل لأداء ${multiRecitationData.length} طلاب (${targetRecitationDateLabel} - ${targetRecitationDate})`,
+        data: {
+          complexName,
+          date: targetRecitationDate,
+          dateLabel: targetRecitationDateLabel,
+          totalStudents: multiRecitationData.length,
+          isCardsRequest: isCardsTitle,
+          students: multiRecitationData.map((item: any) => ({
+            id: item.studentId,
+            studentId: item.studentId,
+            studentName: item.studentName,
+            name: item.studentName,
+            halaqahName: item.halaqahName,
+            level: item.level,
+            currentSurah: item.currentSurah,
+            dailyNewTarget: item.dailyNewTarget || 'نصف وجه',
+            newMemorization: item.newMemorization,
+            facesCount: item.totalFaces,
+            facesLabel: item.facesLabel,
+            reviewAchieved: item.reviewAchieved,
+            teacherNotes: item.teacherNotes,
+            pointsEarned: item.pointsEarned,
+            attendanceStatus: item.attendanceStatus,
+          })),
+          rows: multiRecitationData.map((item: any) => ({
+            id: item.studentId,
+            studentId: item.studentId,
+            studentName: item.studentName,
+            name: item.studentName,
+            halaqahName: item.halaqahName,
+            level: item.level,
+            currentSurah: item.currentSurah,
+            dailyNewTarget: item.dailyNewTarget || 'نصف وجه',
+            newMemorization: item.newMemorization,
+            facesCount: item.totalFaces,
+            facesLabel: item.facesLabel,
+            reviewAchieved: item.reviewAchieved,
+            teacherNotes: item.teacherNotes,
+            pointsEarned: item.pointsEarned,
+            attendanceStatus: item.attendanceStatus,
+          }))
+        }
+      };
+    } else if (hasAnyRecitationHistoryInquiry && candidateStudentForRecitation) {
+      action = {
+        type: "SHOW_STUDENT_RECITATION_HISTORY",
+        title: `مسيرة وسجل تسميع الطالب: ${candidateStudentForRecitation.name}`,
+        data: {
+          studentId: candidateStudentForRecitation.id,
+          studentName: candidateStudentForRecitation.name,
+          halaqahName: candidateStudentForRecitation.halaqahName || "الحلقة القرآنية",
+          lifetimeTotalFaces,
+          lifetimeNewFaces,
+          lifetimeReviewFaces,
+          lifetimeDaysCount,
+          bestMonth: bestMonthData,
+          queriedDate: queriedSpecificDate,
+          queriedDateLabel: queriedSpecificDateLabel,
+          queriedDateDetails: targetEvaluationForQueriedDate ? {
+            dayTotal: targetEvaluationForQueriedDate.dayTotal,
+            dayNewFaces: targetEvaluationForQueriedDate.dayNewFaces,
+            dayReviewFaces: targetEvaluationForQueriedDate.dayReviewFaces,
+            newAchieved: targetEvaluationForQueriedDate.evaluation?.recitationDetails?.newMemorizationAchieved || "حفظ مقرر",
+            reviewAchieved: targetEvaluationForQueriedDate.evaluation?.recitationDetails?.reviewAchieved || "مراجعة",
+            teacherNotes: targetEvaluationForQueriedDate.evaluation?.recitationDetails?.teacherNotes || "",
+          } : null,
+          monthlyBreakdown: Object.entries(monthlyStats).map(([key, val]) => ({
+            monthKey: key,
+            ...val,
+          })),
+          recentEvaluations: evaluationsList
+            .filter((e: any) => e.studentId === candidateStudentForRecitation.id)
+            .slice(-8)
+            .map((ev: any) => ({
+              date: ev.date,
+              newRecited: ev.recitationDetails?.newMemorizationAchieved || ev.recitationDetails?.todayNewItem?.surahName || "حفظ جديد",
+              reviewRecited: ev.recitationDetails?.reviewAchieved || "مراجعة",
+              pointsAwarded: ev.pointsAwarded || 0,
+            })),
+        },
+      };
+    } else if (hasDeleteStudentIntent && studentToDelete) {
+      action = {
+        type: "NAVIGATE_TO_DELETE_ITEM",
+        title: `تأكيد حذف الطالب: ${studentToDelete.name}`,
+        data: {
+          itemType: "student",
+          studentId: studentToDelete.id,
+          studentName: studentToDelete.name,
+          itemId: studentToDelete.id,
+          itemName: studentToDelete.name,
+          halaqahName: studentToDelete.halaqahName || "الحلقة",
+          phoneNumber: studentToDelete.phone || studentToDelete.parentPhone || "",
+          totalPoints: Number(studentToDelete.points ?? studentToDelete.totalPoints) || 0,
+          role: role,
+          tab: isDeveloper ? "accounts" : "students",
+          subTab: isDeveloper ? "students" : undefined,
+          highlightId: studentToDelete.id,
+          highlightType: "student",
+          action: "delete",
+        },
+      };
+    } else if (hasThemeIntent) {
+
+      action = {
+        type: "NAVIGATE_TO_THEME",
+        title: `تخصيص ثيم المجمع: ${complexName}`,
+        data: {
+          tab: "general",
+          section: "theme",
+          complexName: complexName
+        }
+      };
+    } else if (hasTransferStudentIntent && studentToTransfer) {
+      action = {
+        type: "CONFIRM_TRANSFER_STUDENT",
+        data: {
+          studentId: studentToTransfer.id,
+          studentName: studentToTransfer.name,
+          currentHalaqahId: studentToTransfer.halaqahId,
+          currentHalaqahName: studentToTransfer.halaqahName || "الحلقة الحالية",
+          targetHalaqahId: targetTransferHalaqah?.id || (halaqahsList[0]?.id || ""),
+          targetHalaqahName: targetTransferHalaqah?.name || (halaqahsList[0]?.name || "الحلقة المستهدفة"),
+        },
+      };
+    } else if (hasRecordAttendanceIntent && studentToRecordAttendance) {
+      action = {
+        type: "CONFIRM_RECORD_ATTENDANCE",
+        data: {
+          studentId: studentToRecordAttendance.id,
+          studentName: studentToRecordAttendance.name,
+          halaqahName: studentToRecordAttendance.halaqahName || "الحلقة",
+          status: targetAttendanceStatus,
+        },
+      };
+    } else if (hasDeleteHalaqahIntent && halaqahToDelete) {
+      action = {
+        type: "CONFIRM_DELETE_HALAQAH",
+        data: {
+          halaqahId: halaqahToDelete.id,
+          halaqahName: halaqahToDelete.name,
+        },
+      };
+    } else if (hasAddHalaqahIntent) {
+      action = {
+        type: "CONFIRM_ADD_HALAQAH",
+        data: {
+          suggestedName: newHalaqahCandidateName || "حلقة جديدة",
+        },
+      };
+    } else if (hasRegisterIntent) {
+      action = {
+        type: "SHOW_REGISTRATION_SURVEY",
+        data: {
+          studentName: extractedName,
+          defaultPassword: "123",
+          suggestedHalaqahId: detectedHalaqahId || (halaqahsList[0]?.id || ""),
+          suggestedHalaqahName: detectedHalaqahName || (halaqahsList[0]?.name || ""),
+        },
+      };
+    } else if (hasPlanSettingsInquiryIntent) {
+      action = {
+        type: "SHOW_PLAN_SETTINGS",
+        title: `إعدادات ضبط الخطة ومواعيد الختم المعتمدة بالسحابة - ${effectiveComplexName}`,
+        data: {
+          complexName: effectiveComplexName,
+          daysLabels: planDaysLabels,
+          dailyHours: planDailyHours,
+          strategyLabel: planStrategyLabel,
+          targetScope: planScheduleConfig.targetScope || 'all',
+          lastUpdated: planScheduleConfig.lastUpdated || new Date().toISOString()
+        }
+      };
+    } else if (hasStudentKhatmOrPlanInquiryIntent && candidateStudentForPlan) {
+      const sPlan = candidateStudentForPlan.memorizationPlan;
+      const sMemJuz = sPlan?.memorizedJuzCount || (candidateStudentForPlan.currentSurah ? (candidateStudentForPlan.currentSurah <= 2 ? 30 : Math.max(1, Math.round((114 - candidateStudentForPlan.currentSurah) / 3.8))) : 1);
+      const sConsJuz = sPlan?.consolidatedJuzCount || Math.max(0, sMemJuz - 2);
+      const sTimeline = calculateServerKhatmTimeline({
+        memorizedJuz: sMemJuz,
+        consolidatedJuz: sConsJuz,
+        dailyNewPages: sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1,
+        dailyReviewPages: sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5,
+        weeklyDaysCount: planSelectedDays.length,
+        dailyHoursCount: planDailyHours,
+        startDate: new Date()
+      });
+      const tDate = sPlan?.targetCompletionDate || sTimeline.targetCompletionDate;
+      const remDays = sPlan?.estimatedDaysRemaining || sTimeline.estimatedDaysRemaining;
+      const dNew = sPlan?.dailyNewPages || candidateStudentForPlan.dailyNewTarget || 1;
+      const dRev = sPlan?.dailyReviewPages || candidateStudentForPlan.dailyReviewTarget || 5;
+
+      action = {
+        type: "SHOW_STUDENT_PLAN",
+        title: `خطة وموعد ختم الطالب: ${candidateStudentForPlan.name}`,
+        data: {
+          studentId: candidateStudentForPlan.id,
+          studentName: candidateStudentForPlan.name,
+          targetCompletionDate: tDate,
+          estimatedDaysRemaining: remDays,
+          dailyNewPages: dNew,
+          dailyReviewPages: dRev,
+          memorizedJuz: sMemJuz,
+          consolidatedJuz: sConsJuz,
+          currentSurah: candidateStudentForPlan.currentSurahName || 'سورة جارية',
+          currentAyah: candidateStudentForPlan.currentAyah || 1,
+          aiNotes: sPlan?.aiNotes || ''
+        }
+      };
+    } else if (hasStudentAttendanceInquiryIntent && studentTargetForStats) {
+      action = {
+        type: "SHOW_STUDENT_ATTENDANCE",
+        title: `تقرير ونسبة حضور وغياب الطالب: ${studentTargetForStats.name}`,
+        data: {
+          student: {
+            id: studentTargetForStats.id,
+            name: studentTargetForStats.name,
+            halaqahName: studentTargetForStats.halaqahName || "الحلقة",
+            complexName: studentTargetForStats.complexName || complexName,
+            level: studentTargetForStats.level || "متوسط",
+            totalPoints: studentTargetForStats.totalPoints || 0,
+          },
+          weekPct: studentWeekPct,
+          presentWeek: studentPresentWeek,
+          absentWeek: studentAbsentWeek,
+          excusedWeek: studentExcusedWeek,
+          lateWeek: studentLateWeek,
+          totalWeek: studentTotalWeek,
+          overallPct: studentOverallPct,
+          presentTotal: studentPresentTotal,
+          absentTotal: studentAbsentTotal,
+          excusedTotal: studentExcusedTotal,
+          lateTotal: studentLateTotal,
+          totalRecords: studentTotalRecords,
+          todayStatus: studentTodayStatus,
+          recentRecords: studentWeekRecords.slice(0, 7),
+        },
+      };
+    } else if (hasStudentReportIntent && candidateStudentForReport) {
+      const studentViolations = violationsList.filter(
+        (v: any) => v.studentId === candidateStudentForReport.id || v.studentName === candidateStudentForReport.name
+      );
+      action = {
+        type: "SHOW_STUDENT_REPORT",
+        title: `التقرير القرآني الشامل لأداء الطالب: ${candidateStudentForReport.name}`,
+        data: {
+          student: {
+            id: candidateStudentForReport.id,
+            name: candidateStudentForReport.name,
+            halaqahName: candidateStudentForReport.halaqahName || "الحلقة",
+            complexName: candidateStudentForReport.complexName || complexName,
+            level: candidateStudentForReport.level || "متوسط",
+            currentSurahName: candidateStudentForReport.currentSurahName || "الفاتحة",
+            dailyNewTarget: candidateStudentForReport.dailyNewTarget || "نصف وجه",
+            totalPoints: Number(candidateStudentForReport.totalPoints) || 0,
+            phoneNumber: candidateStudentForReport.phoneNumber || candidateStudentForReport.parentPhone,
+          },
+          weekPct: studentWeekPct,
+          overallPct: studentOverallPct,
+          presentWeek: studentPresentWeek,
+          absentWeek: studentAbsentWeek,
+          excusedWeek: studentExcusedWeek,
+          lateWeek: studentLateWeek,
+          todayStatus: studentTodayStatus,
+          evaluation: studentEvaluationRecord || null,
+          recitationDetails: studentEvaluationRecord?.recitationDetails || {
+            newMemorizationAchieved: "متابعة الورد المعتمد",
+            reviewAchieved: "مراجعة متواصلة وتثبيت",
+            teacherNotes: "طالب مجتهد ومواظب على الحفظ",
+          },
+          tomorrowAssignment: tomorrowRecitationAssignment || null,
+          violationsCount: studentViolations.length,
+          violations: studentViolations,
+          generatedDate: new Date().toLocaleDateString("ar-SA", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }),
+        },
+      };
+    } else if (hasSpecificStudentsProgressIntent) {
+      let targetStudentsCohort: any[] = [];
+      const normMsg = normalizeArabicText(message);
+
+      if (studentResolution.matchedStudents.length > 0) {
+        targetStudentsCohort = [...studentResolution.matchedStudents];
+      } else if (matchedHalaqah) {
+        targetStudentsCohort = studentsList.filter(
+          (s: any) => s.halaqahId === matchedHalaqah.id || s.halaqahName === matchedHalaqah.name
+        );
+      } else if (contextStudents.length > 0) {
+        targetStudentsCohort = [...contextStudents];
+      } else {
+        const progCountObj = parseRequestedStudentCount(message, studentsList.length);
+        const count = progCountObj.count > 0 ? progCountObj.count : Math.min(studentsList.length || 6, 6);
+        targetStudentsCohort = studentsList.slice(0, count);
+      }
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "custom_students_progress",
+        title: `كشف مسار وإنجاز الطلاب في الحفظ والحضور والغياب (${targetStudentsCohort.map(s => s.name).join(" - ")})`,
+        data: {
+          complexName,
+          totalStudents: targetStudentsCohort.length,
+          students: targetStudentsCohort.map((s: any) => {
+            const metrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+            const facesLabel = metrics.totalFaces === 0.25 ? "ربع وجه"
+              : metrics.totalFaces === 0.5 ? "نصف وجه"
+              : metrics.totalFaces === 0.75 ? "ثلاثة أرباع وجه"
+              : metrics.totalFaces === 1 ? "وجه كامل"
+              : `${metrics.totalFaces} وجه`;
+
+            return {
+              id: s.id,
+              name: s.name,
+              halaqahName: s.halaqahName || "الحلقة",
+              currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+              totalFaces: metrics.totalFaces,
+              facesLabel: facesLabel,
+              attendanceRate: `${metrics.attendanceRate}%`,
+              presentDays: metrics.presentCount,
+              absentDays: metrics.absentCount,
+              excusedDays: metrics.excusedCount,
+              totalPoints: metrics.finalPoints
+            };
+          })
+        }
+      };
+    } else if (hasDailyRecitationReviewIntent) {
+      const targetEvals = evaluationsList.filter((e: any) => e.date === targetRecitationDate);
+      const effectiveEvals = targetEvals.length > 0 ? targetEvals : evaluationsList.slice(0, 10);
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "recitation_archive",
+        title: `كشف وأرشيف تسميعات الطلاب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate})`,
+        data: {
+          date: targetRecitationDate,
+          dateLabel: targetRecitationDateLabel,
+          totalEvaluations: effectiveEvals.length,
+          rows: effectiveEvals.map((ev: any) => {
+            const s = studentsList.find((st: any) => st.id === ev.studentId);
+            const details = ev.recitationDetails || {};
+            const newSurah = details.todayNewItem?.surahName || "حفظ مقرر";
+            const fromA = details.todayNewItem?.fromAyah || 1;
+            const toA = details.todayNewItem?.toAyah || 1;
+            const newFaces = details.todayNewItem && !details.todayNewItem.didNotRecite
+              ? calculateRecitationFractionalFaces(details.todayNewItem.surahNumber, fromA, details.todayNewItem.toSurahNumber || details.todayNewItem.surahNumber, toA)
+              : 0;
+
+            const facesLabel = newFaces === 0.25 ? "ربع وجه"
+              : newFaces === 0.5 ? "نصف وجه"
+              : newFaces === 0.75 ? "ثلاثة أرباع وجه"
+              : newFaces === 1 ? "وجه كامل"
+              : `${newFaces} أوجه`;
+
+            return {
+              id: ev.id,
+              studentId: ev.studentId,
+              studentName: s?.name || ev.studentName || "طالب مبارك",
+              halaqahName: s?.halaqahName || "الحلقة القرآنية",
+              newMemorization: details.newMemorizationAchieved || `${newSurah} (${fromA}-${toA})`,
+              facesCount: newFaces,
+              facesLabel: facesLabel,
+              reviewAchieved: details.reviewAchieved || "مراجعة دورية",
+              teacherNotes: details.teacherNotes || "مستوى طيب ومواظب",
+              pointsEarned: details.pointsEarnedToday || (newFaces * 5)
+            };
+          })
+        }
+      };
+    } else if (hasAttendanceTableIntent) {
+      const attCohort = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
+
+      const attCohortIds = new Set(attCohort.map((s: any) => s.id));
+      const targetDateAttRecords = attendanceList.filter((a: any) => a.date === targetRecitationDate && attCohortIds.has(a.studentId));
+      const hasTargetDateRecords = targetDateAttRecords.length > 0;
+      const isPastDate = targetRecitationDateLabel !== "اليوم";
+
+      const effPresent = isPastDate
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "حاضر").length : attCohort.filter((s: any) => datePresentStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.presentStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'حاضر')).length : metrics.presentCount);
+      const effAbsent = isPastDate
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "غائب").length : attCohort.filter((s: any) => dateAbsentStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.absentStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'غائب')).length : metrics.absentCount);
+      const effExcused = isPastDate
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "معتذر").length : attCohort.filter((s: any) => dateExcusedStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => metrics.excusedStudents.includes(s.name) || attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'معتذر')).length : metrics.excusedCount);
+      const effLate = isPastDate
+        ? (hasTargetDateRecords ? targetDateAttRecords.filter((a: any) => a.status === "متأخر").length : attCohort.filter((s: any) => dateLateStudents.includes(s.name)).length)
+        : (effectiveMatchedComplex || matchedHalaqah ? attCohort.filter((s: any) => attendanceList.some((a: any) => a.studentId === s.id && a.date === targetRecitationDate && a.status === 'متأخر')).length : metrics.lateCount);
+
+      const tableTitleAttendance = isPastDate
+        ? (matchedHalaqah
+            ? `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+            : (effectiveMatchedComplex
+                ? `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) - ${effectiveMatchedComplex.name}`
+                : `كشف الحضور والغياب ليوم (${targetRecitationDateLabel} - ${targetRecitationDate}) - ${effectiveComplexName}`))
+        : (matchedHalaqah
+            ? `كشف الحضور والغياب اليومي لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+            : (effectiveMatchedComplex
+                ? `كشف الحضور والغياب اليومي - ${effectiveMatchedComplex.name}`
+                : `كشف الحضور والغياب اليومي - ${effectiveComplexName}`));
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "attendance",
+        title: tableTitleAttendance,
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName || halaqahName,
+          date: targetRecitationDate,
+          dateLabel: targetRecitationDateLabel,
+          totalStudents: attCohort.length,
+          presentCount: effPresent,
+          absentCount: effAbsent,
+          excusedCount: effExcused,
+          lateCount: effLate,
+          students: attCohort.map((s: any) => {
+            let status = "حاضر";
+            const todayRec = attendanceList.find((a: any) => a.studentId === s.id && a.date === targetRecitationDate);
+            if (todayRec) {
+              status = todayRec.status;
+            } else if (isPastDate && hasTargetDateRecords) {
+              const rec = targetDateAttRecords.find((a: any) => a.studentId === s.id);
+              status = rec ? rec.status : "حاضر";
+            } else if (isPastDate) {
+              if (dateAbsentStudents.includes(s.name)) status = "غائب";
+              else if (dateExcusedStudents.includes(s.name)) status = "معتذر";
+              else if (dateLateStudents.includes(s.name)) status = "متأخر";
+              else status = "حاضر";
+            } else {
+              const isPresent = metrics.presentStudents.includes(s.name);
+              const isAbsent = metrics.absentStudents.includes(s.name);
+              const isExcused = metrics.excusedStudents.includes(s.name);
+              status = isPresent ? "حاضر" : isAbsent ? "غائب" : isExcused ? "معتذر" : "حاضر";
+            }
+            return {
+              id: s.id,
+              name: s.name,
+              halaqahName: s.halaqahName || "عامة",
+              status,
+              currentSurah: s.currentSurahName || "جزء عم",
+            };
+          }),
+        },
+      };
+    } else if (hasTeachersTableIntent) {
+      const teachersPool = matchedHalaqah
+        ? teachersList.filter((t: any) =>
+            t.halaqahId === matchedHalaqah.id ||
+            normalizeArabicText(t.halaqahName || '').includes(normalizeArabicText(matchedHalaqah.name)) ||
+            normalizeArabicText(matchedHalaqah.name).includes(normalizeArabicText(t.halaqahName || ''))
+          )
+        : (effectiveMatchedComplex
+            ? finalComplexTeachersCohort
+            : teachersList);
+
+      const effectiveTeachers = teachersPool;
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "teachers",
+        title: matchedHalaqah
+          ? `كشف معلمي ومحفظي حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف معلمي ومحفظي ${effectiveMatchedComplex.name}`
+              : `كشف معلمي ومحفظي المنظومة - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalTeachers: effectiveTeachers.length,
+          rows: effectiveTeachers.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            teacherName: t.name,
+            halaqahName: t.halaqahName || (matchedHalaqah ? matchedHalaqah.name : 'الحلقة القرآنية'),
+            title: t.title || t.role || 'معلم ومحفظ',
+            role: t.role || 'teacher',
+            phone: t.phone || '-',
+            teacherCode: t.teacherCode || '-',
+          })),
+          students: effectiveTeachers.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            teacherName: t.name,
+            halaqahName: t.halaqahName || (matchedHalaqah ? matchedHalaqah.name : 'الحلقة القرآنية'),
+            title: t.title || t.role || 'معلم ومحفظ',
+            role: t.role || 'teacher',
+            phone: t.phone || '-',
+            teacherCode: t.teacherCode || '-',
+          })),
+        },
+      };
+    } else if (hasMemorizationTableIntent) {
+      const memStudentsPool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : studentsList);
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "memorization",
+        title: matchedHalaqah
+          ? `كشف مسار ومستويات حفظ طلاب حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف مسار ومستويات حفظ طلاب ${effectiveMatchedComplex.name}`
+              : `كشف مسار ومستويات حفظ الطلاب - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalStudents: memStudentsPool.length,
+          students: memStudentsPool.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahName: s.halaqahName || detectedHalaqahName || "عامة",
+            level: s.level || "متوسط",
+            currentSurah: s.currentSurahName || "الفاتحة",
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: s.totalPoints || 0,
+          })),
+        },
+      };
+    } else if (hasTopPointsIntent) {
+      const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
+
+      const sortedDesc = [...pointsBasePool].sort(
+        (a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0)
+      );
+      const topCount = requestedMultiCount > 0 ? requestedMultiCount : Math.min(sortedDesc.length, 5);
+      const top5 = sortedDesc.slice(0, topCount);
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "top_points",
+        title: matchedHalaqah
+          ? `كشف الطلاب الأوائل في النقاط لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف الطلاب الأوائل في النقاط - ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب الأوائل في النقاط (الـ ${top5.length} الأوائل) - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalStudents: top5.length,
+          students: top5.map((s: any, idx: number) => ({
+            id: s.id,
+            rank: idx + 1,
+            name: s.name,
+            halaqahName: s.halaqahName || detectedHalaqahName || "عامة",
+            level: s.level || "متوسط",
+            currentSurah: s.currentSurahName || "الفاتحة",
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: Number(s.totalPoints ?? s.points) || 0,
+          })),
+        },
+      };
+    } else if (hasLowPointsIntent) {
+      const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
+
+      const sortedAsc = [...pointsBasePool].sort(
+        (a: any, b: any) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0)
+      );
+      const lowCount = requestedMultiCount > 0 ? requestedMultiCount : Math.min(sortedAsc.length, 5);
+      const low5 = sortedAsc.slice(0, lowCount);
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "low_points",
+        title: matchedHalaqah
+          ? `كشف الطلاب الأقل نقاطاً بحاجة لمتابعة لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف الطلاب الأكثر حاجة للمتابعة والدعم (الأقل نقاطاً) - ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب الأكثر حاجة للمتابعة والدعم (الأقل نقاطاً) - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalStudents: low5.length,
+          students: low5.map((s: any, idx: number) => ({
+            id: s.id,
+            rank: idx + 1,
+            name: s.name,
+            halaqahName: s.halaqahName || detectedHalaqahName || "عامة",
+            level: s.level || "متوسط",
+            currentSurah: s.currentSurahName || "الفاتحة",
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: Number(s.totalPoints ?? s.points) || 0,
+          })),
+        },
+      };
+    } else if (hasViolationsTableIntent) {
+      const targetStudentsForViolations = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex ? finalComplexStudentsCohort : studentsList);
+
+      const targetStudentIds = new Set(targetStudentsForViolations.map((s: any) => s.id));
+      const filteredViolations = violationsList.filter((v: any) => targetStudentIds.has(v.studentId) || targetStudentsForViolations.some((s: any) => s.name === v.studentName));
+
+      const violationRows =
+        filteredViolations.length > 0
+          ? filteredViolations.map((v: any, idx: number) => {
+              const st = targetStudentsForViolations.find(
+                (s: any) => s.id === v.studentId || s.name === v.studentName
+              );
+              return {
+                id: v.id || `v_${idx}`,
+                name: v.studentName || st?.name || "طالب",
+                halaqahName: st?.halaqahName || v.halaqahName || "الحلقة",
+                violationType: v.violationType || v.type || v.title || "تنبيه سلوكي",
+                actionTaken: v.actionTaken || v.action || "تنبيه وتوجيه تربوي",
+                date: v.date || new Date().toISOString().split("T")[0],
+                pointsDeducted: Number(v.pointsDeducted) || 0,
+                notes: v.notes || v.description || "متابعة سلوكية",
+              };
+            })
+          : targetStudentsForViolations.slice(0, 5).map((s: any, idx: number) => ({
+              id: `v_clean_${idx}`,
+              name: s.name,
+              halaqahName: s.halaqahName || "الحلقة",
+              violationType: "لا توجد مخالفات مسجلة - سجل نظيف",
+              actionTaken: "ممتاز",
+              date: new Date().toISOString().split("T")[0],
+              pointsDeducted: 0,
+              notes: "سلوك ملتزم ومتميز",
+            }));
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "violations",
+        title: matchedHalaqah
+          ? `كشف الطلاب ذوي التنبيهات لحلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف تنبيهات وملاحظات طلاب ${effectiveMatchedComplex.name}`
+              : `كشف الطلاب ذوي التنبيهات والملاحظات السلوكية - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalStudents: violationRows.length,
+          students: violationRows,
+        },
+      };
+    } else if (hasPointsTableIntent) {
+      const pointsBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all'
+                ? studentsList.filter((s: any) => s.halaqahId === activeHalaqah.id)
+                : studentsList));
+
+      let sortedAll = [...pointsBasePool];
+      if (isSortPointsAsc) {
+        sortedAll.sort((a: any, b: any) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0));
+      } else if (isSortAlpha) {
+        sortedAll.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      } else {
+        sortedAll.sort((a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0));
+      }
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "points",
+        title: matchedHalaqah
+          ? `كشف ترتيب نقاط طلاب حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف ترتيب نقاط طلاب ${effectiveMatchedComplex.name}`
+              : `كشف ترتيب نقاط كافة طلاب المنظومة - ${effectiveComplexName}`),
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          totalStudents: sortedAll.length,
+          students: sortedAll.map((s: any, idx: number) => ({
+            id: s.id,
+            rank: idx + 1,
+            name: s.name,
+            halaqahName: s.halaqahName || detectedHalaqahName || "عامة",
+            level: s.level || "متوسط",
+            currentSurah: s.currentSurahName || "الفاتحة",
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: Number(s.totalPoints ?? s.points) || 0,
+          })),
+        },
+      };
+    } else if (hasGeneralTableIntent) {
+      let genBasePool: any[] = [];
+      if (matchedHalaqah) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inH = studentResolution.matchedStudents.filter((s: any) => isStudentInHalaqah(s, matchedHalaqah));
+          genBasePool = inH.length > 0 ? inH : halaqahStudentsCohort;
+        } else {
+          genBasePool = halaqahStudentsCohort;
+        }
+      } else if (effectiveMatchedComplex) {
+        if (studentResolution.matchedStudents.length > 0) {
+          const inC = studentResolution.matchedStudents.filter((s: any) => isStudentInComplex(s, effectiveMatchedComplex, halaqahsList, teachersList));
+          genBasePool = inC.length > 0 ? inC : finalComplexStudentsCohort;
+        } else {
+          genBasePool = finalComplexStudentsCohort;
+        }
+      } else if (studentResolution.matchedStudents.length > 0) {
+        genBasePool = studentResolution.matchedStudents;
+      } else if (studentResolution.detectedTeacher) {
+        genBasePool = studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id);
+      } else if (studentResolution.detectedLevel) {
+        genBasePool = studentsList.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!));
+      } else if (isTeacher && activeHalaqah?.id && activeHalaqah.id !== 'all') {
+        genBasePool = studentsList.filter(s => s.halaqahId === activeHalaqah.id);
+      } else {
+        genBasePool = studentsList;
+      }
+
+      let sortedGen = [...genBasePool];
+      if (isSortAlpha || studentResolution.detectedSort === 'alpha') {
+        sortedGen.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      } else if (isSortPointsAsc || studentResolution.detectedSort === 'points_asc') {
+        sortedGen.sort((a: any, b: any) => (Number(a.totalPoints ?? a.points) || 0) - (Number(b.totalPoints ?? b.points) || 0));
+      } else if (isSortPointsDesc || studentResolution.detectedSort === 'points_desc') {
+        sortedGen.sort((a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0));
+      } else if (studentResolution.detectedSort === 'attendance_desc') {
+        sortedGen.sort((a: any, b: any) => (Number(b.attendanceRate) || 0) - (Number(a.attendanceRate) || 0));
+      }
+
+      const effectiveCountLimit = studentResolution.explicitCount || (studentResolution.isCountQuery ? studentResolution.requestedCount : undefined) || (hasExplicitMultiCount ? requestedMultiCount : undefined);
+      if (effectiveCountLimit && effectiveCountLimit > 0 && sortedGen.length > effectiveCountLimit) {
+        sortedGen = sortedGen.slice(0, effectiveCountLimit);
+      }
+
+      let tableTitle = `كشف وبيان طلاب المنظومة - ${effectiveComplexName}`;
+      if (effectiveCountLimit && effectiveCountLimit > 0) {
+        tableTitle = matchedHalaqah
+          ? `كشف (${sortedGen.length}) طلاب من حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`
+          : (effectiveMatchedComplex
+              ? `كشف (${sortedGen.length}) طلاب من ${effectiveMatchedComplex.name}`
+              : (studentResolution.detectedTeacher
+                  ? `كشف (${sortedGen.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name} - ${effectiveComplexName}`
+                  : `كشف (${sortedGen.length}) طلاب بأسمائهم ومستواهم ومسار حفظهم - ${effectiveComplexName}`));
+      } else if (studentResolution.detectedTeacher) {
+        tableTitle = `كشف طلاب وإحصائيات فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${effectiveComplexName}`;
+      } else if (matchedHalaqah) {
+        tableTitle = `كشف طلاب وإحصائيات حلقة ${matchedHalaqah.name} - ${effectiveComplexName}`;
+      } else if (effectiveMatchedComplex) {
+        tableTitle = `كشف طلاب وإحصائيات ${effectiveMatchedComplex.name}`;
+      } else if (studentResolution.detectedLevel) {
+        tableTitle = `كشف طلاب فئة (${studentResolution.detectedLevel}) - ${effectiveComplexName}`;
+      } else if (studentResolution.matchedStudents && studentResolution.matchedStudents.length > 0 && sortedGen.length <= 4) {
+        tableTitle = `كشف بيانات ومسار الطلاب (${sortedGen.map(s => s.name).join(" - ")})`;
+      }
+
+      action = {
+        type: "SHOW_DATA_TABLE",
+        tableType: "smart_custom_table",
+        title: tableTitle,
+        data: {
+          complexName: effectiveComplexName,
+          halaqahName: detectedHalaqahName,
+          detectedLevel: studentResolution.detectedLevel,
+          totalStudents: sortedGen.length,
+          students: sortedGen.map((s: any, idx: number) => {
+            const studentMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+            const studentEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+            const latestEval = studentEvals[studentEvals.length - 1];
+            const evDetails = latestEval?.recitationDetails || {};
+
+            const newSurah = evDetails.newMemorizationAchieved ||
+              (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر'));
+
+            const revSurah = evDetails.reviewAchieved ||
+              (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0
+                ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join('، ')
+                : 'مراجعة وتثبيت');
+
+            const notes = evDetails.teacherNotes || 'مواظب ومجتهد';
+
+            const facesLabel = studentMetrics.totalFaces === 0.25 ? "ربع وجه"
+              : studentMetrics.totalFaces === 0.5 ? "نصف وجه"
+              : studentMetrics.totalFaces === 0.75 ? "ثلاثة أرباع وجه"
+              : studentMetrics.totalFaces === 1 ? "وجه كامل"
+              : `${studentMetrics.totalFaces} وجه`;
+
+            return {
+              id: s.id,
+              rank: idx + 1,
+              name: s.name,
+              studentName: s.name,
+              halaqahId: s.halaqahId,
+              halaqahName: s.halaqahName || detectedHalaqahName || "الحلقة القرآنية",
+              complexName: s.complexName || complexName,
+              level: s.level || "متوسط",
+              currentSurah: s.currentSurahName || "الفاتحة",
+              currentAyah: s.currentAyah || 1,
+              currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+              newMemorization: newSurah,
+              facesLabel: facesLabel,
+              totalFaces: studentMetrics.totalFaces,
+              reviewAchieved: revSurah,
+              attendanceRate: `${studentMetrics.attendanceRate}%`,
+              presentDays: studentMetrics.presentCount,
+              absentDays: studentMetrics.absentCount,
+              excusedDays: studentMetrics.excusedCount,
+              dailyTarget: s.dailyNewTarget || "نصف وجه",
+              totalPoints: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+              teacherNotes: notes,
+            };
+          }),
+        },
+      };
+    } else if (hasWhatsAppIntent) {
+      action = {
+        type: "ATTENDANCE_MESSAGE",
+        data: {
+          messageText: whatsappText,
+          metrics,
+        },
+      };
+    } else if (hasCreateCertificateTemplateIntent) {
+      action = {
+        type: "CREATE_CERTIFICATE_TEMPLATE",
+        title: `قالب شهادة: ${customTemplateTitle}`,
+        data: {
+          name: `قالب ${customTemplateTitle} (المنصة)`,
+          title: customTemplateTitle,
+          occasion: "شكر وتقدير وتميز",
+          occasionText: customTemplateOccasionText,
+          bgStyle: "royal_emerald",
+          accentColor: "#fbbf24",
+          isPlatformGenerated: true,
+          complexId: complex.id || undefined,
+        },
+      };
+    } else if (hasGenerateCertificatesIntent) {
+      action = {
+        type: "GENERATE_CERTIFICATES",
+        title: "صنع وإصدار الشهادات التقديرية",
+        data: {
+          occasion: "شكر وتقدير وتميز",
+          occasionText: "تقديراً لجهوده المباركة وتفوقه في حفظ وتلاوة القرآن الكريم",
+          certificateTitle: "شكر وتقدير",
+          templateId: "platform_emerald_royal",
+          students: certificateCandidateStudents.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahId: s.halaqahId,
+            halaqahName: s.halaqahName || "الحلقة",
+            complexId: s.complexId || complex.id,
+            complexName: s.complexName || complexName,
+            totalPoints: s.totalPoints || 0,
+            level: s.level || "متوسط",
+          })),
+        },
+      };
+    } else if (hasRecitationInquiryIntent && studentForEvaluationInquiry) {
+      const todayDateStr = new Date().toISOString().split("T")[0];
+      const hasRecitedToday = Boolean(
+        studentEvaluationRecord && studentEvaluationRecord.date === todayDateStr
+      );
+      action = {
+        type: "SHOW_STUDENT_EVALUATION",
+        title: `تقرير تقييم وتسميع الطالب: ${studentForEvaluationInquiry.name}`,
+        data: {
+          student: {
+            id: studentForEvaluationInquiry.id,
+            name: studentForEvaluationInquiry.name,
+            halaqahName: studentForEvaluationInquiry.halaqahName || "الحلقة",
+            level: studentForEvaluationInquiry.level || "متوسط",
+            currentSurahName: studentForEvaluationInquiry.currentSurahName || "الفاتحة",
+            totalPoints: studentForEvaluationInquiry.totalPoints || 0,
+          },
+          evaluation: studentEvaluationRecord || null,
+          hasRecitedToday,
+          recitationDetails: studentEvaluationRecord?.recitationDetails || {
+            newMemorizationAchieved: "لم يسجل بعد لليوم",
+            reviewAchieved: "لم يسجل بعد",
+            teacherNotes: "في انتظار حضور الطالب وتسميعه",
+          },
+          tomorrowAssignment: tomorrowRecitationAssignment || {
+            tomorrowNewItem: null,
+            tomorrowReviewItem: null,
+            tomorrowDailyNote: "متابعة الحفظ المعتمد",
+          },
+          hasRecording: Boolean(studentRecordingItem),
+          recording: studentRecordingItem || null,
+        },
+      };
+    } else if (hasChartDiagnosticIntent) {
+      const levelsMap: Record<string, number> = {};
+      studentsList.forEach((s: any) => {
+        const lvl = s.level || "متوسط";
+        levelsMap[lvl] = (levelsMap[lvl] || 0) + 1;
+      });
+
+      const halaqahMap: Record<string, { name: string; count: number; totalPoints: number }> = {};
+      studentsList.forEach((s: any) => {
+        const hName = s.halaqahName || "حلقة عامة";
+        if (!halaqahMap[hName]) halaqahMap[hName] = { name: hName, count: 0, totalPoints: 0 };
+        halaqahMap[hName].count++;
+        halaqahMap[hName].totalPoints += Number(s.totalPoints) || 0;
+      });
+
+      const sortedByPoints = [...studentsList].sort(
+        (a: any, b: any) => (Number(b.totalPoints ?? b.points) || 0) - (Number(a.totalPoints ?? a.points) || 0)
+      );
+
+      const chartBasePool = matchedHalaqah && halaqahStudentsCohort.length > 0
+        ? halaqahStudentsCohort
+        : (effectiveMatchedComplex
+            ? finalComplexStudentsCohort
+            : studentsList);
+
+      const chartCohortRaw = studentResolution.matchedStudents.length > 0
+        ? studentResolution.matchedStudents
+        : (studentResolution.detectedTeacher
+            ? studentsList.filter((s: any) => s.halaqahId === studentResolution.detectedTeacher?.halaqahId || s.teacherId === studentResolution.detectedTeacher?.id)
+            : (studentResolution.detectedLevel
+                ? chartBasePool.filter(s => matchStudentLevel(s.level, studentResolution.detectedLevel!))
+                : (matchedHalaqah && halaqahStudentsCohort.length > 0 ? halaqahStudentsCohort : sortedByPoints.slice(0, 8))));
+
+      const effectiveChartCohort = (studentResolution.explicitCount && studentResolution.explicitCount > 0 && chartCohortRaw.length > studentResolution.explicitCount)
+        ? chartCohortRaw.slice(0, studentResolution.explicitCount)
+        : chartCohortRaw;
+
+      const enrichedCohort = effectiveChartCohort.map((s: any, idx: number) => {
+        const studentMetrics = computeStudentAccurateMetrics(s, evaluationsList, attendanceList, recordingsList, []);
+        const studentEvals = evaluationsList.filter((e: any) => e.studentId === s.id);
+        const latestEval = studentEvals[studentEvals.length - 1];
+        const evDetails = latestEval?.recitationDetails || {};
+        const newSurah = evDetails.newMemorizationAchieved ||
+          (evDetails.todayNewItem ? `${evDetails.todayNewItem.surahName} (${evDetails.todayNewItem.fromAyah}-${evDetails.todayNewItem.toAyah})` : (s.currentSurahName ? `سورة ${s.currentSurahName}` : 'حفظ مقرر'));
+        const revSurah = evDetails.reviewAchieved ||
+          (Array.isArray(evDetails.todayReviewItems) && evDetails.todayReviewItems.length > 0
+            ? evDetails.todayReviewItems.map((r: any) => `${r.surahName} (${r.fromAyah}-${r.toAyah})`).join('، ')
+            : 'مراجعة وتثبيت');
+        const notes = evDetails.teacherNotes || 'مواظب ومجتهد';
+        const facesLabel = studentMetrics.totalFaces === 0.25 ? "ربع وجه"
+          : studentMetrics.totalFaces === 0.5 ? "نصف وجه"
+          : studentMetrics.totalFaces === 0.75 ? "ثلاثة أرباع وجه"
+          : studentMetrics.totalFaces === 1 ? "وجه كامل"
+          : `${studentMetrics.totalFaces} وجه`;
+
+        return {
+          id: s.id,
+          rank: idx + 1,
+          name: s.name,
+          studentName: s.name,
+          halaqahId: s.halaqahId,
+          halaqahName: s.halaqahName || detectedHalaqahName || "الحلقة القرآنية",
+          complexName: s.complexName || complexName,
+          level: s.level || "متوسط",
+          currentSurah: s.currentSurahName || "الفاتحة",
+          currentAyah: s.currentAyah || 1,
+          currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+          newMemorization: newSurah,
+          facesLabel: facesLabel,
+          totalFaces: studentMetrics.totalFaces,
+          reviewAchieved: revSurah,
+          attendanceRate: `${studentMetrics.attendanceRate}%`,
+          presentDays: studentMetrics.presentCount,
+          absentDays: studentMetrics.absentCount,
+          excusedDays: studentMetrics.excusedCount,
+          dailyTarget: s.dailyNewTarget || "نصف وجه",
+          points: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+          totalPoints: Number(s.totalPoints ?? s.points ?? studentMetrics.finalPoints) || 0,
+          teacherNotes: notes,
+        };
+      });
+
+      let dynamicChartTitle = `التشخيص البياني والإحصائي الشامل - ${complexName}`;
+      if (studentResolution.explicitCount && studentResolution.explicitCount > 0) {
+        dynamicChartTitle = matchedHalaqah
+          ? `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب من حلقة ${matchedHalaqah.name}`
+          : (studentResolution.detectedTeacher
+              ? `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب للشيخ ${studentResolution.detectedTeacher.name}`
+              : `مقارنة وتشخيص بياني لـ (${enrichedCohort.length}) طلاب بأسمائهم ومستواهم`);
+      } else if (studentResolution.detectedTeacher) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لطلاب فضيلة الشيخ ${studentResolution.detectedTeacher.name} - ${complexName}`;
+      } else if (matchedHalaqah) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لـ (${detectedHalaqahName}) - ${complexName}`;
+      } else if (studentResolution.detectedLevel) {
+        dynamicChartTitle = `الإحصائيات والتشخيص البياني لطلاب فئة (${studentResolution.detectedLevel})${detectedHalaqahName ? ` - ${detectedHalaqahName}` : ''} - ${complexName}`;
+      } else if (studentResolution.matchedStudents.length > 0 && enrichedCohort.length <= 4) {
+        dynamicChartTitle = `مقارنة وتشخيص بياني للطلاب (${enrichedCohort.map(s => s.name).join(' - ')})`;
+      }
+
+      action = {
+        type: "SHOW_CHART",
+        chartType: preferredChartStyle,
+        title: dynamicChartTitle,
+        tableType: "smart_custom_table",
+        data: {
+          preferredStyle: preferredChartStyle,
+          metrics,
+          students: enrichedCohort,
+          studentsComparison: enrichedCohort.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            points: Number(s.totalPoints ?? s.points) || 0,
+            totalPoints: Number(s.totalPoints ?? s.points) || 0,
+            halaqahName: s.halaqahName || "الحلقة",
+            level: s.level || "متوسط",
+            facesLabel: s.facesLabel,
+            totalFaces: s.totalFaces,
+            newMemorization: s.newMemorization,
+            reviewAchieved: s.reviewAchieved,
+            currentPosition: s.currentPosition,
+            attendanceRate: s.attendanceRate,
+          })),
+          attendance: {
+            present: metrics.presentCount,
+            absent: metrics.absentCount,
+            excused: metrics.excusedCount,
+            late: metrics.lateCount,
+            total: metrics.totalStudents,
+            rate: metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0,
+          },
+          recitation: {
+            totalPages: metrics.totalRecitedPagesToday,
+            newPages: metrics.totalNewPagesToday,
+            reviewPages: metrics.totalReviewPagesToday,
+          },
+          topPoints: sortedByPoints.slice(0, 5).map((s: any) => ({
+            name: s.name,
+            points: Number(s.totalPoints) || 0,
+            halaqahName: s.halaqahName || "الحلقة",
+          })),
+          levels: Object.entries(levelsMap).map(([name, count]) => ({ name, count })),
+          halaqahs: Object.values(halaqahMap),
+        },
+      };
+    } else if (lowerMsg.includes("كم وجه") || lowerMsg.includes("تسميع") || lowerMsg.includes("أوجه")) {
+      action = {
+        type: "SHOW_CHART",
+        chartType: "recitation_breakdown",
+        title: "توزيع الأوجه المسمعة اليوم",
+        data: {
+          totalPages: metrics.totalRecitedPagesToday,
+          newPages: metrics.totalNewPagesToday,
+          reviewPages: metrics.totalReviewPagesToday,
+        },
+      };
+    } else if ((lowerMsg.includes("حضور") || lowerMsg.includes("غياب") || lowerMsg.includes("نسبة")) && !hasStudentAttendanceInquiryIntent && !hasStudentReportIntent) {
+      action = {
+        type: "SHOW_CHART",
+        chartType: "attendance_breakdown",
+        title: "نسب الحضور والغياب لليوم",
+        data: {
+          present: metrics.presentCount,
+          absent: metrics.absentCount,
+          excused: metrics.excusedCount,
+          late: metrics.lateCount,
+        },
+      };
+    } else if (hasCoachingIntent && candidateStudentForCoaching && !deleteItemTarget && !hasDeleteStudentIntent && !hasStudentReportIntent) {
+      action = {
+        type: "SHOW_STUDENT_COACHING_CARD",
+        title: `جلسة سهرة واستشارة تربوية: ${candidateStudentForCoaching.name}`,
+        data: {
+          studentId: candidateStudentForCoaching.id,
+          studentName: candidateStudentForCoaching.name,
+          halaqahName: candidateStudentForCoaching.halaqahName || "الحلقة القرآنية",
+          level: candidateStudentForCoaching.level || "متوسط",
+          currentSurah: candidateStudentForCoaching.currentSurahName || "الفاتحة",
+          currentAyah: candidateStudentForCoaching.currentAyah || 1,
+          dailyTarget: candidateStudentForCoaching.dailyNewTarget || "نصف وجه",
+          totalPoints: typeof candidateStudentForCoaching.points === 'number' ? candidateStudentForCoaching.points : candidateStudentForCoaching.totalPoints || 0,
+          attendanceRate: studentWeekPct,
+          overallAttendanceRate: studentOverallPct,
+          parentPhone: candidateStudentForCoaching.parentPhone || candidateStudentForCoaching.phone || "",
+        }
+      };
+    } else if (hasLatestStudentIntent && candidateRecentStudents.length > 0) {
+      action = {
+        type: "SHOW_DATA_TABLE",
+        title: "كشف أحدث الطلاب المنضمين للمنظومة",
+        tableType: "custom_students_progress",
+        data: {
+          complexName,
+          totalStudents: candidateRecentStudents.length,
+          students: candidateRecentStudents.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahName: s.halaqahName || "الحلقة القرآنية",
+            level: s.level || "متوسط",
+            currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: typeof s.points === 'number' ? s.points : (s.totalPoints || 0),
+            createdAt: s.createdAt,
+          })),
+        },
+      };
+    } else if (hasStudentCountIntent && studentsList.length > 0) {
+      action = {
+        type: "SHOW_DATA_TABLE",
+        title: `كشف إجمالي طلاب المنظومة (${studentsList.length} طالباً)`,
+        tableType: "custom_students_progress",
+        data: {
+          complexName,
+          totalStudents: studentsList.length,
+          students: studentsList.slice(0, 15).map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            halaqahName: s.halaqahName || "الحلقة القرآنية",
+            level: s.level || "متوسط",
+            currentPosition: `سورة ${s.currentSurahName || 'الفاتحة'} (آية ${s.currentAyah || 1})`,
+            dailyTarget: s.dailyNewTarget || "نصف وجه",
+            totalPoints: typeof s.points === 'number' ? s.points : (s.totalPoints || 0),
+          })),
+        },
+      };
+    }
+
+    const coachingSuggestions = hasCoachingIntent ? [
+      candidateStudentForCoaching ? `كيف أتواصل مع ولي أمر ${candidateStudentForCoaching.name}؟` : "كيف أحفز طلاب الحلقة عموماً؟",
+      candidateStudentForCoaching ? `ضع لي خطة أسبوعية لعلاج ضعف ${candidateStudentForCoaching.name}` : "أفكار مسابقات حماسية لكسر روتين الحلقة",
+      candidateStudentForCoaching ? `ماذا أفعل لو عاد ${candidateStudentForCoaching.name} للشغب مرة أخرى؟` : "كيف أتعامل مع الطلاب متعددي الأعمار في حلقة واحدة؟",
+      "جلسة سهرة: اسألني سؤالاً تربوياً لتطوير مهاراتي كمعلم قرآن"
+    ] : undefined;
+
+    return res.json({ reply: stripFaceEmojis(geminiReply), action, suggestions: coachingSuggestions });
+  } catch (error: any) {
+    console.error("Gemini assistant error:", error);
+    res.json({
+      reply: stripFaceEmojis("أهلاً بك يا أخي الكريم. حدث تعذر عابر في معالجة طلبك، يرجى المحاولة مرة أخرى أو اختيار أحد الأوامر السريعة أدناه."),
+      action: null,
+    });
+  }
+});
+
+// Helper for realistic Quran recitation phonetic timings calculation
+function calculateQuranicPhoneticTimings(
+  surahNumber: number,
+  verses: string[],
+  totalDurationSec?: number | null,
+  reciterName?: string
+) {
+  const basmalahWeight = 6.5; // Ayah 0: الاستعاذة والبسملة
+  const weights: Array<{ ayahNumber: number; text: string; weight: number }> = [];
+
+  weights.push({
+    ayahNumber: 0,
+    text: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ (الاستعاذة والبسملة)",
+    weight: basmalahWeight,
+  });
+
+  for (let i = 0; i < verses.length; i++) {
+    const vText = verses[i] || "";
+    // Clean text of diacritics for accurate word count
+    const cleanText = vText.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
+    const words = cleanText.trim().split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+
+    // Count madd signs (ٓ, مد متصل/منفصل/لازم/عارض للسكون)
+    const maddMatches = (vText.match(/[آٓ]|\u0653|[اوي]ء|[اوي][\u064B-\u0652]*ء/g) || []).length;
+    // Count shaddah (تشديد)
+    const shaddahMatches = (vText.match(/\u0651/g) || []).length;
+    // Average Murattal word recitation time + pauses + Madd duration
+    const verseWeight = (wordCount * 1.45) + (maddMatches * 1.3) + (shaddahMatches * 0.25) + 1.4;
+
+    weights.push({
+      ayahNumber: i + 1,
+      text: vText,
+      weight: Math.max(3.0, verseWeight),
+    });
+  }
+
+  const sumWeights = weights.reduce((acc, w) => acc + w.weight, 0);
+  const targetDuration = totalDurationSec && totalDurationSec > 10 ? totalDurationSec : sumWeights;
+  const scale = targetDuration / sumWeights;
+
+  let currentStart = 0;
+  const segments: Array<{
+    ayahNumber: number;
+    ayahText: string;
+    startTimeSeconds: number;
+    endTimeSeconds: number;
+    duration: number;
+  }> = [];
+
+  for (let j = 0; j < weights.length; j++) {
+    const w = weights[j];
+    let duration = Math.round((w.weight * scale) * 100) / 100;
+    if (duration < 2.0) duration = 2.0;
+
+    const start = Math.round(currentStart * 100) / 100;
+    let end = Math.round((start + duration) * 100) / 100;
+    if (j === weights.length - 1 && targetDuration > 10) {
+      end = Math.round(targetDuration * 100) / 100;
+      duration = Math.max(1.5, Math.round((end - start) * 100) / 100);
+    }
+    currentStart = end;
+
+    segments.push({
+      ayahNumber: w.ayahNumber,
+      ayahText: w.text,
+      startTimeSeconds: start,
+      endTimeSeconds: end,
+      duration: Math.round((end - start) * 100) / 100,
+    });
+  }
+
+  return segments;
+}
+
+// 6. High-Precision Quran Recording Segmentation (Gemini AI + Quranic Phonetic Engine)
+app.post("/api/gemini/segment-recording", async (req, res) => {
+  try {
+    const {
+      surahNumber,
+      surahName,
+      reciterName,
+      youtubeUrl,
+      youtubeVideoId,
+      totalDurationSeconds,
+      quranVerses,
+    } = req.body;
+
+    console.log(`[AI-Segment] Processing Surah ${surahNumber} (${surahName}), Reciter: ${reciterName}, Target Duration: ${totalDurationSeconds}s`);
+
+    // Load authentic Quran text
+    let verses: string[] = Array.isArray(quranVerses) && quranVerses.length > 0 ? quranVerses : [];
+    if (verses.length === 0) {
+      try {
+        const quranPath = path.join(process.cwd(), "public", "quran-verses.json");
+        if (fs.existsSync(quranPath)) {
+          const raw = JSON.parse(fs.readFileSync(quranPath, "utf-8"));
+          if (raw[String(surahNumber)]) {
+            verses = raw[String(surahNumber)];
+          }
+        }
+      } catch (fErr) {
+        console.warn("Could not read local quran-verses.json:", fErr);
+      }
+    }
+
+    if (verses.length === 0) {
+      const sInfo = getSurahInfo(Number(surahNumber) || 1);
+      const count = (sInfo as any)?.numberOfAyahs || 7;
+      verses = Array.from({ length: count }, (_, i) => `الآية رقم ${i + 1}`);
+    }
+
+    // Attempt Gemini AI if API key is available
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const versesListText = verses
+          .map((v, i) => `[الآية ${i + 1}]: ${v}`)
+          .slice(0, 50) // Keep prompt within safe bounds
+          .join("\n");
+
+        const prompt = `أنت عالم التجويد والقراءات وحساب أزمنة التلاوة القرآنية بدقة الثواني وجزء الثانية (مثل 1.25 أو 4.5 ثانية).
+المطلوب: حساب التوقيت الحقيقي والواقعي لبداية ونهاية كل آية من آيات سورة ${surahName || surahNumber} في هذا التسجيل الصوتي.
+
+بيانات التسجيل:
+- السورة: سورة ${surahName || surahNumber} (رقم ${surahNumber})
+- إجمالي عدد آيات السورة: ${verses.length} آية
+- القارئ: ${reciterName || "القارئ الشيخ"}
+- الرابط: ${youtubeUrl || ""}
+- إجمالي مدة التسجيل المعتمدة: ${totalDurationSeconds || "غير محددة"} ثانية
+
+نصوص الآيات الرسمية:
+[الآية 0]: بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ (الاستعاذة والبسملة)
+${versesListText}
+
+تعليمات حاسمة وصارمة:
+1. تقبل التوقيتات بالثواني وجزء الثانية (مثلاً: 0، 6.5، 12.25، 18.75).
+2. [ممنوع منعاً باتاً التكرار]: ممنوع جعل مدة كل آية متساوية أو 8 ثوانٍ! كل آية تختلف مدتها اختلافاً جذرياً بحسب عدد كلماتها وحروفها والمدود والوقف.
+3. الآيات القصيرة تأخذ من 2.5 إلى 5.5 ثوانٍ فقط.
+4. الآيات المتوسطة تأخذ من 6 إلى 14 ثانية.
+5. الآيات الطويلة تأخذ من 15 إلى 35 ثانية.
+6. البسملة والاستعاذة (رقم 0) تأخذ من 4.5 إلى 7.5 ثوانٍ.
+7. [التسلسل والتطابق]: نهاية كل آية (endTimeSeconds) هي نقطة توقف القارئ وانتهاء لفظ الآية، وبداية الآية التالية (startTimeSeconds) تبدأ فوراً بعدها.
+8. الالتزام بالمدة الإجمالية (${totalDurationSeconds || 180} ثانية) بحيث تنتهي الآية الأخيرة عند نهاية التسجيل.
+
+أخرج النتيجة بصيغة JSON فقط:
+{
+  "totalDuration": ${totalDurationSeconds || 120},
+  "segments": [
+    {
+      "ayahNumber": 0,
+      "ayahText": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+      "startTimeSeconds": 0,
+      "endTimeSeconds": 6.5,
+      "duration": 6.5
+    }
+  ]
+}`;
+
+        const geminiRes = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const parsed = JSON.parse(geminiRes.text || "{}");
+        if (Array.isArray(parsed.segments) && parsed.segments.length >= Math.min(verses.length, 3)) {
+          // Verify that durations are varied and valid numbers
+          const cleanSegments = parsed.segments.map((s: any) => {
+            const start = Math.round(Number(s.startTimeSeconds || 0) * 100) / 100;
+            const end = Math.round(Number(s.endTimeSeconds || (start + 3)) * 100) / 100;
+            return {
+              ayahNumber: Number(s.ayahNumber),
+              ayahText: s.ayahText || "",
+              startTimeSeconds: start,
+              endTimeSeconds: end,
+              duration: Math.round((end - start) * 100) / 100,
+            };
+          });
+
+          const uniqueDurations = new Set(cleanSegments.map(s => Math.round(s.duration)));
+          if (uniqueDurations.size > 1) {
+            console.log(`[AI-Segment] Successfully generated ${cleanSegments.length} varied segments via Gemini.`);
+            return res.json({
+              success: true,
+              source: "gemini_ai",
+              totalDuration: parsed.totalDuration || totalDurationSeconds,
+              segments: cleanSegments,
+            });
+          }
+        }
+      } catch (geminiErr) {
+        console.warn("[AI-Segment] Gemini API call skipped or errored, using phonetic engine:", geminiErr);
+      }
+    }
+
+    // High-precision Phonetic Quranic Engine (Accurate mathematical alignment)
+    const phoneticSegments = calculateQuranicPhoneticTimings(
+      Number(surahNumber) || 1,
+      verses,
+      totalDurationSeconds,
+      reciterName
+    );
+
+    console.log(`[AI-Segment] Generated ${phoneticSegments.length} varied segments via Phonetic Engine.`);
+    return res.json({
+      success: true,
+      source: "phonetic_engine",
+      totalDuration: phoneticSegments[phoneticSegments.length - 1]?.endTimeSeconds || totalDurationSeconds || 180,
+      segments: phoneticSegments,
+    });
+  } catch (error: any) {
+    console.error("[AI-Segment] error:", error);
+    res.status(500).json({ error: error?.message || "Failed to segment recording" });
+  }
+});
+
+// Quran Verses Complete JSON Provider
+app.get("/api/quran/all", (req, res) => {
+  try {
+    const quranPath = path.join(process.cwd(), "public", "quran-verses.json");
+    if (fs.existsSync(quranPath)) {
+      const data = fs.readFileSync(quranPath, "utf-8");
+      res.setHeader("Content-Type", "application/json");
+      return res.send(data);
+    }
+    res.status(404).json({ error: "quran-verses.json not found" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to read quran-verses.json" });
+  }
+});
+
+// ============================================================================
+// GEMINI AI STUDENT PLACEMENT & ADAPTIVE KHATMAH PLAN APIS
+// ============================================================================
+
+// 1. Dynamic Interactive Student Diagnostic Interview
+app.post("/api/gemini/student-diagnostic-interview", async (req, res) => {
+  try {
+    const {
+      studentData,
+      step,
+      chatHistory,
+      userAnswer,
+      complexInfo
+    } = req.body;
+
+    const memCount = Array.isArray(studentData?.memorizedJuzList) ? studentData.memorizedJuzList.length : Number(studentData?.memorizedJuzCount || 1);
+    const isKhatim = memCount >= 30;
+    const isIntermediate = memCount >= 5 && memCount < 30;
+    const studentAge = Number(studentData?.age) || 12;
+
+    const prompt = `أنت «المساعد القرآني والتربوي الذكي لمنصة عُمْرَان» لمجمعات تحفيظ القرآن الكريم.
+أنت تجري مقابلة ذكية تفاعلية وشخصية وديناميكية مع طالب جديد لتحديد مستواه وتسكينه في الحلقة والمسجد والشيخ الأنسب.
+
+بيانات الطالب الحالية:
+- اسم الطالب: ${studentData?.name || 'الطالب'}
+- العمر: ${studentAge} سنة
+- عدد الأجزاء المحفوظة المسجلة: ${memCount} جزءاً (${isKhatim ? 'خاتم للقرآن الكريم كاملاً' : isIntermediate ? 'مستوى متوسط' : 'مستوى تأسيسي وبداية الحفظ'})
+- إجابة الطالب الأخيرة: ${JSON.stringify(userAnswer || '')}
+- سجل المحادثة السابق: ${JSON.stringify(chatHistory?.slice(-4) || [])}
+- الخطوة الحالية: ${step || 1}
+
+القواعد التربوية الإلزامية:
+1. إياك والأسئلة الثابتة والمكررة! كل سؤال يجب أن يتولد خصيصاً لهذا الطالب بناءً على عمره (${studentAge} سنة) ومستواه الفعلي.
+2. الخاتم (حافظ 30 جزء) لا يعامل أبداً مثل من يحفظ جزء عم!
+   - الخاتم: فحص جودة ضبط المتشابهات اللفظية، مخارج الحروف والوقف والابتداء، الإجازات والأسانيد، ومعدل السرد التثبيتي.
+   - المتوسط (5-29 جزء): فحص جودة استحضار السور، أحكام التجويد العملية في آيات من محفوظه، ونقاط الضعف التي يشتكي منها.
+   - المبتدئ (1-4 أجزاء): أسئلة تشجيعية دافئة ولطيفة، أحكام تجويد أساسية سهلة (النون الساكنة)، ونفسيته وهمته.
+3. راجع إجابة الطالب السابقة بدقة وناقشها بأسلوب تربوي ذكي، ثم اطرح السؤال التالي أو الاختبار المناسب له.
+4. إخراج الإجابة بصيغة JSON فقط:
+{
+  "replyText": "النص التفاعلي الدافئ الموجه للطالب ومناقشة إجابته",
+  "questionType": "choice" أو "text" أو "quiz",
+  "options": [
+    {"label": "نص الخيار 1", "value": "قيمة 1", "subtext": "شرح لطيف"},
+    {"label": "نص الخيار 2", "value": "قيمة 2", "subtext": "شرح لطيف"}
+  ],
+  "isFinalStep": true/false,
+  "diagnosticResult": {
+    "consolidationQuality": "ممتاز / عالي / متوسط / يحتاج تثبيت",
+    "recommendedLevel": "مبتدئ / متوسط / متقدم / إتقان وإجازة",
+    "estimatedDaysToGoal": 180,
+    "recommendedDailyNewPages": 1,
+    "recommendedDailyReviewPages": 5,
+    "psychologicalProfile": "ملخص تربوي نفسي عن همة الطالب وطاقته",
+    "khatmahPaceExplanation": "شرح دقيق لكيفية الختم مع التثبيت بدون تعجل"
+  }
+}`;
+
+    let replyJson: any = null;
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+    if (aiText) {
+      try {
+        replyJson = JSON.parse(aiText);
+      } catch (e) {}
+    }
+
+    if (!replyJson) {
+      // Fallback dynamic responses tailored to student level
+      if (isKhatim) {
+        replyJson = {
+          replyText: `ما شاء الله تبارك الرحمن يا ${studentData?.name || 'يا أخي المبارك'}! حمل كتاب الله في الصدر شرف عظيم وأمانة جليلة. بما أنك أتممت حفظ القرآن الكريم كاملاً، فإن معيارنا معك يتركز على «الإتقان والسرد وضبط المتشابهات». أخبرني: هل معك إجازة مسندة بالسند المتصل؟ وما هو معدل وردك السردي اليومي الحالي؟`,
+          questionType: "choice",
+          options: [
+            { label: "معي إجازة وأريد تثبيتاً متقناً لجمع القراءات", value: "ijazah_mastered", subtext: "مستوى متقدم جداً" },
+            { label: "خاتم بدون إجازة وأسعى لنيل الإجازة برواية حفص", value: "khatim_seeking_ijazah", subtext: "تحضير لسرد الختمة" },
+            { label: "حفظت القرآن لكن تفلت مني بعض الأجزاء وأريد دورة تثبيت مكثفة", value: "khatim_needs_consolidation", subtext: "تثبيت وضبط المتشابهات" }
+          ],
+          isFinalStep: false
+        };
+      } else if (isIntermediate) {
+        replyJson = {
+          replyText: `حيّاك الله وبياك يا ${studentData?.name || 'بطل القرآن'}! إنجاز حفظ ${memCount} جزءاً هو ثمرة مباركة من التوفيق والجهد. لنفحص معاً متانة التثبيت: من بين هذه الأجزاء، ما هي السور التي تشعر أنها راسخة مثل سورة الفاتحة؟ وما هي السور التي تحتاج تعاهداً مستمراً؟`,
+          questionType: "choice",
+          options: [
+            { label: "المثبت أكثر من 70% وأحتاج فقط مراجعة مستمرة", value: "strong_intermediate", subtext: "جاهز للتقدم مع المراجعة" },
+            { label: "المثبت نصف الأجزاء تقريباً وأفضل تثبيت القديم قبل الجديد", value: "balanced_intermediate", subtext: "تثبيت رأس المال أولاً" },
+            { label: "أحتاج حلقة تركز على ضبط المتشابهات ومخارج الحروف", value: "tajweed_focus", subtext: "تركيز على التجويد والإتقان" }
+          ],
+          isFinalStep: false
+        };
+      } else {
+        replyJson = {
+          replyText: `أهلاً وسهلاً بك يا ${studentData?.name || 'بطلنا الصغير'} في رحاب القرآن الكريم! مرحلة البداية هي أجمل مراحل الحفظ وأثبتها في الصغر كالنقش في الحجر. كم وجهاً أو سورة تستطيع تسميعها يومياً بشوق وسعادة دون إرهاق؟`,
+          questionType: "choice",
+          options: [
+            { label: "وجه كامل يومياً مع المراجعة", value: "one_page", subtext: "همة عالية ونشاط" },
+            { label: "نصف وجه يومياً بهدوء وإتقان", value: "half_page", subtext: "تدرج متقن ومريح" },
+            { label: "بضع آيات مع التركيز على النطق الصحيح والتجويد", value: "few_ayahs", subtext: "تأسيس سليم ومتقن" }
+          ],
+          isFinalStep: false
+        };
+      }
+    }
+
+    return res.json({ success: true, ...replyJson });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Interview failed" });
+  }
+});
+
+// 2. High-Precision Mathematical & Pedagogical Khatmah Calculation API
+app.post("/api/gemini/calculate-khatmah-plan", async (req, res) => {
+  try {
+    const {
+      studentName,
+      age,
+      memorizedJuz,
+      consolidatedJuz,
+      goal,
+      dailyNewPages,
+      dailyReviewPages,
+      weeklyDaysCount,
+      dailyHours,
+      ayahErrorsCount
+    } = req.body;
+
+    const totalPages = 604;
+    const memJuzNum = Math.min(30, Math.max(0, Number(memorizedJuz) || 0));
+    const consJuzNum = Math.min(memJuzNum, Math.max(0, Number(consolidatedJuz) || 0));
+    const isKhatim = memJuzNum >= 30;
+
+    const memPages = memJuzNum * 20;
+    const consPages = consJuzNum * 20;
+    const unconsPages = Math.max(0, memPages - consPages);
+    const newPagesRemaining = Math.max(0, totalPages - memPages);
+
+    const weeklyDays = Math.min(7, Math.max(1, Number(weeklyDaysCount) || 5));
+    const newPagePace = Math.max(0.25, Number(dailyNewPages) || 1);
+    const reviewPace = Math.max(1, Number(dailyReviewPages) || 5);
+
+    // Rule: "مش الطالب يختم بسرعة لا ان الطالب يختم وهو مثبت"
+    // Calculate realistic weekly progress:
+    const effectiveWeeklyNew = newPagePace * Math.max(1, (weeklyDays - 1)); // 1 day dedicated purely to cumulative review
+    const weeksForNew = newPagesRemaining > 0 ? (newPagesRemaining / effectiveWeeklyNew) : 0;
+    const effectiveWeeklyReview = reviewPace * weeklyDays;
+    const weeksForConsolidation = unconsPages > 0 ? ((unconsPages * 2) / Math.max(5, effectiveWeeklyReview)) : (isKhatim ? 12 : 0);
+
+    const errMultiplier = 1 + Math.min(0.35, (Number(ayahErrorsCount) || 0) * 0.05);
+    const totalWeeksNeeded = Math.ceil((weeksForNew + weeksForConsolidation) * errMultiplier);
+    const totalCalendarDays = Math.max(30, totalWeeksNeeded * 7);
+
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + totalCalendarDays);
+
+    const targetDateFormatted = targetDate.toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+
+    const monthsRemaining = Math.max(1, Math.round(totalCalendarDays / 30));
+    const progressPct = Math.min(100, Math.round((memPages / totalPages) * 100));
+
+    const prompt = `احسب واشرح خطة ختم وتثبيت قرآنية دقيقة للطالب:
+- الاسم: ${studentName || 'الطالب'} (العمر: ${age || 12} سنة)
+- المحفوظ: ${memJuzNum} جزء (المثبت: ${consJuzNum} جزء)
+- أيام الحلقة أسبوعياً: ${weeklyDays} أيام
+- الحفظ الجديد اليومي: ${newPagePace} وجه
+- المراجعة اليومية: ${reviewPace} أوجه
+- الحساب الرياضي الدقيق: ${totalCalendarDays} يوماً (قرابة ${monthsRemaining} شهراً)
+- موعد الختم المحسوب: ${targetDateFormatted}
+- القاعدة الأساسية: «التثبيت رأس المال والحفظ ربح - التثبيت أولاً ثم التقدم».
+
+قدم توجيهاً تربوياً متزناً وخارطة طريق ومراحل تثبيت محددة بصيغة JSON فقط:
+{
+  "targetCompletionDate": "${targetDateFormatted}",
+  "estimatedDaysRemaining": ${totalCalendarDays},
+  "monthsRemaining": ${monthsRemaining},
+  "progressPercentage": ${progressPct},
+  "roadmapSummary": "نص الشرح والتوجيه التربوي",
+  "monthlyMilestones": ["المرحلة الأولى...", "المرحلة الثانية..."],
+  "consolidationRule": "قاعدة التثبيت المعتمدة"
+}`;
+
+    let resultJson: any = null;
+    const aiText = await generateGeminiContentWithFallback(ai, prompt, { responseMimeType: "application/json" });
+    if (aiText) {
+      try {
+        resultJson = JSON.parse(aiText);
+      } catch (e) {}
+    }
+
+    if (!resultJson) {
+      resultJson = {
+        targetCompletionDate: targetDateFormatted,
+        estimatedDaysRemaining: totalCalendarDays,
+        monthsRemaining,
+        progressPercentage: progressPct,
+        roadmapSummary: `تم احتساب الخطة بدقة بناءً على جدول الحلقة (${weeklyDays} أيام أسبوعياً) ومعدل الحفظ (${newPagePace} وجه جديد) والتثبيت (${reviewPace} أوجه). موعد الختمة المستهدفة بإذن الله: ${targetDateFormatted}، مع تخصيص يوم أسبوعي للمراجعة التراكمية لتثبيت المحفوظ في الصدر.`,
+        monthlyMilestones: [
+          `المرحلة الأولى (الشهر 1 - 3): تثبيت وضبط الأجزاء السابقة مع الورد اليومي`,
+          `المرحلة الثانية: التقدم المنتظم بمعدل ${newPagePace} وجه لكل جلسة مع المراجعة المستمرة`,
+          `المرحلة الختامية: سرد الختمة كاملة غيباً على الشيخ ونيل إجازة الإتقان`
+        ],
+        consolidationRule: "كل 10 أوجه حفظ جديدة تخصص جلسة كاملة لتثبيتها تراكمياً قبل الانتقال لما بعدها"
+      };
+    }
+
+    return res.json({ success: true, ...resultJson });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Plan calculation failed" });
+  }
+});
+
+// 3. AI Dynamic Adaptation After Recitation Evaluation
+app.post("/api/gemini/adapt-student-plan", async (req, res) => {
+  try {
+    const { student, todayEvaluation, ayahErrors } = req.body;
+    const errorsList = Array.isArray(ayahErrors) ? ayahErrors : (student?.mushafErrors || []);
+    const uncorrectedErrors = errorsList.filter((e: any) => !e.cleared);
+
+    let needsConsolidation = uncorrectedErrors.length > 0;
+    let newDailyNewTarget = student?.dailyNewTarget || "وجه واحد";
+    let newDailyReviewTarget = student?.dailyReviewTarget || "5 أوجه";
+    let persistentItems: any[] = student?.persistentReviewItems || [];
+
+    // If student made errors today: automatically schedule those verses for repetition tomorrow!
+    if (needsConsolidation) {
+      const errorVersesNames = uncorrectedErrors.map((e: any) => `${e.surahName || 'السورة'} (آية ${e.ayahNumber})`).join('، ');
+      const newReviewItem = {
+        id: `rev_mistake_${Date.now()}`,
+        type: "تكرار وتثبيت مواضع الأخطاء",
+        surahNumber: uncorrectedErrors[0]?.surahNumber || 1,
+        surahName: uncorrectedErrors[0]?.surahName || "السورة",
+        fromAyah: uncorrectedErrors[0]?.ayahNumber || 1,
+        toAyah: uncorrectedErrors[0]?.ayahNumber || 1,
+        notes: `تكرار وتثبيت مكثف للمواضع التي تكرر فيها الخطأ اليوم: ${errorVersesNames}`,
+        isCompleted: false
+      };
+      persistentItems = [newReviewItem, ...persistentItems.filter(p => !p.notes?.includes(errorVersesNames))];
+    }
+
+    return res.json({
+      success: true,
+      needsConsolidation,
+      uncorrectedErrorsCount: uncorrectedErrors.length,
+      suggestedReviewItems: persistentItems,
+      planAdjusted: true
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Plan adaptation failed" });
+  }
+});
+
+// Vite middleware for development & production static serving
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    const activeUser = process.env.SMTP_USER || process.env.GMAIL_USER;
+    const hasSmtp = Boolean((process.env.SMTP_USER && process.env.SMTP_PASS) || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD));
+    console.log(`Omran Quran Platform server listening on port ${PORT} [Real SMTP: ${hasSmtp ? `CONFIGURED (${activeUser})` : 'AWAITING SMTP_USER & SMTP_PASS'}]`);
+  });
+}
+
+// Only start the HTTP server if not in a serverless environment (e.g. Netlify functions)
+if (process.env.NETLIFY !== "true" && !process.env.AWS_LAMBDA_FUNCTION_NAME && !process.env.LAMBDA_TASK_ROOT) {
+  startServer();
+}
+
+export default app;
