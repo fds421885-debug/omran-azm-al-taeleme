@@ -809,6 +809,76 @@ table tr:hover {
 }
 
 /* ========================================================================= */
+/* Mushaf & Global Smooth Touch Scrolling & Custom Scrollbars               */
+/* ========================================================================= */
+.mushaf-scroll-container {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  scroll-behavior: smooth !important;
+}
+
+.custom-scrollbar,
+.mushaf-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 200, 0, 0.45) rgba(19, 31, 36, 0.35);
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.mushaf-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.mushaf-scrollbar::-webkit-scrollbar-track {
+  background: rgba(19, 31, 36, 0.35);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.mushaf-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 200, 0, 0.45);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 200, 0, 0.2);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.mushaf-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 200, 0, 0.85);
+}
+
+/* ========================================================================= */
+/* Disable Mobile Context Menu Callout on Mushaf Canvas & Verses             */
+/* ========================================================================= */
+.mushaf-reading-area,
+.mushaf-leaf,
+.mushaf-scroll-container,
+.mushaf-ayah-item {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Active Recitation Ayah Glow & Pulse */
+@keyframes ayahRecitationPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--complex-accent, #ffc800), 0 0 16px rgba(255, 200, 0, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--complex-accent, #ffc800), 0 0 26px rgba(255, 200, 0, 0.75);
+  }
+}
+
+.ayah-recitation-active {
+  animation: ayahRecitationPulse 1.8s ease-in-out infinite;
+  border-radius: 0.45rem;
+  z-index: 15;
+  position: relative;
+}
+
+
+/* ========================================================================= */
 /* Print & PDF Export Rules                                                  */
 /* ========================================================================= */
 @media print {

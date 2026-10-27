@@ -18,7 +18,14 @@ import {
   VolumeX,
   Compass,
   Headphones,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  SkipForward,
+  SkipBack,
+  Square
 } from 'lucide-react';
 import { QURAN_SURAHS, FAMOUS_RECITERS, getSurahInfo } from '../../data/quranData';
 import {
@@ -54,6 +61,7 @@ interface KingFahdQuranModalProps {
   highlightItems?: QuranHighlightItem[];
   activeItemId?: string;
   selectedSheikhName?: string;
+  onReciterChange?: (reciterName: string, reciterId: string) => void;
   studentName?: string;
   studentId?: string;
   teacherId?: string;
@@ -159,6 +167,31 @@ function resolveInitialReciterId(sheikhName?: string): string {
   return 'minshawi';
 }
 
+export function getNextSequentialVerse(surah: number, ayah: number): { surah: number; ayah: number } | null {
+  const currentSurah = getSurahInfo(surah);
+  if (!currentSurah) return null;
+  if (ayah < currentSurah.numberOfAyahs) {
+    return { surah, ayah: ayah + 1 };
+  }
+  if (surah < 114) {
+    return { surah: surah + 1, ayah: 1 };
+  }
+  return null; // Reached end of Quran (An-Nas)
+}
+
+export function getPrevSequentialVerse(surah: number, ayah: number): { surah: number; ayah: number } | null {
+  if (ayah > 1) {
+    return { surah, ayah: ayah - 1 };
+  }
+  if (surah > 1) {
+    const prevSurah = getSurahInfo(surah - 1);
+    if (prevSurah) {
+      return { surah: surah - 1, ayah: prevSurah.numberOfAyahs };
+    }
+  }
+  return null; // At beginning of Quran (Al-Fatihah 1)
+}
+
 export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   isOpen,
   onClose,
@@ -169,6 +202,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   highlightItems = [],
   activeItemId,
   selectedSheikhName,
+  onReciterChange,
   studentName,
   studentId,
   theme,
@@ -240,30 +274,86 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   isFlipSoundEnabledRef.current = isFlipSoundEnabled;
 
   // Built-in Audio Recitation Player State
-  const [selectedReciterId, setSelectedReciterId] = useState<string>(() =>
-    resolveInitialReciterId(selectedSheikhName)
-  );
+  const [selectedReciterId, setSelectedReciterId] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('omran_mushaf_reciter');
+        if (saved && FAMOUS_RECITERS.some(r => r.id === saved)) {
+          return saved;
+        }
+      }
+    } catch {}
+    return resolveInitialReciterId(selectedSheikhName);
+  });
+  const selectedReciterIdRef = useRef<string>(selectedReciterId);
+  selectedReciterIdRef.current = selectedReciterId;
+
   const [audioScope, setAudioScope] = useState<'page' | 'highlight'>('page');
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [playingVerse, setPlayingVerse] = useState<{ surah: number; ayah: number } | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingAudioRef = useRef<boolean>(false);
+  const activeAyahPlayTokenRef = useRef<number>(0);
   const audioQueueRef = useRef<Array<{ surah: number; ayah: number }>>([]);
   const audioQueueIndexRef = useRef<number>(0);
 
   const modalContainerRef = useRef<HTMLDivElement | null>(null);
   const mushafScrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Smooth scroll tracking & helpers for mobile & all screen sizes
+  const [canScrollDown, setCanScrollDown] = useState<boolean>(false);
+  const [canScrollUp, setCanScrollUp] = useState<boolean>(false);
+
+  const checkScrollState = useCallback(() => {
+    const el = mushafScrollRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollHeight > el.clientHeight + 12;
+    setCanScrollUp(hasOverflow && el.scrollTop > 35);
+    setCanScrollDown(hasOverflow && el.scrollTop + el.clientHeight < el.scrollHeight - 35);
+  }, []);
+
+  const handleSmoothScroll = useCallback((direction: 'up' | 'down') => {
+    const el = mushafScrollRef.current;
+    if (!el) return;
+    const scrollStep = Math.max(220, Math.round(el.clientHeight * 0.7));
+    el.scrollBy({
+      top: direction === 'down' ? scrollStep : -scrollStep,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = mushafScrollRef.current;
+    if (!el || !isOpen) return;
+
+    const timer = setTimeout(checkScrollState, 120);
+    el.addEventListener('scroll', checkScrollState, { passive: true });
+    window.addEventListener('resize', checkScrollState);
+
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener('scroll', checkScrollState);
+      window.removeEventListener('resize', checkScrollState);
+    };
+  }, [checkScrollState, currentPage, fontSize, isLoadingVerses, isOpen]);
+
   // Track deliberate navigation vs initial open so background syncs NEVER yank page or scroll
   const pendingFocusScrollRef = useRef<'target' | 'top' | null>('target');
   const lastHandledOpenSessionRef = useRef<string>('');
 
-  // Sync reciter if teacher changed suggested sheikh while audio is stopped
+  // Sync reciter from suggested sheikh ONLY when no custom choice was saved by user
   useEffect(() => {
-    if (!isPlayingAudio && selectedSheikhName) {
-      setSelectedReciterId(resolveInitialReciterId(selectedSheikhName));
+    if (selectedSheikhName) {
+      try {
+        const saved = typeof window !== 'undefined' ? localStorage.getItem('omran_mushaf_reciter') : null;
+        if (!saved) {
+          const resolved = resolveInitialReciterId(selectedSheikhName);
+          setSelectedReciterId(resolved);
+          selectedReciterIdRef.current = resolved;
+        }
+      } catch {}
     }
-  }, [selectedSheikhName, isPlayingAudio]);
+  }, [selectedSheikhName]);
 
   // Helper to navigate to any page WITH realistic 3D flip animation + paper flip sound + persistent session save
   const navigateToPage = useCallback(
@@ -588,15 +678,22 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     }
   }, [isOpen, studentId, openRequestVersion, resolvedStartPage, activeItemId, browsedPageStorageKey]);
 
-  // Built-in Audio Player Controls
+  // Master Continuous Ayah Player: Plays sequentially verse by verse, turns pages, and NEVER stops until user clicks stop!
+  const currentPlayingVerseRef = useRef<{ surah: number; ayah: number } | null>(null);
+
   const stopAudioPlayback = useCallback(() => {
+    activeAyahPlayTokenRef.current++;
     isPlayingAudioRef.current = false;
+    currentPlayingVerseRef.current = null;
     setIsPlayingAudio(false);
     setPlayingVerse(null);
     if (audioElRef.current) {
       try {
-        audioElRef.current.pause();
-        audioElRef.current.src = '';
+        const el = audioElRef.current;
+        el.onended = null;
+        el.onerror = null;
+        el.pause();
+        el.src = '';
       } catch {}
       audioElRef.current = null;
     }
@@ -608,20 +705,16 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
     };
   }, [stopAudioPlayback]);
 
-  const playVerseAtQueueIndex = useCallback(
-    (index: number, reciterIdOverride?: string) => {
-      const queue = audioQueueRef.current;
-      if (!isPlayingAudioRef.current || index < 0 || index >= queue.length) {
-        stopAudioPlayback();
-        return;
-      }
+  const playSingleVerse = useCallback(
+    (surah: number, ayah: number, reciterIdOverride?: string) => {
+      if (!isPlayingAudioRef.current) return;
 
-      audioQueueIndexRef.current = index;
-      const item = queue[index];
-      setPlayingVerse(item);
+      const currentToken = ++activeAyahPlayTokenRef.current;
+      currentPlayingVerseRef.current = { surah, ayah };
+      setPlayingVerse({ surah, ayah });
 
-      // Turn Mushaf page automatically (with animation & sound) if the recited verse is on another page!
-      const versePage = getPageOfAyah(item.surah, item.ayah);
+      // 1. Turn Mushaf page automatically (with 3D animation & sound) if the recited verse is on another page!
+      const versePage = getPageOfAyah(surah, ayah);
       setCurrentPage(prevPage => {
         if (prevPage !== versePage) {
           const dir = versePage > prevPage ? 'next' : 'prev';
@@ -638,14 +731,14 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
         return prevPage;
       });
 
-      // Smoothly scroll the playing verse into comfortable view
+      // 2. Smoothly scroll the recited verse into comfortable center view
       setTimeout(() => {
         const container = mushafScrollRef.current;
-        const el = document.getElementById(`mushaf-ayah-${item.surah}-${item.ayah}`);
+        const el = document.getElementById(`mushaf-ayah-${surah}-${ayah}`);
         if (container && el) {
           const elRect = el.getBoundingClientRect();
           const cRect = container.getBoundingClientRect();
-          if (elRect.top < cRect.top + 40 || elRect.bottom > cRect.bottom - 40) {
+          if (elRect.top < cRect.top + 45 || elRect.bottom > cRect.bottom - 45) {
             const relTop = elRect.top - cRect.top + container.scrollTop;
             container.scrollTo({
               top: Math.max(0, relTop - container.clientHeight / 2 + elRect.height / 2),
@@ -653,39 +746,103 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             });
           }
         }
-      }, 90);
+      }, 95);
 
-      const folder = resolveReciterFolderById(reciterIdOverride || selectedReciterId);
-      const sPad = String(item.surah).padStart(3, '0');
-      const aPad = String(item.ayah).padStart(3, '0');
+      const activeReciter = reciterIdOverride || selectedReciterIdRef.current;
+      const folder = resolveReciterFolderById(activeReciter);
+      const sPad = String(surah).padStart(3, '0');
+      const aPad = String(ayah).padStart(3, '0');
       const url = `https://everyayah.com/data/${folder}/${sPad}${aPad}.mp3`;
 
-      if (audioElRef.current) {
+      // Clean unbinding of listeners and pause previous audio before changing src to eliminate phantom error skips
+      let audio = audioElRef.current;
+      if (audio) {
+        audio.onended = null;
+        audio.onerror = null;
         try {
-          audioElRef.current.pause();
-          audioElRef.current.src = '';
+          audio.pause();
         } catch {}
+      } else {
+        audio = new Audio();
+        audioElRef.current = audio;
       }
 
-      const audio = new Audio(url);
-      audioElRef.current = audio;
+      audio.preload = 'auto';
 
+      // Sequential advance: when current verse finishes, automatically play next verse without stopping!
       audio.onended = () => {
-        if (!isPlayingAudioRef.current) return;
-        playVerseAtQueueIndex(index + 1, reciterIdOverride);
+        if (activeAyahPlayTokenRef.current !== currentToken || !isPlayingAudioRef.current) return;
+        const next = getNextSequentialVerse(surah, ayah);
+        if (next && isPlayingAudioRef.current) {
+          playSingleVerse(next.surah, next.ayah, activeReciter);
+        } else {
+          stopAudioPlayback();
+        }
       };
 
       audio.onerror = () => {
-        if (!isPlayingAudioRef.current) return;
-        playVerseAtQueueIndex(index + 1, reciterIdOverride);
+        if (activeAyahPlayTokenRef.current !== currentToken || !isPlayingAudioRef.current) return;
+        console.warn(`[QuranAudio] Error loading audio for ${surah}:${ayah}, advancing to next verse`);
+        const next = getNextSequentialVerse(surah, ayah);
+        if (next && isPlayingAudioRef.current) {
+          setTimeout(() => {
+            if (activeAyahPlayTokenRef.current === currentToken && isPlayingAudioRef.current) {
+              playSingleVerse(next.surah, next.ayah, activeReciter);
+            }
+          }, 350);
+        } else {
+          stopAudioPlayback();
+        }
       };
 
-      audio.play().catch(() => {
-        stopAudioPlayback();
-      });
+      try {
+        audio.src = url;
+        audio.play().catch(err => {
+          if (activeAyahPlayTokenRef.current !== currentToken || !isPlayingAudioRef.current) return;
+          console.warn('[QuranAudio] Playback interrupted or prevented:', err);
+          stopAudioPlayback();
+        });
+      } catch (err) {
+        if (activeAyahPlayTokenRef.current === currentToken) {
+          console.warn('[QuranAudio] Failed to set audio source:', err);
+          stopAudioPlayback();
+        }
+      }
     },
-    [selectedReciterId, stopAudioPlayback, browsedPageStorageKey]
+    [stopAudioPlayback, browsedPageStorageKey]
   );
+
+  // Start continuous audio recitation starting from an exact Ayah
+  const playContinuousFromAyah = useCallback(
+    (startSurah: number, startAyah: number, reciterIdOverride?: string) => {
+      isPlayingAudioRef.current = true;
+      setIsPlayingAudio(true);
+      playSingleVerse(startSurah, startAyah, reciterIdOverride);
+    },
+    [playSingleVerse]
+  );
+
+  const handlePlayNextAyah = useCallback(() => {
+    if (!currentPlayingVerseRef.current) return;
+    const next = getNextSequentialVerse(
+      currentPlayingVerseRef.current.surah,
+      currentPlayingVerseRef.current.ayah
+    );
+    if (next) {
+      playSingleVerse(next.surah, next.ayah);
+    }
+  }, [playSingleVerse]);
+
+  const handlePlayPrevAyah = useCallback(() => {
+    if (!currentPlayingVerseRef.current) return;
+    const prev = getPrevSequentialVerse(
+      currentPlayingVerseRef.current.surah,
+      currentPlayingVerseRef.current.ayah
+    );
+    if (prev) {
+      playSingleVerse(prev.surah, prev.ayah);
+    }
+  }, [playSingleVerse]);
 
   const handleToggleAudioPlay = () => {
     if (isPlayingAudio) {
@@ -693,27 +850,137 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
       return;
     }
 
-    let queue: Array<{ surah: number; ayah: number }> = [];
-    if (audioScope === 'highlight' && activeHighlight) {
-      queue = getExpandedAyahSequenceForRange(activeHighlight);
-    } else {
-      queue = getAyahsOnPage(currentPage);
-    }
+    const startSurah = playingVerse?.surah || (activeHighlight ? activeHighlight.surahNumber : pageInfo.startSurah);
+    const startAyah = playingVerse?.ayah || (activeHighlight ? activeHighlight.fromAyah : pageInfo.startAyah);
 
-    if (queue.length === 0) return;
-
-    audioQueueRef.current = queue;
-    isPlayingAudioRef.current = true;
-    setIsPlayingAudio(true);
-    playVerseAtQueueIndex(0);
+    playContinuousFromAyah(startSurah, startAyah);
   };
 
   const handleReciterChange = (newReciterId: string) => {
     setSelectedReciterId(newReciterId);
-    if (isPlayingAudioRef.current) {
-      playVerseAtQueueIndex(audioQueueIndexRef.current, newReciterId);
+    selectedReciterIdRef.current = newReciterId;
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('omran_mushaf_reciter', newReciterId);
+      }
+    } catch {}
+
+    const found = FAMOUS_RECITERS.find(r => r.id === newReciterId);
+    if (found && onReciterChange) {
+      onReciterChange(found.name, newReciterId);
+    }
+
+    if (isPlayingAudioRef.current && currentPlayingVerseRef.current) {
+      playSingleVerse(
+        currentPlayingVerseRef.current.surah,
+        currentPlayingVerseRef.current.ayah,
+        newReciterId
+      );
     }
   };
+
+  // Ayah Long-Press (التعليق بالإصبع) gesture tracking for phones & tablets
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressTriggeredRef = useRef<boolean>(false);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleAyahTouchStart = (
+    e: React.TouchEvent,
+    surahNumber: number,
+    ayahNumber: number
+  ) => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+
+    const touch = e.touches[0];
+    if (!touch) return;
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+
+    // 400ms hold timer (تعليق بالإصبع لبدء التلاوة المستمرة)
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      try {
+        if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate(50);
+        }
+      } catch {}
+
+      // Select Ayah and begin continuous recitation!
+      playContinuousFromAyah(surahNumber, ayahNumber);
+      const sInfo = getSurahInfo(surahNumber);
+      showToast('added', `بدء تلاوة الشيخ المستمرة من الآية (${toArabicNumerals(ayahNumber)}) سورة ${sInfo?.name || surahNumber}`);
+    }, 400);
+  };
+
+  const handleAyahTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPosRef.current) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+
+    // Cancel long-press if user moves finger to scroll
+    if (dx > 9 || dy > 9) {
+      clearLongPressTimer();
+    }
+  };
+
+  const handleAyahTouchEnd = (
+    e: React.TouchEvent,
+    surahNumber: number,
+    ayahNumber: number
+  ) => {
+    clearLongPressTimer();
+
+    // If long-press fired, prevent click / double-tap
+    if (longPressTriggeredRef.current) {
+      if (e.cancelable) e.preventDefault();
+      longPressTriggeredRef.current = false;
+      return;
+    }
+
+    // Double-tap error recording
+    const now = Date.now();
+    if (
+      lastTapRef.current.surah === surahNumber &&
+      lastTapRef.current.ayah === ayahNumber &&
+      now - lastTapRef.current.time < 360
+    ) {
+      if (e.cancelable) e.preventDefault();
+      recordAyahError(surahNumber, ayahNumber);
+      lastTapRef.current = { time: 0, surah: 0, ayah: 0 };
+      return;
+    }
+    lastTapRef.current = { time: now, surah: surahNumber, ayah: ayahNumber };
+  };
+
+  const handleAyahTouchCancel = () => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+  };
+
+  // Prevent native Android Chrome & browser context menu from ever showing inside Mushaf
+  useEffect(() => {
+    if (!isOpen) return;
+    const preventContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('.mushaf-reading-area, .mushaf-scroll-container, .mushaf-ayah-item, .mushaf-leaf-frame')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('contextmenu', preventContextMenu, { capture: true });
+    return () => {
+      window.removeEventListener('contextmenu', preventContextMenu, { capture: true });
+    };
+  }, [isOpen]);
 
   // Load complete authentic King Fahd Uthmani Quran verses
   useEffect(() => {
@@ -949,14 +1216,14 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   return (
     <div
       ref={modalContainerRef}
-      className={`fixed inset-0 z-[99999] flex flex-col bg-black/92 backdrop-blur-md overflow-hidden text-right select-none ${
-        isFullscreen ? 'p-0' : 'p-1.5 sm:p-3 md:p-4'
+      className={`fixed inset-0 z-[99999] flex flex-col bg-black/92 backdrop-blur-md overflow-hidden text-right select-none h-[100dvh] max-h-[100dvh] w-full ${
+        isFullscreen ? 'p-0' : 'p-1 sm:p-2.5 md:p-4'
       }`}
       dir="rtl"
     >
       {/* Quran Modal Main Wrapper Styled in Active Platform Theme */}
       <div
-        className={`w-full h-full mx-auto flex flex-col shadow-2xl overflow-hidden relative transition-all duration-200 ${
+        className={`w-full h-full min-h-0 max-h-full mx-auto flex flex-col shadow-2xl overflow-hidden relative transition-all duration-200 ${
           isFullscreen
             ? 'max-w-none rounded-none border-0'
             : 'max-w-5xl rounded-2xl sm:rounded-3xl border-2'
@@ -1332,13 +1599,18 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
           ref={mushafScrollRef}
           onTouchStart={handlePageTouchStart}
           onTouchEnd={handlePageTouchEnd}
-          className="flex-1 overflow-y-auto px-2 sm:px-6 py-3 sm:py-6 flex flex-col items-center custom-scrollbar"
-          style={{ backgroundColor: themeDarkBg }}
+          className="flex-1 min-h-0 w-full overflow-y-auto px-2 sm:px-6 py-3 sm:py-6 flex flex-col items-center custom-scrollbar mushaf-scroll-container scroll-smooth relative"
+          style={{
+            backgroundColor: themeDarkBg,
+            touchAction: 'pan-y',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorY: 'contain'
+          }}
         >
           {/* Animated Page Flip Leaf Frame */}
           <div
             key={flipAnimKey}
-            className={`w-full max-w-2xl bg-[#fffef7] text-[#1a1a1a] rounded-xl sm:rounded-2xl shadow-2xl border-4 relative overflow-hidden transition-all p-4 sm:p-7 md:p-9 ${
+            className={`w-full max-w-2xl bg-[#fffef7] text-[#1a1a1a] rounded-xl sm:rounded-2xl shadow-2xl border-4 relative transition-all p-3.5 sm:p-7 md:p-9 pb-16 sm:pb-24 mb-10 ${
               flipDirection === 'next'
                 ? 'mushaf-flip-next'
                 : flipDirection === 'prev'
@@ -1347,7 +1619,8 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             }`}
             style={{
               borderColor: '#c5a059',
-              boxShadow: '0 20px 45px -10px rgba(0,0,0,0.45)'
+              boxShadow: '0 20px 45px -10px rgba(0,0,0,0.45)',
+              touchAction: 'pan-y'
             }}
           >
             {/* Real King Fahd Mushaf Header line */}
@@ -1377,10 +1650,11 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                 </div>
               ) : (
                 <div
-                  className="font-mushaf text-justify leading-[2.5] sm:leading-[2.7] text-[#1c1c1c]"
+                  className="font-mushaf text-justify leading-[2.5] sm:leading-[2.7] text-[#1c1c1c] select-none"
                   style={{
                     fontSize: `${fontSize}px`,
-                    wordSpacing: '0.12em'
+                    wordSpacing: '0.12em',
+                    touchAction: 'pan-y'
                   }}
                   dir="rtl"
                 >
@@ -1431,24 +1705,40 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                             <span
                               key={ay.ayahNumber}
                               id={`mushaf-ayah-${section.surahNumber}-${ay.ayahNumber}`}
+                              onContextMenu={e => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                playContinuousFromAyah(section.surahNumber, ay.ayahNumber);
+                                return false;
+                              }}
+                              onTouchStart={e => handleAyahTouchStart(e, section.surahNumber, ay.ayahNumber)}
+                              onTouchMove={handleAyahTouchMove}
+                              onTouchEnd={e => handleAyahTouchEnd(e, section.surahNumber, ay.ayahNumber)}
+                              onTouchCancel={handleAyahTouchCancel}
                               onDoubleClick={() => recordAyahError(section.surahNumber, ay.ayahNumber)}
-                              onTouchStart={e =>
-                                handleTouchStartWithDoubleTap(e, section.surahNumber, ay.ayahNumber)
-                              }
-                              className={`relative inline cursor-pointer select-text transition-colors duration-150 rounded px-1 py-0.5 ${
+                              onClick={() => {
+                                if (isPlayingAudioRef.current) {
+                                  playContinuousFromAyah(section.surahNumber, ay.ayahNumber);
+                                }
+                              }}
+                              className={`mushaf-ayah-item relative inline cursor-pointer select-none transition-all duration-150 rounded px-1.5 py-0.5 ${
                                 isTarget ? 'ayah-primary-target' : ''
-                              } ${ay.isHighlighted ? 'ayah-highlighted' : ''}`}
+                              } ${ay.isHighlighted ? 'ayah-highlighted' : ''} ${
+                                isAudioActive ? 'ayah-recitation-active' : ''
+                              }`}
                               style={{
+                                touchAction: 'pan-y',
                                 backgroundColor: isAudioActive
-                                  ? `${themeAccent}50`
+                                  ? `${themeAccent}40`
                                   : errCount > 0
                                   ? 'rgba(239, 68, 68, 0.16)'
                                   : ay.isHighlighted
                                   ? 'rgba(251, 191, 36, 0.18)'
                                   : 'transparent',
-                                outline: isAudioActive ? `2px solid ${themeAccent}` : undefined
+                                outline: isAudioActive ? `2.5px solid ${themeAccent}` : undefined,
+                                boxShadow: isAudioActive ? `0 0 16px ${themeAccent}90` : undefined
                               }}
-                              title="انقر نقراً مزدوجاً لتسجيل خطأ للطالب سحابياً"
+                              title="علق بإصبعك (Long Press) لبدء التلاوة المستمرة بصوت الشيخ من هذه الآية • انقر مرتين لرصد خطأ"
                             >
                               {/* Error Badge with Instant Clear on Click */}
                               {errCount > 0 && (
@@ -1495,6 +1785,50 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Floating Smooth Scroll Assist Controls for Mobile & All Screens */}
+          {(canScrollUp || canScrollDown) && (
+            <div
+              className="sticky bottom-4 z-40 self-end mr-2 sm:mr-4 mb-2 flex flex-col gap-2 items-center pointer-events-auto transition-all"
+              style={{ direction: 'ltr' }}
+            >
+              {canScrollUp && (
+                <button
+                  type="button"
+                  onClick={() => handleSmoothScroll('up')}
+                  className="w-10 h-10 rounded-full shadow-2xl border-2 flex items-center justify-center cursor-pointer transition-all active:scale-90 hover:scale-110 backdrop-blur-md"
+                  style={{
+                    backgroundColor: `${themePrimary}f0`,
+                    borderColor: `${themeAccent}cc`,
+                    color: themeAccent,
+                    boxShadow: '0 6px 20px rgba(0,0,0,0.5)'
+                  }}
+                  title="تمرير سلس لأعلى المصحف"
+                  aria-label="تمرير لأعلى"
+                >
+                  <ChevronUp className="w-5 h-5 stroke-[2.5]" />
+                </button>
+              )}
+
+              {canScrollDown && (
+                <button
+                  type="button"
+                  onClick={() => handleSmoothScroll('down')}
+                  className="w-10 h-10 rounded-full shadow-2xl border-2 flex items-center justify-center cursor-pointer transition-all active:scale-90 hover:scale-110 backdrop-blur-md animate-bounce"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    color: accentTextColor,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
+                  }}
+                  title="تمرير سلس لأسفل الصفحة لرؤية باقي الآيات"
+                  aria-label="تمرير لأسفل"
+                >
+                  <ChevronDown className="w-5 h-5 stroke-[2.5]" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}
@@ -1526,9 +1860,37 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             <span className="text-white font-bold text-[11px] sm:text-xs font-heading truncate max-w-[180px] sm:max-w-md">
               {formatPageTitle(currentPage)}
             </span>
-            <span className="hidden md:inline text-[10px] text-slate-300">
-              استخدم الأسهم (← / →) أو اسحب الصفحة للتقليب • اضغط (F) لملء الشاشة
-            </span>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="hidden md:inline text-[10px] text-slate-300">
+                استخدم الأسهم (← / →) أو اسحب الصفحة للتقليب • اضغط (F) لملء الشاشة
+              </span>
+              {(canScrollUp || canScrollDown) && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSmoothScroll('up')}
+                    disabled={!canScrollUp}
+                    className="px-2 py-0.5 rounded-lg border text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed transition-all active:scale-95 hover:brightness-110"
+                    style={{ backgroundColor: themeCard, borderColor: themeBorder, color: themeAccent }}
+                    title="تمرير سلس لأعلى الوجه"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                    <span>أعلى</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSmoothScroll('down')}
+                    disabled={!canScrollDown}
+                    className="px-2 py-0.5 rounded-lg border text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed transition-all active:scale-95 hover:brightness-110"
+                    style={{ backgroundColor: themeCard, borderColor: themeBorder, color: themeAccent }}
+                    title="تمرير سلس لأسفل الوجه لرؤية باقي الآيات"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                    <span>أسفل</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -1548,6 +1910,90 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" style={{ color: accentTextColor }} />
           </button>
         </div>
+
+        {/* Floating Continuous Recitation Active Controller Bar */}
+        {isPlayingAudio && playingVerse && (
+          <div
+            className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-2 sm:gap-4 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-2xl shadow-2xl border-2 backdrop-blur-xl transition-all max-w-[94vw] w-fit"
+            style={{
+              backgroundColor: `${themePrimary}fa`,
+              borderColor: themeAccent,
+              boxShadow: `0 12px 36px rgba(0,0,0,0.65), 0 0 20px ${themeAccent}40`
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 border animate-pulse"
+                style={{
+                  backgroundColor: `${themeAccent}25`,
+                  borderColor: themeAccent,
+                  color: themeAccent
+                }}
+              >
+                <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] sm:text-xs font-black text-white truncate flex items-center gap-1.5">
+                  <span>سُورَةُ {getSurahInfo(playingVerse.surah)?.name || playingVerse.surah}</span>
+                  <span
+                    className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/40 border border-white/10"
+                    style={{ color: themeAccent }}
+                  >
+                    آية {toArabicNumerals(playingVerse.ayah)}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-300 font-bold truncate flex items-center gap-1.5 mt-0.5">
+                  <span className="hidden sm:inline">القارئ:</span>
+                  <select
+                    value={selectedReciterId}
+                    onChange={e => handleReciterChange(e.target.value)}
+                    className="bg-black/50 border border-white/20 text-[10px] text-amber-300 rounded px-1.5 py-0.5 outline-none cursor-pointer max-w-[130px] sm:max-w-[170px] truncate"
+                    title="تغيير القارئ أثناء التلاوة"
+                  >
+                    {FAMOUS_RECITERS.map(r => (
+                      <option key={r.id} value={r.id} style={{ backgroundColor: '#022c22', color: '#ffffff' }}>
+                        {r.name.replace('الشيخ ', '').replace(' (المصحف المعلم)', ' - معلم').replace(' (المصحف المرتل)', '')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Player Control Buttons */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 pr-2 border-r border-white/10">
+              <button
+                type="button"
+                onClick={handlePlayPrevAyah}
+                className="p-1.5 sm:p-2 rounded-xl border text-slate-200 hover:text-white transition-all cursor-pointer hover:brightness-110 active:scale-95"
+                style={{ backgroundColor: themeCard, borderColor: themeBorder }}
+                title="الآية السابقة"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={stopAudioPlayback}
+                className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl font-black text-xs cursor-pointer shadow-md transition-all active:scale-95 bg-red-600 hover:bg-red-700 text-white"
+                title="إيقاف التلاوة"
+              >
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>إيقاف</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePlayNextAyah}
+                className="p-1.5 sm:p-2 rounded-xl border text-slate-200 hover:text-white transition-all cursor-pointer hover:brightness-110 active:scale-95"
+                style={{ backgroundColor: themeCard, borderColor: themeBorder }}
+                title="الآية التالية"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Floating Cloud Save Notification Toast */}
         {lastErrorNotification && (

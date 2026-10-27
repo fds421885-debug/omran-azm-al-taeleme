@@ -222,7 +222,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     }
   ]);
 
-  const [selectedSheikh, setSelectedSheikh] = useState<string>(FAMOUS_RECITERS[0].name);
+  const [selectedSheikh, setSelectedSheikh] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('omran_mushaf_reciter');
+        if (saved) {
+          const found = FAMOUS_RECITERS.find(r => r.id === saved || r.name === saved);
+          if (found) return found.name;
+        }
+      }
+    } catch {}
+    return FAMOUS_RECITERS[0].name;
+  });
   const [targetRepetitions, setTargetRepetitions] = useState<number>(3);
   const [dailyHomeNote, setDailyHomeNote] = useState<string>(
     'الاستماع للقارئ المتقن 3 مرات، وتكرار الآيات غيباً 5 مرات قبل النوم والتسميع على ولي الأمر.'
@@ -985,6 +996,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setSelectedSheikh(activeStudent.activeListeningAssignment.sheikhName);
       } else if (activeStudent.aiPlan?.currentDailyAssignment?.suggestedSheikh) {
         setSelectedSheikh(activeStudent.aiPlan.currentDailyAssignment.suggestedSheikh);
+      } else {
+        try {
+          const saved = typeof window !== 'undefined' ? localStorage.getItem('omran_mushaf_reciter') : null;
+          if (saved) {
+            const found = FAMOUS_RECITERS.find(r => r.id === saved || r.name === saved);
+            if (found) setSelectedSheikh(found.name);
+          }
+        } catch {}
       }
       setTodayNewDidNotRecite(false);
       setTodayNewDidNotReciteReason('');
@@ -3936,6 +3955,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       onChange={e => {
                         const val = e.target.value;
                         setSelectedSheikh(val);
+                        const found = FAMOUS_RECITERS.find(r => r.name === val || r.id === val);
+                        if (found) {
+                          try {
+                            localStorage.setItem('omran_mushaf_reciter', found.id);
+                          } catch {}
+                        }
                         if (val === 'بدون') {
                           setTargetRepetitions(0);
                         } else if (targetRepetitions === 0) {
@@ -4635,6 +4660,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         highlightItems={mushafHighlightItems}
         activeItemId={mushafActiveItemId}
         selectedSheikhName={selectedSheikh}
+        onReciterChange={(reciterName, reciterId) => {
+          setSelectedSheikh(reciterName);
+          try {
+            if (typeof window !== 'undefined' && reciterId) {
+              localStorage.setItem('omran_mushaf_reciter', reciterId);
+            }
+          } catch {}
+        }}
         studentName={activeStudent?.name}
         studentId={activeStudent?.id}
         theme={currentTheme}
