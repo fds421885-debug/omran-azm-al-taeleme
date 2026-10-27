@@ -79,7 +79,8 @@ import {
   DEFAULT_LEADERBOARD_SETTINGS,
   OMRAN_CACHE_KEYS,
   getLocalCache,
-  getDeletedExamIds
+  getDeletedExamIds,
+  purgeAllLocalDataCaches
 } from './lib/firebase';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { Navbar } from './components/Navbar';
@@ -378,9 +379,22 @@ export function App() {
     getLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, [])
   );
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isInitialAppBoot, setIsInitialAppBoot] = useState(true);
   const [isTabLoading, setIsTabLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('مُحدّث سحابياً');
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncText, setCloudSyncText] = useState('مزامنة سحابية مباشرة...');
+  const syncTimeoutRef = useRef<any>(null);
+
+  const triggerCloudSyncIndicator = useCallback((text = 'تحديث سحابي مباشر (Firestore)...') => {
+    setCloudSyncText(text);
+    setIsCloudSyncing(true);
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      setIsCloudSyncing(false);
+    }, 2200);
+  }, []);
 
   // Dedicated Complex Portal ID parsed from shareable link (e.g. ?complexPortal=xxx)
   const [portalComplexId, setPortalComplexId] = useState<string | null>(() => {
@@ -494,16 +508,24 @@ export function App() {
     resolvePortalStudent();
   }, [portalStudentId, students]);
 
-  // Load all data from Firestore / LocalCache with non-blocking live sync
+  // Load all data from Firestore directly (central real-time database)
   const loadAllData = async (isManualSync = false) => {
+    // Purge any residual or legacy local storage cache keys to ensure Firestore is single source of truth
+    purgeAllLocalDataCaches();
+
     if (isManualSync) {
       setIsSyncing(true);
+      triggerCloudSyncIndicator('جاري تحديث كافة السجلات من فايربيس...');
+    } else {
+      triggerCloudSyncIndicator('جاري فحص وتحديث السجلات سحابياً...');
     }
-    // Safety auto-dismiss: ensure loading state never hangs
+
+    // Safety auto-dismiss: ensure loading state never hangs indefinitely
     const safetyTimer = setTimeout(() => {
       setIsSyncing(false);
       setIsLoadingData(false);
-    }, 1800);
+      setIsInitialAppBoot(false);
+    }, 15000);
 
     try {
       if (isManualSync) {
@@ -589,6 +611,7 @@ export function App() {
       console.warn('Initial data load notice:', e);
     } finally {
       clearTimeout(safetyTimer);
+      setIsInitialAppBoot(false);
       setIsLoadingData(false);
       setIsSyncing(false);
     }
@@ -902,49 +925,56 @@ export function App() {
     loadAllData();
 
     // 4. Attach Firestore real-time subscriptions for the active database
+    let isInitialSnapshotSkipped = false;
+    setTimeout(() => { isInitialSnapshotSkipped = true; }, 1800);
+
+    const notifyBackgroundSync = () => {
+      if (isInitialSnapshotSkipped) {
+        triggerCloudSyncIndicator('تم استقبال تحديث جديد من السحابة ✓');
+      }
+    };
+
     const unsubStudents = OmranDataService.subscribeStudents(newStudents => {
       if (isMounted) {
-        if (newStudents && newStudents.length > 0) {
-          setStudents(prev => {
-            if (!prev || prev.length === 0) return newStudents;
-            const prevMap = new Map<string, Student>(prev.map(s => [s.id, s]));
-            return newStudents.map(ns => {
-              const local = prevMap.get(ns.id);
-              if (
-                local?.mushafErrorsUpdatedAt &&
-                (!ns.mushafErrorsUpdatedAt || local.mushafErrorsUpdatedAt > ns.mushafErrorsUpdatedAt)
-              ) {
-                return {
-                  ...ns,
-                  mushafErrors: local.mushafErrors,
-                  mushafErrorsUpdatedAt: local.mushafErrorsUpdatedAt
-                };
-              }
-              return ns;
-            });
-          });
-        } else {
-          setStudents(prev => (prev.length > 0 ? prev : newStudents));
-        }
+        setStudents(newStudents || []);
+        notifyBackgroundSync();
       }
     });
     const unsubAttendance = OmranDataService.subscribeAttendance(newAtt => {
-      if (isMounted) setAttendance(newAtt);
+      if (isMounted) {
+        setAttendance(newAtt);
+        notifyBackgroundSync();
+      }
     });
     const unsubEvaluations = OmranDataService.subscribeEvaluations(newEvals => {
-      if (isMounted) setEvaluations(newEvals);
+      if (isMounted) {
+        setEvaluations(newEvals);
+        notifyBackgroundSync();
+      }
     });
     const unsubCriteria = OmranDataService.subscribeCriteria(newCrit => {
-      if (isMounted) setCriteria(newCrit);
+      if (isMounted) {
+        setCriteria(newCrit);
+        notifyBackgroundSync();
+      }
     });
     const unsubSettings = OmranDataService.subscribeSettings(newSet => {
-      if (isMounted) setSettings(newSet);
+      if (isMounted) {
+        setSettings(newSet);
+        notifyBackgroundSync();
+      }
     });
     const unsubTeachers = OmranDataService.subscribeTeachers(newTeach => {
-      if (isMounted) setTeachers(newTeach);
+      if (isMounted) {
+        setTeachers(newTeach);
+        notifyBackgroundSync();
+      }
     });
     const unsubViolations = OmranDataService.subscribeViolations(newViolations => {
-      if (isMounted) setViolations(newViolations);
+      if (isMounted) {
+        setViolations(newViolations);
+        notifyBackgroundSync();
+      }
     });
     const unsubHalaqahs = OmranDataService.subscribeHalaqahs(newHalaqahs => {
       if (isMounted) {
@@ -953,11 +983,15 @@ export function App() {
         } else {
           setHalaqahs(prev => (prev.length > 0 ? prev : newHalaqahs));
         }
+        notifyBackgroundSync();
       }
     });
     // complexes subscription always listens to Central DB
     const unsubComplexes = OmranDataService.subscribeComplexes(newComplexes => {
-      if (isMounted) setComplexes(newComplexes);
+      if (isMounted) {
+        setComplexes(newComplexes);
+        notifyBackgroundSync();
+      }
     });
     const unsubPlanConfig = OmranDataService.subscribePlanScheduleConfig(cfg => {
       if (!isMounted || !cfg) return;
@@ -3627,14 +3661,14 @@ export function App() {
         {/* Tab Views with Buttery Smooth Animated Transitions (مثل المنصات العالمية) */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab + (isTabLoading || isLoadingData ? '_loading' : '_ready')}
+            key={activeTab}
             initial={{ opacity: 0, y: 10, scale: 0.995 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.995 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className="w-full space-y-6"
           >
-            {isTabLoading || isLoadingData ? (
+            {isTabLoading || (isInitialAppBoot && students.length === 0) ? (
               <TabSkeleton activeTab={activeTab} activeComplex={activeComplex} />
             ) : (
               <>
@@ -4225,6 +4259,31 @@ export function App() {
                 </div>
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Sleek Modern Bottom-Right Cloud Sync Indicator (تحميل وتحديث اسفل اليمين بدون إعادة تحميل أو إزعاج) */}
+      <AnimatePresence>
+        {isCloudSyncing && (
+          <motion.div
+            initial={{ opacity: 0, y: 25, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 25, scale: 0.9 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#022c22]/95 border-2 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
+            style={{
+              borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}70`,
+              color: activeComplex?.theme?.accentColor || '#fbbf24'
+            }}
+            dir="rtl"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ color: activeComplex?.theme?.accentColor || '#fbbf24' }} />
+            <span className="text-white font-medium">{cloudSyncText}</span>
           </motion.div>
         )}
       </AnimatePresence>

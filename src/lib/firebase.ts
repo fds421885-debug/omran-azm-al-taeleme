@@ -158,8 +158,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Resilient, non-blocking Firestore query helpers with automatic fast timeout (2.5s)
-export async function safeGetDocs(colRef: any, timeoutMs = 2500): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
+// Resilient, non-blocking Firestore query helpers with automatic timeout (20s)
+export async function safeGetDocs(colRef: any, timeoutMs = 20000): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
   try {
     const fetchPromise = getDocs(colRef);
     const timeoutPromise = new Promise<{ docs: any[]; empty: boolean; forEach: (fn: any) => void }>((resolve) =>
@@ -175,7 +175,7 @@ export async function safeGetDocs(colRef: any, timeoutMs = 2500): Promise<{ docs
   }
 }
 
-export async function safeGetDoc(docRef: any, timeoutMs = 2500): Promise<{ exists: () => boolean; data: () => any }> {
+export async function safeGetDoc(docRef: any, timeoutMs = 20000): Promise<{ exists: () => boolean; data: () => any }> {
   try {
     const fetchPromise = getDoc(docRef);
     const timeoutPromise = new Promise<{ exists: () => boolean; data: () => any }>((resolve) =>
@@ -1725,36 +1725,88 @@ export function removeDeletedCertificateId(id: string): void {
   removeTombstoneFromBothDbs('deletedCertificates', id).catch(() => {});
 }
 
-// Safe Local Cache Getter with fallback
+// In-memory runtime cache for the active session (NEVER writes to or reads from localStorage for platform entities!)
+// We completely eliminate localStorage persistence of business data so every device and user is 100% unified with Firebase Firestore!
+const runtimeMemoryStore = new Map<string, any>();
+
 export function getLocalCache<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
+  // In-memory runtime lookup only, strictly bypassing localStorage to prevent divergent stale user copies
+  if (runtimeMemoryStore.has(key)) {
+    return runtimeMemoryStore.get(key) as T;
   }
+  return fallback;
 }
 
-// Safe Local Cache Setter with deep sanitization
 export function setLocalCache<T>(key: string, data: T): void {
   try {
-    const cleaned = cleanFirestoreData(data);
-    localStorage.setItem(key, JSON.stringify(cleaned));
+    runtimeMemoryStore.set(key, data);
+    // Explicitly purge the key from localStorage if it previously existed
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+// Complete purge of all local storage platform data caches across the browser
+export function purgeAllLocalDataCaches(): void {
+  runtimeMemoryStore.clear();
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith('omran_cache_') ||
+          k.startsWith('omran_data_') ||
+          k.startsWith('omran_students') ||
+          k.startsWith('omran_attendance') ||
+          k.startsWith('omran_evaluations') ||
+          k.startsWith('omran_criteria') ||
+          k.startsWith('omran_settings') ||
+          k.startsWith('omran_teachers') ||
+          k.startsWith('omran_complexes') ||
+          k.startsWith('omran_halaqahs') ||
+          k.startsWith('omran_violations') ||
+          k.startsWith('omran_exams') ||
+          k.startsWith('omran_submissions') ||
+          k.startsWith('omran_certificates') ||
+          k.startsWith('omran_leaderboard') ||
+          k.startsWith('omran_recordings') ||
+          k.startsWith('omran_listening') ||
+          k.startsWith('omran_teacher_') ||
+          k.startsWith('omran_mosque') ||
+          k.startsWith('omran_library') ||
+          k.startsWith('omran_deleted_') ||
+          k.startsWith('omran_plan_schedule_') ||
+          k.startsWith('omran_registration_applications') ||
+          k === 'omran_certificates_templates' ||
+          k === 'omran_exams_initialized' ||
+          k === 'omran_platform_initialized_flag' ||
+          k === 'omran_temp_transient_session')
+      ) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
   } catch (e) {
-    console.warn('[OmranDataService] LocalStorage save warning:', e);
+    console.warn('[OmranDataService] Local cache purge notice:', e);
   }
 }
 
-// Non-destructive check to ensure legacy keys are safely migrated without wiping user data
-export function clearLegacyLocalStorage() {
-  // We strictly DO NOT wipe user data to guarantee dual-persistence safety and continuous offline resilience!
-  // Only remove temporary invalid or orphaned session tokens if any
+// Automatically purge stale local storage caches on startup
+if (typeof window !== 'undefined') {
   try {
-    localStorage.removeItem('omran_temp_transient_session');
-  } catch (e) {
-    // Ignore in case localStorage is disabled or restricted
-  }
+    purgeAllLocalDataCaches();
+  } catch {}
+}
+
+export function clearLegacyLocalStorage() {
+  purgeAllLocalDataCaches();
 }
 
 // Deep sanitize any object before sending to Firestore so no 'undefined' fields ever reach setDoc
@@ -2085,8 +2137,6 @@ export class OmranDataService {
   static async loadTeachers(): Promise<TeacherAccount[]> {
     await syncTombstonesFromCloud().catch(() => {});
     const deletedTeacherIds = getDeletedTeacherIds();
-    const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, [])
-      .filter(t => t?.id && !deletedTeacherIds.has(t.id));
     let cloudList: TeacherAccount[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'teachers'));
@@ -2101,23 +2151,17 @@ export class OmranDataService {
     }
 
     const mergedMap = new Map<string, TeacherAccount>();
-    // If teachers already exist in cloud or local, or any deletions occurred, NEVER inject INITIAL_TEACHERS
-    if (cloudList.length === 0 && local.length === 0 && deletedTeacherIds.size === 0) {
-      for (const t of INITIAL_TEACHERS) {
-        if (!deletedTeacherIds.has(t.id)) {
-          mergedMap.set(t.id, t);
-        }
-      }
-    } else {
-      // First populate with local cache
-      for (const t of local) {
-        if (t?.id && !deletedTeacherIds.has(t.id)) {
-          mergedMap.set(t.id, t);
-        }
-      }
-      // Cloud is authoritative
+    // If teachers exist in cloud, use cloud exclusively
+    if (cloudList.length > 0) {
       for (const t of cloudList) {
         if (t?.id && !deletedTeacherIds.has(t.id)) {
+          mergedMap.set(t.id, t);
+        }
+      }
+    } else if (deletedTeacherIds.size === 0) {
+      // Only fallback to INITIAL_TEACHERS if Firestore has no teachers and no deletions occurred
+      for (const t of INITIAL_TEACHERS) {
+        if (!deletedTeacherIds.has(t.id)) {
           mergedMap.set(t.id, t);
         }
       }
@@ -2380,12 +2424,10 @@ export class OmranDataService {
     } catch {}
   }
 
-  // Load Complexes with Dual Persistence and Tombstone filtering
+  // Load Complexes strictly from Firestore with Tombstones Filter
   static async loadComplexes(): Promise<QuranComplex[]> {
     await syncTombstonesFromCloud().catch(() => {});
     const deletedComplexIds = getDeletedComplexIds();
-    const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, [])
-      .filter(c => c?.id && !deletedComplexIds.has(c.id));
     let cloudList: QuranComplex[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getCentralDb(), 'complexes'));
@@ -2399,41 +2441,14 @@ export class OmranDataService {
       handleFirestoreError(e, OperationType.LIST, 'complexes');
     }
 
-    const mergedMap = new Map<string, QuranComplex>();
-    // If complexes already exist in cloud or local, NEVER inject DEFAULT_COMPLEXES
-    if (cloudList.length === 0 && local.length === 0 && deletedComplexIds.size === 0) {
-      for (const c of DEFAULT_COMPLEXES) {
-        if (!deletedComplexIds.has(c.id)) {
-          mergedMap.set(c.id, c);
-        }
-      }
-    } else {
-      // First populate with local cache
-      for (const c of local) {
-        if (c?.id && !deletedComplexIds.has(c.id)) {
-          mergedMap.set(c.id, c);
-        }
-      }
-      // Cloud is authoritative - update mergedMap with latest cloud data
-      for (const c of cloudList) {
-        if (c?.id && !deletedComplexIds.has(c.id)) {
-          const localC = mergedMap.get(c.id);
-          if (!localC) {
-            mergedMap.set(c.id, c);
-          } else {
-            const cloudTime = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
-            const localTime = localC.updatedAt ? new Date(localC.updatedAt).getTime() : 0;
-            if (cloudTime >= localTime || !localTime) {
-              mergedMap.set(c.id, { ...localC, ...c });
-            }
-          }
-        }
-      }
+    if (cloudList.length > 0) {
+      return cloudList;
     }
 
-    const merged = Array.from(mergedMap.values());
-    setLocalCache(OMRAN_CACHE_KEYS.COMPLEXES, merged);
-    return merged;
+    if (deletedComplexIds.size === 0) {
+      return DEFAULT_COMPLEXES;
+    }
+    return [];
   }
 
   // Subscribe to Complexes in real-time
@@ -2448,35 +2463,12 @@ export class OmranDataService {
             list.push(c);
           }
         });
-        if (list.length === 0 && deletedComplexIds.size === 0) {
-          const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
-          callback(local.length > 0 ? local : DEFAULT_COMPLEXES);
+        if (list.length > 0) {
+          callback(list);
+        } else if (deletedComplexIds.size === 0) {
+          callback(DEFAULT_COMPLEXES);
         } else {
-          // Cloud snapshot is authoritative - update local cache with cloud data
-          const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
-          const map = new Map<string, QuranComplex>();
-          for (const c of local) {
-            if (c?.id && !deletedComplexIds.has(c.id)) {
-              map.set(c.id, c);
-            }
-          }
-          for (const c of list) {
-            if (c?.id && !deletedComplexIds.has(c.id)) {
-              const localC = map.get(c.id);
-              if (!localC) {
-                map.set(c.id, c);
-              } else {
-                const cloudTime = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
-                const localTime = localC.updatedAt ? new Date(localC.updatedAt).getTime() : 0;
-                if (cloudTime >= localTime || !localTime) {
-                  map.set(c.id, { ...localC, ...c });
-                }
-              }
-            }
-          }
-          const finalComplexes = Array.from(map.values());
-          setLocalCache(OMRAN_CACHE_KEYS.COMPLEXES, finalComplexes);
-          callback(finalComplexes);
+          callback([]);
         }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'complexes');
@@ -2949,37 +2941,60 @@ export class OmranDataService {
     };
   }
 
-  // Import / Restore specific complex data
+  // Import / Restore specific complex data directly into Firestore
   static async importComplexBackup(
     arg1: string | ComplexBackupData,
-    arg2?: string | ComplexBackupData
+    arg2?: string | ComplexBackupData | ((progress: number, stageName: string, detailText?: string) => void),
+    arg3?: (progress: number, stageName: string, detailText?: string) => void
   ): Promise<{ studentsCount: number; halaqahsCount: number }> {
     let complexId: string;
     let data: ComplexBackupData;
+    let onProgress: ((progress: number, stageName: string, detailText?: string) => void) | undefined;
+
     if (typeof arg1 === 'string') {
       complexId = arg1;
       data = arg2 as ComplexBackupData;
+      onProgress = arg3;
     } else {
       data = arg1 as ComplexBackupData;
       complexId = typeof arg2 === 'string' ? arg2 : (data.complex?.id || 'unknown');
+      onProgress = typeof arg2 === 'function' ? arg2 : arg3;
     }
 
     if (!data || typeof data !== 'object') {
       throw new Error('بيانات النسخة الاحتياطية للمجمع غير صالحة.');
     }
+
+    const yieldTick = (ms = 35) => new Promise(r => setTimeout(r, ms));
+
+    onProgress?.(10, 'فحص ملف المجمع', `جاري تحليل بيانات مجمع (${data.complex?.name || complexId})...`);
+    await yieldTick(50);
+
     if (data.complex) {
       await this.saveComplex({ ...data.complex, id: complexId });
     }
+    await yieldTick(30);
+
+    onProgress?.(30, 'حفظ الحلقات القرآنية', `جاري رفع الحلقات (${data.halaqahs?.length || 0} حلقة)...`);
+    await yieldTick(30);
     if (Array.isArray(data.halaqahs)) {
       for (const h of data.halaqahs) {
         await this.saveHalaqah({ ...h, complexId, complexName: data.complex?.name });
       }
     }
+    await yieldTick(30);
+
+    onProgress?.(55, 'حفظ بيانات الطلاب', `جاري رفع طلاب المجمع (${data.students?.length || 0} طالب)...`);
+    await yieldTick(30);
     if (Array.isArray(data.students)) {
       for (const s of data.students) {
         await setDoc(doc(this.getActiveDb(), 'students', s.id), cleanFirestoreData(s));
       }
     }
+    await yieldTick(30);
+
+    onProgress?.(75, 'حفظ الحضور والتقييمات', 'جاري رفع سجلات الحضور والتقييمات الخاصة بالمجمع...');
+    await yieldTick(30);
     if (Array.isArray(data.attendance)) {
       for (const a of data.attendance) {
         await setDoc(doc(this.getActiveDb(), 'attendance', a.id), cleanFirestoreData(a));
@@ -2995,6 +3010,14 @@ export class OmranDataService {
         await setDoc(doc(this.getActiveDb(), 'violations', v.id), cleanFirestoreData(v));
       }
     }
+    await yieldTick(30);
+
+    onProgress?.(95, 'مزامنة وتطهير الكاش', 'جاري مسح أي كاش قديم وتوحيد بيانات فايربيس...');
+    await yieldTick(40);
+    purgeAllLocalDataCaches();
+
+    onProgress?.(100, 'اكتمل الاستيراد بنجاح 100%!', `تم استيراد بيانات مجمع (${data.complex?.name || complexId}) بنجاح.`);
+    await yieldTick(50);
 
     return {
       studentsCount: data.students?.length || 0,
@@ -3808,19 +3831,17 @@ export class OmranDataService {
     await setDoc(complexRef, cleanFirestoreData(updated));
   }
 
-  // Load Halaqahs with Dual Persistence and Tombstone filtering
+  // Load Halaqahs strictly from Firestore with Tombstones Filter
   static async loadHalaqahs(): Promise<Halaqah[]> {
     await syncTombstonesFromCloud().catch(() => {});
     const deletedHalaqahIds = getDeletedHalaqahIds();
-    const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, [])
-      .filter(h => h?.id && !deletedHalaqahIds.has(h.id));
     let cloudList: Halaqah[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'halaqahs'));
       snap.forEach(d => {
         const h = d.data() as Halaqah;
         if (h?.id && !deletedHalaqahIds.has(h.id)) {
-          cloudList.push(h);
+          cloudList.push({ ...h, capacity: h.capacity || 15 });
         }
       });
 
@@ -3833,7 +3854,7 @@ export class OmranDataService {
             if (h?.id && !deletedHalaqahIds.has(h.id) && !cloudList.some(item => item.id === h.id)) {
               // Strictly isolate: only pull halaqahs that belong to this complex or have no complexId assigned
               if (!h.complexId || (this.activeComplexId && h.complexId === this.activeComplexId)) {
-                cloudList.push(h);
+                cloudList.push({ ...h, capacity: h.capacity || 15 });
               }
             }
           });
@@ -3843,21 +3864,14 @@ export class OmranDataService {
       handleFirestoreError(e, OperationType.LIST, 'halaqahs');
     }
 
-    const mergedMap = new Map<string, Halaqah>();
-    for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-    for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-
-    if (mergedMap.size === 0) {
-      for (const h of DEFAULT_HALAQAHS) {
-        if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-      }
+    if (cloudList.length > 0) {
+      return cloudList;
     }
 
-    const merged = Array.from(mergedMap.values());
-    if (merged.length > 0) {
-      setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
+    if (deletedHalaqahIds.size === 0) {
+      return DEFAULT_HALAQAHS;
     }
-    return merged;
+    return [];
   }
 
   // Verify Google Meet Meeting status/existence before joining
@@ -4224,19 +4238,18 @@ export class OmranDataService {
     removeDeletedCertificateId(id);
   }
 
-  // Load Students directly with Dual Persistence and Deletion Filtering
+  // Load Students directly from Firestore with Deletion Filtering
   static async loadStudents(): Promise<Student[]> {
     try {
       await syncTombstonesFromCloud();
     } catch {}
     const deletedIds = OmranDataService.getDeletedStudentIds();
-    const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []).filter(s => s?.id && !deletedIds.has(s.id));
     let cloudList: Student[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'students'));
       snap.forEach(d => {
         const s = d.data() as Student;
-        if (s?.id && !deletedIds.has(s.id)) {
+        if (s?.id && !deletedIds.has(s.id) && !s.id.startsWith('teacher-')) {
           cloudList.push(s);
         }
       });
@@ -4244,59 +4257,23 @@ export class OmranDataService {
       handleFirestoreError(e, OperationType.LIST, 'students');
     }
 
-    const mergedMap = new Map<string, Student>();
-    for (const s of local) {
-      if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
-    }
-    for (const s of cloudList) {
-      if (s?.id && !deletedIds.has(s.id)) {
-        const localS = mergedMap.get(s.id);
-        if (!localS) {
-          mergedMap.set(s.id, s);
-        } else {
-          const cloudTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
-          const localTime = localS.updatedAt ? new Date(localS.updatedAt).getTime() : 0;
-          const cloudErrTime = s.mushafErrorsUpdatedAt ? new Date(s.mushafErrorsUpdatedAt).getTime() : 0;
-          const localErrTime = localS.mushafErrorsUpdatedAt ? new Date(localS.mushafErrorsUpdatedAt).getTime() : 0;
-          const base = (cloudTime >= localTime || !localTime) ? { ...localS, ...s } : { ...s, ...localS };
-          if (localErrTime > cloudErrTime) {
-            base.mushafErrors = localS.mushafErrors || [];
-            base.mushafErrorsUpdatedAt = localS.mushafErrorsUpdatedAt;
-          } else if (cloudErrTime > localErrTime && Array.isArray(s.mushafErrors)) {
-            base.mushafErrors = s.mushafErrors;
-            base.mushafErrorsUpdatedAt = s.mushafErrorsUpdatedAt;
-          }
-          mergedMap.set(s.id, base);
-        }
-      }
+    if (cloudList.length > 0) {
+      const cleaned = cloudList.map(s => {
+        const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
+        return {
+          ...s,
+          parentPhone,
+          age: s.age || 14
+        };
+      });
+      return cleaned;
     }
 
-    // Only fallback to INITIAL_STUDENTS if mergedMap is empty
-    if (mergedMap.size === 0) {
-      for (const s of INITIAL_STUDENTS) {
-        if (!deletedIds.has(s.id)) {
-          mergedMap.set(s.id, s);
-        }
-      }
+    // Only fallback to INITIAL_STUDENTS if Firestore has no students and no deletions occurred
+    if (deletedIds.size === 0) {
+      return INITIAL_STUDENTS;
     }
-    const merged = Array.from(mergedMap.values()).filter(s => {
-      if (deletedIds.has(s.id)) return false;
-      if (s.id === 'teacher-1' || (s.id.startsWith('teacher-') && (s as any).username)) {
-        return false;
-      }
-      return true;
-    }).map(s => {
-      const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
-      return {
-        ...s,
-        parentPhone,
-        age: s.age || 14
-      };
-    });
-    if (merged.length > 0) {
-      setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
-    }
-    return merged;
+    return [];
   }
 
   static async getStudents(): Promise<Student[]> {
@@ -4537,34 +4514,26 @@ export class OmranDataService {
     setLocalCache(OMRAN_CACHE_KEYS.VIOLATIONS, violLocal.filter(v => !idSet.has(v.studentId)));
   }
 
-  // Load Attendance with Dual Persistence
+  // Load Attendance directly from Firestore
   static async loadAttendance(): Promise<AttendanceRecord[]> {
-    const local = getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE);
     let cloudList: AttendanceRecord[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'attendance'));
-      snap.forEach(d => cloudList.push(d.data() as AttendanceRecord));
+      snap.forEach(d => {
+        const a = d.data() as AttendanceRecord;
+        if (a?.id) cloudList.push(a);
+      });
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'attendance');
     }
-
-    const mergedMap = new Map<string, AttendanceRecord>();
-    for (const a of (local.length > 0 ? local : INITIAL_ATTENDANCE)) {
-      if (a?.id) mergedMap.set(a.id, a);
-    }
-    for (const a of cloudList) {
-      if (a?.id) mergedMap.set(a.id, a);
-    }
-    const merged = Array.from(mergedMap.values());
-    setLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, merged);
-    return merged;
+    return cloudList;
   }
 
   // Save Batch Attendance with Dual Persistence
   static async saveAttendanceRecords(records: AttendanceRecord[]): Promise<void> {
     const cleanRecords: AttendanceRecord[] = records.map(r => cleanFirestoreData(r));
 
-    // 1. Immediately store in local cache
+    // 1. Store in memory runtime cache
     const local = getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, []);
     const map = new Map<string, AttendanceRecord>();
     for (const a of local) {
@@ -4589,40 +4558,31 @@ export class OmranDataService {
     }
   }
 
-  // Load Evaluations with Dual Persistence
+  // Load Evaluations directly from Firestore
   static async loadEvaluations(): Promise<StudentEvaluation[]> {
-    const local = getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, INITIAL_EVALUATIONS);
     let cloudList: StudentEvaluation[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'evaluations'));
-      snap.forEach(d => cloudList.push(d.data() as StudentEvaluation));
+      snap.forEach(d => {
+        const ev = d.data() as StudentEvaluation;
+        if (ev?.id) cloudList.push(ev);
+      });
+      cloudList.sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'evaluations');
     }
-
-    const mergedMap = new Map<string, StudentEvaluation>();
-    for (const e of (local.length > 0 ? local : INITIAL_EVALUATIONS)) {
-      if (e?.id) mergedMap.set(e.id, e);
-    }
-    for (const e of cloudList) {
-      if (e?.id) mergedMap.set(e.id, e);
-    }
-    const merged = Array.from(mergedMap.values());
-    merged.sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
-    setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, merged);
-    return merged;
+    return cloudList;
   }
 
-  // Save Evaluation with Dual Persistence
+  // Save Evaluation directly in Firestore
   static async saveEvaluation(evaluation: StudentEvaluation): Promise<void> {
     const clean = cleanFirestoreData(evaluation);
 
-    // 1. Instantly update local cache (guarantees 100% data safety, instant response, and prevents UI errors)
     const local = getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, []);
     const updated = [clean, ...local.filter(e => e.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, updated);
 
-    // 2. Synchronize to Firestore Cloud
+    // Synchronize to Firestore Cloud
     try {
       await setDoc(doc(this.getActiveDb(), 'evaluations', clean.id), clean);
     } catch (e) {
@@ -4643,33 +4603,28 @@ export class OmranDataService {
     }
   }
 
-  // Load Criteria with Dual Persistence
+  // Load Criteria directly from Firestore
   static async loadCriteria(): Promise<EvaluationCriteria[]> {
-    const local = getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, []);
     let cloudList: EvaluationCriteria[] = [];
     try {
       const activeDb = this.getActiveDb();
       const snap = await safeGetDocs(collection(activeDb, 'criteria'));
-      snap.forEach(d => cloudList.push(d.data() as EvaluationCriteria));
-      if (snap.empty && local.length === 0) {
-        for (const c of DEFAULT_CRITERIA) {
-          await setDoc(doc(activeDb, 'criteria', c.id), cleanFirestoreData(c));
-        }
-        setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA);
-        return DEFAULT_CRITERIA;
+      snap.forEach(d => {
+        const c = d.data() as EvaluationCriteria;
+        if (c?.id) cloudList.push(c);
+      });
+      if (cloudList.length > 0) {
+        return cloudList;
       }
+      // If Firestore criteria collection is completely empty, seed defaults
+      for (const c of DEFAULT_CRITERIA) {
+        await setDoc(doc(activeDb, 'criteria', c.id), cleanFirestoreData(c));
+      }
+      return DEFAULT_CRITERIA;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'criteria');
+      return DEFAULT_CRITERIA;
     }
-
-    const mergedMap = new Map<string, EvaluationCriteria>();
-    for (const c of DEFAULT_CRITERIA) mergedMap.set(c.id, c);
-    for (const c of local) if (c?.id) mergedMap.set(c.id, c);
-    for (const c of cloudList) if (c?.id) mergedMap.set(c.id, c);
-
-    const merged = Array.from(mergedMap.values());
-    setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, merged);
-    return merged;
   }
 
   // Save Criteria List with Dual Persistence
@@ -4700,14 +4655,13 @@ export class OmranDataService {
     }
   }
 
-  // Load Settings with Dual Persistence
+  // Load Settings directly from Firestore
   static async loadSettings(): Promise<AppSettings> {
-    const local = getLocalCache<AppSettings>(OMRAN_CACHE_KEYS.SETTINGS, DEFAULT_SETTINGS);
     try {
       const docSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'main'));
       if (docSnap.exists()) {
         const cloud = docSnap.data() as AppSettings;
-        const merged: AppSettings = {
+        return {
           ...DEFAULT_SETTINGS,
           ...cloud,
           attendancePointsSettings: {
@@ -4715,13 +4669,11 @@ export class OmranDataService {
             ...(cloud.attendancePointsSettings || {})
           }
         };
-        setLocalCache(OMRAN_CACHE_KEYS.SETTINGS, merged);
-        return merged;
       }
     } catch (e) {
       handleFirestoreError(e, OperationType.GET, 'settings/main');
     }
-    return local;
+    return DEFAULT_SETTINGS;
   }
 
   // Save Settings with Dual Persistence
@@ -4892,70 +4844,23 @@ export class OmranDataService {
           if (s.id === 'teacher-1' || (s.id.startsWith('teacher-') && (s as any).username)) {
             return;
           }
-          cloudList.push(s);
-        });
-
-        // Dual persistence: preserve local cache items
-        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS).filter(
-          s => s?.id && !deletedIds.has(s.id)
-        );
-
-        const mergedMap = new Map<string, Student>();
-        // 1. Fill with local items
-        for (const s of local) {
-          if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
-        }
-        // 2. Overlay cloud items respecting updatedAt & mushafErrorsUpdatedAt timestamps
-        for (const s of cloudList) {
-          if (s?.id && !deletedIds.has(s.id)) {
-            const localS = mergedMap.get(s.id);
-            if (!localS) {
-              mergedMap.set(s.id, s);
-            } else {
-              const cloudTime = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
-              const localTime = localS.updatedAt ? new Date(localS.updatedAt).getTime() : 0;
-              const cloudErrTime = s.mushafErrorsUpdatedAt ? new Date(s.mushafErrorsUpdatedAt).getTime() : 0;
-              const localErrTime = localS.mushafErrorsUpdatedAt ? new Date(localS.mushafErrorsUpdatedAt).getTime() : 0;
-              const base = (cloudTime >= localTime || !localTime) ? { ...localS, ...s } : { ...s, ...localS };
-              if (localErrTime > cloudErrTime) {
-                base.mushafErrors = localS.mushafErrors || [];
-                base.mushafErrorsUpdatedAt = localS.mushafErrorsUpdatedAt;
-              } else if (cloudErrTime > localErrTime && Array.isArray(s.mushafErrors)) {
-                base.mushafErrors = s.mushafErrors;
-                base.mushafErrorsUpdatedAt = s.mushafErrorsUpdatedAt;
-              }
-              mergedMap.set(s.id, base);
-            }
-          }
-        }
-
-        // 3. Fallback to INITIAL_STUDENTS if empty
-        if (mergedMap.size === 0) {
-          for (const s of INITIAL_STUDENTS) {
-            if (!deletedIds.has(s.id)) {
-              mergedMap.set(s.id, s);
-            }
-          }
-        }
-
-        const merged = Array.from(mergedMap.values()).map(s => {
           const parentPhone = s.parentPhone || (s.parentPhones && s.parentPhones.length > 0 ? s.parentPhones[0] : s.phone) || '';
-          return { ...s, parentPhone, age: s.age || 14 };
+          cloudList.push({
+            ...s,
+            parentPhone,
+            age: s.age || 14
+          });
         });
 
-        if (merged.length > 0) {
-          setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, merged);
-          callback(merged);
-        } else if (local.length > 0) {
-          callback(local);
+        if (cloudList.length > 0) {
+          callback(cloudList);
+        } else if (deletedIds.size === 0) {
+          callback(INITIAL_STUDENTS);
+        } else {
+          callback([]);
         }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'students');
-        const deletedIds = OmranDataService.getDeletedStudentIds();
-        const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS).filter(
-          s => s?.id && !deletedIds.has(s.id)
-        );
-        callback(local.length > 0 ? local : INITIAL_STUDENTS);
       });
     } catch (e) {
       return () => {};
@@ -4966,21 +4871,13 @@ export class OmranDataService {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'attendance'), snap => {
         const cloudList: AttendanceRecord[] = [];
-        snap.forEach(d => cloudList.push(d.data() as AttendanceRecord));
-
-        const local = getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, []);
-        const map = new Map<string, AttendanceRecord>();
-        for (const a of local) if (a?.id) map.set(a.id, a);
-        for (const a of cloudList) if (a?.id) map.set(a.id, a);
-
-        const merged = Array.from(map.values());
-        if (merged.length > 0) {
-          setLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, merged);
-        }
-        callback(merged.length > 0 ? merged : local);
+        snap.forEach(d => {
+          const a = d.data() as AttendanceRecord;
+          if (a?.id) cloudList.push(a);
+        });
+        callback(cloudList);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'attendance');
-        callback(getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE));
       });
     } catch (e) {
       return () => {};
@@ -4991,21 +4888,14 @@ export class OmranDataService {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'evaluations'), snap => {
         const cloudList: StudentEvaluation[] = [];
-        snap.forEach(d => cloudList.push(d.data() as StudentEvaluation));
-
-        const local = getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, []);
-        const map = new Map<string, StudentEvaluation>();
-        for (const ev of local) if (ev?.id) map.set(ev.id, ev);
-        for (const ev of cloudList) if (ev?.id) map.set(ev.id, ev);
-
-        const merged = Array.from(map.values());
-        if (merged.length > 0) {
-          setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, merged);
-        }
-        callback(merged.length > 0 ? merged : local);
+        snap.forEach(d => {
+          const ev = d.data() as StudentEvaluation;
+          if (ev?.id) cloudList.push(ev);
+        });
+        cloudList.sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
+        callback(cloudList);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'evaluations');
-        callback(getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, INITIAL_EVALUATIONS));
       });
     } catch (e) {
       return () => {};
@@ -5016,19 +4906,13 @@ export class OmranDataService {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'criteria'), snap => {
         const cloudList: EvaluationCriteria[] = [];
-        snap.forEach(d => cloudList.push(d.data() as EvaluationCriteria));
-
-        const local = getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA);
-        const map = new Map<string, EvaluationCriteria>();
-        for (const c of local) if (c?.id) map.set(c.id, c);
-        for (const c of cloudList) if (c?.id) map.set(c.id, c);
-
-        const merged = Array.from(map.values());
-        setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, merged);
-        callback(merged.length > 0 ? merged : DEFAULT_CRITERIA);
+        snap.forEach(d => {
+          const c = d.data() as EvaluationCriteria;
+          if (c?.id) cloudList.push(c);
+        });
+        callback(cloudList.length > 0 ? cloudList : DEFAULT_CRITERIA);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'criteria');
-        callback(getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA));
       });
     } catch (e) {
       return () => {};
@@ -5040,19 +4924,14 @@ export class OmranDataService {
       return onSnapshot(doc(this.getActiveDb(), 'settings', 'main'), snap => {
         if (snap.exists()) {
           const cloud = snap.data() as AppSettings;
-          const local = getLocalCache<AppSettings>(OMRAN_CACHE_KEYS.SETTINGS, DEFAULT_SETTINGS);
-          const merged: AppSettings = {
+          callback({
             ...DEFAULT_SETTINGS,
-            ...local,
             ...cloud,
             attendancePointsSettings: {
               ...DEFAULT_SETTINGS.attendancePointsSettings,
-              ...(local.attendancePointsSettings || {}),
               ...(cloud.attendancePointsSettings || {})
             }
-          };
-          setLocalCache(OMRAN_CACHE_KEYS.SETTINGS, merged);
-          callback(merged);
+          });
         }
       }, err => {
         handleFirestoreError(err, OperationType.GET, 'settings/main');
@@ -5073,48 +4952,16 @@ export class OmranDataService {
             list.push(t);
           }
         });
-        const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS).filter(
-          t => t?.id && !deletedTeacherIds.has(t.id)
-        );
-        const map = new Map<string, TeacherAccount>();
-        for (const t of local) map.set(t.id, t);
-        for (const t of list) map.set(t.id, t);
-        const finalTeachers = Array.from(map.values());
-        setLocalCache(OMRAN_CACHE_KEYS.TEACHERS, finalTeachers);
-        callback(finalTeachers);
+        if (list.length > 0) {
+          callback(list);
+        } else if (deletedTeacherIds.size === 0) {
+          callback(INITIAL_TEACHERS);
+        } else {
+          callback([]);
+        }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'teachers');
-        const deletedTeacherIds = getDeletedTeacherIds();
-        const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS).filter(
-          t => t?.id && !deletedTeacherIds.has(t.id)
-        );
-        callback(local);
       });
-
-      if (this.getActiveDb() !== this.getCentralDb()) {
-        const unsubCentral = onSnapshot(collection(this.getCentralDb(), 'teachers'), snap => {
-          const deletedTeacherIds = getDeletedTeacherIds();
-          const list: TeacherAccount[] = [];
-          snap.forEach(d => {
-            const t = d.data() as TeacherAccount;
-            if (t?.id && !deletedTeacherIds.has(t.id)) {
-              list.push(t);
-            }
-          });
-          const local = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, []);
-          const map = new Map<string, TeacherAccount>();
-          for (const t of local) if (t?.id && !deletedTeacherIds.has(t.id)) map.set(t.id, t);
-          for (const t of list) map.set(t.id, t);
-          const finalTeachers = Array.from(map.values());
-          setLocalCache(OMRAN_CACHE_KEYS.TEACHERS, finalTeachers);
-          callback(finalTeachers);
-        }, () => {});
-
-        return () => {
-          unsubActive();
-          unsubCentral();
-        };
-      }
 
       return unsubActive;
     } catch (e) {
@@ -5133,69 +4980,16 @@ export class OmranDataService {
             cloudList.push({ ...h, capacity: h.capacity || 15 });
           }
         });
-
-        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS).filter(
-          h => h?.id && !deletedHalaqahIds.has(h.id)
-        );
-
-        const mergedMap = new Map<string, Halaqah>();
-        for (const h of local) {
-          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-        }
-        for (const h of cloudList) {
-          if (h?.id && !deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-        }
-
-        if (mergedMap.size === 0) {
-          for (const h of DEFAULT_HALAQAHS) {
-            if (!deletedHalaqahIds.has(h.id)) mergedMap.set(h.id, { ...h, capacity: h.capacity || 15 });
-          }
-        }
-
-        const merged = Array.from(mergedMap.values());
-        if (merged.length > 0) {
-          setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, merged);
-          callback(merged);
-        } else if (local.length > 0) {
-          callback(local);
+        if (cloudList.length > 0) {
+          callback(cloudList);
+        } else if (deletedHalaqahIds.size === 0) {
+          callback(DEFAULT_HALAQAHS);
+        } else {
+          callback([]);
         }
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'halaqahs');
-        const deletedHalaqahIds = getDeletedHalaqahIds();
-        const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS).filter(
-          h => h?.id && !deletedHalaqahIds.has(h.id)
-        );
-        callback(local.length > 0 ? local : DEFAULT_HALAQAHS);
       });
-
-      if (this.getActiveDb() !== this.getCentralDb()) {
-        const unsubCentral = onSnapshot(collection(this.getCentralDb(), 'halaqahs'), snap => {
-          const deletedHalaqahIds = getDeletedHalaqahIds();
-          const cloudList: Halaqah[] = [];
-          snap.forEach(d => {
-            const h = d.data() as Halaqah;
-            if (h?.id && !deletedHalaqahIds.has(h.id)) {
-              if (!h.complexId || (this.activeComplexId && h.complexId === this.activeComplexId)) {
-                cloudList.push({ ...h, capacity: h.capacity || 15 });
-              }
-            }
-          });
-          const local = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS);
-          const map = new Map<string, Halaqah>();
-          for (const h of local) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, { ...h, capacity: h.capacity || 15 });
-          for (const h of cloudList) if (h?.id && !deletedHalaqahIds.has(h.id)) map.set(h.id, { ...h, capacity: h.capacity || 15 });
-          const finalHalaqahs = Array.from(map.values());
-          if (finalHalaqahs.length > 0) {
-            setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, finalHalaqahs);
-            callback(finalHalaqahs);
-          }
-        }, () => {});
-
-        return () => {
-          unsubActive();
-          unsubCentral();
-        };
-      }
 
       return unsubActive;
     } catch (e) {
@@ -5850,15 +5644,12 @@ export class OmranDataService {
     };
   }
 
-  // Load Certificates with Dual Persistence
+  // Load Certificates directly from Firestore
   static async loadCertificates(): Promise<IssuedCertificate[]> {
     try {
       await syncTombstonesFromCloud();
     } catch {}
     const deletedCertIds = OmranDataService.getDeletedCertificateIds();
-    const local = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []).filter(
-      c => c?.id && !deletedCertIds.has(c.id)
-    );
     let cloudList: IssuedCertificate[] = [];
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'certificates'));
@@ -5873,18 +5664,7 @@ export class OmranDataService {
       handleFirestoreError(e, OperationType.LIST, 'certificates');
     }
 
-    const mergedMap = new Map<string, IssuedCertificate>();
-    for (const c of local) {
-      if (c?.id && !deletedCertIds.has(c.id)) mergedMap.set(c.id, OmranDataService.sanitizeCertificate(c));
-    }
-    for (const c of cloudList) {
-      if (c?.id && !deletedCertIds.has(c.id)) mergedMap.set(c.id, c);
-    }
-
-    const merged = Array.from(mergedMap.values());
-    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, merged);
-    return merged;
+    return cloudList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   // Save Single Certificate directly in Firestore & Cache
@@ -5960,7 +5740,7 @@ export class OmranDataService {
     }
   }
 
-  // Subscribe to Certificates in real time with resilient Dual-Persistence merge
+  // Subscribe to Certificates in real time
   static subscribeCertificates(callback: (certs: IssuedCertificate[]) => void): () => void {
     try {
       return onSnapshot(collection(this.getActiveDb(), 'certificates'), snap => {
@@ -5974,36 +5754,10 @@ export class OmranDataService {
           }
         });
 
-        // Dual-persistence merge: preserve local customTemplateImageUrl and any local pending certs
-        const local = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []).filter(
-          c => c?.id && !deletedCertIds.has(c.id)
-        );
-        const localMap = new Map<string, IssuedCertificate>();
-        for (const c of local) {
-          if (c?.id && !deletedCertIds.has(c.id)) localMap.set(c.id, c);
-        }
-
-        const mergedMap = new Map<string, IssuedCertificate>();
-        for (const c of cloudList) {
-          if (deletedCertIds.has(c.id)) continue;
-          const localItem = localMap.get(c.id);
-          const finalCert = {
-            ...c,
-            customTemplateImageUrl: c.customTemplateImageUrl || localItem?.customTemplateImageUrl
-          };
-          mergedMap.set(c.id, finalCert);
-        }
-        for (const loc of local) {
-          if (loc?.id && !deletedCertIds.has(loc.id) && !mergedMap.has(loc.id)) {
-            mergedMap.set(loc.id, loc);
-          }
-        }
-
-        const merged = Array.from(mergedMap.values()).sort(
+        const sorted = cloudList.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
-        setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, merged);
-        callback(merged);
+        callback(sorted);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'certificates');
       });
@@ -6012,8 +5766,11 @@ export class OmranDataService {
     }
   }
 
-  // Import / Restore Full Database directly into Firestore (replaces existing data)
-  static async importFullBackup(backup: FullBackupData): Promise<{
+  // Import / Restore Full Database directly into Firestore with Staged Progress Reporting
+  static async importFullBackup(
+    backup: FullBackupData,
+    onProgress?: (progress: number, stageName: string, detailText?: string) => void
+  ): Promise<{
     studentsCount: number;
     attendanceCount: number;
     evaluationsCount: number;
@@ -6025,10 +5782,16 @@ export class OmranDataService {
     examsCount?: number;
     submissionsCount?: number;
     recordingsCount?: number;
+    certificatesCount?: number;
   }> {
     if (!backup || typeof backup !== 'object') {
       throw new Error('ملف النسخة الاحتياطية غير صالح أو تالف.');
     }
+
+    const yieldTick = (ms = 35) => new Promise(r => setTimeout(r, ms));
+
+    onProgress?.(5, 'قراءة وتحليل ملف النسخة الاحتياطية', 'جاري فحص الجداول والتحقق من بنية السجلات...');
+    await yieldTick(50);
 
     const studentsList = Array.isArray(backup.students) ? backup.students : [];
     const attendanceList = Array.isArray(backup.attendance) ? backup.attendance : [];
@@ -6055,97 +5818,182 @@ export class OmranDataService {
     const listeningLogsList = Array.isArray(backup.listeningLogs) ? backup.listeningLogs : [];
     const certificatesList = Array.isArray(backup.certificates) ? backup.certificates : [];
 
-    // Helper to safely clear collections to guarantee complete replacement of data
-    const clearCol = async (colName: string) => {
-      try {
-        const snap = await getDocs(collection(this.getActiveDb(), colName));
-        const delP: Promise<any>[] = [];
-        snap.forEach(d => delP.push(deleteDoc(d.ref)));
-        await Promise.all(delP);
-      } catch (err) {
-        console.warn(`Could not clear col ${colName}`, err);
+    const chunkArray = <T>(arr: T[], size: number): T[][] => {
+      const res: T[][] = [];
+      for (let i = 0; i < arr.length; i += size) {
+        res.push(arr.slice(i, i + size));
       }
+      return res;
     };
 
-    // Clear prior data to ensure full replacement
-    await Promise.all([
-      clearCol('students'),
-      clearCol('attendance'),
-      clearCol('evaluations'),
-      clearCol('criteria'),
-      clearCol('teachers'),
-      clearCol('complexes'),
-      clearCol('halaqahs'),
-      clearCol('violations'),
-      clearCol('exams'),
-      clearCol('exam_submissions'),
-      clearCol('surah_recordings'),
-      clearCol('listening_logs'),
-      clearCol('certificates')
-    ]);
+    onProgress?.(10, 'كتابة بيانات المجمعات القرآنية', `جاري حفظ (${complexesList.length}) مجمع في قاعدة بيانات فايربيس...`);
+    await yieldTick();
 
-    // Persist new data directly to Firestore concurrently
-    try {
-      const promises: Promise<any>[] = [];
-
-      for (const s of studentsList) {
-        if (s?.id) promises.push(setDoc(doc(this.getActiveDb(), 'students', s.id), s));
+    // 1. Complexes
+    for (const comp of complexesList) {
+      if (comp?.id) {
+        await setDoc(doc(this.getActiveDb(), 'complexes', comp.id), cleanFirestoreData(comp));
+        if (this.getActiveDb() !== this.getCentralDb()) {
+          await setDoc(doc(this.getCentralDb(), 'complexes', comp.id), cleanFirestoreData(comp)).catch(() => {});
+        }
       }
-      for (const a of attendanceList) {
-        if (a?.id) promises.push(setDoc(doc(this.getActiveDb(), 'attendance', a.id), a));
-      }
-      for (const ev of evaluationsList) {
-        if (ev?.id) promises.push(setDoc(doc(this.getActiveDb(), 'evaluations', ev.id), ev));
-      }
-      for (const c of criteriaList) {
-        if (c?.id) promises.push(setDoc(doc(this.getActiveDb(), 'criteria', c.id), c));
-      }
-      for (const t of teachersList) {
-        if (t?.id) promises.push(setDoc(doc(this.getActiveDb(), 'teachers', t.id), t));
-      }
-      for (const comp of complexesList) {
-        if (comp?.id) promises.push(setDoc(doc(this.getActiveDb(), 'complexes', comp.id), comp));
-      }
-      for (const h of halaqahsList) {
-        if (h?.id) promises.push(setDoc(doc(this.getActiveDb(), 'halaqahs', h.id), h));
-      }
-      for (const v of violationsList) {
-        if (v?.id) promises.push(setDoc(doc(this.getActiveDb(), 'violations', v.id), v));
-      }
-      for (const ex of examsList) {
-        if (ex?.id) promises.push(setDoc(doc(this.getActiveDb(), 'exams', ex.id), ex));
-      }
-      for (const sub of submissionsList) {
-        if (sub?.id) promises.push(setDoc(doc(this.getActiveDb(), 'exam_submissions', sub.id), sub));
-      }
-      for (const rec of recordingsList) {
-        if (rec?.id) promises.push(setDoc(doc(this.getActiveDb(), 'surah_recordings', rec.id), rec));
-      }
-      for (const log of listeningLogsList) {
-        if (log?.id) promises.push(setDoc(doc(this.getActiveDb(), 'listening_logs', log.id), log));
-      }
-      for (const cert of certificatesList) {
-        if (cert?.id) promises.push(setDoc(doc(this.getActiveDb(), 'certificates', cert.id), cert));
-      }
-
-      if (settingsData) {
-        promises.push(setDoc(doc(this.getActiveDb(), 'settings', 'main'), settingsData));
-      }
-      if (leaderboardSettings) {
-        promises.push(setDoc(doc(this.getActiveDb(), 'settings', 'leaderboard'), leaderboardSettings));
-      }
-      if (backup.googleOAuth) {
-        promises.push(setDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'), backup.googleOAuth));
-      }
-      if (recordingsConfig) {
-        promises.push(setDoc(doc(this.getActiveDb(), 'settings', 'recordings_config'), recordingsConfig));
-      }
-
-      await Promise.all(promises);
-    } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, 'importFullBackup');
-      throw e;
     }
+    await yieldTick();
+
+    onProgress?.(18, 'كتابة الحلقات القرآنية', `جاري حفظ (${halaqahsList.length}) حلقة في فايربيس...`);
+    await yieldTick();
+
+    // 2. Halaqahs
+    for (const h of halaqahsList) {
+      if (h?.id) await setDoc(doc(this.getActiveDb(), 'halaqahs', h.id), cleanFirestoreData(h));
+    }
+    await yieldTick();
+
+    onProgress?.(28, 'كتابة حسابات المعلمين والمشرفين', `جاري حفظ (${teachersList.length}) معلم في قاعدة البيانات...`);
+    await yieldTick();
+
+    // 3. Teachers
+    for (const t of teachersList) {
+      if (t?.id) {
+        await setDoc(doc(this.getActiveDb(), 'teachers', t.id), cleanFirestoreData(t));
+        if (this.getActiveDb() !== this.getCentralDb()) {
+          await setDoc(doc(this.getCentralDb(), 'teachers', t.id), cleanFirestoreData(t)).catch(() => {});
+        }
+      }
+    }
+    await yieldTick();
+
+    // 4. Students (Batched with real-time percentage 35% -> 60%)
+    onProgress?.(35, 'كتابة بيانات الطلاب وخطط الذكاء الاصطناعي', `جاري رفع سجلات الطلاب (${studentsList.length} طالب)...`);
+    await yieldTick();
+
+    const studentChunks = chunkArray(studentsList, 10);
+    let writtenStudents = 0;
+    for (let ci = 0; ci < studentChunks.length; ci++) {
+      const chunk = studentChunks[ci];
+      await Promise.all(
+        chunk.map(s => s?.id && setDoc(doc(this.getActiveDb(), 'students', s.id), cleanFirestoreData(s)))
+      );
+      writtenStudents += chunk.length;
+      const progressPct = Math.round(35 + (writtenStudents / Math.max(studentsList.length, 1)) * 25);
+      onProgress?.(
+        Math.min(progressPct, 60),
+        'كتابة بيانات الطلاب وخطط الذكاء الاصطناعي',
+        `تم حفظ ${writtenStudents} من ${studentsList.length} طالباً في فايربيس...`
+      );
+      await yieldTick(30);
+    }
+
+    // 5. Attendance (Batched with real-time percentage 60% -> 75%)
+    onProgress?.(60, 'كتابة سجلات الحضور اليومي', `جاري رفع سجلات الحضور (${attendanceList.length} سجل)...`);
+    await yieldTick();
+
+    const attChunks = chunkArray(attendanceList, 20);
+    let writtenAtt = 0;
+    for (let ci = 0; ci < attChunks.length; ci++) {
+      const chunk = attChunks[ci];
+      await Promise.all(
+        chunk.map(a => a?.id && setDoc(doc(this.getActiveDb(), 'attendance', a.id), cleanFirestoreData(a)))
+      );
+      writtenAtt += chunk.length;
+      const progressPct = Math.round(60 + (writtenAtt / Math.max(attendanceList.length, 1)) * 15);
+      onProgress?.(
+        Math.min(progressPct, 75),
+        'كتابة سجلات الحضور اليومي',
+        `تم حفظ ${writtenAtt} من ${attendanceList.length} سجل حضور في فايربيس...`
+      );
+      await yieldTick(25);
+    }
+
+    // 6. Evaluations (Batched with real-time percentage 75% -> 85%)
+    onProgress?.(75, 'كتابة سجلات التقييم والتسميع اليومي', `جاري رفع تقييمات التسميع (${evaluationsList.length} سجل)...`);
+    await yieldTick();
+
+    const evalChunks = chunkArray(evaluationsList, 20);
+    let writtenEvals = 0;
+    for (let ci = 0; ci < evalChunks.length; ci++) {
+      const chunk = evalChunks[ci];
+      await Promise.all(
+        chunk.map(ev => ev?.id && setDoc(doc(this.getActiveDb(), 'evaluations', ev.id), cleanFirestoreData(ev)))
+      );
+      writtenEvals += chunk.length;
+      const progressPct = Math.round(75 + (writtenEvals / Math.max(evaluationsList.length, 1)) * 10);
+      onProgress?.(
+        Math.min(progressPct, 85),
+        'كتابة سجلات التقييم والتسميع اليومي',
+        `تم حفظ ${writtenEvals} من ${evaluationsList.length} تقييم في فايربيس...`
+      );
+      await yieldTick(25);
+    }
+
+    // 7. Violations & Criteria (85% -> 89%)
+    onProgress?.(86, 'كتابة معايير التقييم والملاحظات السلوكية', 'جاري حفظ معايير التقييم والمخالفات...');
+    await yieldTick();
+
+    for (const v of violationsList) {
+      if (v?.id) await setDoc(doc(this.getActiveDb(), 'violations', v.id), cleanFirestoreData(v));
+    }
+    for (const c of criteriaList) {
+      if (c?.id) await setDoc(doc(this.getActiveDb(), 'criteria', c.id), cleanFirestoreData(c));
+    }
+    await yieldTick();
+
+    // 8. Exams & Submissions (89% -> 93%)
+    onProgress?.(90, 'كتابة بنك الاختبارات وإجابات الطلاب', `جاري حفظ (${examsList.length}) اختبار قرآني...`);
+    await yieldTick();
+
+    for (const ex of examsList) {
+      if (ex?.id) await setDoc(doc(this.getActiveDb(), 'exams', ex.id), cleanFirestoreData(ex));
+    }
+    for (const sub of submissionsList) {
+      if (sub?.id) await setDoc(doc(this.getActiveDb(), 'exam_submissions', sub.id), cleanFirestoreData(sub));
+    }
+    await yieldTick();
+
+    // 9. Recordings, Listening Logs, Certificates (93% -> 96%)
+    onProgress?.(94, 'كتابة الشهادات والتسجيلات القرآنية', `جاري حفظ (${certificatesList.length}) شهادة و (${recordingsList.length}) تلاوة...`);
+    await yieldTick();
+
+    for (const rec of recordingsList) {
+      if (rec?.id) await setDoc(doc(this.getActiveDb(), 'surah_recordings', rec.id), cleanFirestoreData(rec));
+    }
+    for (const log of listeningLogsList) {
+      if (log?.id) await setDoc(doc(this.getActiveDb(), 'listening_logs', log.id), cleanFirestoreData(log));
+    }
+    for (const cert of certificatesList) {
+      if (cert?.id) await setDoc(doc(this.getActiveDb(), 'certificates', cert.id), cleanFirestoreData(cert));
+    }
+    await yieldTick();
+
+    // 10. Settings documents (96% -> 98%)
+    onProgress?.(97, 'حفظ إعدادات المنظومة ولوحة الشرف', 'جاري اعتماد إعدادات المنصة وقواعد الحضور...');
+    await yieldTick();
+
+    if (settingsData) {
+      await setDoc(doc(this.getActiveDb(), 'settings', 'main'), cleanFirestoreData(settingsData));
+    }
+    if (leaderboardSettings) {
+      await setDoc(doc(this.getActiveDb(), 'settings', 'leaderboard'), cleanFirestoreData(leaderboardSettings));
+    }
+    if (backup.googleOAuth) {
+      await setDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'), cleanFirestoreData(backup.googleOAuth));
+    }
+    if (recordingsConfig) {
+      await setDoc(doc(this.getActiveDb(), 'settings', 'recordings_config'), cleanFirestoreData(recordingsConfig));
+    }
+    await yieldTick();
+
+    onProgress?.(99, 'المزامنة السحابية وتطهير الكاش المحلي', 'جاري مسح أي كاش قديم وتوحيد قاعدة بيانات فايربيس...');
+    await yieldTick(50);
+
+    // Purge any local storage caches so this browser and any other tab/user is 100% clean
+    purgeAllLocalDataCaches();
+
+    // Trigger reactive events
+    broadcastDataUpdate('full-backup-restored', { timestamp: new Date().toISOString() });
+
+    onProgress?.(100, 'اكتملت الاستعادة بنجاح 100%!', 'تم حفظ وتحديث قاعدة بيانات فايربيس بنجاح تام.');
+    await yieldTick(60);
 
     return {
       studentsCount: studentsList.length,
@@ -6158,7 +6006,8 @@ export class OmranDataService {
       violationsCount: violationsList.length,
       examsCount: examsList.length,
       submissionsCount: submissionsList.length,
-      recordingsCount: recordingsList.length
+      recordingsCount: recordingsList.length,
+      certificatesCount: certificatesList.length
     };
   }
 

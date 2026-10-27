@@ -120,6 +120,16 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [isImportingComplex, setIsImportingComplex] = useState(false);
   const [complexBackupToRestore, setComplexBackupToRestore] = useState<ComplexBackupData | null>(null);
 
+  // Themed Import Progress Modal State (تتبع شريط الاستيراد بالثيم حتى 100%)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importStageText, setImportStageText] = useState('');
+  const [importDetailText, setImportDetailText] = useState('');
+  const [isImportComplete, setIsImportComplete] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importStats, setImportStats] = useState<any>(null);
+  const [importTargetTitle, setImportTargetTitle] = useState('');
+
   // Complex purge dialog
   const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
   const [purgeConfirmationText, setPurgeConfirmationText] = useState('');
@@ -608,18 +618,42 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
 
   const handleConfirmRestore = async () => {
     if (!pendingRestore) return;
+    const backupDataToRestore = pendingRestore;
+    setPendingRestore(null);
     setIsImporting(true);
     setStatusMsg(null);
 
+    // Launch Themed Progress Modal
+    setIsImportModalOpen(true);
+    setImportProgress(2);
+    setImportStageText('بدء تحليل ملف النسخة الاحتياطية وإعداد الاتصال بقاعدة بيانات فايربيس...');
+    setImportDetailText('جاري فحص سلامة الجداول واستبعاد التخزين المحلي...');
+    setIsImportComplete(false);
+    setImportError(null);
+    setImportStats(null);
+    setImportTargetTitle('قاعدة البيانات المركزية العامة للمنصة');
+
     try {
-      const stats = await OmranDataService.importFullBackup(pendingRestore);
+      const stats = await OmranDataService.importFullBackup(
+        backupDataToRestore,
+        (progress, stageName, detailText) => {
+          setImportProgress(progress);
+          setImportStageText(stageName);
+          if (detailText) setImportDetailText(detailText);
+        }
+      );
+      setImportStats(stats);
+      setImportProgress(100);
+      setImportStageText('اكتمل الاستيراد بنجاح 100% وحُفظت كافة البيانات في فايربيس!');
+      setImportDetailText('تم تفريغ كافة البيانات في Firestore وإلغاء أي اعتماد على التخزين المحلي.');
+      setIsImportComplete(true);
       await onRefreshAllData();
       setStatusMsg({
         type: 'success',
         text: `تمت استعادة البيانات بنجاح: (${stats.studentsCount}) طالب، (${stats.attendanceCount}) سجل حضور، (${stats.halaqahsCount || 0}) حلقة، و (${stats.complexesCount || 0}) مجمع!`
       });
-      setPendingRestore(null);
     } catch (err: any) {
+      setImportError(err.message || 'فشل استيراد النسخة الاحتياطية');
       setStatusMsg({
         type: 'error',
         text: 'فشل استيراد النسخة الاحتياطية: ' + (err.message || 'خطأ غير متوقع')
@@ -690,17 +724,45 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
 
   const handleConfirmImportComplex = async () => {
     if (!complexBackupToRestore || !activeComplex) return;
+    const backupToRestore = complexBackupToRestore;
+    const compName = activeComplex.name;
+    const compId = activeComplex.id;
+    setComplexBackupToRestore(null);
     setIsImportingComplex(true);
     setStatusMsg(null);
+
+    // Launch Themed Progress Modal
+    setIsImportModalOpen(true);
+    setImportProgress(5);
+    setImportStageText(`بدء استيراد بيانات مجمع (${compName})...`);
+    setImportDetailText('جاري فحص السجلات والاتصال بقاعدة بيانات فايربيس...');
+    setIsImportComplete(false);
+    setImportError(null);
+    setImportStats(null);
+    setImportTargetTitle(`مجمع: ${compName}`);
+
     try {
-      const stats = await OmranDataService.importComplexBackup(complexBackupToRestore, activeComplex.id);
+      const stats = await OmranDataService.importComplexBackup(
+        backupToRestore,
+        compId,
+        (progress, stageName, detailText) => {
+          setImportProgress(progress);
+          setImportStageText(stageName);
+          if (detailText) setImportDetailText(detailText);
+        }
+      );
+      setImportStats(stats);
+      setImportProgress(100);
+      setImportStageText('اكتمل استيراد بيانات المجمع بنجاح 100%!');
+      setImportDetailText('تم حفظ كافة السجلات في قاعدة بيانات فايربيس وإلغاء أي اعتماد على التخزين المحلي.');
+      setIsImportComplete(true);
       await onRefreshAllData();
       setStatusMsg({
         type: 'success',
-        text: `تم استيراد بيانات المجمع (${activeComplex.name}) بنجاح: (${stats.studentsCount}) طالب و (${stats.halaqahsCount}) حلقات!`
+        text: `تم استيراد بيانات المجمع (${compName}) بنجاح: (${stats.studentsCount}) طالب و (${stats.halaqahsCount}) حلقات!`
       });
-      setComplexBackupToRestore(null);
     } catch (err: any) {
+      setImportError(err.message || 'فشل استيراد بيانات المجمع');
       setStatusMsg({ type: 'error', text: 'فشل استيراد المجمع: ' + err.message });
     } finally {
       setIsImportingComplex(false);
@@ -3214,8 +3276,254 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       )}
 
       {/* ---------------------------------------------------- */}
-      {/* MODAL 3: Purge Complex Data Modal (إفراغ بيانات المجمع) */}
+      {/* THEMED IMPORT PROGRESS MODAL (شريط تحميل الاستيراد بالثيم حتى 100%) */}
       {/* ---------------------------------------------------- */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-xl border-2 rounded-[32px] p-6 sm:p-8 shadow-2xl space-y-6 text-right relative overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            style={{
+              background: 'linear-gradient(180deg, #064e3b 0%, #022c22 60%, #011c16 100%)',
+              borderColor: `${accentColor}80`,
+              boxShadow: `0 0 50px ${accentColor}30`
+            }}
+          >
+            {/* Ambient background glow */}
+            <div
+              className="absolute top-0 right-0 w-72 h-72 rounded-full blur-3xl pointer-events-none opacity-30"
+              style={{ backgroundColor: accentColor }}
+            />
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#065f46] pb-4 relative z-10">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-12 h-12 rounded-2xl flex items-center justify-center border shadow-lg shrink-0"
+                  style={{
+                    backgroundColor: `${accentColor}20`,
+                    borderColor: `${accentColor}60`,
+                    color: accentColor
+                  }}
+                >
+                  {isImportComplete ? (
+                    <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                  ) : importError ? (
+                    <AlertTriangle className="w-7 h-7 text-rose-400" />
+                  ) : (
+                    <Cloud className="w-7 h-7 animate-pulse" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white font-heading">
+                    {isImportComplete
+                      ? 'اكتمل استيراد وتفريغ النسخة الاحتياطية بنجاح 100%!'
+                      : importError
+                      ? 'توقف استيراد النسخة الاحتياطية'
+                      : 'جاري استيراد وحفظ النسخة في فايربيس (Firestore)...'}
+                  </h3>
+                  <p className="text-xs text-amber-300 font-bold mt-0.5">
+                    الجهة المستهدفة: {importTargetTitle || 'قاعدة البيانات المركزية العامة'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Close button only enabled when finished or error */}
+              {(isImportComplete || importError) && (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="text-xs text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/10 transition-all cursor-pointer"
+                >
+                  إغلاق
+                </button>
+              )}
+            </div>
+
+            {/* Platform Central Database Guarantee Banner */}
+            <div className="p-3.5 rounded-2xl bg-[#022c22]/90 border border-[#065f46] text-xs text-emerald-200 flex items-start gap-3 relative z-10">
+              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-white text-[13px]">
+                  مزامنة سحابية مركزية ومباشرة بدون تخزين محلي (No LocalStorage Cache)
+                </p>
+                <p className="text-[11px] text-[#86efac]/90 leading-relaxed">
+                  تم إلغاء التخزين المحلي المؤقت كلياً؛ يتم رفع وقراءة السجلات مباشرة من وإلى قاعدة بيانات فايربيس الموحدة، ليحصل كافة المشرفين والمعلمين والطلاب على نفس البيانات الحية في أي وقت ومن أي جهاز.
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Section */}
+            <div className="space-y-4 relative z-10">
+              {/* Progress Percentage & Status Badge */}
+              <div className="flex items-center justify-between text-xs pb-1">
+                <div className="space-y-0.5">
+                  <span className="text-slate-300 font-bold block text-xs">
+                    {isImportComplete
+                      ? 'تمت المزامنة وحفظ السجلات بنسبة:'
+                      : importError
+                      ? 'نسبة الإنجاز عند التوقف:'
+                      : 'نسبة تقدم الاستيراد والحفظ في السحابة:'}
+                  </span>
+                  <span className="text-[11px] text-amber-300/80 font-mono">
+                    {isImportComplete ? '100% مكتمل' : 'مباشر إلى فايربيس (Firestore)'}
+                  </span>
+                </div>
+                <div className="text-left">
+                  <span
+                    className="text-3xl sm:text-4xl font-black font-mono tracking-widest block drop-shadow-md"
+                    style={{ color: isImportComplete ? '#4ade80' : accentColor }}
+                  >
+                    {importProgress}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Themed Progress Bar with Glowing Tip */}
+              <div className="w-full h-6 bg-black/70 rounded-full border border-emerald-500/40 p-1 overflow-hidden shadow-inner relative">
+                <div
+                  className="h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden shadow-lg flex items-center justify-end"
+                  style={{
+                    width: `${Math.max(4, Math.min(100, importProgress))}%`,
+                    background: isImportComplete
+                      ? 'linear-gradient(90deg, #059669 0%, #10b981 50%, #4ade80 100%)'
+                      : `linear-gradient(90deg, #d97706 0%, ${accentColor} 50%, #10b981 100%)`
+                  }}
+                >
+                  {/* Internal Shimmer Animation */}
+                  {!isImportComplete && !importError && (
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.45),transparent)] animate-[shimmer_1.5s_infinite]" />
+                  )}
+                  {/* Glowing Leading Dot */}
+                  {!isImportComplete && !importError && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#ffffff] shrink-0 mr-1 animate-pulse" />
+                  )}
+                </div>
+              </div>
+
+              {/* Dynamic Stage Text & Realtime Detail */}
+              <div className="bg-black/40 rounded-2xl p-3.5 border border-emerald-500/20 space-y-1.5 shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  {!isImportComplete && !importError && (
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+                  )}
+                  {isImportComplete && (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  )}
+                  {importError && (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  )}
+                  <p className="text-xs font-bold text-amber-200">
+                    {importStageText || 'جاري معالجة البيانات...'}
+                  </p>
+                </div>
+                {importDetailText && (
+                  <p className="text-[11px] text-emerald-300 font-mono pr-6">
+                    {importDetailText}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Error Message Box if occurred */}
+            {importError && (
+              <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/50 text-xs text-rose-200 space-y-1 relative z-10">
+                <p className="font-bold text-rose-300">تفاصيل الخطأ:</p>
+                <p className="font-mono text-[11px]">{importError}</p>
+              </div>
+            )}
+
+            {/* Success Summary Stat Cards when Complete */}
+            {isImportComplete && importStats && (
+              <div className="space-y-3 relative z-10 animate-in fade-in duration-300">
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>إحصائيات السجلات المفروغة في فايربيس (Firestore):</span>
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-amber-300 font-mono">
+                      {importStats.studentsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">طالب</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-emerald-300 font-mono">
+                      {importStats.attendanceCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">سجل حضور</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-amber-300 font-mono">
+                      {importStats.halaqahsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">حلقة قرآنية</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-emerald-300 font-mono">
+                      {importStats.complexesCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">مجمع</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-amber-300 font-mono">
+                      {importStats.teachersCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">معلم ومستخدم</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-emerald-300 font-mono">
+                      {importStats.evaluationsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">سجل تقييم</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-amber-300 font-mono">
+                      {importStats.examsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">اختبار قرآني</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="text-lg font-black text-emerald-300 font-mono">
+                      {importStats.certificatesCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-300 font-bold">شهادة شكر</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Footer Buttons */}
+            <div className="pt-2 relative z-10">
+              {isImportComplete ? (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="w-full py-3.5 rounded-2xl font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: accentColor,
+                    color: '#064e3b'
+                  }}
+                >
+                  <Check className="w-5 h-5" />
+                  <span>تم بنجاح، العودة ومتابعة المنصة بنسخة فايربيس الموحدة ✓</span>
+                </button>
+              ) : importError ? (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/20 transition-all cursor-pointer"
+                >
+                  إغلاق النافذة
+                </button>
+              ) : (
+                <div className="text-center text-[11px] text-slate-400 py-1">
+                  يرجى الانتظار دون إغلاق الصفحة أثناء حفظ السجلات في قاعدة بيانات فايربيس السحابية...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {isPurgeModalOpen && activeComplex && (
         <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-[#022c22] border-2 border-rose-600 rounded-[32px] p-6 sm:p-7 shadow-2xl space-y-4 text-right">
