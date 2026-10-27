@@ -29,13 +29,9 @@ import {
   Timer,
   Lock,
   RefreshCw,
-<<<<<<< HEAD
   Key,
   Settings,
   Database
-=======
-  Key
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import firebaseConfig from '../../../firebase-applet-config.json';
@@ -57,10 +53,7 @@ import { OmranDataService, auth } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ModernQuranLoader } from '../loading/ModernLoadingSuite';
 import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
-<<<<<<< HEAD
 import { QuickMailSetupModal } from './QuickMailSetupModal';
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 import {
   validateEmailAuthenticity,
   generateEmailOtp,
@@ -69,14 +62,10 @@ import {
   buildApplicationReceivedEmail,
   buildApplicationAcceptedEmail,
   buildWaitingListEmail,
-<<<<<<< HEAD
   sendRealPortalEmail,
   loadSavedMailConfigFromCloud,
   saveMailConfigToCloudForever,
   SavedPortalMailConfig
-=======
-  sendRealPortalEmail
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 } from '../../lib/portalEmailService';
 
 
@@ -119,18 +108,14 @@ interface ComplexCustomPortalPageProps {
   halaqahs: Halaqah[];
   onLoginSuccess: (user: any, teacher?: any, student?: any) => void;
   onExitPortal: () => void;
-<<<<<<< HEAD
   canManagePortalMail?: boolean;
   onUpdateComplex?: (updated: QuranComplex) => void | Promise<void>;
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 }
 
 export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = ({
   complex,
   halaqahs,
   onLoginSuccess,
-<<<<<<< HEAD
   onExitPortal,
   canManagePortalMail = false,
   onUpdateComplex
@@ -214,10 +199,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     }
     return complex;
   }, [complex, savedMailConfig]);
-=======
-  onExitPortal
-}) => {
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   const portalConfig = complex.portalConfig || {
     isEnabled: true,
     portalMode: 'login_and_register',
@@ -549,11 +530,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       const code = generateEmailOtp(cleanEmail);
 
       // Build Branded Email from the complex with direct registration link
-<<<<<<< HEAD
       const emailPayload = buildOtpVerificationEmail(effectiveComplex, cleanEmail, code, portalUrl);
-=======
-      const emailPayload = buildOtpVerificationEmail(complex, cleanEmail, code, portalUrl);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
       // Trigger REAL email delivery via Gmail SMTP / Google Workspace
       const sendRes = await sendRealPortalEmail(emailPayload);
@@ -711,11 +688,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       await OmranDataService.saveRegistrationApplication(newApp);
 
       // Send Real Queue Status & Tracking Email to student/parent's personal inbox
-<<<<<<< HEAD
       const receivedEmailPayload = buildApplicationReceivedEmail(effectiveComplex, newApp, portalUrl);
-=======
-      const receivedEmailPayload = buildApplicationReceivedEmail(complex, newApp, portalUrl);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       sendRealPortalEmail(receivedEmailPayload).catch(err => console.warn('Could not send application email:', err));
 
       setSubmitSuccessApp(newApp);
@@ -1013,7 +986,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           </div>
 
           <div className="flex items-center gap-2">
-<<<<<<< HEAD
             {isAuthorizedAdminSession && (
               <button
                 type="button"
@@ -1030,8 +1002,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 <span className="hidden sm:inline">البريد والمفتاح</span>
               </button>
             )}
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             <button
               type="button"
               onClick={onExitPortal}
@@ -2550,11 +2520,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 await OmranDataService.saveRegistrationApplication(updatedApp);
 
                 // Send immediate real confirmation email
-<<<<<<< HEAD
                 const emailPayload = buildApplicationAcceptedEmail(effectiveComplex, updatedApp, newStudent.halaqahName || 'الحلقة القرآنية', portalUrl);
-=======
-                const emailPayload = buildApplicationAcceptedEmail(complex, updatedApp, newStudent.halaqahName || 'الحلقة القرآنية', portalUrl);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                 sendRealPortalEmail(emailPayload).catch(() => {});
               }
 
@@ -2573,17 +2539,10 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           }}
           onWaitingListAdded={async (waitingEntry: WaitingListStudent) => {
             try {
-<<<<<<< HEAD
               const currentWait = effectiveComplex.waitingList || [];
               const updatedWait = [...currentWait.filter(w => w.id !== waitingEntry.id), waitingEntry];
               const updatedComplex: QuranComplex = {
                 ...effectiveComplex,
-=======
-              const currentWait = complex.waitingList || [];
-              const updatedWait = [...currentWait.filter(w => w.id !== waitingEntry.id), waitingEntry];
-              const updatedComplex: QuranComplex = {
-                ...complex,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                 waitingList: updatedWait
               };
               await OmranDataService.saveComplex(updatedComplex);
@@ -2604,11 +2563,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 const targetEmail = interviewStudentData.email || matchingApp?.email;
                 if (targetEmail) {
                   const waitPayload = buildWaitingListEmail(
-<<<<<<< HEAD
                     effectiveComplex,
-=======
-                    complex,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                     waitingEntry.applicationTrackingCode,
                     waitingEntry.studentName,
                     targetEmail,
@@ -2629,7 +2584,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           onCancel={() => setIsAIInterviewOpen(false)}
         />
       )}
-<<<<<<< HEAD
 
       {/* Anytime Email & 16-char Key Configuration Modal on the Complex Portal Link */}
       {isAuthorizedAdminSession && (
@@ -2653,8 +2607,6 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           }}
         />
       )}
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     </div>
   );
 };

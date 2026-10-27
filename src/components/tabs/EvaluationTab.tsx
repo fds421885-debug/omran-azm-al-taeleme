@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-=======
-import React, { useState, useEffect, useMemo } from 'react';
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 import {
   Star,
   BookOpen,
@@ -158,7 +154,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     }
   }, [students, selectedStudentId, activeStudentId]);
 
-<<<<<<< HEAD
   const rawFoundStudent = students.find(s => s.id === activeStudentId);
   const lastStableStudentRef = useRef<Student | undefined>(rawFoundStudent);
   if (rawFoundStudent) {
@@ -167,9 +162,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     lastStableStudentRef.current = undefined;
   }
   const activeStudent = rawFoundStudent || (activeStudentId && lastStableStudentRef.current?.id === activeStudentId ? lastStableStudentRef.current : undefined);
-=======
-  const activeStudent = students.find(s => s.id === activeStudentId);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   // History Drawer toggle
   const [showHistoryDrawer, setShowHistoryDrawer] = useState<boolean>(false);
@@ -366,16 +358,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const [newCritOptions, setNewCritOptions] = useState<string>('ممتاز, جيد جدا, جيد, ضعيف');
   const [newCritPointsWeight, setNewCritPointsWeight] = useState<number>(10);
 
-<<<<<<< HEAD
   // King Fahd Mushaf Viewer Modal State & Per-Student Cloud Error Isolation Refs
-=======
-  // King Fahd Mushaf Viewer Modal State
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   const [isMushafOpen, setIsMushafOpen] = useState<boolean>(false);
   const [mushafInitialSurah, setMushafInitialSurah] = useState<number>(78);
   const [mushafInitialAyah, setMushafInitialAyah] = useState<number>(1);
   const [mushafActiveItemId, setMushafActiveItemId] = useState<string>('new_today');
-<<<<<<< HEAD
   const [mushafOpenVersion, setMushafOpenVersion] = useState<number>(0);
   const [mushafAyahErrors, setMushafAyahErrors] = useState<Record<string, number>>({});
 
@@ -571,84 +558,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     }
   };
 
-=======
-  const [mushafAyahErrors, setMushafAyahErrors] = useState<Record<string, number>>({});
-
-  const handleRecordAyahError = (surah: number, ayah: number, errorCount: number) => {
-    const key = `${surah}:${ayah}`;
-    setMushafAyahErrors(prev => {
-      if (errorCount <= 0) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: errorCount };
-    });
-
-    const sInfo = getSurahInfo(surah);
-    const surahName = sInfo?.name || `سورة ${surah}`;
-    const errorNote = `[رصد خطأ تسميع بالضغط المزدوج ⚡]: سورة ${surahName} الآية ${ayah} (${errorCount} ${errorCount === 1 ? 'خطأ' : 'أخطاء'}).`;
-
-    setTeacherNotes(prev => {
-      const cleanPrev = (prev || '').split('\n').filter(line => !line.includes(`سورة ${surahName} الآية ${ayah}`)).join('\n');
-      if (errorCount <= 0) return cleanPrev;
-      return cleanPrev ? `${cleanPrev}\n• ${errorNote}` : `• ${errorNote}`;
-    });
-
-    // Real-Time Persistent Cloud Firestore Save strictly for activeStudent
-    if (activeStudent) {
-      const currentLogs: AyahErrorRecord[] = [...(activeStudent.mushafErrors || [])];
-      let updatedLogs: AyahErrorRecord[];
-
-      if (errorCount <= 0) {
-        // Completely clear this ayah error from the student's records
-        updatedLogs = currentLogs.filter(l => !(l.surahNumber === surah && l.ayahNumber === ayah));
-      } else {
-        const existingIdx = currentLogs.findIndex(l => l.surahNumber === surah && l.ayahNumber === ayah);
-        const record: AyahErrorRecord = {
-          id: existingIdx >= 0 ? currentLogs[existingIdx].id : `err_${activeStudent.id}_${surah}_${ayah}_${Date.now()}`,
-          studentId: activeStudent.id,
-          surahNumber: surah,
-          ayahNumber: ayah,
-          surahName,
-          errorCount,
-          lastErrorDate: selectedDate,
-          sessionDate: selectedDate,
-          timestamp: new Date().toISOString(),
-          cleared: false
-        };
-        if (existingIdx >= 0) {
-          updatedLogs = [...currentLogs];
-          updatedLogs[existingIdx] = { ...updatedLogs[existingIdx], ...record };
-        } else {
-          updatedLogs = [...currentLogs, record];
-        }
-      }
-
-      const updatedStd: Student = {
-        ...activeStudent,
-        mushafErrors: updatedLogs
-      };
-
-      OmranDataService.saveStudent(updatedStd).catch(e => console.warn('Cloud save ayah mistake notice:', e));
-      try {
-        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
-      } catch {}
-    }
-  };
-
-  const handleRecordDetailedAyahError = (errorLog: AyahErrorLog) => {
-    if (!activeStudent) return;
-    const currentLogs = activeStudent.mushafErrors || [];
-    const updatedStd: Student = {
-      ...activeStudent,
-      mushafErrors: [...currentLogs, errorLog]
-    };
-    OmranDataService.saveStudent(updatedStd).catch(e => console.warn('Error saving ayah error log:', e));
-    window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
-  };
-
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   const hiatusStatus = useMemo(() => {
     if (!activeStudent) return null;
     return checkStudentHiatusStatus(activeStudent);
@@ -658,10 +567,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     setMushafInitialSurah(surah);
     setMushafInitialAyah(ayah);
     if (itemId) setMushafActiveItemId(itemId);
-<<<<<<< HEAD
     setMushafOpenVersion(v => v + 1);
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     setIsMushafOpen(true);
   };
 
@@ -676,7 +582,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const startTomRevSurahInfo = getSurahInfo(firstTomRev?.surahNumber || 79);
   const endTomRevSurahInfo = getSurahInfo(firstTomRev?.toSurahNumber || firstTomRev?.surahNumber || 79);
 
-<<<<<<< HEAD
   const formatHighlightBadgeRange = (
     fromS: number,
     fromA: number,
@@ -692,8 +597,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     return `${startName} ${fromA} ← ${endName} ${toA}`;
   };
 
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   // Dynamic King Fahd Mushaf Highlight Items for the current student & recitation state
   const mushafHighlightItems: QuranHighlightItem[] = useMemo(() => {
     const items: QuranHighlightItem[] = [];
@@ -701,11 +604,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     // 1. Today's New
     items.push({
       id: 'new_today',
-<<<<<<< HEAD
       title: `الحفظ الجديد (${formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)})`,
-=======
-      title: `الحفظ الجديد (${startTodaySurahInfo.name} ${todayNewFromAyah}-${todayNewToAyah})`,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       surahNumber: todayNewSurah,
       fromAyah: todayNewFromAyah,
       toSurahNumber: todayNewToSurah,
@@ -716,11 +615,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     todayReviews.forEach(r => {
       items.push({
         id: r.id,
-<<<<<<< HEAD
         title: `${r.type} (${formatHighlightBadgeRange(r.surahNumber, r.fromAyah, r.toSurahNumber, r.toAyah)})`,
-=======
-        title: `${r.type} (${r.surahName || getSurahInfo(r.surahNumber).name} ${r.fromAyah}-${r.toAyah})`,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         surahNumber: r.surahNumber,
         fromAyah: r.fromAyah,
         toSurahNumber: r.toSurahNumber || r.surahNumber,
@@ -731,11 +626,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     // 3. Tomorrow's New
     items.push({
       id: 'new_tomorrow',
-<<<<<<< HEAD
       title: `مقرر الغد جديد (${formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)})`,
-=======
-      title: `مقرر الغد جديد (${startTomNewSurahInfo.name} ${tomNewFromAyah}-${tomNewToAyah})`,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       surahNumber: tomNewSurah,
       fromAyah: tomNewFromAyah,
       toSurahNumber: tomNewToSurah,
@@ -746,11 +637,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     tomReviews.forEach(r => {
       items.push({
         id: r.id,
-<<<<<<< HEAD
         title: `مقرر غد (${formatHighlightBadgeRange(r.surahNumber, r.fromAyah, r.toSurahNumber, r.toAyah)})`,
-=======
-        title: `مقرر غد (${r.surahName || getSurahInfo(r.surahNumber).name} ${r.fromAyah}-${r.toAyah})`,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         surahNumber: r.surahNumber,
         fromAyah: r.fromAyah,
         toSurahNumber: r.toSurahNumber || r.surahNumber,
@@ -764,19 +651,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     todayNewFromAyah,
     todayNewToSurah,
     todayNewToAyah,
-<<<<<<< HEAD
-=======
-    startTodaySurahInfo.name,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
+
     todayReviews,
     tomNewSurah,
     tomNewFromAyah,
     tomNewToSurah,
     tomNewToAyah,
-<<<<<<< HEAD
-=======
-    startTomNewSurahInfo.name,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
+
     tomReviews
   ]);
 
@@ -806,7 +687,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       setTomNewToSurah(updatedPortion.toSurah);
       setTomNewToAyah(updatedPortion.toAyah);
 
-<<<<<<< HEAD
       const latestStdForPace = latestStudentsMapRef.current[activeStudent.id] || activeStudent;
       const updatedStudent: Student = {
         ...latestStdForPace,
@@ -818,16 +698,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           dailyNewPages: newPace,
           nextDayAssignment: {
             ...latestStdForPace.memorizationPlan?.nextDayAssignment!,
-=======
-      const updatedStudent: Student = {
-        ...activeStudent,
-        dailyNewTarget: newTargetLabel,
-        memorizationPlan: {
-          ...activeStudent.memorizationPlan!,
-          dailyNewPages: newPace,
-          nextDayAssignment: {
-            ...activeStudent.memorizationPlan?.nextDayAssignment!,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             newMemorization: updatedPortion.description
           },
           aiNotes: `🌟 تم ترقية ورد الحفظ بنصف وجه إضافي بفضل التميز والتطور في التسميع الشهري (${newPace} وجه).`,
@@ -835,10 +705,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         }
       };
 
-<<<<<<< HEAD
       latestStudentsMapRef.current[updatedStudent.id] = updatedStudent;
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       await OmranDataService.saveStudent(updatedStudent);
       window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStudent }));
     } catch (e) {
@@ -851,7 +718,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const [isManualGeneratingPlan, setIsManualGeneratingPlan] = useState(false);
   const handleForceGeneratePlan = async () => {
     if (!activeStudent) return;
-<<<<<<< HEAD
     const targetStdId = activeStudent.id;
     const studentSnapshot = latestStudentsMapRef.current[targetStdId] || activeStudent;
     setIsManualGeneratingPlan(true);
@@ -863,17 +729,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       const sNum = studentSnapshot.currentSurah || 78;
       const sAyah = studentSnapshot.currentAyah || 1;
-=======
-    setIsManualGeneratingPlan(true);
-    try {
-      const pace = activeStudent.memorizationPlan?.dailyNewPages ||
-        (activeStudent.dailyNewTarget?.includes('وجهين') ? 2.0 :
-         activeStudent.dailyNewTarget?.includes('ربع') ? 0.25 :
-         activeStudent.dailyNewTarget?.includes('وجه واحد') ? 1.0 : 0.5);
-
-      const sNum = activeStudent.currentSurah || 78;
-      const sAyah = activeStudent.currentAyah || 1;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       const initialPortion = calculatePortionFromPace(sNum, sAyah, pace);
 
       let aiPlanObj: any = null;
@@ -884,11 +739,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         const config = await OmranAIService.loadConfig();
         if (config.masterApiKey || config.groupAllocations.some(g => g.isEnabled && g.apiKey)) {
           const prompt = `أنت الموجه القرآني الذكي في منصة عمران. قم بإنشاء خطة حفظ قرآنية دقيقة للطالب:
-<<<<<<< HEAD
 بيانات الطالب: ${JSON.stringify(studentSnapshot)}
-=======
-بيانات الطالب: ${JSON.stringify(activeStudent)}
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 المقدار اليومي الجديد المطلوب: ${pace} وجه.
 المطلوب: توليد الخطة التربوية بصيغة JSON حصراً:
 {
@@ -921,11 +772,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           const res = await fetch(ApiConfig.getEndpoint('/api/gemini/generate-plan'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-<<<<<<< HEAD
             body: JSON.stringify({ student: studentSnapshot })
-=======
-            body: JSON.stringify({ student: activeStudent })
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           });
           if (res.ok) {
             const data = await res.json();
@@ -937,22 +784,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         }
       }
 
-<<<<<<< HEAD
       // Read latest student & Mushaf errors so async AI plan NEVER overwrites errors recorded meanwhile!
       const liveStd = latestStudentsMapRef.current[targetStdId] || studentSnapshot;
       const updatedStd: Student = {
         ...liveStd,
         mushafErrors: studentMushafRecordsRef.current[targetStdId] ?? liveStd.mushafErrors,
         mushafErrorsUpdatedAt: liveStd.mushafErrorsUpdatedAt,
-=======
-      const updatedStd: Student = {
-        ...activeStudent,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         isGeneratingPlan: false,
         aiPlan: aiPlanObj ? {
           ...aiPlanObj,
           lastUpdated: new Date().toISOString()
-<<<<<<< HEAD
         } : liveStd.aiPlan,
         memorizationPlan: {
           ...liveStd.memorizationPlan!,
@@ -961,40 +802,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             ...liveStd.memorizationPlan?.nextDayAssignment!,
             newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
             review: aiPlanObj?.currentDailyAssignment?.review || liveStd.memorizationPlan?.nextDayAssignment?.review || 'مراجعة وتثبيت المحفوظ',
-=======
-        } : activeStudent.aiPlan,
-        memorizationPlan: {
-          ...activeStudent.memorizationPlan!,
-          dailyNewPages: pace,
-          nextDayAssignment: {
-            ...activeStudent.memorizationPlan?.nextDayAssignment!,
-            newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
-            review: aiPlanObj?.currentDailyAssignment?.review || activeStudent.memorizationPlan?.nextDayAssignment?.review || 'مراجعة وتثبيت المحفوظ',
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
             surahNumber: aiPortion.fromSurah,
             fromAyah: aiPortion.fromAyah,
             toSurahNumber: aiPortion.toSurah,
             toAyah: aiPortion.toAyah
           },
-<<<<<<< HEAD
           aiNotes: aiPlanObj?.roadmapSummary || liveStd.memorizationPlan?.aiNotes,
-=======
-          aiNotes: aiPlanObj?.roadmapSummary || activeStudent.memorizationPlan?.aiNotes,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           lastUpdated: new Date().toISOString()
         }
       };
 
-<<<<<<< HEAD
       latestStudentsMapRef.current[targetStdId] = updatedStd;
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       await OmranDataService.saveStudent(updatedStd);
       window.dispatchEvent(new CustomEvent('omran:student-plan-ready', { detail: updatedStd }));
       window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStd }));
 
-<<<<<<< HEAD
       if (activeStudentIdRef.current === targetStdId) {
         setTodayNewSurah(aiPortion.fromSurah);
         setTodayNewFromAyah(aiPortion.fromAyah);
@@ -1016,27 +839,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
         setAutoFilledNotice(`✨ تم إعداد واعتماد خطة الطالب القرآنية بنجاح: ${aiPortion.description}`);
       }
-=======
-      setTodayNewSurah(aiPortion.fromSurah);
-      setTodayNewFromAyah(aiPortion.fromAyah);
-      setTodayNewToSurah(aiPortion.toSurah);
-      setTodayNewToAyah(aiPortion.toAyah);
-
-      const toInfo = getSurahInfo(aiPortion.toSurah);
-      let nextS = aiPortion.toSurah;
-      let nextA = aiPortion.toAyah + 1;
-      if (nextA > toInfo.numberOfAyahs) {
-        nextS = aiPortion.toSurah < 114 ? aiPortion.toSurah + 1 : 1;
-        nextA = 1;
-      }
-      const tomPortion = calculatePortionFromPace(nextS, nextA, pace);
-      setTomNewSurah(tomPortion.fromSurah);
-      setTomNewFromAyah(tomPortion.fromAyah);
-      setTomNewToSurah(tomPortion.toSurah);
-      setTomNewToAyah(tomPortion.toAyah);
-
-      setAutoFilledNotice(`✨ تم إعداد واعتماد خطة الطالب القرآنية بنجاح: ${aiPortion.description}`);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     } catch (e) {
       console.error('Error generating plan manually:', e);
     } finally {
@@ -1084,7 +886,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   // Initialize or load student evaluation when active student or selected date changes
   useEffect(() => {
-<<<<<<< HEAD
     if (!activeStudent) {
       setMushafAyahErrors({});
       loadedStudentSessionKeyRef.current = '';
@@ -1107,9 +908,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     }
     loadedStudentSessionKeyRef.current = sessionKey;
 
-=======
-    if (!activeStudent) return;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     setAutoFilledNotice('');
 
     // If student has no plan at all, automatically trigger background AI plan generation
@@ -1118,14 +916,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       return;
     }
 
-<<<<<<< HEAD
-=======
-    // 1. Check if an evaluation already exists for the selectedDate
-    const existing = evaluations.find(
-      e => e.date === selectedDate && e.studentId === activeStudent.id
-    );
 
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     if (existing) {
       setCriteriaValues(existing.criteriaValues || {});
       setTeacherNotes(existing.recitationDetails?.teacherNotes || '');
@@ -1181,23 +972,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       } else {
         setIsManualPointsModified(false);
       }
-<<<<<<< HEAD
-=======
 
-      // Load errors strictly for this activeStudent (Per-student isolated Mushaf)
-      const studentErrorsMap: Record<string, number> = {};
-      const evalErrors = (existing.recitationDetails as any)?.ayahErrors;
-      if (evalErrors && typeof evalErrors === 'object' && Object.keys(evalErrors).length > 0) {
-        Object.assign(studentErrorsMap, evalErrors);
-      } else if (activeStudent.mushafErrors && activeStudent.mushafErrors.length > 0) {
-        activeStudent.mushafErrors.forEach(err => {
-          if (!err.cleared && err.errorCount > 0) {
-            studentErrorsMap[`${err.surahNumber}:${err.ayahNumber}`] = err.errorCount;
-          }
-        });
-      }
-      setMushafAyahErrors(studentErrorsMap);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     } else {
       setIsManualPointsModified(false);
       // 2. No evaluation exists for this date yet!
@@ -1498,11 +1273,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           student: activeStudent,
           evaluationsHistory: studentEvaluationsHistory,
           isTomorrow: false,
-<<<<<<< HEAD
           mushafErrors: isolatedStudentErrors
-=======
-          mushafErrors: mushafAyahErrors
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         });
 
         const adaptiveTomReviews = generateAdaptiveDailyReviews({
@@ -1515,11 +1286,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             toSurah: todayEndS,
             toAyah: todayEndA
           },
-<<<<<<< HEAD
           mushafErrors: isolatedStudentErrors
-=======
-          mushafErrors: mushafAyahErrors
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         });
 
         if (adaptiveTodayReviews.rationaleNotes.length > 0) {
@@ -1541,20 +1308,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       });
       setCriteriaValues(defaults);
       setTeacherNotes('أداء طيب ومتقن ما شاء الله، نسأل الله له التوفيق والرفعة.');
-<<<<<<< HEAD
-=======
 
-      // Load errors strictly for this activeStudent (Per-student isolated Mushaf)
-      const studentErrorsMap: Record<string, number> = {};
-      if (activeStudent.mushafErrors && activeStudent.mushafErrors.length > 0) {
-        activeStudent.mushafErrors.forEach(err => {
-          if (!err.cleared && err.errorCount > 0) {
-            studentErrorsMap[`${err.surahNumber}:${err.ayahNumber}`] = err.errorCount;
-          }
-        });
-      }
-      setMushafAyahErrors(studentErrorsMap);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     }
   }, [activeStudentId, selectedDate, evaluations, criteria]);
 
@@ -1646,15 +1400,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const handleTodayEndSurahChange = (surahNum: number) => {
     setTodayNewToSurah(surahNum);
     const info = getSurahInfo(surahNum);
-<<<<<<< HEAD
     // When selecting a different end surah (e.g. من الناس إلى الإخلاص), default to the full end surah
     const targetToAyah =
       surahNum !== todayNewSurah
         ? info.numberOfAyahs
         : Math.max(todayNewFromAyah, Math.min(todayNewToAyah, info.numberOfAyahs));
-=======
-    const targetToAyah = Math.min(todayNewToAyah, info.numberOfAyahs);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     setTodayNewToAyah(targetToAyah);
     recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, surahNum, targetToAyah, todayNewDidNotRecite);
   };
@@ -1672,15 +1422,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const handleTomNewEndSurahChange = (surahNum: number) => {
     setTomNewToSurah(surahNum);
     const info = getSurahInfo(surahNum);
-<<<<<<< HEAD
     const targetToAyah =
       surahNum !== tomNewSurah
         ? info.numberOfAyahs
         : Math.max(tomNewFromAyah, Math.min(tomNewToAyah, info.numberOfAyahs));
     setTomNewToAyah(targetToAyah);
-=======
-    setTomNewToAyah(Math.min(tomNewToAyah, info.numberOfAyahs));
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   };
 
   // Add Review Item for Today
@@ -2226,7 +1972,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         }
       }
 
-<<<<<<< HEAD
       // Analyze ayah errors: track improvements and update error records strictly for this student
       const baseStudentErrors = (
         studentMushafRecordsRef.current[activeStudent.id] ??
@@ -2237,11 +1982,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       const errorAnalysis = analyzeAndDistributeAyahErrors({
         existingErrors: baseStudentErrors,
-=======
-      // Analyze ayah errors: track improvements and update error records
-      const errorAnalysis = analyzeAndDistributeAyahErrors({
-        existingErrors: activeStudent.mushafErrors || [],
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         todayEvaluatedRange: {
           fromSurah: todayNewSurah,
           fromAyah: todayNewFromAyah,
@@ -2252,7 +1992,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         dailyMaxErrorVerses: 3
       });
 
-<<<<<<< HEAD
       const taggedUpdatedErrors = errorAnalysis.updatedErrorsList.map(e => ({
         ...e,
         studentId: activeStudent.id
@@ -2267,12 +2006,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         recentlyCompletedSurahs: updatedRecentlyCompleted,
         mushafErrors: taggedUpdatedErrors,
         mushafErrorsUpdatedAt: evalSavedIso
-=======
-      const studentUpdates: Partial<Student> = {
-        isFirstSession: false,
-        recentlyCompletedSurahs: updatedRecentlyCompleted,
-        mushafErrors: errorAnalysis.updatedErrorsList
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       };
 
       // 1. Save evaluation and atomically update student's points, position, and assignments
@@ -2288,21 +2021,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           new CustomEvent('omran:ai-tune-plan', {
             detail: {
               student: activeStudent,
-<<<<<<< HEAD
               dispatchedAt: evalSavedIso,
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
               todayEvaluation: fullEvaluation,
               ayahErrors: errorsList,
               didNotRecite: todayNewDidNotRecite,
               newDailyAssignment,
               updatedPosition,
               updatedRecentlyCompletedSurahs: updatedRecentlyCompleted,
-<<<<<<< HEAD
               updatedMushafErrors: taggedUpdatedErrors,
-=======
-              updatedMushafErrors: errorAnalysis.updatedErrorsList,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
               errorRationale: errorAnalysis.rationale
             }
           })
@@ -3566,13 +3292,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600/30 via-[#064e3b] to-emerald-600/30 hover:from-emerald-600/50 hover:to-emerald-600/50 border border-emerald-500/40 text-emerald-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm group"
                   >
                     <BookOpen className="w-4 h-4 text-[#fbbf24] group-hover:scale-110 transition-transform" />
-<<<<<<< HEAD
                     <span>
                       قراءة ومتابعة في مصحف الملك فهد ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • الوجه {getPageOfAyah(todayNewSurah, todayNewFromAyah)})
                     </span>
-=======
-                    <span>قراءة ومتابعة في مصحف مجمع الملك فهد (سورة {startTodaySurahInfo.name} - الآيات {todayNewFromAyah} إلى {todayNewToAyah} - الوجه {getPageOfAyah(todayNewSurah, todayNewFromAyah)})</span>
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                   </button>
 
                   {/* Did not recite toggle */}
@@ -3835,11 +3557,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               className="w-full py-2 px-3 rounded-xl bg-[#064e3b]/50 hover:bg-[#064e3b] border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
                             >
                               <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
-<<<<<<< HEAD
                               <span>قراءة في المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
-=======
-                              <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                             </button>
                           </div>
                         );
@@ -4012,11 +3730,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600/30 via-[#064e3b] to-emerald-600/30 hover:from-emerald-600/50 hover:to-emerald-600/50 border border-emerald-500/40 text-emerald-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm group"
                   >
                     <BookOpen className="w-4 h-4 text-[#fbbf24] group-hover:scale-110 transition-transform" />
-<<<<<<< HEAD
                     <span>قراءة في مصحف الملك فهد ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • الوجه {getPageOfAyah(tomNewSurah, tomNewFromAyah)})</span>
-=======
-                    <span>قراءة في مصحف الملك فهد (سورة {startTomNewSurahInfo.name} - الآيات {tomNewFromAyah} إلى {tomNewToAyah} - الوجه {getPageOfAyah(tomNewSurah, tomNewFromAyah)})</span>
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                   </button>
                 </div>
 
@@ -4911,17 +4625,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         </div>
       )}
 
-<<<<<<< HEAD
       {/* Per-Student Isolated King Fahd Holy Quran Modal Reader */}
-=======
-      {/* King Fahd Holy Quran Modal Reader with 2.5s Long-Press Recitation Error Recording */}
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       <KingFahdQuranModal
         isOpen={isMushafOpen}
         onClose={() => setIsMushafOpen(false)}
         initialSurah={mushafInitialSurah}
         initialAyah={mushafInitialAyah}
-<<<<<<< HEAD
         openRequestVersion={mushafOpenVersion}
         highlightItems={mushafHighlightItems}
         activeItemId={mushafActiveItemId}
@@ -4931,15 +4640,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         theme={currentTheme}
         recordedAyahErrors={mushafAyahErrors}
         onRecordAyahError={handleRecordAyahError}
-=======
-        highlightItems={mushafHighlightItems}
-        activeItemId={mushafActiveItemId}
-        studentName={activeStudent?.name}
-        studentId={activeStudent?.id}
-        recordedAyahErrors={mushafAyahErrors}
-        onRecordAyahError={handleRecordAyahError}
-        onRecordDetailedAyahError={handleRecordDetailedAyahError}
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       />
     </div>
   );

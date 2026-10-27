@@ -1326,19 +1326,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         },
       };
 
-<<<<<<< HEAD
-      let clientModel = 'gemini-3.8-flash';
-      let customConfiguredKey = '';
-      try {
-        const aiCfg = await OmranAIService.loadConfig();
-        if (aiCfg) {
-          if (aiCfg.masterModel) {
-            clientModel = aiCfg.masterModel;
-          }
-          if (aiCfg.masterApiKey) {
-            customConfiguredKey = aiCfg.masterApiKey.trim();
-          }
-=======
       let clientApiKey = (
         (import.meta as any).env?.VITE_GEMINI_API_KEY ||
         (import.meta as any).env?.GEMINI_API_KEY ||
@@ -1356,20 +1343,14 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
           if (aiCfg.masterModel) {
             clientModel = aiCfg.masterModel;
           }
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         }
       } catch {}
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-<<<<<<< HEAD
-      if (customConfiguredKey) {
-        headers['x-gemini-api-key'] = customConfiguredKey;
-=======
       if (clientApiKey) {
         headers['x-gemini-api-key'] = clientApiKey;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       }
 
       const res = await fetch(ApiConfig.getEndpoint('/api/gemini/assistant'), {
@@ -1377,10 +1358,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         headers,
         body: JSON.stringify({
           ...payload,
-<<<<<<< HEAD
-=======
           apiKey: clientApiKey || undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           model: clientModel,
         }),
       });

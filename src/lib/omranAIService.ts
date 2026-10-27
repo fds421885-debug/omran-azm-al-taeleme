@@ -349,11 +349,7 @@ export class OmranAIService {
   }
 
   /**
-<<<<<<< HEAD
-   * Test an API Key and Model via server endpoint
-=======
    * Test an API Key and Model directly or via server endpoint
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
    * Returns latency, response text, and verifies connectivity.
    */
   static async testApiKeyAndModel(
@@ -367,10 +363,6 @@ export class OmranAIService {
   }> {
     const cleanKey = (apiKey || '').trim();
     const cleanModel = sanitizeGeminiModelName(modelName);
-<<<<<<< HEAD
-    const startTime = performance.now();
-
-=======
 
     if (!cleanKey) {
       return {
@@ -385,31 +377,18 @@ export class OmranAIService {
     const testPrompt = 'اختبار اتصال: أجب بعبارة قصيرة واحدة باللغة العربية تبدأ بـ "تم الاتصال بنجاح بمنظومة عمران القرآنية".';
 
     // 1. Try server proxy endpoint first for maximum compatibility
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     try {
       const serverRes = await fetch(ApiConfig.getEndpoint('/api/gemini/test-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-<<<<<<< HEAD
-        body: JSON.stringify({ apiKey: cleanKey || undefined, model: cleanModel })
-      });
-      const latencyMs = Math.round(performance.now() - startTime);
-=======
         body: JSON.stringify({ apiKey: cleanKey, model: cleanModel })
       });
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       if (serverRes.ok) {
         const sData = await serverRes.json();
         if (sData?.success) {
           this.recordUsage();
           return {
             success: true,
-<<<<<<< HEAD
-            latencyMs: sData.latencyMs || latencyMs,
-            responseText: sData.responseText || 'تم الاتصال بنجاح بمنظومة عمران القرآنية'
-          };
-        }
-=======
             latencyMs: sData.latencyMs || Math.round(performance.now() - startTime),
             responseText: sData.responseText || 'تم الاتصال بنجاح بمنظومة عمران القرآنية'
           };
@@ -470,28 +449,10 @@ export class OmranAIService {
           }
         } catch {}
 
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         return {
           success: false,
           latencyMs,
           responseText: '',
-<<<<<<< HEAD
-          error: sData?.error || 'تعذر التحقق من الاتصال عبر الخادم'
-        };
-      }
-      return {
-        success: false,
-        latencyMs,
-        responseText: '',
-        error: `تعذر الاتصال بالخادم (كود ${serverRes.status})`
-      };
-    } catch (serverErr: any) {
-      return {
-        success: false,
-        latencyMs: Math.round(performance.now() - startTime),
-        responseText: '',
-        error: `تعذر الوصول إلى خادم المنظومة: ${serverErr?.message || 'خطأ في الشبكة'}`
-=======
           error: errorMsg
         };
       }
@@ -515,7 +476,6 @@ export class OmranAIService {
         latencyMs: Math.round(endTime - startTime),
         responseText: '',
         error: `خطأ شبكة أثناء الاتصال المباشر بـ Google Gemini: ${netErr?.message || 'تعذر الوصول للخادم'}`
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       };
     }
   }
@@ -624,12 +584,8 @@ export class OmranAIService {
   }
 
   /**
-<<<<<<< HEAD
-   * Unified Server-Side Content Generation via /api/gemini/generate
-=======
    * Unified Direct Content Generation
    * Works 100% on Netlify, static hosting, GitHub Pages, or with a backend server!
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
    */
   static async generateContent(
     options: GenerateContentOptions
@@ -650,8 +606,6 @@ export class OmranAIService {
       };
     }
 
-<<<<<<< HEAD
-=======
     // 1. DIRECT CLIENT-SIDE EXECUTION (Works on Netlify / Static without Node.js server)
     if (apiKey && apiKey.trim()) {
       try {
@@ -706,7 +660,6 @@ export class OmranAIService {
     }
 
     // 2. SERVER FALLBACK (If Express backend is running on port 3000 / localhost)
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     try {
       const serverEndpoint = ApiConfig.getEndpoint('/api/gemini/generate');
       const serverRes = await fetch(serverEndpoint, {
@@ -727,7 +680,6 @@ export class OmranAIService {
 
       if (serverRes.ok) {
         const sData = await serverRes.json();
-<<<<<<< HEAD
         const generatedText = (sData.text || sData.response || '').trim();
         if (generatedText) {
           this.recordUsage();
@@ -753,35 +705,18 @@ export class OmranAIService {
         };
       }
     } catch (err: any) {
+      // 3. Fallback message if no server and direct call did not succeed
+      const errorGuidance =
+        !apiKey
+          ? 'لم يتم ضبط مفتاح Gemini API الرئيسي في إعدادات المنظومة (تبويب المبرمج والنسخ الاحتياطي). يرجى إضافة المفتاح وتفعيله للعمل على نتفلاي والسيرفر السحابي.'
+          : 'تعذر الاتصال بخدمة Google Gemini، يرجى التأكد من اتصال الإنترنت وصلاحية مفتاح API المحدد.';
+
       return {
         text: '',
         success: false,
         model,
-        error: `تعذر الاتصال بخدمة الذكاء الاصطناعي على الخادم: ${err?.message || 'خطأ في الشبكة'}`
+        error: errorGuidance
       };
     }
-=======
-        this.recordUsage();
-        return {
-          text: sData.text || sData.response || '',
-          success: true,
-          model
-        };
-      }
-    } catch {}
-
-    // 3. Fallback message if no key or connectivity
-    const errorGuidance =
-      !apiKey
-        ? 'لم يتم ضبط مفتاح Gemini API الرئيسي في إعدادات المنظومة (تبويب المبرمج والنسخ الاحتياطي). يرجى إضافة المفتاح وتفعيله للعمل على نتفلاي والسيرفر السحابي.'
-        : 'تعذر الاتصال بخدمة Google Gemini، يرجى التأكد من اتصال الإنترنت وصلاحية مفتاح API المحدد.';
-
-    return {
-      text: '',
-      success: false,
-      model,
-      error: errorGuidance
-    };
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
 }

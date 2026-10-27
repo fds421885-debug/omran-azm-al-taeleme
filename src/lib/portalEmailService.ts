@@ -10,7 +10,6 @@
 import { QuranComplex, StudentRegistrationApplication } from '../types';
 import { darkenHex, lightenHex } from './themeUtils';
 import { ApiConfig } from './apiConfig';
-<<<<<<< HEAD
 import { db, OmranDataService } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -250,8 +249,6 @@ export async function saveMailConfigToCloudForever(params: {
 
   return configPayload;
 }
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
 // Comprehensive list of known disposable / throwaway / temporary email domains
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
@@ -505,18 +502,12 @@ export function verifyEmailOtp(email: string, enteredCode: string): {
 export interface BrandedEmailPayload {
   toEmail: string;
   fromEmail?: string;
-<<<<<<< HEAD
   complexId?: string;
   mailConfig?: {
     user: string;
     pass: string;
     fromName?: string;
     fromEmail?: string;
-=======
-  mailConfig?: {
-    user: string;
-    pass: string;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   };
   subject: string;
   title: string;
@@ -581,12 +572,8 @@ export function buildOtpVerificationEmail(
   return {
     toEmail,
     fromEmail: senderEmail,
-<<<<<<< HEAD
     complexId: complex.id,
     mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass, fromName: complex.mailConfig.fromName, fromEmail: complex.mailConfig.fromEmail } : undefined,
-=======
-    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     subject: `رمز التحقق لتسجيل حسابك في ${complex.name} [${otpCode}]`,
     title: `توثيق البريد الإلكتروني • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته،`,
@@ -649,12 +636,8 @@ export function buildApplicationReceivedEmail(
   return {
     toEmail: application.email || '',
     fromEmail: senderEmail,
-<<<<<<< HEAD
     complexId: complex.id,
     mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass, fromName: complex.mailConfig.fromName, fromEmail: complex.mailConfig.fromEmail } : undefined,
-=======
-    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     subject: `تم استلام طلب انضمامك في ${complex.name} • رقم التذكرة [${application.trackingCode}]`,
     title: `تأكيد استلام طلب الانضمام • ${complex.name}`,
     greeting: `حياك الله وبياك أخي ولي أمر الطالب / ${application.studentName} حفظه الله ورعاه..`,
@@ -707,12 +690,8 @@ export function buildApplicationAcceptedEmail(
   return {
     toEmail: application.email || '',
     fromEmail: senderEmail,
-<<<<<<< HEAD
     complexId: complex.id,
     mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass, fromName: complex.mailConfig.fromName, fromEmail: complex.mailConfig.fromEmail } : undefined,
-=======
-    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     subject: `🎉 بشرى سارة: تم قبول الطالب ${application.studentName} في ${complex.name}! [${application.trackingCode}]`,
     title: `بشرى القبول والاعتماد • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته 🌿`,
@@ -761,12 +740,8 @@ export function buildWaitingListEmail(
   return {
     toEmail,
     fromEmail: senderEmail,
-<<<<<<< HEAD
     complexId: complex.id,
     mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass, fromName: complex.mailConfig.fromName, fromEmail: complex.mailConfig.fromEmail } : undefined,
-=======
-    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     subject: `إشعار إدراج في قائمة الانتظار • مجمع ${complex.name} [${trackingCode}]`,
     title: `قائمة الانتظار الرسمية • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته، مرحباً بك يا ${studentName}..`,
@@ -828,12 +803,8 @@ export function buildApplicationRejectedEmail(
   return {
     toEmail: application.email || '',
     fromEmail: senderEmail,
-<<<<<<< HEAD
     complexId: complex.id,
     mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass, fromName: complex.mailConfig.fromName, fromEmail: complex.mailConfig.fromEmail } : undefined,
-=======
-    mailConfig: complex.mailConfig ? { user: complex.mailConfig.user, pass: complex.mailConfig.pass } : undefined,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     subject: `إشعار بشأن طلب الانضمام إلى ${complex.name} • [${application.trackingCode}]`,
     title: `إشعار بخصوص طلب الانضمام • ${complex.name}`,
     greeting: `السلام عليكم ورحمة الله وبركاته، مرحباً بك أخي ولي أمر الطالب / ${application.studentName} حفظه الله..`,
@@ -1008,7 +979,6 @@ export async function sendRealPortalEmail(
   }
 
   try {
-<<<<<<< HEAD
     // Ensure saved Gmail & App Password key from Cloud Firestore are always resolved even if complex object lacked them
     let resolvedMailConfig = payload.mailConfig;
     if (!resolvedMailConfig?.user || !resolvedMailConfig?.pass) {
@@ -1034,9 +1004,6 @@ export async function sendRealPortalEmail(
       ...payload,
       fromEmail: effectiveFromEmail
     });
-=======
-    const html = renderBrandedEmailHtml(payload);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
     // Call server backend SMTP endpoint directly. NEVER invoke client GIS/Google popup!
     const srvRes = await fetch(ApiConfig.getEndpoint('/api/mail/send-gmail'), {
@@ -1046,18 +1013,11 @@ export async function sendRealPortalEmail(
         to: payload.toEmail,
         subject: payload.subject,
         html,
-<<<<<<< HEAD
         complexId: payload.complexId,
         fromName: resolvedMailConfig?.fromName || payload.complexName || 'منظومة عُمْرَان لإدارة المجمعات القرآنية',
         fromEmail: effectiveFromEmail,
         gmailUser: resolvedMailConfig?.user,
         gmailAppPassword: resolvedMailConfig?.pass
-=======
-        fromName: payload.complexName || 'منظومة عُمْرَان لإدارة المجمعات القرآنية',
-        fromEmail: payload.fromEmail || 'qdrat2626@gmail.com',
-        gmailUser: payload.mailConfig?.user,
-        gmailAppPassword: payload.mailConfig?.pass
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       })
     });
 

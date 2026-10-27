@@ -719,11 +719,7 @@ export function analyzeAndDistributeAyahErrors(params: {
   let improvedCount = 0;
   const updatedErrorsList: any[] = [];
 
-<<<<<<< HEAD
   // 1. Sync existing errors with authoritative active Mushaf errors (todayReportedErrors)
-=======
-  // 1. Check each past error: did today's recitation cover it without error?
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   existingErrors.forEach(err => {
     const s = Number(err.surahNumber);
     const a = Number(err.ayahNumber);
@@ -735,7 +731,6 @@ export function analyzeAndDistributeAyahErrors(params: {
       a >= todayEvaluatedRange.fromAyah &&
       a <= todayEvaluatedRange.toAyah;
 
-<<<<<<< HEAD
     const reportedCount = todayReportedErrors[key] || 0;
     const hadErrorToday = reportedCount > 0;
 
@@ -760,35 +755,17 @@ export function analyzeAndDistributeAyahErrors(params: {
       updatedErrorsList.push({
         ...err,
         errorCount: 0,
-=======
-    const hadErrorToday = todayReportedErrors[key] !== undefined && todayReportedErrors[key] > 0;
-
-    if (wasRecitedToday && !hadErrorToday) {
-      // Improved!
-      improvedCount++;
-      updatedErrorsList.push({
-        ...err,
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         cleared: true,
         improvedDate: new Date().toISOString(),
         notes: 'تحسن الطالب في هذا الموضع وتم التثبيت بنجاح'
       });
     } else {
-<<<<<<< HEAD
       // Removed by teacher from Mushaf badge (not in todayReportedErrors)
       updatedErrorsList.push({
         ...err,
         errorCount: 0,
         cleared: true,
         improvedDate: new Date().toISOString()
-=======
-      const additionalCount = todayReportedErrors[key] || 0;
-      updatedErrorsList.push({
-        ...err,
-        errorCount: (err.errorCount || 1) + additionalCount,
-        lastErrorDate: hadErrorToday ? new Date().toISOString() : err.lastErrorDate,
-        cleared: false
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       });
     }
   });
@@ -797,7 +774,6 @@ export function analyzeAndDistributeAyahErrors(params: {
   Object.entries(todayReportedErrors).forEach(([key, count]) => {
     if (count > 0) {
       const [s, a] = key.split(':').map(Number);
-<<<<<<< HEAD
       const existingIdx = updatedErrorsList.findIndex(e => Number(e.surahNumber) === s && Number(e.ayahNumber) === a);
       if (existingIdx >= 0) {
         updatedErrorsList[existingIdx] = {
@@ -807,10 +783,6 @@ export function analyzeAndDistributeAyahErrors(params: {
           lastErrorDate: new Date().toISOString()
         };
       } else {
-=======
-      const alreadyIn = updatedErrorsList.some(e => e.surahNumber === s && e.ayahNumber === a);
-      if (!alreadyIn) {
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         updatedErrorsList.push({
           id: `err_${Date.now()}_${s}_${a}`,
           surahNumber: s,

@@ -222,7 +222,6 @@ export function getPageOfAyah(surahNumber: number, ayahNumber: number): number {
 }
 
 /**
-<<<<<<< HEAD
  * Official King Fahd Medina Mushaf Arabic Juz Titles (الجُزْءُ الأَوَّلُ ... الجُزْءُ الثَّلَاثُونَ)
  */
 export const KING_FAHD_JUZ_NAMES: Record<number, string> = {
@@ -342,19 +341,13 @@ export function getExpandedAyahSequenceForRange(
 }
 
 /**
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
  * Calculate precise fractional faces (أوجه القرآن الكريم) for any recitation portion.
  * Rules:
  * - 0.25 on quarter face (ربع وجه)
  * - 0.5 on half face (نصف وجه)
  * - 0.75 on three-quarters face (ثلاثة أرباع وجه)
  * - 1.0 on whole face (وجه كامل)
-<<<<<<< HEAD
  * Supports single or multi-surah ranges (ascending & descending) and returns cleanly rounded fractions.
-=======
- * Supports single or multi-surah ranges and returns cleanly rounded fractions.
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
  */
 export function calculateRecitationFractionalFaces(
   startSurah: number,
@@ -375,11 +368,7 @@ export function calculateRecitationFractionalFaces(
   // Single page range
   if (startPage === endPage) {
     if (startSurah === eSurah) {
-<<<<<<< HEAD
       const ayahsRecited = Math.max(1, Math.abs(toAyah - sAyah) + 1);
-=======
-      const ayahsRecited = Math.max(1, toAyah - sAyah + 1);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       const totalInSurah = sInfo.numberOfAyahs;
 
       if (ayahsRecited >= totalInSurah && totalInSurah <= 15) {
@@ -396,7 +385,6 @@ export function calculateRecitationFractionalFaces(
       }
       return 1.0;
     } else {
-<<<<<<< HEAD
       // Multiple short surahs on the same page (e.g. Page 604: الإخلاص، الفلق، الناس)
       const pageAyahs = getAyahsOnPage(startPage);
       if (pageAyahs.length > 0) {
@@ -415,9 +403,6 @@ export function calculateRecitationFractionalFaces(
         if (ratio >= 0.35) return 0.5;
         return 0.25;
       }
-=======
-      // Multiple short surahs on the same page (e.g. Al-Falaq & An-Nas on page 604)
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       return 1.0;
     }
   }
@@ -443,7 +428,6 @@ export function formatPageTitle(pageNumber: number): string {
  */
 export function isPageCovered(
   page: QuranPageInfo,
-<<<<<<< HEAD
   ranges: Array<{ surahNumber: number; fromAyah: number; toSurahNumber?: number; toAyah: number }>
 ): boolean {
   if (!ranges || ranges.length === 0) return false;
@@ -453,38 +437,6 @@ export function isPageCovered(
   return ayahsOnPage.every(({ surah, ayah }) =>
     ranges.some(r => isAyahInRecitationRange(surah, ayah, r))
   );
-=======
-  ranges: Array<{ surahNumber: number; fromAyah: number; toAyah: number }>
-): boolean {
-  if (!ranges || ranges.length === 0) return false;
-
-  if (page.startSurah === page.endSurah) {
-    for (let ayah = page.startAyah; ayah <= page.endAyah; ayah++) {
-      const isAyahCovered = ranges.some(
-        r => r.surahNumber === page.startSurah && ayah >= r.fromAyah && ayah <= r.toAyah
-      );
-      if (!isAyahCovered) return false;
-    }
-    return true;
-  }
-
-  const firstSurahInfo = getSurahInfo(page.startSurah);
-  for (let a = page.startAyah; a <= firstSurahInfo.numberOfAyahs; a++) {
-    const covered = ranges.some(
-      r => r.surahNumber === page.startSurah && a >= r.fromAyah && a <= r.toAyah
-    );
-    if (!covered) return false;
-  }
-
-  for (let a = 1; a <= page.endAyah; a++) {
-    const covered = ranges.some(
-      r => r.surahNumber === page.endSurah && a >= r.fromAyah && a <= r.toAyah
-    );
-    if (!covered) return false;
-  }
-
-  return true;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 }
 
 export interface PagePointsResult {

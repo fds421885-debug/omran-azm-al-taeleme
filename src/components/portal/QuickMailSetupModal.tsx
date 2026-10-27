@@ -18,17 +18,11 @@ import {
   Trash2
 } from 'lucide-react';
 import { ApiConfig } from '../../lib/apiConfig';
-<<<<<<< HEAD
 import { QuranComplex } from '../../types';
 import {
   loadSavedMailConfigFromCloud,
   saveMailConfigToCloudForever
 } from '../../lib/portalEmailService';
-=======
-import { db, OmranDataService } from '../../lib/firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { QuranComplex } from '../../types';
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
 interface QuickMailSetupModalProps {
   isOpen: boolean;
@@ -76,7 +70,6 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
   }, [isOpen, targetComplexId]);
 
   const loadCurrentConfig = async () => {
-<<<<<<< HEAD
     try {
       const saved = await loadSavedMailConfigFromCloud(targetComplexId, complex);
       if (saved) {
@@ -89,85 +82,6 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
     } catch (e) {
       console.warn('Mail config load notice:', e);
     }
-=======
-    let foundUser = '';
-    let foundPass = '';
-    let foundFromName = '';
-    let savedTimestamp = '';
-
-    // 1. Check in complex object props
-    if (complex?.mailConfig) {
-      if (complex.mailConfig.user) foundUser = complex.mailConfig.user;
-      if (complex.mailConfig.pass) foundPass = complex.mailConfig.pass;
-      if (complex.mailConfig.fromName) foundFromName = complex.mailConfig.fromName;
-      if (complex.mailConfig.updatedAt) savedTimestamp = complex.mailConfig.updatedAt;
-    }
-
-    // 2. Check Firestore per-complex document if available
-    if (targetComplexId) {
-      try {
-        const complexSnap = await getDoc(doc(db, 'settings', `mail_config_${targetComplexId}`));
-        if (complexSnap.exists()) {
-          const cData = complexSnap.data();
-          if (cData.user) foundUser = cData.user;
-          if (cData.pass) foundPass = cData.pass;
-          if (cData.fromName) foundFromName = cData.fromName;
-          if (cData.updatedAt) savedTimestamp = cData.updatedAt;
-        }
-      } catch (e) {
-        console.warn('Per-complex mail config check notice:', e);
-      }
-    }
-
-    // 3. Check general Firestore settings/mail_config (Source of truth)
-    if (!foundUser || !foundPass) {
-      try {
-        const snap = await getDoc(doc(db, 'settings', 'mail_config'));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (!foundUser && data.user) foundUser = data.user;
-          if (!foundPass && data.pass) foundPass = data.pass;
-          if (!foundFromName && data.fromName) foundFromName = data.fromName;
-          if (!savedTimestamp && data.updatedAt) savedTimestamp = data.updatedAt;
-        }
-      } catch (e) {
-        console.warn('General mail config check notice:', e);
-      }
-    }
-
-    // 4. Check localStorage fallback
-    if (!foundUser || !foundPass) {
-      try {
-        const local = localStorage.getItem('omran_mail_config');
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (!foundUser && parsed.user) foundUser = parsed.user;
-          if (!foundPass && parsed.pass) foundPass = parsed.pass;
-          if (!foundFromName && parsed.fromName) foundFromName = parsed.fromName;
-          if (!savedTimestamp && parsed.updatedAt) savedTimestamp = parsed.updatedAt;
-        }
-      } catch {}
-    }
-
-    // 5. Check server /api/mail/config
-    if (!foundUser || !foundPass) {
-      try {
-        const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'));
-        if (res.ok) {
-          const cfg = await res.json();
-          if (!foundUser && cfg.user) foundUser = cfg.user;
-          if (!foundPass && cfg.pass) foundPass = cfg.pass;
-          if (!foundFromName && cfg.fromName) foundFromName = cfg.fromName;
-        }
-      } catch {}
-    }
-
-    if (foundUser) setGmailUser(foundUser);
-    if (foundPass) setAppPassword(foundPass);
-    if (foundFromName) setFromName(foundFromName);
-    if (savedTimestamp) setLastSavedAt(savedTimestamp);
-    if (foundUser && foundPass) setIsSavedInCloud(true);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   };
 
   if (!isOpen) return null;
@@ -211,7 +125,6 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
     };
 
     try {
-<<<<<<< HEAD
       const savedPayload = await saveMailConfigToCloudForever({
         user: cleanUser,
         pass: cleanPass,
@@ -224,60 +137,6 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
       });
 
       setLastSavedAt(savedPayload.updatedAt || nowIso);
-=======
-      // 1. Save to Firestore central settings/mail_config FOREVER
-      try {
-        await setDoc(doc(db, 'settings', 'mail_config'), configPayload, { merge: true });
-        if (targetComplexId) {
-          await setDoc(doc(db, 'settings', `mail_config_${targetComplexId}`), configPayload, { merge: true });
-        }
-      } catch (fErr: any) {
-        console.error('Firestore mail config save error:', fErr);
-      }
-
-      // 2. If a complex object is provided, update complex.mailConfig and save to Firestore
-      if (complex) {
-        try {
-          const updatedComplex: QuranComplex = {
-            ...complex,
-            mailConfig: {
-              user: cleanUser,
-              pass: cleanPass,
-              fromName: cleanName,
-              fromEmail: cleanUser,
-              updatedAt: nowIso
-            }
-          };
-          await OmranDataService.saveComplex(updatedComplex);
-          if (onSaveComplex) {
-            await onSaveComplex(updatedComplex);
-          }
-        } catch (cErr) {
-          console.warn('Could not update complex object with mailConfig:', cErr);
-        }
-      }
-
-      // 3. Save to localStorage for instant local access
-      try {
-        localStorage.setItem('omran_mail_config', JSON.stringify(configPayload));
-        if (targetComplexId) {
-          localStorage.setItem(`omran_mail_config_${targetComplexId}`, JSON.stringify(configPayload));
-        }
-      } catch {}
-
-      // 4. Save to backend Express server endpoint
-      try {
-        await fetch(ApiConfig.getEndpoint('/api/mail/config'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(configPayload)
-        });
-      } catch (sErr) {
-        console.warn('Server endpoint mail save notice:', sErr);
-      }
-
-      setLastSavedAt(nowIso);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       setIsSavedInCloud(true);
       setStatusMsg({
         type: 'success',
@@ -337,13 +196,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
           fromName: cleanName
         });
       }
-<<<<<<< HEAD
-=======
 
-      try {
-        window.dispatchEvent(new CustomEvent('omran:mail-config-updated', { detail: configPayload }));
-      } catch {}
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'حدث خطأ أثناء الحفظ.' });
     } finally {

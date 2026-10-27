@@ -279,15 +279,12 @@ export const DEFAULT_ABSENCE_TEMPLATES = [
     title: 'رسالة تفقد غياب ودية (الافتراضية)',
     template: 'السلام عليكم ورحمة الله وبركاته، علومك شيخنا بشرنا عنك وعن {اسم_الولد}، استغربنا غيابه اليوم بشر عساه بخير؟',
     createdAt: new Date().toISOString()
-<<<<<<< HEAD
   },
   {
     id: 'absence-template-missed',
     title: 'رسالة افتقاد الطالب في الحلقة',
     template: 'السلام عليكم ورحمة الله وبركاته، حياكم الله ولي أمرنا الكريم، افتقدنا ابننا {اسم_الولد} في الحلقة اليوم، عساه بخير وعافية؟',
     createdAt: new Date().toISOString()
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
 ];
 
@@ -2492,7 +2489,6 @@ export class OmranDataService {
   // Save / Update Complex with Dual Persistence
   static async saveComplex(complex: QuranComplex): Promise<void> {
     removeDeletedComplexId(complex.id);
-<<<<<<< HEAD
     const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
     const existingLocal = local.find(c => c.id === complex.id);
     const enriched: QuranComplex = {
@@ -2502,36 +2498,19 @@ export class OmranDataService {
       updatedAt: new Date().toISOString()
     };
     const clean = cleanFirestoreData(enriched);
-=======
-    const enriched: QuranComplex = {
-      ...complex,
-      updatedAt: new Date().toISOString()
-    };
-    const clean = cleanFirestoreData(enriched);
-    const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const updated = [clean, ...local.filter(c => c.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.COMPLEXES, updated);
     broadcastDataUpdate('complex', clean);
 
     try {
-<<<<<<< HEAD
       // 1. Always persist to central master complexes collection with merge: true to preserve mailConfig & nested settings
       await setDoc(doc(this.getCentralDb(), 'complexes', complex.id), clean, { merge: true });
-=======
-      // 1. Always persist to central master complexes collection
-      await setDoc(doc(this.getCentralDb(), 'complexes', complex.id), clean);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
       // 2. If this complex has a dedicated database, also mirror its complex doc to that dedicated database
       if (complex.databaseConfig?.isCustom && complex.databaseConfig?.projectId) {
         try {
           const dedicatedDb = this.getFirestoreInstanceForComplex(complex);
-<<<<<<< HEAD
           await setDoc(doc(dedicatedDb, 'complexes', complex.id), clean, { merge: true });
-=======
-          await setDoc(doc(dedicatedDb, 'complexes', complex.id), clean);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         } catch (mirrorErr) {
           console.warn('[OmranDataService] Mirrored complex document write notice:', mirrorErr);
         }
@@ -4270,7 +4249,6 @@ export class OmranDataService {
       if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
     }
     for (const s of cloudList) {
-<<<<<<< HEAD
       if (s?.id && !deletedIds.has(s.id)) {
         const localS = mergedMap.get(s.id);
         if (!localS) {
@@ -4291,9 +4269,6 @@ export class OmranDataService {
           mergedMap.set(s.id, base);
         }
       }
-=======
-      if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     }
 
     // Only fallback to INITIAL_STUDENTS if mergedMap is empty
@@ -4331,7 +4306,6 @@ export class OmranDataService {
   // Save Student directly with Dual Persistence and resilient multi-database cloud sync
   static async saveStudent(student: Student): Promise<void> {
     OmranDataService.removeDeletedStudentId(student.id);
-<<<<<<< HEAD
     const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
     const existingLocal = local.find(s => s.id === student.id);
     const nowIso = new Date().toISOString();
@@ -4364,11 +4338,6 @@ export class OmranDataService {
       mushafErrorsUpdatedAt: resolvedMushafErrorsUpdatedAt,
       updatedAt: nowIso
     });
-=======
-    const parentPhone = student.parentPhone || (student.parentPhones && student.parentPhones.length > 0 ? student.parentPhones[0] : student.phone) || '';
-    const clean = cleanFirestoreData({ ...student, parentPhone });
-    const local = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const updated = [clean, ...local.filter(s => s.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, updated);
     broadcastDataUpdate('student', clean);
@@ -4399,16 +4368,10 @@ export class OmranDataService {
     for (const s of students) {
       OmranDataService.removeDeletedStudentId(s.id);
     }
-<<<<<<< HEAD
     const nowIso = new Date().toISOString();
     const cleanList = students.map(st => {
       const parentPhone = st.parentPhone || (st.parentPhones && st.parentPhones.length > 0 ? st.parentPhones[0] : st.phone) || '';
       return cleanFirestoreData({ ...st, parentPhone, updatedAt: st.updatedAt || nowIso });
-=======
-    const cleanList = students.map(st => {
-      const parentPhone = st.parentPhone || (st.parentPhones && st.parentPhones.length > 0 ? st.parentPhones[0] : st.phone) || '';
-      return cleanFirestoreData({ ...st, parentPhone });
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     });
 
     // 1. Update local cache immediately
@@ -4942,7 +4905,6 @@ export class OmranDataService {
         for (const s of local) {
           if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
         }
-<<<<<<< HEAD
         // 2. Overlay cloud items respecting updatedAt & mushafErrorsUpdatedAt timestamps
         for (const s of cloudList) {
           if (s?.id && !deletedIds.has(s.id)) {
@@ -4965,11 +4927,6 @@ export class OmranDataService {
               mergedMap.set(s.id, base);
             }
           }
-=======
-        // 2. Overlay cloud items
-        for (const s of cloudList) {
-          if (s?.id && !deletedIds.has(s.id)) mergedMap.set(s.id, s);
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         }
 
         // 3. Fallback to INITIAL_STUDENTS if empty

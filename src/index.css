@@ -40,7 +40,6 @@
   --duo-card-shadow: #182830;
 }
 
-<<<<<<< HEAD
 @font-face {
   font-family: 'UthmanicHafs';
   src: url('/fonts/UthmanicHafs.woff2') format('woff2'),
@@ -50,8 +49,6 @@
   font-display: swap;
 }
 
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 @layer base {
   html, body {
     width: 100%;
@@ -78,7 +75,6 @@
     letter-spacing: -0.01em;
   }
   
-<<<<<<< HEAD
   .font-mushaf {
     font-family: 'UthmanicHafs', 'Amiri Quran', 'Scheherazade New', 'Amiri', serif;
     font-feature-settings: "liga" 1, "clig" 1, "calt" 1, "ccmp" 1, "mark" 1, "mkmk" 1;
@@ -92,10 +88,6 @@
     font-feature-settings: "liga" 1, "clig" 1, "calt" 1, "ccmp" 1, "mark" 1, "mkmk" 1;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-=======
-  .font-quran {
-    font-family: 'Amiri', serif;
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
   
   .font-heading {
@@ -104,7 +96,6 @@
   }
 }
 
-<<<<<<< HEAD
 @keyframes mushafFlipNextRTL {
   0% {
     opacity: 0.55;
@@ -151,8 +142,6 @@
   will-change: transform, opacity;
 }
 
-=======
->>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 /* ========================================================================= */
 /* UNIVERSAL DUOLINGO 3D TACTILE BUTTONS & CARDS DESIGN SYSTEM               */
 /* ========================================================================= */
