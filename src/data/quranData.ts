@@ -355,6 +355,7 @@ export function formatQuranPortion(
 
   let text = "";
 
+<<<<<<< HEAD
   // Check if reciting across multiple surahs (e.g. from An-Nas 1 to Al-Ikhlas 4)
   if (toSurahName && cleanToSurah !== cleanFromSurah) {
     const fromSObj = QURAN_SURAHS.find(s => s.name === cleanFromSurah);
@@ -370,6 +371,12 @@ export function formatQuranPortion(
     } else if (betweenCount > 1) {
       text += ` (شامل ${betweenCount + 2} سور متصلة)`;
     } else if (toSurahTotalAyahs && toAyah >= toSurahTotalAyahs) {
+=======
+  // Check if reciting across multiple surahs (e.g. from An-Nas 1 to Al-Alaq 4)
+  if (toSurahName && cleanToSurah !== cleanFromSurah) {
+    text = `من سورة ${cleanFromSurah} (الآية ${fromAyah}) إلى سورة ${cleanToSurah} (الآية ${toAyah})`;
+    if (toSurahTotalAyahs && toAyah >= toSurahTotalAyahs) {
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       text += ` (ختام سورة ${cleanToSurah})`;
     }
   } else {

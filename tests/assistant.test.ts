@@ -5,7 +5,10 @@
 
 import {
   resolveStudentsQuery,
+<<<<<<< HEAD
   resolveStudentQuery,
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   filterStudentsByPermissions,
   doesStudentMatchNameToken,
   extractCandidateNamesFromMessage,
@@ -555,6 +558,7 @@ async function runAllTests() {
     );
   }
 
+<<<<<<< HEAD
   // 22. المطابقة الذكية التقريبية لأسماء الطلاب (مثل: محمد بسام -> محمد باسم) مع أولوية التطابق التام عند وجود طالب آخر بنفس الاسم
   {
     const zubairStudents = [
@@ -728,6 +732,8 @@ async function runAllTests() {
     );
   }
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   console.log(`\n========================================`);
   console.log(`Test Results: ${passedCount} passed, ${failedCount} failed.`);
   console.log(`========================================\n`);

@@ -905,6 +905,7 @@ export function App() {
     const unsubStudents = OmranDataService.subscribeStudents(newStudents => {
       if (isMounted) {
         if (newStudents && newStudents.length > 0) {
+<<<<<<< HEAD
           setStudents(prev => {
             if (!prev || prev.length === 0) return newStudents;
             const prevMap = new Map<string, Student>(prev.map(s => [s.id, s]));
@@ -923,6 +924,9 @@ export function App() {
               return ns;
             });
           });
+=======
+          setStudents(newStudents);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         } else {
           setStudents(prev => (prev.length > 0 ? prev : newStudents));
         }
@@ -1037,11 +1041,15 @@ export function App() {
       const type = e.detail?.type;
       const payload = e.detail?.payload;
       if (type === 'student' && payload) {
+<<<<<<< HEAD
         setStudents(prev =>
           prev.some(s => s.id === payload.id)
             ? prev.map(s => (s.id === payload.id ? payload : s))
             : [payload, ...prev]
         );
+=======
+        setStudents(prev => [payload, ...prev.filter(s => s.id !== payload.id)]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       } else if (type === 'student-deleted' && payload) {
         setStudents(prev => prev.filter(s => s.id !== payload));
       } else if (type === 'library' && payload) {
@@ -1098,11 +1106,15 @@ export function App() {
       } else if (type === 'certificate' && payload) {
         setCertificates(prev => [payload, ...prev.filter(c => c.id !== payload.id)]);
       } else if (type === 'student' && payload) {
+<<<<<<< HEAD
         setStudents(prev =>
           prev.some(s => s.id === payload.id)
             ? prev.map(s => (s.id === payload.id ? payload : s))
             : [payload, ...prev]
         );
+=======
+        setStudents(prev => [payload, ...prev.filter(s => s.id !== payload.id)]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       } else if (type === 'student-deleted' && payload) {
         setStudents(prev => prev.filter(s => s.id !== payload));
       } else if (type === 'halaqah' && payload) {
@@ -1125,6 +1137,7 @@ export function App() {
       }
     };
 
+<<<<<<< HEAD
     const handleDirectStudentUpdated = (e: any) => {
       const updated = e.detail as Student | undefined;
       if (!updated?.id) return;
@@ -1137,11 +1150,17 @@ export function App() {
 
     window.addEventListener('omran:data-updated', handleBroadcastUpdate);
     window.addEventListener('omran:students-updated', handleDirectStudentUpdated);
+=======
+    window.addEventListener('omran:data-updated', handleBroadcastUpdate);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
     return () => {
       isMounted = false;
       window.removeEventListener('omran:data-updated', handleBroadcastUpdate);
+<<<<<<< HEAD
       window.removeEventListener('omran:students-updated', handleDirectStudentUpdated);
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       unsubStudents();
       unsubAttendance();
       unsubEvaluations();
@@ -1232,20 +1251,27 @@ export function App() {
             startDate
           });
 
+<<<<<<< HEAD
           const hasNewerLocalMushafErrors =
             Boolean(liveStudent.mushafErrorsUpdatedAt) &&
             (!detail.dispatchedAt || liveStudent.mushafErrorsUpdatedAt! > detail.dispatchedAt);
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           const updatedStudent: Student = {
             ...liveStudent,
             isFirstSession: false,
             recentlyCompletedSurahs: detail.updatedRecentlyCompletedSurahs || liveStudent.recentlyCompletedSurahs,
+<<<<<<< HEAD
             mushafErrors: hasNewerLocalMushafErrors
               ? liveStudent.mushafErrors
               : (detail.updatedMushafErrors || liveStudent.mushafErrors),
             mushafErrorsUpdatedAt: hasNewerLocalMushafErrors
               ? liveStudent.mushafErrorsUpdatedAt
               : (detail.dispatchedAt || liveStudent.mushafErrorsUpdatedAt),
+=======
+            mushafErrors: detail.updatedMushafErrors || liveStudent.mushafErrors,
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             persistentReviewItems: detail.newDailyAssignment?.reviewItems || liveStudent.persistentReviewItems,
             memorizationPlan: {
               dailyNewPages: currentPlan?.dailyNewPages || 1,
@@ -3140,8 +3166,11 @@ export function App() {
       <ComplexCustomPortalPage
         complex={targetComplex}
         halaqahs={complexHalaqahs}
+<<<<<<< HEAD
         canManagePortalMail={Boolean(isDeveloper || isSupervisor || currentUser?.role === 'admin')}
         onUpdateComplex={handleSaveComplex}
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         onLoginSuccess={(user, teacher, student) => {
           handleLoginSuccess(user);
           if (student) {

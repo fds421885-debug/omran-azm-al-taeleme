@@ -34,7 +34,10 @@ import {
   AppSettings,
   AbsenceMessageTemplate,
   getStudentParentPhone,
+<<<<<<< HEAD
   getStudentFirstGivenName,
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   QuranComplex
 } from '../../types';
 import { PrintableQuranicReport } from '../reports/PrintableQuranicReport';
@@ -46,12 +49,15 @@ const DEFAULT_ABSENCE_TEMPLATES: AbsenceMessageTemplate[] = [
     title: 'رسالة تفقد غياب ودية (الافتراضية)',
     template: 'السلام عليكم ورحمة الله وبركاته، علومك شيخنا بشرنا عنك وعن {اسم_الولد}، استغربنا غيابه اليوم بشر عساه بخير؟',
     createdAt: new Date().toISOString()
+<<<<<<< HEAD
   },
   {
     id: 'absence-template-missed',
     title: 'رسالة افتقاد الطالب في الحلقة',
     template: 'السلام عليكم ورحمة الله وبركاته، حياكم الله ولي أمرنا الكريم، افتقدنا ابننا {اسم_الولد} في الحلقة اليوم، عساه بخير وعافية؟',
     createdAt: new Date().toISOString()
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
 ];
 
@@ -102,7 +108,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('absence-template-default');
   const [customAbsentMessage, setCustomAbsentMessage] = useState<string>('');
   const [absentMessageCopied, setAbsentMessageCopied] = useState(false);
+<<<<<<< HEAD
   const [absentPhoneWarning, setAbsentPhoneWarning] = useState<string | null>(null);
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   // 3. Programmer Message Settings Modal State
   const [showMessageSettingsModal, setShowMessageSettingsModal] = useState(false);
@@ -344,6 +353,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   // --------------------------------------------------------------------------
   const formatTemplateWithStudent = (rawTemplate: string, studentName: string): string => {
     if (!rawTemplate) return '';
+<<<<<<< HEAD
     const fullClean = (studentName || '').trim().replace(/\s+/g, ' ');
     const firstGivenName = getStudentFirstGivenName(fullClean) || fullClean;
 
@@ -365,6 +375,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
     }
 
     return formatted.trim();
+=======
+    const clean = studentName.trim();
+    const firstName = clean.split(/\s+/)[0] || clean;
+    return rawTemplate
+      .replace(/\{الاسم_الأول\}|\[الاسم الأول\]/g, firstName)
+      .replace(/\{اسم_الولد\}|\{اسم_الطالب\}|\[اسم الطالب\]|\[اسم الولد\]|\(اسم الولد\)|\(اسم الطالب\)/g, clean)
+      .trim();
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   };
 
   const handleOpenAbsentModal = (student: Student) => {
@@ -373,7 +391,10 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
     setSelectedTemplateId(initialTmpl.id);
     setCustomAbsentMessage(formatTemplateWithStudent(initialTmpl.template, student.name));
     setAbsentMessageCopied(false);
+<<<<<<< HEAD
     setAbsentPhoneWarning(null);
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   };
 
   const handleSelectTemplate = (template: AbsenceMessageTemplate) => {
@@ -389,6 +410,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
     let cleanPhone = rawPhone.replace(/\D/g, '');
     if (cleanPhone.startsWith('05')) {
       cleanPhone = '966' + cleanPhone.slice(1);
+<<<<<<< HEAD
     } else if (cleanPhone.startsWith('5') && cleanPhone.length === 9) {
       cleanPhone = '966' + cleanPhone;
     }
@@ -398,6 +420,14 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       return;
     }
     setAbsentPhoneWarning(null);
+=======
+    }
+    const finalMsg = customAbsentMessage.trim();
+    if (!cleanPhone) {
+      alert('لا يوجد رقم هاتف مسجل لولي أمر هذا الطالب. يرجى نسخ نص الرسالة وإرسالها يدوياً.');
+      return;
+    }
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
   };
 
@@ -1050,6 +1080,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
 
               {/* Editable Message Textarea */}
               <div>
+<<<<<<< HEAD
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
                   <label className="text-xs font-bold text-emerald-200">
                     نص الرسالة المرسلة لولي الأمر (يمكنك تعديلها بحرية):
@@ -1057,6 +1088,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[#022c22] border border-[#065f46] text-[#fbbf24] font-bold">
                     الاسم المُدرج بالرسالة: {getStudentFirstGivenName(selectedAbsentStudent.name)}
                   </span>
+=======
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-emerald-200">
+                    نص الرسالة المرسلة لولي الأمر (يمكنك تعديلها بحرية):
+                  </label>
+                  <span className="text-[10px] text-[#86efac]/70">تم تعيين اسم الطالب تلقائياً</span>
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                 </div>
                 <textarea
                   rows={4}
@@ -1067,12 +1105,15 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 />
               </div>
 
+<<<<<<< HEAD
               {absentPhoneWarning && (
                 <div className="p-3 bg-amber-500/20 border border-amber-400/60 text-amber-200 rounded-xl text-xs font-bold text-center animate-fadeIn">
                   {absentPhoneWarning}
                 </div>
               )}
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
               {absentMessageCopied && (
                 <div className="p-3 bg-emerald-500/20 border border-emerald-400 text-emerald-200 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-2 animate-fadeIn">
                   <Check className="w-4 h-4 text-emerald-300" />
@@ -1214,7 +1255,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                     />
 
                     <div className="mt-1.5 p-2.5 rounded-xl bg-[#064e3b]/30 border border-[#065f46] text-[11px] text-[#86efac] leading-relaxed">
+<<<<<<< HEAD
                       💡 <strong>توضيح للمبرمج:</strong> يمكنك كتابة <code className="bg-purple-950 px-1 py-0.5 rounded text-purple-300 font-mono">{`{اسم_الولد}`}</code> أو النقر على الزر أعلاه في الموضع المناسب في الرسالة، وسيقوم النظام تلقائياً باستبداله بـ <strong>(الاسم الأول فقط)</strong> لكل طالب مع دمج الأسماء المركبة تلقائياً (مثل: <strong>سالم</strong>، أو <strong>عبد الله</strong>، <strong>عبد العزيز</strong>، <strong>عبد الملك</strong>).
+=======
+                      💡 <strong>توضيح للمبرمج:</strong> يمكنك كتابة <code className="bg-purple-950 px-1 py-0.5 rounded text-purple-300 font-mono">{`{اسم_الولد}`}</code> أو النقر على الزر أعلاه في الموضع المناسب في الرسالة، وسيقوم النظام تلقائياً باستبداله بـ <strong>(الاسم الأول فقط)</strong> لكل طالب عند إرسال الإشعار لولي أمره، لتبدو الرسالة لطيفة وموجهة بشكل شخصي ومباشر.
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                     </div>
                   </div>
 

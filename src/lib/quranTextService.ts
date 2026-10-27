@@ -72,6 +72,7 @@ export async function loadAllQuranVerses(): Promise<Record<number, string[]>> {
 }
 
 /**
+<<<<<<< HEAD
  * Normalize any Uthmani/Tanzil Quran string to 100% authentic KFGQPC UthmanicHafs (v0.18) encoding
  * so browser HarfBuzz shapers and UthmanicHafs glyphs NEVER render dotted circles (◌) on Waqf,
  * Ibtida/Rub (۞), Sajdah (۩), Sukun (ۡ), Rounded Zero (ْ), Saktah (ۜ), or Ishmam (۬) marks.
@@ -111,6 +112,8 @@ export function normalizeKfgqpcHafsText(text: string): string {
 }
 
 /**
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
  * Get verses of a specific Surah
  */
 export async function getSurahVerses(surahNumber: number): Promise<string[]> {
@@ -125,7 +128,11 @@ export async function getSurahVerses(surahNumber: number): Promise<string[]> {
     if (res.ok) {
       const data = await res.json();
       if (data?.data?.ayahs) {
+<<<<<<< HEAD
         const verses = data.data.ayahs.map((a: any) => normalizeKfgqpcHafsText(String(a.text || '')));
+=======
+        const verses = data.data.ayahs.map((a: any) => a.text.replace(/^\ufeff/, '').trim());
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         if (!cachedQuranMap) cachedQuranMap = {};
         cachedQuranMap[surahNumber] = verses;
         return verses;
@@ -149,7 +156,11 @@ export async function getSurahVerses(surahNumber: number): Promise<string[]> {
  */
 export function getAyahTextSync(surahNumber: number, ayahNumber: number): string {
   if (ayahNumber === 0) {
+<<<<<<< HEAD
     return 'بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ';
+=======
+    return 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ (الاستعاذة والبسملة)';
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
 
   if (cachedQuranMap && cachedQuranMap[surahNumber]) {

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+=======
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 import {
   Play,
   Pause,
@@ -8,12 +12,21 @@ import {
   CheckCircle2,
   Volume2,
   VolumeX,
+<<<<<<< HEAD
   Clock
+=======
+  Clock,
+  Layers,
+  Award,
+  ChevronRight,
+  ChevronLeft
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Student, StudentListeningLog } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { getSurahInfo } from '../../data/quranData';
+<<<<<<< HEAD
 import { getExpandedAyahSequenceForRange } from '../../data/quranPagesData';
 import { normalizeKfgqpcHafsText } from '../../lib/quranTextService';
 
@@ -21,6 +34,8 @@ function toArabicNumerals(n: number): string {
   const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
   return String(n).replace(/\d/g, (d) => digits[Number(d)]);
 }
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
 // EveryAyah CDN Reciters mapping with high-quality verified audio endpoints
 export const EVERY_AYAH_RECITERS: Record<string, { folder: string; label: string }> = {
@@ -103,6 +118,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     selectedSheikhName === 'لا يوجد' ||
     requiredRepetitions === 0;
 
+<<<<<<< HEAD
   const safeStartSurah = Math.max(1, Math.min(surahNumber || 78, 114));
   const safeEndSurah = Math.max(1, Math.min(toSurahNumber || safeStartSurah, 114));
   const startSurahInfo = getSurahInfo(safeStartSurah);
@@ -132,12 +148,23 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     }
     return `من سورة ${resolvedStartName} (${startAyah}) إلى سورة ${resolvedEndName} (${endAyah})`;
   }, [safeStartSurah, safeEndSurah, surahName, toSurahName, startSurahInfo.name, endSurahInfo.name, startAyah, endAyah]);
+=======
+  // Safe bounds
+  const curSurahInfo = getSurahInfo(surahNumber || 78);
+  const startAyah = Math.max(1, Math.min(fromAyah || 1, curSurahInfo.numberOfAyahs));
+  const endAyah = Math.max(startAyah, Math.min(toAyah || startAyah, curSurahInfo.numberOfAyahs));
+  const totalAyahsInPortion = endAyah - startAyah + 1;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   const reciterConfig = resolveReciterFolder(selectedSheikhName);
 
   // Repetition progress state (persistent in localStorage & listening_logs)
   const todayKey = new Date().toISOString().split('T')[0];
+<<<<<<< HEAD
   const storageProgressKey = `omran_listening_${student.id}_${todayKey}_${safeStartSurah}_${startAyah}_${safeEndSurah}_${endAyah}`;
+=======
+  const storageProgressKey = `omran_listening_${student.id}_${todayKey}_${surahNumber}_${startAyah}_${endAyah}`;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   const [completedRepetitions, setCompletedRepetitions] = useState<number>(() => {
     try {
@@ -158,6 +185,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     }
   });
 
+<<<<<<< HEAD
   // Current playing state (index inside ayahSequence)
   const [isPlaying, setIsPlaying] = useState(false);
   const [sequenceIndex, setSequenceIndex] = useState<number>(0);
@@ -185,6 +213,26 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   useEffect(() => {
     sequenceIndexRef.current = sequenceIndex;
   }, [sequenceIndex]);
+=======
+  // Current playing state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentAyahIndex, setCurrentAyahIndex] = useState<number>(startAyah);
+  const [currentAyahText, setCurrentAyahText] = useState<string>('');
+  const [isLoadingAyahText, setIsLoadingAyahText] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+  const currentAyahRef = useRef<number>(startAyah);
+  const completedRepsRef = useRef<number>(completedRepetitions);
+  const loopTimeoutRef = useRef<any>(null);
+
+  // Keep refs synced
+  useEffect(() => {
+    currentAyahRef.current = currentAyahIndex;
+  }, [currentAyahIndex]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   useEffect(() => {
     completedRepsRef.current = completedRepetitions;
@@ -202,6 +250,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   // Fetch Ayah Text from local cache / public JSON
   useEffect(() => {
     let isCancelled = false;
+<<<<<<< HEAD
     const targetSurah = currentPair.surah;
     const targetAyah = currentPair.ayah;
 
@@ -213,6 +262,16 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
           const data = await res.json();
           if (!isCancelled && data?.ayahs && Array.isArray(data.ayahs)) {
             const rawText = data.ayahs[targetAyah - 1] || '';
+=======
+    const loadText = async () => {
+      setIsLoadingAyahText(true);
+      try {
+        const res = await fetch(`/api/quran/surah/${surahNumber}`);
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          const data = await res.json();
+          if (!isCancelled && data?.ayahs && Array.isArray(data.ayahs)) {
+            const rawText = data.ayahs[currentAyahIndex - 1] || '';
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             setCurrentAyahText(rawText);
             setIsLoadingAyahText(false);
             return;
@@ -227,8 +286,13 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
         const res = await fetch('/quran-verses.json');
         if (res.ok) {
           const allVerses = await res.json();
+<<<<<<< HEAD
           if (!isCancelled && allVerses[targetSurah] && allVerses[targetSurah][targetAyah - 1]) {
             setCurrentAyahText(allVerses[targetSurah][targetAyah - 1]);
+=======
+          if (!isCancelled && allVerses[surahNumber] && allVerses[surahNumber][currentAyahIndex - 1]) {
+            setCurrentAyahText(allVerses[surahNumber][currentAyahIndex - 1]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             setIsLoadingAyahText(false);
             return;
           }
@@ -236,7 +300,11 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       } catch {}
 
       if (!isCancelled) {
+<<<<<<< HEAD
         setCurrentAyahText(`الآية رقم (${targetAyah}) من سورة ${currentPairSurahName}`);
+=======
+        setCurrentAyahText(`الآية رقم (${currentAyahIndex}) من سورة ${surahName}`);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         setIsLoadingAyahText(false);
       }
     };
@@ -245,7 +313,11 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     return () => {
       isCancelled = true;
     };
+<<<<<<< HEAD
   }, [currentPair.surah, currentPair.ayah, currentPairSurahName]);
+=======
+  }, [surahNumber, currentAyahIndex, surahName]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   // Cleanup audio on unmount or target change
   useEffect(() => {
@@ -261,9 +333,13 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
         audioRef.current = null;
       }
     };
+<<<<<<< HEAD
   }, [safeStartSurah, startAyah, safeEndSurah, endAyah, reciterConfig.folder]);
 
   const playSequenceAtRef = useRef<(idx: number) => void>(() => {});
+=======
+  }, [surahNumber, startAyah, endAyah, reciterConfig.folder]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   // Handle entire passage completion: increments repetitions and seamlessly loops again
   const handlePassageCompleted = useCallback(async () => {
@@ -300,8 +376,13 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       studentId: student.id,
       studentName: student.name,
       halaqahId: student.halaqahId,
+<<<<<<< HEAD
       surahNumber: safeStartSurah,
       surahName: surahName || startSurahInfo.name,
+=======
+      surahNumber,
+      surahName,
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       fromAyah: startAyah,
       toAyah: endAyah,
       targetCount: requiredRepetitions,
@@ -312,12 +393,22 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     };
     OmranDataService.saveListeningLog(logEntry).catch(() => {});
 
+<<<<<<< HEAD
     // Automatically restarts from index 0 on its own without user intervention!
+=======
+    // USER REQUIREMENT:
+    // "خليه لما يخلص المقطع يبدأ من جديد من نفسه ويحسب مرات السماع"
+    // Automatically restarts from startAyah on its own without user intervention!
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     if (isPlayingRef.current) {
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
       loopTimeoutRef.current = setTimeout(() => {
         if (isPlayingRef.current) {
+<<<<<<< HEAD
           playSequenceAtRef.current(0);
+=======
+          playAyahAudio(startAyah);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         }
       }, 450);
     }
@@ -328,15 +419,21 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     listeningPointsReward,
     onRepetitionComplete,
     student,
+<<<<<<< HEAD
     safeStartSurah,
     surahName,
     startSurahInfo.name,
+=======
+    surahNumber,
+    surahName,
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     startAyah,
     endAyah,
     todayKey,
     storageProgressKey
   ]);
 
+<<<<<<< HEAD
   // Main Ayah Audio Player callback across sequence
   const playSequenceAt = useCallback((seqIdx: number) => {
     if (!isPlayingRef.current || ayahSequence.length === 0) return;
@@ -345,6 +442,14 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     setAudioError(null);
     sequenceIndexRef.current = boundedIdx;
     setSequenceIndex(boundedIdx);
+=======
+  // Main Ayah Audio Player callback
+  const playAyahAudio = useCallback((ayahNum: number) => {
+    if (!isPlayingRef.current) return;
+    setAudioError(null);
+    currentAyahRef.current = ayahNum;
+    setCurrentAyahIndex(ayahNum);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
     if (loopTimeoutRef.current) {
       clearTimeout(loopTimeoutRef.current);
@@ -357,24 +462,43 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     const audio = audioRef.current;
     audio.pause();
 
+<<<<<<< HEAD
     const audioUrl = getAyahAudioUrl(reciterConfig.folder, item.surah, item.ayah);
+=======
+    const audioUrl = getAyahAudioUrl(reciterConfig.folder, surahNumber, ayahNum);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     audio.src = audioUrl;
     audio.muted = isMuted;
 
     audio.onended = () => {
       if (!isPlayingRef.current) return;
+<<<<<<< HEAD
       if (boundedIdx + 1 < ayahSequence.length) {
         playSequenceAtRef.current(boundedIdx + 1);
       } else {
+=======
+      if (ayahNum < endAyah) {
+        // Advance to next Ayah in assigned passage
+        playAyahAudio(ayahNum + 1);
+      } else {
+        // Entire passage finished!
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         handlePassageCompleted();
       }
     };
 
     audio.onerror = () => {
+<<<<<<< HEAD
       console.warn(`[QuranAudioPlayer] Audio playback notice for ${item.surah}:${item.ayah}`);
       if (!isPlayingRef.current) return;
       if (boundedIdx + 1 < ayahSequence.length) {
         playSequenceAtRef.current(boundedIdx + 1);
+=======
+      console.warn(`[QuranAudioPlayer] Audio playback notice for Ayah ${ayahNum}`);
+      if (!isPlayingRef.current) return;
+      if (ayahNum < endAyah) {
+        playAyahAudio(ayahNum + 1);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       } else {
         handlePassageCompleted();
       }
@@ -383,11 +507,15 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     audio.play().catch(err => {
       console.warn('[QuranAudioPlayer] play notice:', err);
     });
+<<<<<<< HEAD
   }, [ayahSequence, reciterConfig.folder, isMuted, handlePassageCompleted]);
 
   useEffect(() => {
     playSequenceAtRef.current = playSequenceAt;
   }, [playSequenceAt]);
+=======
+  }, [reciterConfig.folder, surahNumber, endAyah, isMuted, handlePassageCompleted]);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   const handleTogglePlay = () => {
     setAudioError(null);
@@ -406,7 +534,11 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       // Play
       isPlayingRef.current = true;
       setIsPlaying(true);
+<<<<<<< HEAD
       playSequenceAt(sequenceIndexRef.current || 0);
+=======
+      playAyahAudio(currentAyahRef.current || startAyah);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     }
   };
 
@@ -420,8 +552,13 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     if (audioRef.current) {
       audioRef.current.pause();
     }
+<<<<<<< HEAD
     sequenceIndexRef.current = 0;
     setSequenceIndex(0);
+=======
+    currentAyahRef.current = startAyah;
+    setCurrentAyahIndex(startAyah);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     completedRepsRef.current = 0;
     setCompletedRepetitions(0);
     setIsCompletedAll(false);
@@ -453,7 +590,11 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
                 </span>
               </div>
               <h3 className="text-lg sm:text-xl font-bold font-heading text-white mt-1">
+<<<<<<< HEAD
                 {portionHeading}
+=======
+                سورة {surahName} : الآيات ({startAyah} - {endAyah})
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
               </h3>
               <p className="text-xs text-[#86efac]/90 mt-1 leading-relaxed">
                 حدد المعلم لهذه الجلسة خيار (بدون استماع) • لا يتطلب منك الاستماع لمقرر اليوم. ركّز على التكرار وتثبيت الحفظ والمراجعة!
@@ -495,7 +636,11 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
               </span>
             </div>
             <h3 className="text-lg sm:text-xl font-bold font-heading text-white mt-1">
+<<<<<<< HEAD
               {portionHeading}
+=======
+              سورة {surahName} : الآيات ({startAyah} - {endAyah})
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             </h3>
           </div>
         </div>
@@ -521,6 +666,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       {/* Main Ayah Display Box (Verse by Verse with Smooth Animation) */}
       <div className="my-6 relative z-10 min-h-[160px] sm:min-h-[190px] flex flex-col justify-center items-center p-6 sm:p-8 rounded-3xl bg-[#011a14]/90 border-2 border-[#fbbf24]/30 shadow-inner text-center">
         {/* Ayah Indicator */}
+<<<<<<< HEAD
         <div className="text-[11px] font-bold text-[#86efac]/80 mb-3 flex flex-wrap items-center justify-center gap-2">
           <span>سورة {currentPairSurahName} • الآية ({currentPair.ayah})</span>
           <span className="px-2.5 py-0.5 rounded-full bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]/40 font-mono">
@@ -529,6 +675,16 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
         </div>
 
         {/* Ayah Arabic Calligraphy (King Fahd Medina Mushaf UthmanicHafs) */}
+=======
+        <div className="text-[11px] font-bold text-[#86efac]/80 mb-3 flex items-center gap-2">
+          <span>الآية الحالية:</span>
+          <span className="px-2.5 py-0.5 rounded-full bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]/40 font-mono">
+            {currentAyahIndex} من {endAyah}
+          </span>
+        </div>
+
+        {/* Ayah Arabic Calligraphy */}
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         <div className="transition-all duration-500 ease-in-out">
           {isLoadingAyahText ? (
             <div className="flex items-center gap-2 text-sm text-[#86efac]/70">
@@ -536,11 +692,20 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
               <span>جاري تحميل الآية الكريمة...</span>
             </div>
           ) : (
+<<<<<<< HEAD
             <div className="font-mushaf text-2xl sm:text-3xl md:text-4xl text-[#f0f9f6] leading-[2] sm:leading-[2.15] text-center max-w-2xl px-2">
               {normalizeKfgqpcHafsText(currentAyahText)}{'\u00A0'}
               <span className="text-[#fbbf24] mx-1 select-none">
                 {toArabicNumerals(currentPair.ayah)}
               </span>
+=======
+            <div className="font-quran text-2xl sm:text-3xl md:text-4xl text-[#f0f9f6] leading-[1.8] sm:leading-[2] tracking-wide text-center max-w-2xl px-2">
+              <span className="text-[#fbbf24]">﴿</span> {currentAyahText}{' '}
+              <span className="text-[#fbbf24] font-bold font-sans text-xl sm:text-2xl mx-1">
+                ۝{currentAyahIndex}
+              </span>{' '}
+              <span className="text-[#fbbf24]">﴾</span>
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
             </div>
           )}
         </div>

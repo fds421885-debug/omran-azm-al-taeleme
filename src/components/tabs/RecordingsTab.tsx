@@ -36,7 +36,11 @@ import {
 import { SurahRecording, RecordingsConfig, SurahRecordingSegment, AppSettings } from '../../types';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import { YouTubeAyahPlayer, formatTimeMMSS } from '../recordings/YouTubeAyahPlayer';
+<<<<<<< HEAD
 import { loadAllQuranVerses, getSurahVerses, getAyahTextSync, normalizeKfgqpcHafsText } from '../../lib/quranTextService';
+=======
+import { loadAllQuranVerses, getSurahVerses, getAyahTextSync } from '../../lib/quranTextService';
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 import { ApiConfig } from '../../lib/apiConfig';
 
 interface RecordingsTabProps {
@@ -1232,10 +1236,17 @@ export const RecordingsTab: React.FC<RecordingsTabProps> = ({
                               {/* Authentic Quranic Text in Uthmani Script */}
                               <div className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-[#065f46]/60">
                                 <p
+<<<<<<< HEAD
                                   className="text-amber-100 font-mushaf text-base sm:text-lg leading-[2] text-right select-text"
                                   dir="rtl"
                                 >
                                   {normalizeKfgqpcHafsText(seg.ayahText || getAyahTextSync(editingRecording.surahNumber || 78, seg.ayahNumber))}
+=======
+                                  className="text-amber-100 font-serif text-sm sm:text-base leading-relaxed text-right select-text"
+                                  dir="rtl"
+                                >
+                                  {seg.ayahText || getAyahTextSync(editingRecording.surahNumber || 78, seg.ayahNumber)}
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                                 </p>
                               </div>
 
@@ -1551,11 +1562,19 @@ export const RecordingsTab: React.FC<RecordingsTabProps> = ({
                               </span>
                             </div>
                             <p
+<<<<<<< HEAD
                               className={`text-sm leading-[1.9] line-clamp-2 font-mushaf ${
                                 isPlaying ? 'text-[#064e3b] font-bold' : 'text-amber-100/90'
                               }`}
                             >
                               {normalizeKfgqpcHafsText(seg.ayahText || getAyahTextSync(previewingRecording.surahNumber, seg.ayahNumber))}
+=======
+                              className={`text-[11px] leading-relaxed line-clamp-2 font-serif ${
+                                isPlaying ? 'text-[#064e3b] font-bold' : 'text-amber-100/90'
+                              }`}
+                            >
+                              {seg.ayahText || getAyahTextSync(previewingRecording.surahNumber, seg.ayahNumber)}
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                             </p>
                           </div>
                           <Play className={`w-4 h-4 shrink-0 mt-1 ${isPlaying ? 'fill-[#064e3b]' : 'fill-current'}`} />

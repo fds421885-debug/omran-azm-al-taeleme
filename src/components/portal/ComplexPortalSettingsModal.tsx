@@ -44,8 +44,11 @@ import {
   Timer,
   Mail,
   Key,
+<<<<<<< HEAD
   Database,
   ShieldCheck,
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   BrainCircuit,
   Award,
   Flame
@@ -68,9 +71,13 @@ import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtil
 import {
   buildApplicationAcceptedEmail,
   buildApplicationRejectedEmail,
+<<<<<<< HEAD
   sendRealPortalEmail,
   loadSavedMailConfigFromCloud,
   SavedPortalMailConfig
+=======
+  sendRealPortalEmail
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 } from '../../lib/portalEmailService';
 import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
@@ -250,11 +257,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [appToDelete, setAppToDelete] = useState<StudentRegistrationApplication | null>(null);
   const [isProcessingApp, setIsProcessingApp] = useState(false);
 
+<<<<<<< HEAD
   // Share link & Saved Cloud Mail state
+=======
+  // Share link state
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPreFlightOpen, setIsPreFlightOpen] = useState(false);
   const [pendingPreFlightAction, setPendingPreFlightAction] = useState<(() => void) | null>(null);
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
+<<<<<<< HEAD
   const [savedMailConfig, setSavedMailConfig] = useState<SavedPortalMailConfig | null>(() => {
     if (complex.mailConfig?.user && complex.mailConfig?.pass) {
       return {
@@ -286,6 +298,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       window.removeEventListener('omran:mail-config-updated', handleMailUpdated);
     };
   }, [complex.id]);
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   // Compute direct registration link for this complex
   const portalUrl = typeof window !== 'undefined'
@@ -505,6 +519,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
       const updatedComplex: QuranComplex = {
         ...complex,
+<<<<<<< HEAD
         portalConfig: updatedConfig,
         mailConfig: savedMailConfig
           ? {
@@ -516,6 +531,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               updatedAt: savedMailConfig.updatedAt || new Date().toISOString()
             }
           : complex.mailConfig
+=======
+        portalConfig: updatedConfig
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       };
 
       await OmranDataService.saveComplex(updatedComplex);
@@ -1241,6 +1259,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     <ExternalLink className="w-4 h-4" />
                   </button>
                 </div>
+<<<<<<< HEAD
 
                 {/* Permanent Cloud Mail & Key Card for the Complex Link */}
                 <div
@@ -1306,6 +1325,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     </span>
                   </button>
                 </div>
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
               </div>
 
               {/* Mode Selector */}
@@ -3814,6 +3835,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           complexId={complex.id}
           complexName={complex.name}
           onSaveComplex={onUpdateComplex}
+<<<<<<< HEAD
           onConfigSaved={(cfg) => {
             if (cfg?.user && cfg?.pass) {
               setSavedMailConfig({
@@ -3826,6 +3848,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             }
             setSaveSuccessMsg('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
             setTimeout(() => setSaveSuccessMsg(null), 4000);
+=======
+          onConfigSaved={() => {
+            setIsMailModalOpen(false);
+            setSaveSuccessMsg('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           }}
         />
       </div>

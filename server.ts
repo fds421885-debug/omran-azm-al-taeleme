@@ -26,7 +26,10 @@ import {
   isHalaqahInComplex,
   cleanComplexBaseName,
   isStudentInHalaqah,
+<<<<<<< HEAD
   scoreStudentNameMatch,
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   type StudentResolutionResult,
   type SearchUserContext
 } from "./src/lib/assistantStudentSearch.ts";
@@ -89,6 +92,7 @@ app.post("/api/assistant/execute-tool", async (req, res) => {
 const MAIL_CONFIG_PATH = path.join(process.cwd(), "data", "mail-config.json");
 let inMemoryMailConfig: any = null;
 
+<<<<<<< HEAD
 async function getFirestoreMailConfig(complexId?: string): Promise<any> {
   try {
     if (complexId) {
@@ -101,6 +105,10 @@ async function getFirestoreMailConfig(complexId?: string): Promise<any> {
         return complexDocSnap.data()?.mailConfig;
       }
     }
+=======
+async function getFirestoreMailConfig(): Promise<any> {
+  try {
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const snap = await getDoc(doc(db, "settings", "mail_config"));
     if (snap.exists()) {
       return snap.data();
@@ -111,6 +119,7 @@ async function getFirestoreMailConfig(complexId?: string): Promise<any> {
   return null;
 }
 
+<<<<<<< HEAD
 async function saveFirestoreMailConfig(config: any, complexId?: string): Promise<void> {
   try {
     const payload = {
@@ -130,6 +139,14 @@ async function saveFirestoreMailConfig(config: any, complexId?: string): Promise
         }
       }, { merge: true });
     }
+=======
+async function saveFirestoreMailConfig(config: any): Promise<void> {
+  try {
+    await setDoc(doc(db, "settings", "mail_config"), {
+      ...config,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   } catch (e) {
     console.warn("Could not save mail config to Firestore:", e);
   }
@@ -157,7 +174,11 @@ function getStoredMailConfig(): {
   return inMemoryMailConfig || {};
 }
 
+<<<<<<< HEAD
 function saveStoredMailConfig(config: any, complexId?: string) {
+=======
+function saveStoredMailConfig(config: any) {
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   inMemoryMailConfig = config;
   try {
     const dir = path.dirname(MAIL_CONFIG_PATH);
@@ -167,11 +188,16 @@ function saveStoredMailConfig(config: any, complexId?: string) {
     console.error("Error saving mail config:", e);
   }
   // Also persist asynchronously to Firestore cloud database
+<<<<<<< HEAD
   saveFirestoreMailConfig(config, complexId).catch(err => console.warn("Firestore mail config save error:", err));
+=======
+  saveFirestoreMailConfig(config).catch(err => console.warn("Firestore mail config save error:", err));
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 }
 
 // Get Mail Configuration Status
 app.get("/api/mail/config", async (req, res) => {
+<<<<<<< HEAD
   const complexId = typeof req.query.complexId === "string" ? req.query.complexId.trim() : undefined;
   let stored = getStoredMailConfig();
   if (complexId || !stored.user || !stored.pass) {
@@ -181,6 +207,14 @@ app.get("/api/mail/config", async (req, res) => {
       if (!complexId) {
         saveStoredMailConfig(stored);
       }
+=======
+  let stored = getStoredMailConfig();
+  if (!stored.user || !stored.pass) {
+    const cloudConfig = await getFirestoreMailConfig();
+    if (cloudConfig?.user && cloudConfig?.pass) {
+      stored = { ...stored, ...cloudConfig };
+      saveStoredMailConfig(stored);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     }
   }
   const envUser = process.env.SMTP_USER || process.env.GMAIL_USER || "";
@@ -202,11 +236,16 @@ app.get("/api/mail/config", async (req, res) => {
 // Save Mail Configuration
 app.post("/api/mail/config", async (req, res) => {
   try {
+<<<<<<< HEAD
     const { user, pass, fromName, fromEmail, smtpHost, smtpPort, complexId } = req.body;
+=======
+    const { user, pass, fromName, fromEmail, smtpHost, smtpPort } = req.body;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     if (!user || !pass) {
       return res.status(400).json({ error: "اسم المستخدم وكلمة المرور مطلوبان." });
     }
 
+<<<<<<< HEAD
     const cleanComplexId = complexId ? String(complexId).trim() : undefined;
     const current = getStoredMailConfig();
     const updated = {
@@ -224,6 +263,23 @@ app.post("/api/mail/config", async (req, res) => {
     saveStoredMailConfig(updated, cleanComplexId);
     await saveFirestoreMailConfig(updated, cleanComplexId);
     return res.json({ success: true, message: "تم حفظ وتفعيل إعدادات البريد والمفتاح بنجاح للأبد في قاعدة البيانات السحابية." });
+=======
+    const current = getStoredMailConfig();
+    const updated = {
+      ...current,
+      user: String(user).trim(),
+      pass: String(pass).trim().replace(/\s+/g, ""),
+      fromName: fromName ? String(fromName).trim() : (current.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية"),
+      fromEmail: fromEmail ? String(fromEmail).trim() : String(user).trim(),
+      smtpHost: smtpHost ? String(smtpHost).trim() : undefined,
+      smtpPort: smtpPort ? Number(smtpPort) : undefined,
+      updatedAt: new Date().toISOString()
+    };
+
+    saveStoredMailConfig(updated);
+    await saveFirestoreMailConfig(updated);
+    return res.json({ success: true, message: "تم حفظ وتفعيل إعدادات البريد الإلكتروني بنجاح في السيرفر وقاعدة البيانات السحابية." });
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -232,7 +288,11 @@ app.post("/api/mail/config", async (req, res) => {
 // Comprehensive Real Email Dispatcher via Gmail API or Gmail SMTP (Nodemailer)
 app.post("/api/mail/send-gmail", async (req, res) => {
   try {
+<<<<<<< HEAD
     const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword, smtpHost, smtpPort, complexId } = req.body;
+=======
+    const { to, subject, html, text, fromName, fromEmail, token, gmailUser, gmailAppPassword, smtpHost, smtpPort } = req.body;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const authHeader = req.headers.authorization;
     const bearerToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
 
@@ -244,6 +304,7 @@ app.post("/api/mail/send-gmail", async (req, res) => {
     }
 
     const cleanTo = String(to).replace(/[\r\n]/g, "").trim();
+<<<<<<< HEAD
     const cleanComplexId = complexId ? String(complexId).trim() : undefined;
     let stored = getStoredMailConfig();
     if (!gmailAppPassword && (cleanComplexId || !stored?.pass)) {
@@ -254,15 +315,30 @@ app.post("/api/mail/send-gmail", async (req, res) => {
           if (!cleanComplexId) {
             inMemoryMailConfig = stored;
           }
+=======
+    let stored = getStoredMailConfig();
+    if (!stored?.pass && !gmailAppPassword) {
+      try {
+        const cloudConfig = await getFirestoreMailConfig();
+        if (cloudConfig?.pass) {
+          stored = { ...stored, ...cloudConfig };
+          inMemoryMailConfig = stored;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         }
       } catch (e) {
         // ignore
       }
     }
 
+<<<<<<< HEAD
     const effectiveUser = String(gmailUser || stored.user || process.env.SMTP_USER || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
     // Clean spaces from Google 16-character App Passwords (e.g. "abcd efgh ijkl mnop" -> "abcdefghijklmnop")
     const rawPass = String(gmailAppPassword || stored.pass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "").trim();
+=======
+    const effectiveUser = String(gmailUser || process.env.SMTP_USER || stored.user || process.env.GMAIL_USER || fromEmail || "qdrat2626@gmail.com").trim();
+    // Clean spaces from Google 16-character App Passwords (e.g. "abcd efgh ijkl mnop" -> "abcdefghijklmnop")
+    const rawPass = String(gmailAppPassword || process.env.SMTP_PASS || stored.pass || process.env.GMAIL_APP_PASSWORD || "").trim();
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const effectivePass = rawPass.replace(/\s+/g, "");
     const cleanFrom = (fromEmail && !fromEmail.includes("qdrat2626") && fromEmail.includes("@")) ? String(fromEmail).replace(/[\r\n]/g, "").trim() : effectiveUser;
     const cleanFromName = String(fromName || stored.fromName || "منظومة عُمْرَان لإدارة المجمعات القرآنية").replace(/[\r\n]/g, "").trim();
@@ -587,6 +663,7 @@ export function sanitizeGeminiModelName(modelName?: string): string {
   return modelName.trim();
 }
 
+<<<<<<< HEAD
 function getCandidateGeminiKeys(clientKey?: string): string[] {
   const rawKeys = [
     process.env.GEMINI_API_KEY,
@@ -605,6 +682,15 @@ function getCandidateGeminiKeys(clientKey?: string): string[] {
 
 function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
   const effectiveKey = getCandidateGeminiKeys(clientKey)[0] || "";
+=======
+function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
+  const effectiveKey = (
+    clientKey ||
+    dynamicMasterApiKey ||
+    process.env.GEMINI_API_KEY ||
+    ""
+  ).trim();
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
   return new GoogleGenAI({
     apiKey: effectiveKey,
@@ -619,9 +705,16 @@ function getEffectiveGenAI(clientKey?: string): GoogleGenAI {
 const ai = getEffectiveGenAI();
 
 function hasServerGeminiKey(req?: any): boolean {
+<<<<<<< HEAD
   const headerKey = req?.headers?.["x-gemini-api-key"] as string | undefined;
   const bodyKey = req?.body?.apiKey as string | undefined;
   return getCandidateGeminiKeys(bodyKey || headerKey).length > 0;
+=======
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) return true;
+  if (dynamicMasterApiKey && dynamicMasterApiKey.trim()) return true;
+  if (req && (req.headers?.["x-gemini-api-key"] || req.body?.apiKey)) return true;
+  return false;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 }
 
 // Endpoint to sync the Master API Key and Model configured in Developer Backup Tab
@@ -646,7 +739,11 @@ app.post("/api/gemini/test-key", async (req, res) => {
   const startTime = Date.now();
   try {
     const { apiKey, model } = req.body;
+<<<<<<< HEAD
     const cleanKey = (apiKey || "").trim() || getCandidateGeminiKeys()[0] || "";
+=======
+    const cleanKey = (apiKey || "").trim();
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const cleanModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
 
     if (!cleanKey) {
@@ -677,9 +774,14 @@ app.post("/api/gemini/test-key", async (req, res) => {
     const latencyMs = Date.now() - startTime;
     const responseText = response?.text?.trim() || "تم الاتصال بنجاح بمنظومة عمران القرآنية";
 
+<<<<<<< HEAD
     if ((apiKey || "").trim()) {
       dynamicMasterApiKey = cleanKey;
     }
+=======
+    // Auto-sync dynamic master key and model on successful test
+    dynamicMasterApiKey = cleanKey;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     dynamicMasterModel = cleanModel;
 
     return res.json({
@@ -699,6 +801,7 @@ app.post("/api/gemini/test-key", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // General server-side Gemini generation endpoint used by OmranAIService
 app.post("/api/gemini/generate", async (req, res) => {
   try {
@@ -790,6 +893,25 @@ async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI | null,
       } catch (err: any) {
         console.warn(`[Gemini Fallback] Model ${model} note:`, err?.status || err?.message?.slice(0, 80));
       }
+=======
+// Helper to call Gemini with robust multi-model fallback cascade
+async function generateGeminiContentWithFallback(aiInstance: GoogleGenAI | null, contents: any, config?: any): Promise<string> {
+  const activeAi = aiInstance || getEffectiveGenAI();
+  const models = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-4-argon"];
+  for (const model of models) {
+    try {
+      const resp = await Promise.race([
+        activeAi.models.generateContent({
+          model,
+          contents,
+          config,
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
+      ]);
+      if (resp?.text) return resp.text.trim();
+    } catch (err: any) {
+      console.warn(`[Gemini Fallback] Model ${model} note:`, err?.status || err?.message?.slice(0, 80));
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     }
   }
   return "";
@@ -1705,6 +1827,7 @@ function formatSeconds(sec: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+<<<<<<< HEAD
 // Local Quran Cache helper (auto-reloads if public/quran-verses.json is updated)
 let localQuranCache: Record<number, string[]> | null = null;
 let localQuranCacheMtime = 0;
@@ -1718,12 +1841,28 @@ function getLocalQuranCache(): Record<number, string[]> | null {
       }
       localQuranCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
       localQuranCacheMtime = stat.mtimeMs;
+=======
+// Local Quran Cache helper
+let localQuranCache: Record<number, string[]> | null = null;
+function getLocalQuranCache(): Record<number, string[]> | null {
+  if (localQuranCache && Object.keys(localQuranCache).length >= 114) {
+    return localQuranCache;
+  }
+  try {
+    const p = path.join(process.cwd(), 'public', 'quran-verses.json');
+    if (fs.existsSync(p)) {
+      localQuranCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       return localQuranCache;
     }
   } catch (e) {
     console.error("Error reading local quran-verses.json:", e);
   }
+<<<<<<< HEAD
   return localQuranCache;
+=======
+  return null;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 }
 
 // Endpoint: Return all Quran verses
@@ -2983,6 +3122,7 @@ function findBestMatchingStudent(
   const normMsg = normalizeArabicText(message);
   const normMsgNoSpaces = normMsg.replace(/\s+/g, "");
 
+<<<<<<< HEAD
   // Never hijack comparison or multi-student queries with a single student match
   const isComparisonOrDualQuery =
     /(?:مقارن|قارن|قارني|مفاضل|فاضل|أيهما|ايهما|الفرق\s+بين)/i.test(message) ||
@@ -2992,6 +3132,8 @@ function findBestMatchingStudent(
     return null;
   }
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   // If query is about multiple students or exportable report, NEVER match a single student unless full name is explicitly provided
   const isMultiQuery =
     /(?:أربع|اربع|أربعة|اربعة|ثلاث|ثلاثة|طالبين|طالبان|خمس|خمسة|ست|ستة|سبع|سبعة|ثمان|ثمانية|تسع|تسعة|عشر|عشرة|\d+)\s*(?:من\s+)?(?:الطلاب|طلاب|طالب)/i.test(message) ||
@@ -3015,6 +3157,7 @@ function findBestMatchingStudent(
     normMsg.includes("استخراج تقرير") ||
     normMsg.includes("تقرير الطلاب");
 
+<<<<<<< HEAD
   let explicitFullNameCount = 0;
   for (const s of studentsList) {
     const normS = normalizeArabicText(s.name);
@@ -3024,6 +3167,18 @@ function findBestMatchingStudent(
   }
 
   if (explicitFullNameCount >= 2 || (isMultiQuery && explicitFullNameCount !== 1)) {
+=======
+  let hasExplicitFullName = false;
+  for (const s of studentsList) {
+    const normS = normalizeArabicText(s.name);
+    if (normS && normS.length >= 4 && normMsg.includes(normS)) {
+      hasExplicitFullName = true;
+      break;
+    }
+  }
+
+  if (isMultiQuery && !hasExplicitFullName) {
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     return null;
   }
 
@@ -3121,6 +3276,7 @@ function findBestMatchingStudent(
     }
 
     if (bestMatch) return bestMatch;
+<<<<<<< HEAD
 
     // Exact-over-fuzzy fallback on extracted candidate token (e.g. "محمد بسام" -> "محمد باسم" unless "محمد بسام" exists)
     const fuzzyScored = studentsList
@@ -3134,6 +3290,8 @@ function findBestMatchingStudent(
         return fuzzyScored[0].student;
       }
     }
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   }
 
   // 5. Try single first name if unique among all students (handling compound names like عبد الرحمن / عبد الله)
@@ -3324,7 +3482,11 @@ export function stripFaceEmojis(text: string): string {
 app.post("/api/gemini/assistant", async (req, res) => {
   try {
     const {
+<<<<<<< HEAD
       message: rawIncomingMessage = "",
+=======
+      message = "",
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       history = [],
       recentReferencedStudents = [],
       user = {},
@@ -3336,6 +3498,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       model = "",
     } = req.body;
 
+<<<<<<< HEAD
     const cleanCurrentMessage = (rawIncomingMessage || "").trim();
 
     // Detect punctuation-only ("؟؟؟؟", "??", "!") or puzzled/correction follow-ups ("ما جاوبتني", "مو هذا سؤالي", "ايش دخل")
@@ -3400,6 +3563,19 @@ app.post("/api/gemini/assistant", async (req, res) => {
     const candidateApiKeys = getCandidateGeminiKeys(apiKey || headerKey);
     const effectiveApiKey = candidateApiKeys[0] || "";
 
+=======
+    const cleanCurrentMessage = (message || "").trim();
+
+    const effectiveApiKey = (
+      apiKey ||
+      (req.headers["x-gemini-api-key"] as string) ||
+      (typeof req.headers["authorization"] === 'string' ? req.headers["authorization"].replace(/^Bearer\s+/i, "") : "") ||
+      dynamicMasterApiKey ||
+      process.env.GEMINI_API_KEY ||
+      ""
+    ).trim();
+
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const currentActiveStudent = activeStudent || dataContext.activeStudent || null;
 
     const role = (user.role || "teacher") as "developer" | "supervisor" | "teacher";
@@ -3934,6 +4110,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
       ? teachersList.filter((t: any) => isTeacherInComplex(t, effectiveMatchedComplex, halaqahsList))
       : complexTeachersCohort;
 
+<<<<<<< HEAD
     // 2.7.3.9 First-Class Multi-Student Comparison Intent (مقارنة شاملة / أيهما أفضل / الفرق بين طالبين أو أكثر)
     const hasComparisonKeywords =
       /(?:مقارن|قارن|قارني|مفاضل|فاضل|أيهما|ايهما|مين\s+أفضل|مين\s+افضل|من\s+أفضل|من\s+افضل|من\s+الأفضل|من\s+الافضل|الفرق\s+بين)/i.test(message) ||
@@ -4004,12 +4181,52 @@ app.post("/api/gemini/assistant", async (req, res) => {
         normUserMessage.includes("اوجه التسميع") ||
         normUserMessage.includes("أوجه التسميع")
       )
+=======
+    // 2.7.4 Explicit Recitation / Memorization Table Intent (كشف التسميع، ماذا سمعوا، لماذا سمعوا، وش سمعوا، إنجاز الحفظ)
+    const isExplicitRecitationInquiry = Boolean(
+      normUserMessage.includes("ماذا سمع") ||
+      normUserMessage.includes("ماذا سمعو") ||
+      normUserMessage.includes("ماذا سمعوا") ||
+      normUserMessage.includes("لماذا سمع") ||
+      normUserMessage.includes("لماذا سمعو") ||
+      normUserMessage.includes("لماذا سمعوا") ||
+      normUserMessage.includes("وش سمع") ||
+      normUserMessage.includes("وش سمعو") ||
+      normUserMessage.includes("وش سمعوا") ||
+      normUserMessage.includes("ايش سمع") ||
+      normUserMessage.includes("ايش سمعو") ||
+      normUserMessage.includes("ايش سمعوا") ||
+      normUserMessage.includes("شو سمع") ||
+      normUserMessage.includes("شو سمعو") ||
+      normUserMessage.includes("شو سمعوا") ||
+      normUserMessage.includes("تسميع") ||
+      normUserMessage.includes("تسميعات") ||
+      normUserMessage.includes("سماع") ||
+      normUserMessage.includes("سمعوا") ||
+      normUserMessage.includes("سمعو") ||
+      normUserMessage.includes("سمع") ||
+      normUserMessage.includes("كشف التسميع") ||
+      normUserMessage.includes("جدول التسميع") ||
+      normUserMessage.includes("سجل التسميع") ||
+      normUserMessage.includes("كشف الحفظ") ||
+      normUserMessage.includes("ما حفظوا") ||
+      normUserMessage.includes("ما حفظو") ||
+      normUserMessage.includes("ما انجزوا") ||
+      normUserMessage.includes("ما انجزو") ||
+      normUserMessage.includes("الأوجه المسمعة") ||
+      normUserMessage.includes("الاوجه المسمعة") ||
+      normUserMessage.includes("اوجه التسميع") ||
+      normUserMessage.includes("أوجه التسميع")
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     );
 
     // 2.7.5 Comprehensive Teachers Table Intent (كشف المعلمين، جدول المعلمين، المحفظين)
     const hasTeachersTableIntent =
       !hasAnyDeleteIntent &&
+<<<<<<< HEAD
       !hasComparisonIntent &&
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       !lowerMsg.includes("حذف") &&
       !lowerMsg.includes("تحضير") &&
       (
@@ -4030,6 +4247,7 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     // 2.7.5.1 Accurate Student Points Inquiry Intent
     const isStudentPointsInquiry =
+<<<<<<< HEAD
       !hasComparisonIntent &&
       !studentResolution.isMultipleStudentsQuery &&
       (
@@ -4043,6 +4261,16 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     const hasPointsTableIntent =
       !hasComparisonIntent &&
+=======
+      /(?:كم\s+(?:عنده\s+)?(?:من\s+)?(?:النقاط|نقاط|نقطة)|كم\s+رصيد(?:ه)?\s*(?:من\s+)?(?:النقاط|نقاط)?|نقاط\s+الطالب|رصيد\s+الطالب|لوحة\s+الشرف|لوحة\s+الصدارة|كم\s+جاب\s+نقطة|كم\s+حصل\s+نقطة|كم\s+نقطة|كم\s+نقاط)/i.test(message) ||
+      lowerMsg.includes("كم نقطة") ||
+      lowerMsg.includes("كم نقاط") ||
+      lowerMsg.includes("رصيد النقاط") ||
+      lowerMsg.includes("نقاطه") ||
+      lowerMsg.includes("في لوحة الشرف");
+
+    const hasPointsTableIntent =
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       !isExplicitRecitationInquiry &&
       !hasTeachersTableIntent &&
       !hasAnyDeleteIntent &&
@@ -4446,7 +4674,10 @@ app.post("/api/gemini/assistant", async (req, res) => {
 
     // Guard 3: Explicit student name not found - Never fall back to all students!
     const hasSpecialIntent =
+<<<<<<< HEAD
       hasComparisonIntent ||
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       isReferentialQuestion ||
       hasChartDiagnosticIntent ||
       hasAttendanceTableIntent ||
@@ -4604,9 +4835,14 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("أوجه")
     );
 
+<<<<<<< HEAD
     // Multi-Student Recitation / Report / ID Cards Inquiry Intent (must NOT hijack comparisons, teachers, attendance, points, charts, or navigation!)
     const hasMultiStudentRecitationIntent = Boolean(
       !hasComparisonIntent &&
+=======
+    // Multi-Student Recitation / Report / ID Cards Inquiry Intent (must NOT hijack teachers, attendance, points, charts, or navigation!)
+    const hasMultiStudentRecitationIntent = Boolean(
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       !deleteItemTarget &&
       !hasTeachersTableIntent &&
       !hasAttendanceTableIntent &&
@@ -5081,12 +5317,40 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("صلح نفسك") ||
       normUserMessage.includes("يا ولد");
 
+<<<<<<< HEAD
     // 2.12.5.6 Puzzled / Repeating user intent (e.g. "؟؟؟؟" or "رد علي" or "وينك" or "ما جاوبتني")
     const isPuzzledOrRepeatIntent =
       isFollowUpCorrectionOrRepeat ||
       /^[؟?!.,،…\s]+$/u.test(cleanCurrentMessage);
 
     const previousUserText = previousSubstantiveUserText;
+=======
+    // 2.12.5.6 Puzzled / Repeating user intent (e.g. "؟؟" or "رد علي" or "وينك" or "ما جاوبتني")
+    const isPuzzledOrRepeatIntent =
+      normUserMessage === "؟" ||
+      normUserMessage === "؟؟" ||
+      normUserMessage === "؟؟؟" ||
+      normUserMessage === "??" ||
+      normUserMessage === "???" ||
+      normUserMessage.includes("وينك") ||
+      normUserMessage.includes("رد علي") ||
+      normUserMessage === "رد" ||
+      normUserMessage.includes("ما جاوبت") ||
+      normUserMessage.includes("ما جاوبتني") ||
+      normUserMessage.includes("جاوبني") ||
+      normUserMessage.includes("ألو") ||
+      normUserMessage.includes("الو");
+
+    // History contextual lookup for repeats / puzzled prompts
+    const previousUserMsgObj = Array.isArray(history)
+      ? [...history].reverse().find((h: any) =>
+          (h.role === 'user' || h.sender === 'user') &&
+          (h.text || h.parts?.[0]?.text || '').trim() &&
+          (h.text || h.parts?.[0]?.text || '').trim() !== cleanCurrentMessage
+        )
+      : null;
+    const previousUserText = (previousUserMsgObj?.text || previousUserMsgObj?.parts?.[0]?.text || '').trim();
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     const previousUserNorm = normalizeArabicText(previousUserText);
 
     if (isPuzzledOrRepeatIntent && previousUserNorm) {
@@ -5129,10 +5393,15 @@ app.post("/api/gemini/assistant", async (req, res) => {
       normUserMessage.includes("حضوره") ||
       normUserMessage.includes("غيابه");
 
+<<<<<<< HEAD
     // 2.12.6 Student Comprehensive Report Intent (طلب تقرير كامل ومفصل أو بيانات طالب بعينه فقط، وليس مقارنة بين طالبين!)
     const hasStudentReportIntent =
       !hasComparisonIntent &&
       !studentResolution.isMultipleStudentsQuery &&
+=======
+    // 2.12.6 Student Comprehensive Report Intent (طلب تقرير كامل ومفصل أو بيانات طالب بعينه)
+    const hasStudentReportIntent =
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       !hasMultiStudentRecitationIntent &&
       !isExportableReportRequest &&
       Boolean(
@@ -5737,6 +6006,7 @@ ${excusedListStr}
       normUserMessage.includes("كسر الروتين");
 
     const candidateStudentForCoaching =
+<<<<<<< HEAD
       !hasComparisonIntent && !studentResolution.isMultipleStudentsQuery
         ? (
             candidateStudentForAttendance ||
@@ -5848,6 +6118,31 @@ ${excusedListStr}
         })
       : [];
 
+=======
+      candidateStudentForAttendance ||
+      candidateStudentForReport ||
+      candidateStudentForRecitation ||
+      currentActiveStudent ||
+      findBestMatchingStudent(message, studentsList, activeHalaqah?.id) ||
+      (contextStudents.length === 1 ? contextStudents[0] : null);
+
+    const hasCoachingIntent =
+      isCoachingQuery ||
+      Boolean(
+        candidateStudentForCoaching &&
+        (
+          normUserMessage.includes("كيف") ||
+          normUserMessage.includes("شو") ||
+          normUserMessage.includes("وش") ||
+          normUserMessage.includes("حل") ||
+          normUserMessage.includes("تصرف") ||
+          normUserMessage.includes("رايك") ||
+          normUserMessage.includes("رأيك") ||
+          normUserMessage.includes("ساعدني")
+        )
+      );
+
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     let coachingStudentProfile = "";
     if (candidateStudentForCoaching) {
       const stEvals = evaluationsList.filter((e: any) => e.studentId === candidateStudentForCoaching.id);
@@ -6041,6 +6336,7 @@ ${coachingStudentProfile}
 4. قاعدة "الأخذ والعطاء" (استمرار الحوار):
    - في نهاية ردك، اطرح على المعلم سؤالاً أو سؤالين استكشافيين ذكيين لتتعرف على تفاصيل أكثر (مثلاً: "هل لاحظت يا شيخنا متى يكثر تشتته في بداية الحلقة أم نهايتها؟"، "وماذا عن علاقته بزملائه المقربين؟").
    - بشّره وأكد له أنك مستعد لمواصلة النقاش معه واقتراح خطة مخصصة مفصلة آية بآية.
+<<<<<<< HEAD
 ═════════════════════════════════════════════════════════════════════════════` : ''}${hasComparisonIntent && comparisonProfiles.length >= 2 ? `
 
 ═════════════════════════════════════════════════════════════════════════════
@@ -6072,6 +6368,9 @@ ${comparisonProfiles
    - محور التميز التنافسي ولوحة الشرف (رصيد النقاط الفعلي).
 3) أجب بوضوح وموضوعية تامة عن سؤال "أيهما أفضل؟": وضّح من يتفوق في النقاط الإجمالية، ومن يتفوق في الحضور أو التسميع أو الإتقان، ثم قدّم خلاصة تربوية منصفة تبرز نقطة قوة كل طالب وتوصية عملية لتحفيزهما معاً، وأشر إلى بطاقة المقارنة البيانية والجدول القابل للتصدير بالأسفل.
 ═════════════════════════════════════════════════════════════════════════════` : ''}${isFollowUpCorrectionOrRepeat && previousSubstantiveUserText ? `\n\n⚠️ تنبيه سياقي فوري وحاسم جداً:\nالمستخدم أرسل للتو («${cleanCurrentMessage}») استغراباً أو تنبيهاً لأن الرد السابق لم يُجب عن سؤاله الفعلي السابق وهو: «${previousSubstantiveUserText}».\n- اعتذر بلطف ولباقة في سطر واحد قصير جداً عن أي التباس سابق، ثم أجب فوراً وبعمق ودقة شاملة عن سؤاله الفعلي («${previousSubstantiveUserText}») مباشرة دون أي حشو أو ترحيب آلي!` : ''}${hasLatestStudentIntent && candidateLatestStudent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "آخر طالب انضم إلينا / أحدث الطلاب":\n- المستخدم يسأل خصيصاً عن آخر طالب انضم للمنظومة/الحلقة!\n- أجب بشكل مباشر وصريح في السطر الأول: اذكر أن آخر طالب انضم هو "${candidateLatestStudent.name}" في حلقة "${candidateLatestStudent.halaqahName || 'الحلقة'}"، ومستواه "${candidateLatestStudent.level || 'متوسط'}"، وموضع حفظه الحالي سورة "${candidateLatestStudent.currentSurahName || 'الفاتحة'}" (آية ${candidateLatestStudent.currentAyah || 1})، وتاريخ انضمامه ${candidateLatestStudent.createdAt ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA') : 'مؤخراً'}.\n- اذكر أيضاً قائمة بأحدث 3 إلى 5 طلاب انضموا بعده لتزويده بمعلومات كاملة ووافية.\n- إياك أن تتجاهل السؤال أو تعيد الترحيب به دون الإجابة!` : ''}${hasStudentCountIntent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "كم عدد الطلاب":\n- المستخدم يسأل عن إجمالي عدد الطلاب المقيدين!\n- أجب مباشرة برقم دقيق: إجمالي عدد الطلاب المقيدين في المنظومة هو ${studentsList.length} طالباً.\n- اذكر تفاصيل توزيعهم على الحلقات القرآنية بالأرقام الدقيقة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
+=======
+═════════════════════════════════════════════════════════════════════════════` : ''}${hasLatestStudentIntent && candidateLatestStudent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "آخر طالب انضم إلينا / أحدث الطلاب":\n- المستخدم يسأل خصيصاً عن آخر طالب انضم للمنظومة/الحلقة!\n- أجب بشكل مباشر وصريح في السطر الأول: اذكر أن آخر طالب انضم هو "${candidateLatestStudent.name}" في حلقة "${candidateLatestStudent.halaqahName || 'الحلقة'}"، ومستواه "${candidateLatestStudent.level || 'متوسط'}"، وموضع حفظه الحالي سورة "${candidateLatestStudent.currentSurahName || 'الفاتحة'}" (آية ${candidateLatestStudent.currentAyah || 1})، وتاريخ انضمامه ${candidateLatestStudent.createdAt ? new Date(candidateLatestStudent.createdAt).toLocaleDateString('ar-SA') : 'مؤخراً'}.\n- اذكر أيضاً قائمة بأحدث 3 إلى 5 طلاب انضموا بعده لتزويده بمعلومات كاملة ووافية.\n- إياك أن تتجاهل السؤال أو تعيد الترحيب به دون الإجابة!` : ''}${hasStudentCountIntent ? `\n\n⚠️ توجيه استثنائي وإلزامي حول استفسار "كم عدد الطلاب":\n- المستخدم يسأل عن إجمالي عدد الطلاب المقيدين!\n- أجب مباشرة برقم دقيق: إجمالي عدد الطلاب المقيدين في المنظومة هو ${studentsList.length} طالباً.\n- اذكر تفاصيل توزيعهم على الحلقات القرآنية بالأرقام الدقيقة!` : ''}${unresolvedStudentNote ? `\n\n⚠️ توجيه هام واستثنائي للذكاء الاصطناعي:\n${unresolvedStudentNote}\nيرجى مخاطبة المستخدم كأذكى مساعد قرآني (مثل ChatGPT وجيميني)، التوضيح له بلطف وذكاء عما هو مسجل وما إذا كان يقصد الطالب المسجل لدينا في الحلقة أو يرغب في تسجيل الطالب الجديد.` : ''}`;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
     // 5. Cleanly build alternating multi-turn conversation history for Gemini
     const chatHistoryParts: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
@@ -6099,6 +6398,7 @@ ${comparisonProfiles
       }
     }
 
+<<<<<<< HEAD
     // Ensure incoming message (or resolved substantive question on "؟؟؟؟" follow-up) is added cleanly as the final user turn
     const effectiveFinalUserPrompt =
       isFollowUpCorrectionOrRepeat && previousSubstantiveUserText
@@ -6114,16 +6414,35 @@ ${comparisonProfiles
           chatHistoryParts.push({
             role: "user",
             parts: [{ text: effectiveFinalUserPrompt }],
+=======
+    // Ensure incoming message is added as final user turn if not already present
+    if (cleanCurrentMessage) {
+      const lastTurn = chatHistoryParts[chatHistoryParts.length - 1];
+      if (!lastTurn || lastTurn.role !== "user" || lastTurn.parts[0].text !== cleanCurrentMessage) {
+        if (lastTurn && lastTurn.role === "user") {
+          lastTurn.parts[0].text += `\n${cleanCurrentMessage}`;
+        } else {
+          chatHistoryParts.push({
+            role: "user",
+            parts: [{ text: cleanCurrentMessage }],
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
           });
         }
       }
     }
 
     // If history was empty, ensure at least user turn exists
+<<<<<<< HEAD
     if (chatHistoryParts.length === 0 && effectiveFinalUserPrompt) {
       chatHistoryParts.push({
         role: "user",
         parts: [{ text: effectiveFinalUserPrompt }],
+=======
+    if (chatHistoryParts.length === 0 && cleanCurrentMessage) {
+      chatHistoryParts.push({
+        role: "user",
+        parts: [{ text: cleanCurrentMessage }],
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       });
     }
 
@@ -6204,15 +6523,32 @@ ${comparisonProfiles
     });
     const juzAmmaCohort = juzAmmaStudents.length > 0 ? juzAmmaStudents : studentsList.slice(0, 6);
 
+<<<<<<< HEAD
     // 6. Call Real Gemini API with Multi-Key & Multi-Model Fallback Cascade
     let geminiReply = "";
     if (candidateApiKeys.length > 0 && chatHistoryParts.length > 0) {
+=======
+    // 6. Call Real Gemini API with Multi-Model Fallback Cascade
+    let geminiReply = "";
+    if (effectiveApiKey && chatHistoryParts.length > 0) {
+      const activeAi = new GoogleGenAI({
+        apiKey: effectiveApiKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+
+      // Prioritize developer's configured model, then high-availability models
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       const effectiveReqModel = sanitizeGeminiModelName(model || dynamicMasterModel || "gemini-3.8-flash");
       const candidateModels = Array.from(new Set([
         effectiveReqModel,
         "gemini-3.8-flash",
         "gemini-3.1-flash-lite",
         "gemini-flash-latest",
+<<<<<<< HEAD
       ]));
 
       outerKeyLoop:
@@ -6246,6 +6582,30 @@ ${comparisonProfiles
           } catch (modelErr: any) {
             console.warn(`[Assistant] Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
           }
+=======
+        "gemini-4-argon"
+      ]));
+
+      for (const modelName of candidateModels) {
+        try {
+          const response = await Promise.race([
+            activeAi.models.generateContent({
+              model: modelName,
+              contents: chatHistoryParts,
+              config: {
+                systemInstruction,
+              },
+            }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 25000)),
+          ]);
+
+          if (response?.text) {
+            geminiReply = response.text.trim();
+            break;
+          }
+        } catch (modelErr: any) {
+          console.warn(`[Assistant] Model ${modelName} encountered note:`, modelErr?.status || modelErr?.message?.slice(0, 80));
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
         }
       }
     }
@@ -6254,6 +6614,7 @@ ${comparisonProfiles
     if (!geminiReply) {
       if (deleteItemTarget) {
         geminiReply = `حياكم الله وبارك فيكم ونفع بكم يا أخي ${firstName}.. 🌿\n\nإكراماً لكتاب الله العظيم وصيانةً لبيانات الحلقات والطلاب من المحو العارض أو غير المقصود ﴿وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ﴾ ﴿وَلَا تَبْخَسُوا النَّاسَ أَشْيَاءَهُمْ﴾، فقد يسّرتُ لك الأمر وأعددتُ لك رابط انتقال مباشر ينقلك فوراً إلى موضع **${deleteItemTarget.name}** أمام عينيك مباشرةً لتتولى مراجعته وتأكيد حذفه بنفسك بكل طمأنينة ويسر.\n\nوسوف **يومض العنصر 3 ومضات بألوان ثيم المجمع** أمام عينيك لتتأكد من أنني فهمت ما تعنيه بدقة، ثم يهدأ الوميض. تفضل بالضغط على الزر أدناه للانتقال فوراً:`;
+<<<<<<< HEAD
       } else if (hasComparisonIntent && comparisonProfiles.length >= 2) {
         const sortedByOverall = [...comparisonProfiles].sort((a, b) => {
           const scoreA = a.totalPoints + a.totalFaces * 10 + a.attendanceRateNum * 0.5 - a.mushafErrorsCount * 3;
@@ -6284,6 +6645,8 @@ ${comparisonProfiles
           `• **التفوق في الانضباط والحضور:** يتقدم **${topAttendanceLeader.name}** بنسبة حضور **${topAttendanceLeader.attendanceRate}**.\n` +
           `• **النتيجة الإجمالية الموزونة:** يبرز **${sortedByOverall[0].name}** في المحصلة الشاملة الحالية، مع تميز أقرانه في جوانب مكملة تستحق التحفيز والتثبيت.\n\n` +
           `وقد أرفقتُ لك بالأسفل **بطاقة المقارنة البيانية والجدول التفصيلي القابل للتصدير (PDF و Excel)**:`;
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       } else if (hasDateInquiryIntent) {
         geminiReply = `اليوم المبارك هو **${exactTodayDayName}**، الموافق بالتاريخ الميلادي المعتمد: **${exactTodayFormatted}** (${exactTodayIso})${hijriEstimate ? `، والموافق تقريباً بالتقويم الهجري: **${hijriEstimate}**` : ''}، والتوقيت الحالي في المنظومة: **${exactTodayTime}** 🌿✨\n\nوجميع سجلات الحلقات، التحضير، التسميع، والخطط القرآنية المجدولة مرتبطة بدقة بهذا التاريخ.`;
       } else if (hasPlanSettingsInquiryIntent) {
@@ -6499,10 +6862,23 @@ ${comparisonProfiles
         geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 🏆📖\n\nإليك **ترتيب أوائل الطلاب الأكثر تسميعاً للأوجه القرآنية** (المتصدرون في التسميع والحفظ) في ${complexName}:\n\n${topText}\n\nوقد أعددتُ لك بالأسفل بطاقة الصدارة القرآنية ولوحة الشرف للاطلاع على كامل الترتيب وتكريم المتميزين:`;
       } else if (isColloquialOrFrustratedIntent) {
         geminiReply = `حقك علي يا أخي ${firstName} وأعتذر منك أشد الاعتذار عن أي تأخر أو تكرار غير مقصود 🌿\n\nأنا معك الآن بكامل التركيز والانتباه، ومحرك الذكاء الاصطناعي موصول بالمفتاح المعتمد بالمنظومة بنجاح.\n\nبيانات مجمعك الحالية بين يدي:\n• إجمالي الطلاب: **${studentsList.length} طالباً**\n• الحلقات القرآنية: **${activeComplexHalaqahs.length} حلقات**\n• الحضور اليوم: **${metrics.presentCount} حاضر**\n\nتفضل بالسؤال عما ترغب فيه (إحصائيات الطلاب، التسميع، خطط الختم، الحضور، أو أي مشورة تربوية) وسأجيبك فوراً وبكل وضوح!`;
+<<<<<<< HEAD
       } else if (isPuzzledOrRepeatIntent) {
         geminiReply = `حقك علي يا أخي ${firstName} وأعتذر منك عن أي التباس سابق 🌿\n\nأنا معك بكامل التركيز والانتباه؛ تفضل بتوضيح سؤالك أو اسم الطالب أو الحلقة التي تود استعراضها أو المقارنة بينها، وسأوافيك بالجواب الدقيق والشامل فوراً من واقع سجلات المجمع الحية.`;
       } else if (chatHistoryParts.length > 2) {
         geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nإليك ملخص سريع لحالة المجمع الآن:\n• إجمالي الطلاب المقيدين: **${studentsList.length} طالباً** موزعين على **${activeComplexHalaqahs.length} حلقات**.\n• الحضور اليوم: **${metrics.presentCount} حاضر** (نسبة ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%).\n• الأوجه المسمعة اليوم: **${metrics.totalRecitedPagesToday} وجه**.\n\nهل ترغب في إجراء مقارنة بين طلاب محددين، أو استعراض كشف التسميع التفصيلي، أو كشف الحضور والغياب؟ تفضل بتوجيهي وسأنفذه فوراً.`;
+=======
+      } else if (isPuzzledOrRepeatIntent && (previousUserNorm || previousUserText)) {
+        if (candidateLatestStudent && (previousUserNorm.includes("اخر") || previousUserNorm.includes("آخر") || previousUserNorm.includes("انضم") || previousUserNorm.includes("جديد"))) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر، وأنا معك بكامل تركيزي واهتمامي!\n\nإجابةً لسؤالك: **آخر طالب انضم إلينا** هو الطالب المبارك **${candidateLatestStudent.name}** في حلقة **${candidateLatestStudent.halaqahName || 'الحلقة'}** (مستواه: ${candidateLatestStudent.level || 'متوسط'}، وموضعه بسورة ${candidateLatestStudent.currentSurahName || 'الفاتحة'}).\n\nوقد أرفقت لك بالأسفل كشف أحدث الطلاب المنضمين للمنظومة تفضل بمراجعته فوراً.`;
+        } else if (previousUserNorm.includes("كم") || previousUserNorm.includes("عدد") || previousUserNorm.includes("طالب")) {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 معك واعتذر على أي تأخر؛ يبلغ **إجمالي عدد الطلاب المقيدين في المنظومة** حالياً **${studentsList.length} طالباً**، والحاضرون اليوم ${metrics.presentCount} طالب.\n\nتفضل بمراجعة الكشف الموضح أدناه.`;
+        } else {
+          geminiReply = `حيّاك الله يا أخي ${firstName} 🌿 أعتذر منك على أي تأخر؛ أنا معك ومتابع لكل كلمة تقولها بكامل الاهتمام. تفضل بطرح ما ترغب في معرفته أو تنفيذه وسأجيبك فوراً وبأدق الأرقام من واقع سجلات المجمع الحية.`;
+        }
+      } else if (chatHistoryParts.length > 2) {
+        geminiReply = `حيّاك الله يا أخي ${firstName} 🌿\n\nأنا معك ومتابع لاستفسارك حول "${cleanCurrentMessage || 'بيانات المجمع'}".\n\nإليك ملخص سريع لحالة المجمع الآن:\n• إجمالي الطلاب المقيدين: **${studentsList.length} طالباً** موزعين على **${activeComplexHalaqahs.length} حلقات**.\n• الحضور اليوم: **${metrics.presentCount} حاضر** (نسبة ${metrics.totalStudents > 0 ? Math.round((metrics.presentCount / metrics.totalStudents) * 100) : 0}%).\n• الأوجه المسمعة اليوم: **${metrics.totalRecitedPagesToday} وجه**.\n\nهل ترغب في استعراض كشف التسميع التفصيلي، كشف الحضور والغياب، أو إحصائية مخصصة لطالب أو حلقة معينة؟ تفضل بتوجيهي وسأنفذه فوراً.`;
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       } else {
         geminiReply = `السلام عليكم ورحمة الله وبركاته يا أخي ${firstName} 🌿\n\nأهلاً بك في منصة عُمْرَان. بصفتي مساعدك القرآني الذكي، يسعدني الإجابة عن أي تساؤل تربوي أو إحصائي حول طلاب وحلقات ${complexName}.\n\nكيف يمكنني خدمتك والتيسير عليك اليوم؟`;
       }
@@ -6535,7 +6911,10 @@ ${comparisonProfiles
         geminiReply = `حيّاك الله وبارك فيك يا أخي ${firstName} 📖✨\n\nإليك **${isCardsTitle ? 'البطاقات التعريفية الرسمية والتقرير القرآني الشامل' : 'التقرير القرآني الشامل والمفصل'}** لما سمّعه كافة الطلاب الـ (${multiRecitationData.length}) ${isCardsTitle ? 'بدون أي حصر على أربعة طلاب وبكامل تفاصيل الهوية القرآنية' : `ليوم (${targetRecitationDateLabel} - ${targetRecitationDate})`} بالتفصيل الكامل وبدون استثناء أي طالب:\n\n${studentSummaries}\n\nوقد أعددتُ لك بالأسفل **${isCardsTitle ? 'البطاقات التعريفية والتقرير القرآني الشامل المعتمد' : 'بطاقة التقرير القرآني الشاملة المعتمدة والقابلة للاستخراج والتصدير الفوري'}** (طباعة رسمية لكل بطاقة، تصدير كـ PDF، إكسل) لكافة الطلاب المحددين:`;
       }
     } else if (
+<<<<<<< HEAD
       !hasComparisonIntent &&
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       !hasMultiStudentRecitationIntent &&
       (
         Boolean(studentResolution.explicitCount && studentResolution.explicitCount > 0) ||
@@ -6658,6 +7037,7 @@ ${comparisonProfiles
           },
         };
       }
+<<<<<<< HEAD
     } else if (hasComparisonIntent && comparisonProfiles.length >= 2) {
       action = {
         type: "SHOW_CHART",
@@ -6704,6 +7084,8 @@ ${comparisonProfiles
             })),
         },
       };
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     } else if (isStudentPointsInquiry && candidateStudentForPoints) {
       const pts = typeof candidateStudentForPoints.points === 'number'
         ? candidateStudentForPoints.points

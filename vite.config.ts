@@ -11,6 +11,12 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+<<<<<<< HEAD
+=======
+    define: {
+      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || ''),
+    },
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     server: {
       allowedHosts: true as const,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

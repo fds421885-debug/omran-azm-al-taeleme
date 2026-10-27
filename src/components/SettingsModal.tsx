@@ -23,9 +23,12 @@ import {
   BookOpen,
   Palette,
   Eye,
+<<<<<<< HEAD
   EyeOff,
   Copy,
   Database,
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   CheckCircle2,
   AlertCircle,
   Upload,
@@ -58,7 +61,10 @@ import { OmranDataService, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { triggerComplexThemePulse } from '../utils/highlightHelper';
 import { ApiConfig } from '../lib/apiConfig';
+<<<<<<< HEAD
 import { loadSavedMailConfigFromCloud, saveMailConfigToCloudForever } from '../lib/portalEmailService';
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -120,8 +126,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Mail / Gmail Configuration State
   const [gmailUser, setGmailUser] = useState('');
   const [gmailAppPass, setGmailAppPass] = useState('');
+<<<<<<< HEAD
   const [showMailPass, setShowMailPass] = useState(false);
   const [copiedMailPass, setCopiedMailPass] = useState(false);
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   const [mailFromName, setMailFromName] = useState(activeComplex?.name || 'منظومة عُمْرَان لإدارة المجمعات القرآنية');
   const [mailFromEmail, setMailFromEmail] = useState('');
   const [mailConfigStatus, setMailConfigStatus] = useState<{ isConfigured: boolean; user: string } | null>(null);
@@ -130,6 +139,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTestingMail, setIsTestingMail] = useState(false);
   const [mailTestResult, setMailTestResult] = useState<{ success: boolean; msg: string } | null>(null);
 
+<<<<<<< HEAD
   // Load Mail Config Status on mount / when mail tab selected / when complex changes
   const fetchMailConfig = async () => {
     try {
@@ -158,18 +168,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (data.pass) setGmailAppPass(data.pass);
         if (data.fromName) setMailFromName(data.fromName);
         if (data.fromEmail) setMailFromEmail(data.fromEmail);
+=======
+  // Load Mail Config Status on mount / when mail tab selected
+  const fetchMailConfig = async () => {
+    try {
+      let loadedFromCloud = false;
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'mail_config'));
+        if (snap.exists()) {
+          const cloud = snap.data();
+          if (cloud?.user) {
+            setGmailUser(prev => prev || cloud.user);
+            setTestEmailTo(prev => prev || cloud.user);
+          }
+          if (cloud?.pass) {
+            setGmailAppPass(prev => prev || cloud.pass);
+          }
+          if (cloud?.fromName) setMailFromName(prev => prev || cloud.fromName);
+          if (cloud?.fromEmail) setMailFromEmail(prev => prev || cloud.fromEmail);
+          if (cloud?.user && cloud?.pass) {
+            setMailConfigStatus({ isConfigured: true, user: cloud.user });
+            loadedFromCloud = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not read cloud mail config:', err);
+      }
+
+      const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'));
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const data = await res.json();
+        if (data.isConfigured || !loadedFromCloud) {
+          setMailConfigStatus({ isConfigured: data.isConfigured, user: data.user });
+        }
+        if (data.user) {
+          setGmailUser(prev => prev || data.user);
+          setTestEmailTo(prev => prev || data.user);
+        }
+        if (data.fromName) setMailFromName(prev => prev || data.fromName);
+        if (data.fromEmail) setMailFromEmail(prev => prev || data.fromEmail);
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
       }
     } catch (e) {
       console.warn('Could not load mail config status:', e);
     }
   };
 
+<<<<<<< HEAD
   useEffect(() => {
     if (isOpen) {
       fetchMailConfig();
     }
   }, [activeComplex?.id]);
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   // Lock body scroll when modal is open and handle initial tab & highlight
   useEffect(() => {
     if (isOpen) {
@@ -2696,14 +2749,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   try {
                     const cleanUser = gmailUser.trim();
                     const cleanPass = gmailAppPass.trim().replace(/\s+/g, '');
+<<<<<<< HEAD
                     const cleanFromName = mailFromName.trim() || (activeComplex?.name ? `مجمع ${activeComplex.name}` : 'منظومة عُمْرَان القرآنية');
                     const cleanFromEmail = mailFromEmail.trim() || cleanUser;
 
                     await saveMailConfigToCloudForever({
+=======
+                    const cleanFromName = mailFromName.trim();
+                    const cleanFromEmail = mailFromEmail.trim() || cleanUser;
+
+                    const res = await fetch(ApiConfig.getEndpoint('/api/mail/config'), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        user: cleanUser,
+                        pass: cleanPass,
+                        fromName: cleanFromName,
+                        fromEmail: cleanFromEmail
+                      })
+                    });
+
+                    // Save to Firestore cloud database forever
+                    await setDoc(doc(db, 'settings', 'mail_config'), {
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                       user: cleanUser,
                       pass: cleanPass,
                       fromName: cleanFromName,
                       fromEmail: cleanFromEmail,
+<<<<<<< HEAD
                       complex: activeComplex || undefined,
                       complexId: activeComplex?.id,
                       onSaveComplex: onSaveComplex
@@ -2717,6 +2790,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setMailConfigStatus({ isConfigured: true, user: cleanUser });
                   } catch (err: any) {
                     setStatusMsg({ type: 'error', text: err?.message || 'فشل حفظ إعدادات البريد.' });
+=======
+                      updatedAt: new Date().toISOString()
+                    }, { merge: true });
+
+                    setStatusMsg({ type: 'success', text: 'تم حفظ وتفعيل إعدادات بريد Gmail بنجاح في السيرفر وقاعدة البيانات السحابية!' });
+                    setMailConfigStatus({ isConfigured: true, user: cleanUser });
+                  } catch (err: any) {
+                    setStatusMsg({ type: 'error', text: err?.message || 'فشل الاتصال بخادم البريد.' });
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                   } finally {
                     setIsSavingMailConfig(false);
                   }
@@ -2727,6 +2809,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   borderColor: themeColors.secondaryColor || '#065f46'
                 }}
               >
+<<<<<<< HEAD
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Key className="w-4 h-4 text-amber-400" />
@@ -2737,6 +2820,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>يُحفظ للأبد لبوابة المجمع • قابل للتعديل بأي وقت</span>
                   </span>
                 </div>
+=======
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Key className="w-4 h-4 text-amber-400" />
+                  <span>بيانات حساب Gmail المعتمد للإرسال</span>
+                </h4>
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -2756,6 +2845,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-[#86efac] mb-1">
+<<<<<<< HEAD
                       مفتاح مرور التطبيقات (Google App Password - 16 حرفاً) <span className="text-red-400">*</span>
                     </label>
                     <div className="relative flex items-center">
@@ -2793,6 +2883,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </button>
                       </div>
                     </div>
+=======
+                      كلمة مرور التطبيقات (Google App Password) <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="16 حرفاً من Google (مثال: abcd efgh ijkl mnop)"
+                      value={gmailAppPass}
+                      onChange={e => setGmailAppPass(e.target.value)}
+                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                      dir="ltr"
+                    />
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                   </div>
 
                   <div>

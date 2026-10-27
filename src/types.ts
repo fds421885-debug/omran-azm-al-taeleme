@@ -73,7 +73,10 @@ export interface QuranComplex {
     pass: string;
     fromName?: string;
     fromEmail?: string;
+<<<<<<< HEAD
     isConfigured?: boolean;
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
     updatedAt?: string;
   };
 }
@@ -1075,8 +1078,12 @@ export interface Student {
   aiPlan?: StudentAIPlan;
   isGeneratingPlan?: boolean; // حالة جاري إعداد الخطة بالذكاء الاصطناعي بواسطة جيميناي
   memorizationPlan?: StudentMemorizationPlan; // الخطة الذكية للتثبيت حتى الختم مع الحساب الزمني والأهداف
+<<<<<<< HEAD
   mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المزدوج
   mushafErrorsUpdatedAt?: string; // طابع زمني لآخر تحديث لأخطاء مصحف الطالب لمنع الكتابة الفوقية
+=======
+  mushafErrors?: AyahErrorRecord[]; // سجل أخطاء التسميع في مصحف الطالب المرصودة بالضغط المطول
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
   assignedMosqueId?: string; // المسجد الملحق به الطالب في حال المنظومة
   assignedMosqueName?: string;
   reviewStartDirection?: 'from_baqarah' | 'from_nas'; // اتجاه المراجعة: من البقرة نزولاً أو من الناس صعوداً
@@ -1533,6 +1540,7 @@ export function getStudentParentPhone(student?: Student | null): string {
   return '';
 }
 
+<<<<<<< HEAD
 /**
  * يستخرج الاسم الأول فقط للطالب لاستخدامه في رسائل أولياء الأمور (مثل رسائل تفقد الغياب)،
  * مع دمج الأسماء العربية المركبة المكتوبة في كلمتين منفصلتين تلقائياً كاسم واحد
@@ -1617,6 +1625,8 @@ export function getStudentFirstGivenName(fullName?: string | null): string {
   return w0;
 }
 
+=======
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 export interface StudentListeningLog {
   id: string;
   studentId: string;

@@ -14,12 +14,16 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getAyahAudioUrl, FAMOUS_RECITERS, getSurahInfo } from '../../data/quranData';
+<<<<<<< HEAD
 import { loadAllQuranVerses, getAyahTextSync, normalizeKfgqpcHafsText } from '../../lib/quranTextService';
 
 function toArabicNumerals(n: number): string {
   const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
   return String(n).replace(/\d/g, d => digits[Number(d)]);
 }
+=======
+import { loadAllQuranVerses, getAyahTextSync } from '../../lib/quranTextService';
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
 
 interface AudioAyahPlayerProps {
   surahNumber: number;
@@ -338,6 +342,7 @@ export const AudioAyahPlayer: React.FC<AudioAyahPlayerProps> = ({
               className="max-w-2xl text-center space-y-3"
             >
               <p
+<<<<<<< HEAD
                 className="text-2xl sm:text-3xl md:text-4xl font-mushaf leading-[2.1] text-amber-100 selection:bg-[#fbbf24] selection:text-[#064e3b]"
                 dir="rtl"
               >
@@ -345,6 +350,14 @@ export const AudioAyahPlayer: React.FC<AudioAyahPlayerProps> = ({
                 {'\u00A0'}
                 <span className="text-[#fbbf24] mx-1 inline-block select-none">
                   {toArabicNumerals(currentAyah)}
+=======
+                className="text-xl sm:text-2xl md:text-3xl font-serif leading-loose text-amber-100 font-bold selection:bg-[#fbbf24] selection:text-[#064e3b]"
+                dir="rtl"
+              >
+                {currentAyahText}
+                <span className="text-[#fbbf24] font-serif font-black mr-2 inline-block">
+                  ﴿{currentAyah}﴾
+>>>>>>> fe1326044c44ff41cee71f10bb01b26f4533f2d4
                 </span>
               </p>
             </motion.div>
