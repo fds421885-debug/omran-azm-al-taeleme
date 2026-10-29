@@ -93,7 +93,7 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
     if (!newMosqueName.trim()) return;
     const mObj: Mosque = {
       id: `mosque-${Date.now()}`,
-      complexId: editingComplex?.id || 'complex-main',
+      complexId: editingComplex?.id || (complexes && complexes[0]?.id) || '',
       name: newMosqueName.trim(),
       address: newMosqueAddress.trim() || undefined,
       mapUrl: newMosqueMapUrl.trim() || undefined,
@@ -386,7 +386,7 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
         capacity: effectiveCapacity,
         mosqueId: editingHalaqah.mosqueId || assignedMosque?.id || undefined,
         mosqueName: assignedMosque?.name || editingHalaqah.mosqueName || undefined,
-        complexId: parentComplex?.id || effectiveComplexId || 'complex-main',
+        complexId: parentComplex?.id || effectiveComplexId || (complexes && complexes[0]?.id) || '',
         complexName: parentComplex?.name || editingHalaqah.complexName || 'المجمع القرآني',
         primaryTeacherId: matchedTeacher?.id || editingHalaqah.primaryTeacherId,
         primaryTeacherName: matchedTeacher?.name || selectedTeacherName || parentComplex?.supervisorTeacherName || teachers[0]?.name || '',

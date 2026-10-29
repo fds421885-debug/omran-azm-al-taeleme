@@ -68,6 +68,7 @@ interface AIStudentPlacementInterviewProps {
     email?: string;
     memorizedJuzList: number[];
     notes?: string;
+    preferredHalaqahId?: string;
     trackingCode: string;
     startingYear?: string;
     previousDirection?: 'baqarah_to_nas' | 'nas_to_baqarah';
@@ -324,11 +325,18 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
       await new Promise(res => setTimeout(res, 500));
     }
 
-    // 4. Candidate halaqah recommendation
+    // 4. Candidate halaqah recommendation: prioritize preferred halaqah if chosen, or match within complex
     const candidateHalaqahs = halaqahs.filter(h => !h.complexId || h.complexId === complex.id);
-    const bestHalaqah: Halaqah | null = candidateHalaqahs[0] || null;
-    const matchedM = complex.mosques?.find(m => m.id === bestHalaqah?.mosqueId) || null;
-    setMatchedHalaqah(bestHalaqah);
+    let candidateHalaqah: Halaqah | null = null;
+    if (studentInitialData.preferredHalaqahId) {
+      candidateHalaqah = candidateHalaqahs.find(h => h.id === studentInitialData.preferredHalaqahId) || null;
+    }
+    if (!candidateHalaqah) {
+      candidateHalaqah = candidateHalaqahs[0] || null;
+    }
+
+    const matchedM = complex.mosques?.find(m => m.id === candidateHalaqah?.mosqueId) || null;
+    setMatchedHalaqah(candidateHalaqah);
     setMatchedMosque(matchedM);
 
     // 5. Create transcript
@@ -339,39 +347,79 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     }));
     setConversationTranscript(transcript);
 
-    const newStdId = `std_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
-    const studentObj: Student = {
-      id: newStdId,
-      name: studentInitialData.studentName,
-      password: '123',
-      phone: studentInitialData.phone,
-      age: studentInitialData.age,
-      parentName: studentInitialData.parentName,
-      parentPhones: [studentInitialData.parentPhone],
-      parentPhone: studentInitialData.parentPhone,
-      googleEmail: studentInitialData.email || null,
-      currentSurah: reachedSurah,
-      currentSurahName: getSurahInfo(reachedSurah).name,
-      currentAyah: reachedAyah,
-      startSurahReached: reachedSurah,
-      startAyahReached: reachedAyah,
-      reviewStartDirection: direction === 'baqarah_to_nas' ? 'from_baqarah' : 'from_nas',
-      isFirstSession: true,
-      dailyNewTarget: 'وجه يومياً',
-      dailyReviewTarget: '3 أوجه يومياً',
-      level: summary.classifiedLevel as any,
-      complexId: complex.id,
-      complexName: complex.name,
-      halaqahId: bestHalaqah?.id || '',
-      halaqahName: bestHalaqah?.name || 'الحلقة القرآنية',
-      assignedMosqueId: matchedM?.id,
-      assignedMosqueName: matchedM?.name,
-      weakSurahs: selectedWeakSurahs,
-      notes: healthNotes ? `ملاحظات: ${healthNotes}` : 'تم إتمام الفحص بنجاح وبانتظار اعتماد المشرف',
-      createdAt: new Date().toISOString()
-    };
-    setCreatedStudent(studentObj);
-    setIsWaitingList(false);
+    // 6. Check if candidate halaqah is full ("لو فل يحطه في طابور الانتظار")
+    const enrolledStudentsInHalaqah = candidateHalaqah
+      ? existingStudents.filter(s => s.halaqahId === candidateHalaqah.id)
+      : [];
+    const halaqahCapacity = candidateHalaqah?.capacity || 15;
+    const isFull = candidateHalaqah ? enrolledStudentsInHalaqah.length >= halaqahCapacity : false;
+
+    if (isFull && candidateHalaqah) {
+      setIsWaitingList(true);
+      const existingWait = complex.waitingList || [];
+      const queueNumber = existingWait.length + 1;
+      const waitingObj: WaitingListStudent = {
+        id: `wait_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`,
+        applicationTrackingCode: generatedTicket,
+        studentName: studentInitialData.studentName,
+        age: studentInitialData.age,
+        phone: studentInitialData.phone,
+        parentName: studentInitialData.parentName,
+        parentPhone: studentInitialData.parentPhone,
+        memorizedJuz: studentInitialData.memorizedJuzList?.length || 1,
+        consolidatedJuz: Math.round(((studentInitialData.memorizedJuzList?.length || 1) * (summary.memorizationScore || 80)) / 100),
+        tajweedLevel: summary.classifiedLevel || 'متوسط',
+        hasIjazah: isKhatim,
+        queueNumber: queueNumber,
+        complexId: complex.id,
+        complexName: complex.name,
+        mosqueId: matchedM?.id,
+        mosqueName: matchedM?.name,
+        targetHalaqahId: candidateHalaqah.id,
+        targetHalaqahName: candidateHalaqah.name,
+        notes: `تم الإدراج تلقائياً في طابور الانتظار لاكتمال الطاقة الاستيعابية للحلقة المرشحة (${candidateHalaqah.name}) [${enrolledStudentsInHalaqah.length}/${halaqahCapacity} طالب] بالدور رقم #${queueNumber}.`,
+        status: 'waiting',
+        addedAt: new Date().toISOString()
+      };
+      setWaitingEntry(waitingObj);
+      setCreatedStudent(null);
+    } else {
+      setIsWaitingList(false);
+      setWaitingEntry(null);
+      const newStdId = `std_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
+      const studentObj: Student = {
+        id: newStdId,
+        name: studentInitialData.studentName,
+        password: '123',
+        phone: studentInitialData.phone,
+        age: studentInitialData.age,
+        parentName: studentInitialData.parentName,
+        parentPhones: [studentInitialData.parentPhone],
+        parentPhone: studentInitialData.parentPhone,
+        googleEmail: studentInitialData.email || null,
+        currentSurah: reachedSurah,
+        currentSurahName: getSurahInfo(reachedSurah).name,
+        currentAyah: reachedAyah,
+        startSurahReached: reachedSurah,
+        startAyahReached: reachedAyah,
+        reviewStartDirection: direction === 'baqarah_to_nas' ? 'from_baqarah' : 'from_nas',
+        isFirstSession: true,
+        dailyNewTarget: 'وجه يومياً',
+        dailyReviewTarget: '3 أوجه يومياً',
+        level: summary.classifiedLevel as any,
+        complexId: complex.id,
+        complexName: complex.name,
+        halaqahId: candidateHalaqah?.id || '',
+        halaqahName: candidateHalaqah?.name || 'الحلقة القرآنية',
+        assignedMosqueId: matchedM?.id,
+        assignedMosqueName: matchedM?.name,
+        weakSurahs: selectedWeakSurahs,
+        notes: healthNotes ? `ملاحظات: ${healthNotes}` : 'تم إتمام الفحص بنجاح وبانتظار اعتماد المشرف',
+        createdAt: new Date().toISOString()
+      };
+      setCreatedStudent(studentObj);
+    }
+
     setCurrentPhase('result');
   };
 
@@ -840,45 +888,97 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
               </div>
             </div>
 
-            {/* Admission Request Submitted to Supervisor Card */}
-            <div className="p-5 rounded-3xl bg-[#064e3b]/80 border-2 border-emerald-400/80 shadow-2xl space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-400 text-[#022c22] flex items-center justify-center font-bold shadow-lg">
-                  <CheckCircle2 className="w-6 h-6" />
+            {/* Admission Request Submitted OR Waiting List Card */}
+            {isWaitingList && waitingEntry ? (
+              <div className="p-5 rounded-3xl bg-amber-950/40 border-2 border-amber-400/80 shadow-2xl space-y-4 animate-in fade-in duration-300">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-amber-400 text-amber-950 flex items-center justify-center font-bold shadow-lg shrink-0">
+                    <Clock className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-heading font-black text-base text-amber-300">
+                        تم إدراجك في طابور الانتظار الرسمي للمجمع
+                      </h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-amber-950">
+                        طابور الانتظار #{waitingEntry.queueNumber}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-200">
+                      كود المتابعة والتذكرة المعتمد: <span className="font-mono font-black text-amber-300">[{ticketCode}]</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-heading font-black text-base text-emerald-300">
-                    تم إتمام الفحص التشخيصي وإرسال ملفك للمشرف بنجاح
-                  </h4>
-                  <p className="text-xs text-slate-200">
-                    كود التذكرة الخاص بطلبك: <span className="font-mono font-black text-amber-300">[{ticketCode}]</span>
+
+                <div className="p-4 rounded-2xl bg-[#022c22] border border-amber-400/40 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between text-amber-300 font-bold border-b border-amber-400/20 pb-2">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      سبب الإدراج في طابور الانتظار:
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 text-[11px] font-bold">
+                      الحلقة المرشحة مكتملة العدد
+                    </span>
+                  </div>
+                  <p className="text-slate-200 text-xs leading-relaxed">
+                    الحلقة المرشحة للطالب <strong className="text-white">({matchedHalaqah?.name || 'الحلقة المختارة'})</strong> وصلت إلى طاقتها الاستيعابية الكاملة ({existingStudents.filter(s => s.halaqahId === matchedHalaqah?.id).length}/{matchedHalaqah?.capacity || 15} طالب).
+                  </p>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    تم توثيق كافة نتائجك في الفحص القرآني (المستوى: {testSummary?.classifiedLevel}) وحجز مقعدك بالترتيب رقم <strong className="text-amber-400 font-black font-mono">#{waitingEntry.queueNumber}</strong> في طابور الانتظار، وسيتواصل معكم المشرف فور توفر مقعد أو فتح حلقة جديدة بالمجمع.
                   </p>
                 </div>
-              </div>
 
-              <div className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-2 text-xs">
-                <span className="font-black text-amber-300 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  حالة الطلب: تم الرفع إلى لوحة المشرف العام للمجمع
-                </span>
-                <p className="text-slate-300 text-xs leading-relaxed">
-                  تم رصد وتوثيق كافة نتائجك في التجويد وثبات الاستحضار والمتشابهات بنجاح. سيقوم المشرف العام بمراجعة الملف واعتماد تسكينك في المسجد والحلقة المعتمدة، كما يمكنك متابعة حالة طلبك برقم التذكرة عبر البوابة.
-                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onWaitingListAdded(waitingEntry);
+                  }}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-110 text-amber-950 font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Check className="w-5 h-5 stroke-[3]" />
+                  <span>تأكيد الإدراج في طابور الانتظار ومتابعة الطلب ➔</span>
+                </button>
               </div>
+            ) : (
+              <div className="p-5 rounded-3xl bg-[#064e3b]/80 border-2 border-emerald-400/80 shadow-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-400 text-[#022c22] flex items-center justify-center font-bold shadow-lg">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-heading font-black text-base text-emerald-300">
+                      تم إتمام الفحص التشخيصي وإرسال ملفك للمشرف بنجاح
+                    </h4>
+                    <p className="text-xs text-slate-200">
+                      كود التذكرة الخاص بطلبك: <span className="font-mono font-black text-amber-300">[{ticketCode}]</span>
+                    </p>
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (createdStudent) {
-                    onPlacementSuccess(createdStudent);
-                  }
-                }}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 hover:brightness-110 text-[#022c22] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
-              >
-                <Check className="w-5 h-5 stroke-[3]" />
-                <span>إنهاء وتتبع حالة الطلب ➔</span>
-              </button>
-            </div>
+                <div className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-2 text-xs">
+                  <span className="font-black text-amber-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    حالة الطلب: تم الرفع إلى لوحة المشرف العام للمجمع
+                  </span>
+                  <p className="text-slate-300 text-xs leading-relaxed">
+                    تم رصد وتوثيق كافة نتائجك في التجويد وثبات الاستحضار والمتشابهات بنجاح. سيقوم المشرف العام بمراجعة الملف واعتماد تسكينك في المسجد والحلقة المعتمدة، كما يمكنك متابعة حالة طلبك برقم التذكرة عبر البوابة.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (createdStudent) {
+                      onPlacementSuccess(createdStudent);
+                    }
+                  }}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 hover:brightness-110 text-[#022c22] font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <Check className="w-5 h-5 stroke-[3]" />
+                  <span>إنهاء وتتبع حالة الطلب ➔</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 

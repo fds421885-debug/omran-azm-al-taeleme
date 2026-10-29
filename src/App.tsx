@@ -273,23 +273,29 @@ export function App() {
   // Complexes State & Complex Management Modal (المجمعات القرآنية)
   const [complexes, setComplexes] = useState<QuranComplex[]>(() => {
     try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(OMRAN_CACHE_KEYS.COMPLEXES);
+        if (raw && (raw.includes('complex-main') || raw.includes('المجمع القرآني النموذجي'))) {
+          localStorage.removeItem(OMRAN_CACHE_KEYS.COMPLEXES);
+        }
+      }
       const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []);
       const delSet = new Set(Array.isArray(deleted) ? deleted : []);
-      const cached = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
-      return Array.isArray(cached) ? cached.filter(c => c?.id && !delSet.has(c.id)) : [];
+      const cached = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
+      return Array.isArray(cached) ? cached.filter(c => c?.id && c.id !== 'complex-main' && !delSet.has(c.id)) : [];
     } catch {
-      return DEFAULT_COMPLEXES;
+      return [];
     }
   });
   const [isComplexModalOpen, setIsComplexModalOpen] = useState(false);
   const [selectedComplexId, setSelectedComplexId] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('omran_selected_complex_id');
-      if (saved) return saved;
+      if (saved && saved !== 'complex-main') return saved;
       const session = localStorage.getItem('omran_session');
       if (session) {
         const u = JSON.parse(session);
-        if (u?.complexId) return u.complexId;
+        if (u?.complexId && u.complexId !== 'complex-main') return u.complexId;
       }
       return '';
     } catch {
@@ -826,16 +832,17 @@ export function App() {
   // 2. If developer or supervisor: specifically selected complex (or first complex)
   // 3. For regular teacher: aligned with their active halaqah's complex or assigned complex
   const activeComplex = useMemo<QuranComplex | null>(() => {
-    if (complexes.length === 0) return null;
+    const validComplexes = complexes.filter(c => c && c.id && c.id !== 'complex-main');
+    if (validComplexes.length === 0) return null;
     if (activePortalStudent) {
       if (activePortalStudent.complexId) {
-        const match = complexes.find(c => c.id === activePortalStudent.complexId);
+        const match = validComplexes.find(c => c.id === activePortalStudent.complexId);
         if (match) return match;
       }
       if (activePortalStudent.halaqahId) {
         const hMatch = halaqahs.find(h => h.id === activePortalStudent.halaqahId);
         if (hMatch?.complexId) {
-          const cMatch = complexes.find(c => c.id === hMatch.complexId);
+          const cMatch = validComplexes.find(c => c.id === hMatch.complexId);
           if (cMatch) return cMatch;
         }
       }
@@ -845,23 +852,23 @@ export function App() {
     if (currentTeacher && !isDeveloper && activeHalaqahId && activeHalaqahId !== 'all') {
       const activeH = halaqahs.find(h => h.id === activeHalaqahId);
       if (activeH?.complexId) {
-        const cMatch = complexes.find(c => c.id === activeH.complexId);
+        const cMatch = validComplexes.find(c => c.id === activeH.complexId);
         if (cMatch) return cMatch;
       }
     }
 
     // Developer can switch to any complex freely
     if (isDeveloper) {
-      if (selectedComplexId && selectedComplexId !== 'all') {
-        const match = complexes.find(c => c.id === selectedComplexId);
+      if (selectedComplexId && selectedComplexId !== 'all' && selectedComplexId !== 'complex-main') {
+        const match = validComplexes.find(c => c.id === selectedComplexId);
         if (match) return match;
       }
-      return complexes[0] || null;
+      return validComplexes[0] || null;
     }
 
     // Supervisor: allow switching ONLY to complexes they actually supervise or are assigned to
-    if (isSupervisor && selectedComplexId && selectedComplexId !== 'all') {
-      const match = complexes.find(c => c.id === selectedComplexId);
+    if (isSupervisor && selectedComplexId && selectedComplexId !== 'all' && selectedComplexId !== 'complex-main') {
+      const match = validComplexes.find(c => c.id === selectedComplexId);
       if (match) {
         const isAuthorized =
           isDeveloper ||
@@ -879,27 +886,28 @@ export function App() {
     if (rawTeacherAssignedHalaqahs.length > 0) {
       const firstH = rawTeacherAssignedHalaqahs[0];
       if (firstH.complexId) {
-        const cMatch = complexes.find(c => c.id === firstH.complexId);
+        const cMatch = validComplexes.find(c => c.id === firstH.complexId);
         if (cMatch) return cMatch;
       }
     }
 
     if (currentTeacher?.supervisedComplexId) {
-      const cMatch = complexes.find(c => c.id === currentTeacher.supervisedComplexId);
+      const cMatch = validComplexes.find(c => c.id === currentTeacher.supervisedComplexId);
       if (cMatch) return cMatch;
     }
 
     if (currentTeacher?.complexId) {
-      const cMatch = complexes.find(c => c.id === currentTeacher.complexId);
+      const cMatch = validComplexes.find(c => c.id === currentTeacher.complexId);
       if (cMatch) return cMatch;
     }
 
     if (currentUser?.complexId) {
-      const cMatch = complexes.find(c => c.id === currentUser.complexId);
+      const cMatch = validComplexes.find(c => c.id === currentUser.complexId);
       if (cMatch) return cMatch;
     }
 
-    return availableTeacherComplexes[0] || complexes[0] || null;
+    const validTeacherComplexes = availableTeacherComplexes.filter(c => c && c.id && c.id !== 'complex-main');
+    return validTeacherComplexes[0] || validComplexes[0] || null;
   }, [
     complexes,
     activePortalStudent,
@@ -1003,7 +1011,11 @@ export function App() {
     // complexes subscription always listens to Central DB
     const unsubComplexes = OmranDataService.subscribeComplexes(newComplexes => {
       if (isMounted) {
-        setComplexes(newComplexes);
+        const clean = (newComplexes || []).filter(c => c && c.id && c.id !== 'complex-main');
+        setComplexes(clean);
+        if (clean.length > 0) {
+          setSelectedComplexId(prev => (prev === 'complex-main' || !prev ? clean[0].id : prev));
+        }
         notifyBackgroundSync();
       }
     });

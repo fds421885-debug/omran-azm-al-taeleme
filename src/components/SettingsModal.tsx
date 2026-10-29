@@ -457,7 +457,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         id: editingHalaqah.id || `halaqah-${Date.now()}`,
         name: editingHalaqah.name.trim(),
         description: editingHalaqah.description?.trim() || '',
-        complexId: targetComplex?.id || editingHalaqah.complexId || 'complex-main',
+        complexId: targetComplex?.id || editingHalaqah.complexId || '',
         complexName: targetComplex?.name || editingHalaqah.complexName || complexName || 'المجمع القرآني',
         primaryTeacherId: matchedTeacher?.id || editingHalaqah.primaryTeacherId,
         primaryTeacherName: matchedTeacher?.name || selectedTeacherName || '',

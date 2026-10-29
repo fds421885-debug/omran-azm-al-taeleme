@@ -205,53 +205,10 @@ export const DEFAULT_CRITERIA: EvaluationCriteria[] = [
   }
 ];
 
-export const DEFAULT_COMPLEXES: QuranComplex[] = [
-  {
-    id: 'complex-main',
-    name: 'المجمع القرآني النموذجي',
-    description: 'المجمع القرآني النموذجي التابع لمنظومة عمران',
-    complexType: 'single_complex',
-    supervisorTeacherId: 'teacher-1',
-    supervisorTeacherName: 'المشرف العام',
-    createdAt: new Date().toISOString()
-  }
-];
+export const DEFAULT_COMPLEXES: QuranComplex[] = [];
 
-export const DEFAULT_HALAQAHS: Halaqah[] = [
-  {
-    id: 'halaqah-main',
-    name: 'حلقة القرآن الكريم',
-    description: 'الحلقة القرآنية النموذجية',
-    complexId: 'complex-main',
-    complexName: 'المجمع القرآني النموذجي',
-    primaryTeacherName: 'معلم ومحفظ الحلقة',
-    capacity: 15,
-    createdAt: new Date().toISOString(),
-    isDefault: true
-  },
-  {
-    id: 'halaqah-zubair',
-    name: 'حلقة الزبير بن العوام',
-    description: 'حلقة المتميزين والحفظ المكثف',
-    complexId: 'complex-main',
-    complexName: 'المجمع القرآني النموذجي',
-    primaryTeacherName: 'الشيخ إبراهيم الخليل',
-    capacity: 15,
-    createdAt: new Date().toISOString(),
-    isDefault: false
-  },
-  {
-    id: 'halaqah-abubakr',
-    name: 'حلقة أبي بكر الصديق',
-    description: 'حلقة التأسيس وإتقان التلاوة',
-    complexId: 'complex-main',
-    complexName: 'المجمع القرآني النموذجي',
-    primaryTeacherName: 'م. محمد منتصر',
-    capacity: 15,
-    createdAt: new Date().toISOString(),
-    isDefault: false
-  }
-];
+export const DEFAULT_HALAQAHS: Halaqah[] = [];
+
 
 export const DEFAULT_ABSENCE_TEMPLATES = [
   {
@@ -291,7 +248,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const INITIAL_TEACHERS: TeacherAccount[] = [
   {
     id: 'teacher-1',
-    name: 'م. محمد منتصر',
+    name: 'محمد منتصر محمد يونس',
     username: 'admin',
     password: '123',
     phone: '0500000000',
@@ -299,233 +256,19 @@ export const INITIAL_TEACHERS: TeacherAccount[] = [
     title: 'المشرف والمعلم المبرمج والمطور العام',
     role: 'developer',
     isPrimary: true,
-    complexId: 'complex-main',
-    complexName: 'المجمع القرآني النموذجي',
-    halaqahId: 'halaqah-main',
-    halaqahName: 'حلقة القرآن الكريم',
+    complexId: 'complex-zubeir',
+    complexName: 'مجمع الحربي',
+    halaqahId: 'halaqah-zubeir',
+    halaqahName: 'حلقة الزبير بن العوام رضي الله عنه',
     googleEmail: 'fds421885@gmail.com',
     isGoogleLinked: true,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'teacher-2',
-    name: 'الشيخ إبراهيم الخليل',
-    username: 'ibrahim',
-    password: '123',
-    phone: '0501122334',
-    teacherCode: '582910',
-    title: 'معلم ومحفظ حلقة الزبير بن العوام',
-    role: 'teacher',
-    isPrimary: false,
-    complexId: 'complex-main',
-    complexName: 'المجمع القرآني النموذجي',
-    halaqahId: 'halaqah-zubair',
-    halaqahName: 'حلقة الزبير بن العوام',
     createdAt: new Date().toISOString()
   }
 ];
 
-// Initial Seed Students for demonstration
-export const INITIAL_STUDENTS: Student[] = [
-  {
-    id: 'std-1',
-    name: 'عبد الرحمن أحمد السعيد',
-    password: '123',
-    phone: '0501234567',
-    age: 12,
-    parentName: 'أحمد السعيد',
-    parentPhones: ['966501234567', '966551234567'],
-    parentPhone: '966501234567',
-    currentSurah: 2,
-    currentSurahName: 'البقرة',
-    currentAyah: 45,
-    dailyNewTarget: 'وجه كامل',
-    dailyReviewTarget: 'نصف جزء',
-    level: 'قوي',
-    halaqahId: 'halaqah-main',
-    halaqahName: 'حلقة القرآن الكريم',
-    aiPlan: {
-      roadmapSummary: 'خطة حفظ سورة البقرة بمعدل وجه يومياً مع مراجعة نصف جزء من جزء عم وتبارك.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة البقرة: الآيات (46 - 52)',
-        review: 'سورة النبأ وسورة النازعات كاملتين',
-        suggestedSheikh: 'الشيخ محمود خليل الحصري (المصحف المعلم)',
-        tajweedFocus: 'تطبيق أحكام النون الساكنة والتنوين (الإدغام بغنة)',
-        dailyNote: 'كرر كل آية 5 مرات بالربط مع الآية التي قبلها قبل التسميع على المعلم.'
-      },
-      difficultyAdjustment: 'وتيرة ممتازة تناسب قدرات الطالب العالية',
-      estimatedDaysToFinishJuz: 22,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'طالب مجتهد وحافظ متميز',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'std-2',
-    name: 'يوسف عمر الكردي',
-    password: '123',
-    phone: '0507654321',
-    age: 10,
-    parentName: 'عمر الكردي',
-    parentPhones: ['966507654321'],
-    parentPhone: '966507654321',
-    currentSurah: 78,
-    currentSurahName: 'النبأ',
-    currentAyah: 16,
-    dailyNewTarget: 'نصف وجه',
-    dailyReviewTarget: 'سورة واحدة',
-    level: 'متوسط',
-    halaqahId: 'halaqah-main',
-    halaqahName: 'حلقة القرآن الكريم',
-    aiPlan: {
-      roadmapSummary: 'إتمام جزء عم خلال 3 أسابيع بمعدل 6 إلى 8 آيات يومياً مع تكرار الاستماع.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة النبأ: الآيات (17 - 30)',
-        review: 'سورة الإخلاص والفلق والناس وقريش',
-        suggestedSheikh: 'الشيخ محمد صديق المنشاوي (المعلم)',
-        tajweedFocus: 'قلقلة حروف (قطب جد) والمد المتصل',
-        dailyNote: 'استمع للشيخ المنشاوي 3 مرات وركز على نطق الحركات بدقة.'
-      },
-      difficultyAdjustment: 'خطة متوازنة لتعزيز الثقة والتجويد',
-      estimatedDaysToFinishJuz: 18,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'يحتاج تركيز على المدود',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'std-3',
-    name: 'بلال خالد القحطاني',
-    password: '123',
-    phone: '0509876543',
-    age: 8,
-    parentName: 'خالد القحطاني',
-    parentPhones: ['966509876543'],
-    parentPhone: '966509876543',
-    currentSurah: 93,
-    currentSurahName: 'الضحى',
-    currentAyah: 1,
-    dailyNewTarget: '3 آيات',
-    dailyReviewTarget: 'سورة قصيرة',
-    level: 'ضعيف',
-    halaqahId: 'halaqah-main',
-    halaqahName: 'حلقة القرآن الكريم',
-    aiPlan: {
-      roadmapSummary: 'خطة تشجيعية وتيسيرية لقصار السور بمعدل 3 آيات يومياً مع تقنية التكرار المرحلي.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة الضحى كاملة (11 آية)',
-        review: 'سورة الشرح والتين والعلق',
-        suggestedSheikh: 'الشيخ مشاري بن راشد العفاسي',
-        tajweedFocus: 'مخارج الحروف الأساسية والوضوح',
-        dailyNote: 'قسّم السورة إلى مقطعين، 5 آيات صباحاً و6 آيات مساءً مع الوالد.'
-      },
-      difficultyAdjustment: 'تم تيسير الورد وتقسيمه ليناسب عمر الطالب وقدرته',
-      estimatedDaysToFinishJuz: 45,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'يحتاج تشجيع ومكافآت مستمرة',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'std-4',
-    name: 'عمر عبد العزيز الفهد',
-    password: '123',
-    phone: '0505544332',
-    age: 11,
-    parentName: 'عبد العزيز الفهد',
-    parentPhones: ['966505544332'],
-    parentPhone: '966505544332',
-    currentSurah: 18,
-    currentSurahName: 'الكهف',
-    currentAyah: 10,
-    dailyNewTarget: 'وجه كامل',
-    dailyReviewTarget: 'ربع جزء',
-    level: 'متوسط',
-    halaqahId: 'halaqah-zubair',
-    halaqahName: 'حلقة الزبير بن العوام',
-    aiPlan: {
-      roadmapSummary: 'متابعة حفظ سورة الكهف بمعدل وجه يومياً مع مراجعة سورة مريم والإسراء.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة الكهف: الآيات (1 - 10)',
-        review: 'سورة مريم كاملة',
-        suggestedSheikh: 'الشيخ عبد الباسط عبد الصمد',
-        tajweedFocus: 'أحكام الراءات وتفخيمها وترقيقها',
-        dailyNote: 'تلاوة خاشعة مع استشعار معاني أوائل سورة الكهف.'
-      },
-      difficultyAdjustment: 'وتيرة مستقرة وممتازة',
-      estimatedDaysToFinishJuz: 25,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'طالب حسن الصوت وملتزم',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'std-5',
-    name: 'حمزة مصطفى الباز',
-    password: '123',
-    phone: '0503322114',
-    age: 13,
-    parentName: 'مصطفى الباز',
-    parentPhones: ['966503322114'],
-    parentPhone: '966503322114',
-    currentSurah: 3,
-    currentSurahName: 'آل عمران',
-    currentAyah: 20,
-    dailyNewTarget: 'وجه ونصف',
-    dailyReviewTarget: 'جزء كامل',
-    level: 'قوي',
-    halaqahId: 'halaqah-zubair',
-    halaqahName: 'حلقة الزبير بن العوام',
-    aiPlan: {
-      roadmapSummary: 'خطة متقدمة لحفظ سورة آل عمران مع مراجعة سورة البقرة وتثبيتها.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة آل عمران: الآيات (1 - 9)',
-        review: 'سورة البقرة: الأرباع الثلاثة الأولى',
-        suggestedSheikh: 'الشيخ محمود علي البنا',
-        tajweedFocus: 'المدود وأحكام الميم الساكنة',
-        dailyNote: 'التركيز على متشابهات أوائل آل عمران مع البقرة.'
-      },
-      difficultyAdjustment: 'مستوى متفوق ومتميز جداً',
-      estimatedDaysToFinishJuz: 15,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'طالب متفوق ومرشح لمسابقات القرآن الكريم',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'std-6',
-    name: 'أنس إبراهيم الدوسري',
-    password: '123',
-    phone: '0508899776',
-    age: 9,
-    parentName: 'إبراهيم الدوسري',
-    parentPhones: ['966508899776'],
-    parentPhone: '966508899776',
-    currentSurah: 67,
-    currentSurahName: 'الملك',
-    currentAyah: 14,
-    dailyNewTarget: 'نصف وجه',
-    dailyReviewTarget: 'سورة الملك',
-    level: 'متوسط',
-    halaqahId: 'halaqah-zubair',
-    halaqahName: 'حلقة الزبير بن العوام',
-    aiPlan: {
-      roadmapSummary: 'إتمام جزء تبارك بمعدل نصف وجه يومياً وتكرار الاستماع لسورة الملك.',
-      currentDailyAssignment: {
-        newMemorization: 'سورة الملك: الآيات (1 - 14)',
-        review: 'سورة النبأ والنازعات',
-        suggestedSheikh: 'الشيخ سعد الغامدي',
-        tajweedFocus: 'أحكام النون والميم المشددتين',
-        dailyNote: 'قراءة السورة قبل النوم ترسيخاً للحفظ النبوي.'
-      },
-      difficultyAdjustment: 'خطة تشجيعية مناسبة',
-      estimatedDaysToFinishJuz: 30,
-      lastUpdated: new Date().toISOString()
-    },
-    notes: 'طالب حريص على الحضور والمواظبة',
-    createdAt: new Date().toISOString()
-  }
-];
+// Initial Seed Students
+export const INITIAL_STUDENTS: Student[] = [];
+
 
 // Helper to compute recent seed dates dynamically
 const getRecentWeekdaySeed = (targetDayIndex: number, weeksAgo = 0): string => {
@@ -2425,7 +2168,7 @@ export class OmranDataService {
       const snap = await safeGetDocs(collection(this.getCentralDb(), 'complexes'));
       snap.forEach(d => {
         const c = d.data() as QuranComplex;
-        if (c?.id && !deletedComplexIds.has(c.id)) {
+        if (c?.id && c.id !== 'complex-main' && !deletedComplexIds.has(c.id)) {
           cloudList.push(c);
         }
       });
@@ -2433,14 +2176,7 @@ export class OmranDataService {
       handleFirestoreError(e, OperationType.LIST, 'complexes');
     }
 
-    if (cloudList.length > 0) {
-      return cloudList;
-    }
-
-    if (deletedComplexIds.size === 0) {
-      return DEFAULT_COMPLEXES;
-    }
-    return [];
+    return cloudList;
   }
 
   // Subscribe to Complexes in real-time
@@ -2451,17 +2187,11 @@ export class OmranDataService {
         const list: QuranComplex[] = [];
         snap.forEach(d => {
           const c = d.data() as QuranComplex;
-          if (c?.id && !deletedComplexIds.has(c.id)) {
+          if (c?.id && c.id !== 'complex-main' && !deletedComplexIds.has(c.id)) {
             list.push(c);
           }
         });
-        if (list.length > 0) {
-          callback(list);
-        } else if (deletedComplexIds.size === 0) {
-          callback(DEFAULT_COMPLEXES);
-        } else {
-          callback([]);
-        }
+        callback(list);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'complexes');
       });
@@ -2473,7 +2203,7 @@ export class OmranDataService {
   // Save / Update Complex with Dual Persistence
   static async saveComplex(complex: QuranComplex): Promise<void> {
     removeDeletedComplexId(complex.id);
-    const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, DEFAULT_COMPLEXES);
+    const local = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
     const existingLocal = local.find(c => c.id === complex.id);
     const enriched: QuranComplex = {
       ...existingLocal,
@@ -5795,12 +5525,8 @@ export class OmranDataService {
     const teachersList = Array.isArray(backup.teachers) && backup.teachers.length > 0
       ? backup.teachers
       : INITIAL_TEACHERS;
-    const complexesList = Array.isArray(backup.complexes) && backup.complexes.length > 0
-      ? backup.complexes
-      : DEFAULT_COMPLEXES;
-    const halaqahsList = Array.isArray(backup.halaqahs) && backup.halaqahs.length > 0
-      ? backup.halaqahs
-      : DEFAULT_HALAQAHS;
+    const complexesList = Array.isArray(backup.complexes) ? backup.complexes : [];
+    const halaqahsList = Array.isArray(backup.halaqahs) ? backup.halaqahs : [];
     const violationsList = Array.isArray(backup.violations) ? backup.violations : [];
     const examsList = Array.isArray(backup.exams) ? backup.exams : [];
     const submissionsList = Array.isArray(backup.submissions) ? backup.submissions : [];

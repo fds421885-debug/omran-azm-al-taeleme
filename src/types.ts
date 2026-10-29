@@ -931,8 +931,8 @@ export const isHalaqahInComplex = (
     }
 
     // 3.2 Default fallback for legacy unassigned halaqahs: assign strictly to the primary complex
-    const primaryId = allComplexes[0]?.id || 'complex-main';
-    if (complex.id === primaryId || allComplexes.length <= 1) return true;
+    const primaryId = allComplexes[0]?.id || '';
+    if ((primaryId && complex.id === primaryId) || allComplexes.length <= 1) return true;
   }
 
   return false;

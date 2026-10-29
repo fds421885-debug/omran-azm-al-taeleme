@@ -302,12 +302,13 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
   const visibleHalaqahs = useMemo(() => {
     if (!showHalaqahQuestion) return [];
+    const complexHalaqahs = halaqahs.filter(h => !h.complexId || h.complexId === complex.id);
     if (portalConfig.fieldConfig.halaqahSelectionMode === 'specific' && Array.isArray(portalConfig.fieldConfig.allowedHalaqahIds) && portalConfig.fieldConfig.allowedHalaqahIds.length > 0) {
       const allowedSet = new Set(portalConfig.fieldConfig.allowedHalaqahIds);
-      return halaqahs.filter(h => allowedSet.has(h.id));
+      return complexHalaqahs.filter(h => allowedSet.has(h.id));
     }
-    return halaqahs;
-  }, [showHalaqahQuestion, portalConfig.fieldConfig.halaqahSelectionMode, portalConfig.fieldConfig.allowedHalaqahIds, halaqahs]);
+    return complexHalaqahs;
+  }, [showHalaqahQuestion, portalConfig.fieldConfig.halaqahSelectionMode, portalConfig.fieldConfig.allowedHalaqahIds, halaqahs, complex.id]);
 
   // Form State: Register / Join Request
   const [studentName, setStudentName] = useState('');
@@ -753,6 +754,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         parentPhone: parentPhone.trim(),
         email: cleanEmail,
         memorizedJuzList: selectedJuz,
+        preferredHalaqahId: showHalaqahQuestion && preferredHalaqahId ? preferredHalaqahId : undefined,
         notes: applicationNotes.trim() || undefined,
         trackingCode: '' // Will be officially generated only when the AI interview is fully completed!
       });
@@ -1934,6 +1936,64 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   />
                 </div>
 
+                {/* 6. PREFERRED HALAQAH SELECTION (سؤال الحلقة القرآنية المرغوبة) */}
+                {showHalaqahQuestion && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="w-4 h-4 text-amber-400" />
+                        <span>{halaqahQuestionLabel || 'الحلقة القرآنية المرغوبة في المجمع:'}</span>
+                      </span>
+                      <span className="text-[10px] text-amber-400 font-bold">
+                        {portalConfig.fieldConfig.preferredHalaqahRequired ? 'إلزامي *' : 'اختياري'}
+                      </span>
+                    </label>
+
+                    <select
+                      value={preferredHalaqahId}
+                      onChange={e => setPreferredHalaqahId(e.target.value)}
+                      required={portalConfig.fieldConfig.preferredHalaqahRequired && !allowAutoPlacement}
+                      className="w-full border-2 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white font-bold outline-none cursor-pointer transition-all focus:border-amber-400"
+                      style={{
+                        backgroundColor: themeBg,
+                        borderColor: themeCardBorder
+                      }}
+                    >
+                      {allowAutoPlacement && (
+                        <option value="">-- ترشيح وتوجيه تلقائي من المساعد القرآني الذكي --</option>
+                      )}
+                      {visibleHalaqahs.map(h => {
+                        const enrolled = existingStudents.filter(s => s.halaqahId === h.id).length;
+                        const cap = h.capacity || 15;
+                        const isFull = enrolled >= cap;
+                        return (
+                          <option key={h.id} value={h.id}>
+                            {h.name} {isFull ? `(مكتملة العدد ${enrolled}/${cap} - طابور انتظار)` : `(متاح ${enrolled}/${cap} طالب)`}
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {preferredHalaqahId && (() => {
+                      const selectedH = visibleHalaqahs.find(h => h.id === preferredHalaqahId);
+                      if (!selectedH) return null;
+                      const count = existingStudents.filter(s => s.halaqahId === selectedH.id).length;
+                      const cap = selectedH.capacity || 15;
+                      if (count >= cap) {
+                        return (
+                          <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                            <Clock className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                            <span>
+                              تنبيه: حلقة ({selectedH.name}) وصلت إلى طاقتها الاستيعابية القصوى ({count}/{cap} طالب). سيتم إدراج الطالب تلقائياً في طابور الانتظار المعتمد بالدور.
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                )}
+
                 {/* 7. DYNAMIC CUSTOM QUESTIONS (الأسئلة الإضافية المخصصة من المشرف) */}
                 {activeCustomQuestions.length > 0 && (
                   <div className="space-y-4 pt-3 border-t border-white/10">
@@ -2363,19 +2423,22 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                       {/* Status Badge */}
                       <div>
-                        {trackedApplication.status === 'accepted' && (
+                        {trackedApplication.isWaitingList ? (
+                          <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black shadow-sm">
+                            <Clock className="w-4 h-4 animate-pulse" />
+                            <span>في طابور الانتظار (اكتمال سعة الحلقة)</span>
+                          </div>
+                        ) : trackedApplication.status === 'accepted' ? (
                           <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#58cc02]/20 border border-[#58cc02] text-[#58cc02] text-xs font-black shadow-sm">
                             <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                             <span>مقبول ومعتمد 🎉</span>
                           </div>
-                        )}
-                        {trackedApplication.status === 'rejected' && (
+                        ) : trackedApplication.status === 'rejected' ? (
                           <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-500/20 border border-red-500 text-red-300 text-xs font-black shadow-sm">
                             <XCircle className="w-4 h-4 stroke-[2.5]" />
                             <span>نعتذر، لم يتم القبول</span>
                           </div>
-                        )}
-                        {trackedApplication.status === 'pending' && (
+                        ) : (
                           <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black shadow-sm">
                             <Clock className="w-4 h-4 animate-spin" />
                             <span>قيد الدراسة والمراجعة في الدور</span>
@@ -2587,11 +2650,86 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 customQuestionResponses: []
               };
 
+              const selectedHalaqahObj = halaqahs.find(h => h.id === newStudent.halaqahId || h.id === activeDraft.preferredHalaqahId);
+              const enrolledInHalaqah = selectedHalaqahObj ? existingStudents.filter(s => s.halaqahId === selectedHalaqahObj.id) : [];
+              const halaqahCap = selectedHalaqahObj?.capacity || 15;
+
+              // SAFETY GUARD: If candidate halaqah is full, route directly to waiting list!
+              if (selectedHalaqahObj && enrolledInHalaqah.length >= halaqahCap) {
+                const trackingCode = `OMR-${Math.floor(100000 + Math.random() * 900000)}`;
+                const existingWait = effectiveComplex.waitingList || [];
+                const queueNumber = existingWait.length + 1;
+
+                const waitEntry: WaitingListStudent = {
+                  id: `wait_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`,
+                  applicationTrackingCode: trackingCode,
+                  studentName: activeDraft.studentName,
+                  age: activeDraft.age,
+                  phone: activeDraft.parentPhone,
+                  parentName: activeDraft.parentName,
+                  parentPhone: activeDraft.parentPhone,
+                  memorizedJuz: activeDraft.memorizedJuzList?.length || 1,
+                  consolidatedJuz: 1,
+                  tajweedLevel: newStudent.level || 'متوسط',
+                  hasIjazah: false,
+                  queueNumber,
+                  complexId: complex.id,
+                  complexName: complex.name,
+                  targetHalaqahId: selectedHalaqahObj.id,
+                  targetHalaqahName: selectedHalaqahObj.name,
+                  notes: `تم الإدراج تلقائياً في طابور الانتظار لاكتمال سعة (${selectedHalaqahObj.name}) [${enrolledInHalaqah.length}/${halaqahCap} طالب]`,
+                  status: 'waiting',
+                  addedAt: new Date().toISOString()
+                };
+
+                const appToSave: StudentRegistrationApplication = {
+                  ...activeDraft,
+                  id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                  trackingCode,
+                  complexId: complex.id,
+                  complexName: complex.name,
+                  queueNumber,
+                  status: 'pending',
+                  isWaitingList: true,
+                  preferredHalaqahId: selectedHalaqahObj.id,
+                  preferredHalaqahName: selectedHalaqahObj.name,
+                  notes: `${activeDraft.notes || ''} • مدرج في طابور الانتظار لاكتمال سعة (${selectedHalaqahObj.name}) بالدور #${queueNumber}`.trim(),
+                  appliedAt: new Date().toISOString(),
+                  createdAt: new Date().toISOString()
+                };
+
+                await OmranDataService.saveRegistrationApplication(appToSave);
+                const updatedWait = [...existingWait.filter(w => w.id !== waitEntry.id), waitEntry];
+                await OmranDataService.saveComplex({
+                  ...effectiveComplex,
+                  waitingList: updatedWait
+                });
+
+                const targetEmail = activeDraft.email || studentEmail;
+                if (targetEmail) {
+                  const waitPayload = buildWaitingListEmail(
+                    effectiveComplex,
+                    trackingCode,
+                    waitEntry.studentName,
+                    targetEmail,
+                    queueNumber,
+                    portalUrl
+                  );
+                  sendRealPortalEmail(waitPayload).catch(err => console.warn('Could not send waiting list email:', err));
+                }
+
+                setSubmitSuccessApp(appToSave);
+                setIsAIInterviewOpen(false);
+                setDraftApplication(null);
+                setSearchQuery(trackingCode);
+                setActiveTab('track');
+                handleLookupApplication(undefined, trackingCode);
+                return;
+              }
+
               // NOW AND ONLY NOW: Issue official registration ticket upon successful interview completion!
               const randomDigits = Math.floor(100000 + Math.random() * 900000);
               const trackingCode = `OMR-${randomDigits}`;
-
-              const selectedHalaqahObj = halaqahs.find(h => h.id === newStudent.halaqahId || h.id === activeDraft.preferredHalaqahId);
 
               // Calculate queue number & pending ahead count for this complex
               const allExisting = await OmranDataService.loadRegistrationApplications(complex.id);
@@ -2663,18 +2801,24 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           onWaitingListAdded={async (waitingEntry: WaitingListStudent) => {
             try {
               // Officially generate ticket and save application only when interview outcome is reached
-              const trackingCode = `OMR-${Math.floor(100000 + Math.random() * 900000)}`;
+              const trackingCode = waitingEntry.applicationTrackingCode || `OMR-${Math.floor(100000 + Math.random() * 900000)}`;
               const existingApps = await OmranDataService.loadRegistrationApplications(complex.id);
-              const queueNumber = existingApps.length + 1;
+              const queueNumber = waitingEntry.queueNumber || (existingApps.length + 1);
 
               const appToSave: StudentRegistrationApplication = draftApplication ? {
                 ...draftApplication,
                 id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                 trackingCode: trackingCode,
+                complexId: complex.id,
+                complexName: complex.name,
                 queueNumber: queueNumber,
                 status: 'pending',
-                notes: `${draftApplication.notes || ''} • مدرج في قائمة الانتظار للمجمع بالدور #${queueNumber}`.trim(),
-                createdAt: new Date().toISOString()
+                isWaitingList: true,
+                preferredHalaqahId: waitingEntry.targetHalaqahId,
+                preferredHalaqahName: waitingEntry.targetHalaqahName,
+                notes: `${draftApplication.notes || ''} • مدرج في طابور الانتظار للمجمع بالدور #${queueNumber}`.trim(),
+                createdAt: new Date().toISOString(),
+                appliedAt: new Date().toISOString()
               } : {
                 id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                 complexId: complex.id,
@@ -2682,8 +2826,12 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 trackingCode: trackingCode,
                 queueNumber: queueNumber,
                 status: 'pending',
-                notes: `مدرج في قائمة الانتظار بالدور #${queueNumber}`,
-                createdAt: new Date().toISOString()
+                isWaitingList: true,
+                preferredHalaqahId: waitingEntry.targetHalaqahId,
+                preferredHalaqahName: waitingEntry.targetHalaqahName,
+                notes: `مدرج في طابور الانتظار بالدور #${queueNumber}`,
+                createdAt: new Date().toISOString(),
+                appliedAt: new Date().toISOString()
               };
 
               await OmranDataService.saveRegistrationApplication(appToSave);
@@ -2698,7 +2846,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
               await OmranDataService.saveComplex(updatedComplex);
 
               // Send real waiting list confirmation email to student/parent
-              const targetEmail = interviewStudentData.email || appToSave?.email;
+              const targetEmail = interviewStudentData?.email || appToSave?.email || studentEmail;
               if (targetEmail) {
                 const waitPayload = buildWaitingListEmail(
                   effectiveComplex,
@@ -2711,6 +2859,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 sendRealPortalEmail(waitPayload).catch(err => console.warn('Could not send waiting list email:', err));
               }
 
+              setSubmitSuccessApp(appToSave);
               setDraftApplication(null);
             } catch (err) {
               console.warn('Waiting list save note:', err);
