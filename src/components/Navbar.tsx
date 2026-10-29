@@ -630,22 +630,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </>
                 )}
               </div>
-              {onOpenMultiComplexModal && (
-                <button
-                  type="button"
-                  onClick={onOpenMultiComplexModal}
-                  title="عرض بطاقات المجمعات والحلقات التابعة لك"
-                  className="p-1.5 rounded-xl border-2 border-b-2 hover:border-b-4 active:translate-y-[1px] transition-all cursor-pointer shrink-0"
-                  style={{
-                    backgroundColor: themeSecondary,
-                    borderColor: `${themeAccent}50`,
-                    borderBottomColor: themeAccentShadow,
-                    color: themeAccent
-                  }}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
           ) : (
             <div
