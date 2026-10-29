@@ -355,7 +355,15 @@ interface PrintableQuranicReportProps {
   reportType?: 'weekly' | 'monthly' | 'comprehensive';
   selectedDate?: string;
   complex?: QuranComplex | null;
-  onSaveDocument?: (doc: LibraryDocument) => Promise<void>;
+  onSaveDocument?: (
+    doc: LibraryDocument,
+    options?: {
+      blob?: Blob;
+      htmlContent?: string;
+      mimeType?: string;
+      fileExtension?: string;
+    }
+  ) => Promise<void>;
   getStudentLatestRecitations?: (student: Student) => {
     name: string;
     parentPhone: string;
@@ -424,18 +432,22 @@ export const PrintableQuranicReport: React.FC<PrintableQuranicReportProps> = ({
   });
   const todayGregorian = todayDateObj.toLocaleDateString('en-GB');
 
-  // Save report directly into Omran Library and upload to Google Drive if authorized
+  // Save report directly into Omran Library and upload to Complex's Google Drive section folder
   const handleSaveToLibraryAndDrive = async () => {
     setIsSavingToLibrary(true);
     setLibrarySaveNotice(null);
     try {
-      const docTitle = documentType === 'custom'
-        ? `تقرير متابعة مخصص (${targetStudents.length} طلاب)`
-        : documentType === 'all_students'
-        ? `كشف المتابعة الشامل لطلاب حلقة ${settings.halaqahName || 'القرآن'}`
-        : documentType === 'attendance'
-        ? `كشف رصد الحضور والمواظبة (${selectedDate})`
-        : `تقرير إنجاز قرآني - ${selectedStudent?.name || student?.name || 'طالب'}`;
+      const halaqahNameVal = selectedStudent?.halaqahName || settings.halaqahName || 'الحلقة القرآنية';
+      const isAttendanceDoc = documentType === 'attendance';
+
+      const docTitle =
+        documentType === 'custom'
+          ? `تقرير متابعة مخصص (${targetStudents.length} طلاب) - ${halaqahNameVal}`
+          : documentType === 'all_students'
+          ? `كشف المتابعة الشامل لطلاب حلقة ${halaqahNameVal}`
+          : isAttendanceDoc
+          ? `الحضور والغياب - ${halaqahNameVal} - ${selectedDate}`
+          : `تقرير إنجاز قرآني - ${selectedStudent?.name || student?.name || 'طالب'}`;
 
       const printEl = document.getElementById('printable-quranic-document');
       const docHtml = printEl ? printEl.outerHTML : '<div>تقرير قرآني</div>';
@@ -467,70 +479,55 @@ export const PrintableQuranicReport: React.FC<PrintableQuranicReportProps> = ({
 </body>
 </html>`;
 
-      const blob = new Blob(
-        [fullStyledHtml],
-        { type: 'text/html;charset=utf-8' }
-      );
-
-      let driveLink = '';
-      let driveFileId: string | undefined;
-
-      // Try Google Drive upload if connected
-      try {
-        const token = await GoogleWorkspaceService.getValidAccessToken();
-        if (token) {
-          const driveRes = await GoogleWorkspaceService.uploadPDFToDrive(
-            blob,
-            `${docTitle.replace(/[\/\\]/g, '_')}_${Date.now()}`,
-            'تقارير منصة عمران القرآنية'
-          );
-          driveLink = driveRes.webViewLink;
-          driveFileId = driveRes.fileId;
-        }
-      } catch (driveErr) {
-        console.warn('Drive upload warning:', driveErr);
-      }
-
+      const blob = new Blob([fullStyledHtml], { type: 'text/html;charset=utf-8' });
       const docId = `lib-rep-${Date.now()}`;
-      const halaqahIdVal = selectedStudent?.halaqahId || (documentType === 'individual' ? student?.halaqahId : undefined);
-      const halaqahNameVal = selectedStudent?.halaqahName || settings.halaqahName || 'الحلقة القرآنية';
-
-      // Create a persistent data URI representation for instant offline previewing
-      const fallbackDataUri = `data:text/html;charset=utf-8,${encodeURIComponent(fullStyledHtml)}`;
+      const halaqahIdVal =
+        selectedStudent?.halaqahId || (documentType === 'individual' ? student?.halaqahId : undefined);
 
       const libraryDoc: LibraryDocument = {
         id: docId,
         title: docTitle,
-        type: 'pdf_report',
+        type: isAttendanceDoc ? 'attendance_sheet' : 'pdf_report',
+        sectionCategory: isAttendanceDoc ? 'attendance' : 'reports',
         date: new Date().toISOString().split('T')[0],
-        description: `تم استخراج هذا التقرير وأرشفته من قسم التقارير القرآنية بتاريخ ${todayFormatted}`,
-        fileUrl: driveLink || fallbackDataUri,
-        googleUrl: driveLink || undefined,
+        description: isAttendanceDoc
+          ? `كشف الحضور والغياب لـ ${halaqahNameVal} بتاريخ ${selectedDate}`
+          : `تم استخراج هذا التقرير وأرشفته من قسم التقارير القرآنية بتاريخ ${todayFormatted}`,
+        htmlContent: fullStyledHtml,
         halaqahId: halaqahIdVal,
         halaqahName: halaqahNameVal,
         complexId: complex?.id,
         complexName: complex?.name || settings.complexName,
+        createdBy: teacherName || settings.teacherName || 'معلم الحلقة',
         createdByName: teacherName || settings.teacherName || 'معلم الحلقة',
         createdAt: new Date().toISOString(),
-        tags: ['تقرير', 'PDF', halaqahNameVal]
+        tags: isAttendanceDoc ? ['حضور وغياب', halaqahNameVal] : ['تقرير', 'PDF', halaqahNameVal]
       };
 
-      await OmranDataService.saveLibraryDocument(libraryDoc);
-      if (onSaveDocument) {
-        await onSaveDocument(libraryDoc);
+      if (!onSaveDocument) {
+        throw new Error('خاصية الحفظ في المكتبة غير مهيأة في هذه الصفحة.');
       }
+
+      await onSaveDocument(libraryDoc, {
+        blob,
+        htmlContent: fullStyledHtml,
+        mimeType: 'text/html',
+        fileExtension: '.html'
+      });
 
       setLibrarySaveNotice({
         type: 'success',
-        text: driveLink
-          ? 'تم حفظ التقرير في المكتبة وأرشفته بنجاح على Google Drive!'
-          : 'تم حفظ التقرير في قسم المكتبة والأرشيف السحابي بنجاح!',
-        url: driveLink || undefined
+        text: isAttendanceDoc
+          ? 'تم حفظ كشف الحضور والغياب في المكتبة وداخل مجلد «الحضور والغياب» على Google Drive بنجاح!'
+          : 'تم حفظ التقرير في المكتبة وداخل مجلد «التقارير الدورية» على Google Drive بنجاح!'
       });
     } catch (err: any) {
+      if (err?.message === 'LIBRARY_NOT_LINKED') {
+        return;
+      }
       setLibrarySaveNotice({
         type: 'error',
-        text: `حدث خطأ أثناء حفظ التقرير: ${err?.message || err}`
+        text: `حدث خطأ أثناء حفظ الملف: ${err?.message || err}`
       });
     } finally {
       setIsSavingToLibrary(false);
@@ -1031,7 +1028,7 @@ export const PrintableQuranicReport: React.FC<PrintableQuranicReportProps> = ({
               ) : (
                 <>
                   <FolderArchive className="w-4 h-4 text-[#fbbf24]" />
-                  <span>حفظ في المكتبة و Drive</span>
+                  <span>حفظ في المكتبة</span>
                 </>
               )}
             </button>

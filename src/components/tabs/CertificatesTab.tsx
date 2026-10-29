@@ -40,7 +40,8 @@ import {
   IssuedCertificate,
   ExamSubmission,
   getStudentParentPhone,
-  QuranComplex
+  QuranComplex,
+  LibraryDocument
 } from '../../types';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
 import { OmranDataService, OMRAN_CACHE_KEYS, getLocalCache, setLocalCache } from '../../lib/firebase';
@@ -66,6 +67,10 @@ interface CertificatesTabProps {
   activeComplex?: QuranComplex | null;
   submissions?: ExamSubmission[];
   initialHighlightId?: string;
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: { blob?: Blob; htmlContent?: string; mimeType?: string; fileExtension?: string }
+  ) => Promise<void>;
 }
 
 // 10 Distinctive Arabic Calligraphic Fonts
@@ -175,7 +180,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
   activeComplexName,
   activeComplex,
   submissions = [],
-  initialHighlightId
+  initialHighlightId,
+  onSaveLibraryDoc
 }) => {
   // Navigation Sub-Tabs ('issue' | 'archive' | 'builder' | 'templates')
   const [activeSubTab, setActiveSubTab] = useState<'issue' | 'archive' | 'builder' | 'templates'>('issue');
@@ -1002,6 +1008,146 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
       halaqahName: cert.halaqahName
     } as any);
     await handleSendWhatsApp(student, 0);
+  };
+
+  // Save Certificate PDF by student name directly into the Complex's Library (Google Drive -> مجلد الشهادات)
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
+
+  const buildCertificatePreviewHtml = (
+    studentName: string,
+    occasionTitle: string,
+    occasionBody: string,
+    halaqahLabel: string,
+    complexLabel: string,
+    issueDateLabel: string
+  ) => `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>شهادة - ${studentName} - ${occasionTitle}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Cairo:wght@600;700;800;900&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Cairo',sans-serif;background:#022c22;margin:0;padding:32px;direction:rtl;">
+  <div style="max-width:920px;margin:0 auto;background:linear-gradient(135deg,#022c22,#064e3b,#022c22);border:8px double #fbbf24;border-radius:28px;padding:48px 36px;text-align:center;color:#ffffff;">
+    <div style="font-family:'Amiri',serif;font-size:26px;color:#fbbf24;font-weight:700;">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
+    <h1 style="font-size:38px;color:#fbbf24;margin:18px 0 10px;font-weight:900;">شَهَادَةُ تَمَيُّزٍ وَإِتْقَانٍ قُرْآنِيٍّ</h1>
+    <p style="font-size:18px;color:#e2e8f0;margin:14px 0;">يَسُرُّ إِدَارَةَ الحِلْقَةِ أَنْ تَمْنَحَ هذِهِ الشَّهَادَةَ المُبَارَكَةَ لِلطَّالِبِ النَّجِيبِ:</p>
+    <div style="font-family:'Amiri',serif;font-size:46px;color:#fbbf24;font-weight:700;margin:16px 0;">${studentName}</div>
+    <p style="font-size:19px;color:#ffffff;max-width:680px;margin:14px auto;line-height:1.8;">${occasionBody}</p>
+    <div style="margin-top:26px;padding-top:18px;border-top:1px solid rgba(251,191,36,0.35);font-size:15px;color:#a7f3d0;font-weight:700;">
+      الحلقة: ${halaqahLabel} • المجمع: ${complexLabel} • تاريخ الإصدار: ${issueDateLabel}
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const handleSaveCertificateToLibrary = async (student: Student, index: number = 0, certOverride?: IssuedCertificate) => {
+    if (!onSaveLibraryDoc || isSavingToLibrary) return;
+    setIsSavingToLibrary(true);
+    setExportStatusText(`جاري تجهيز وحفظ شهادة (${student.name}) في مكتبة المجمع (مجلد الشهادات)...`);
+    try {
+      const { blob } = await generateSinglePdfDoc(student, index);
+      const occasionLabel = certOverride?.occasion || occasion || 'شهادة تميز وإتقان';
+      const occasionBody = certOverride?.occasionText || getOccasionDescription();
+      const halaqahLabel = certOverride?.halaqahName || student.halaqahName || settings.halaqahName || 'الحلقة القرآنية';
+      const complexLabel = activeComplex?.name || activeComplexName || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
+      const dateGreg = certOverride?.dateGregorian || todayGregorian;
+      const htmlContent = buildCertificatePreviewHtml(
+        student.name,
+        occasionLabel,
+        occasionBody,
+        halaqahLabel,
+        complexLabel,
+        certOverride?.dateArabic || todayArabic
+      );
+
+      const libDoc: LibraryDocument = {
+        id: `lib_cert_${student.id}_${Date.now()}`,
+        title: `شهادة - ${student.name} - ${occasionLabel}`,
+        type: 'certificate',
+        sectionCategory: 'certificates',
+        studentId: student.id,
+        studentName: student.name,
+        halaqahName: halaqahLabel,
+        complexId: activeComplex?.id || selectedComplexId,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUserName || settings.teacherName || 'إدارة المجمع',
+        htmlContent,
+        summaryText: `${occasionLabel} للطالب ${student.name} (${halaqahLabel}) - ${dateGreg}`
+      };
+
+      await onSaveLibraryDoc(libDoc, {
+        blob,
+        htmlContent,
+        mimeType: 'application/pdf',
+        fileExtension: '.pdf'
+      });
+
+      setSavedSuccessToast(`تم حفظ شهادة (${student.name}) في المكتبة داخل مجلد الشهادات على Google Drive!`);
+      setTimeout(() => setSavedSuccessToast(null), 5000);
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        console.warn('Certificate library save warning:', err);
+      }
+    } finally {
+      setIsSavingToLibrary(false);
+      setExportStatusText(null);
+    }
+  };
+
+  const handleSaveAllCertificatesToLibrary = async () => {
+    if (!onSaveLibraryDoc || targetStudents.length === 0 || isSavingToLibrary) return;
+    setIsSavingToLibrary(true);
+    try {
+      for (let i = 0; i < targetStudents.length; i++) {
+        const std = targetStudents[i];
+        setExportStatusText(`جاري حفظ شهادة (${i + 1}/${targetStudents.length}): ${std.name} في مجلد الشهادات...`);
+        const { blob } = await generateSinglePdfDoc(std, i);
+        const occasionLabel = occasion || 'شهادة تميز وإتقان';
+        const occasionBody = getOccasionDescription();
+        const halaqahLabel = std.halaqahName || settings.halaqahName || 'الحلقة القرآنية';
+        const complexLabel = activeComplex?.name || activeComplexName || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
+        const htmlContent = buildCertificatePreviewHtml(
+          std.name,
+          occasionLabel,
+          occasionBody,
+          halaqahLabel,
+          complexLabel,
+          todayArabic
+        );
+
+        const libDoc: LibraryDocument = {
+          id: `lib_cert_${std.id}_${Date.now()}_${i}`,
+          title: `شهادة - ${std.name} - ${occasionLabel}`,
+          type: 'certificate',
+          sectionCategory: 'certificates',
+          studentId: std.id,
+          studentName: std.name,
+          halaqahName: halaqahLabel,
+          complexId: activeComplex?.id || selectedComplexId,
+          createdAt: new Date().toISOString(),
+          createdBy: currentUserName || settings.teacherName || 'إدارة المجمع',
+          htmlContent,
+          summaryText: `${occasionLabel} للطالب ${std.name} (${halaqahLabel})`
+        };
+
+        await onSaveLibraryDoc(libDoc, {
+          blob,
+          htmlContent,
+          mimeType: 'application/pdf',
+          fileExtension: '.pdf'
+        });
+      }
+      setSavedSuccessToast(`تم حفظ جميع الشهادات (${targetStudents.length}) بأسمائها في مجلد الشهادات بمكتبة Google Drive!`);
+      setTimeout(() => setSavedSuccessToast(null), 5000);
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        console.warn('Batch certificate library save warning:', err);
+      }
+    } finally {
+      setIsSavingToLibrary(false);
+      setExportStatusText(null);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -2246,6 +2392,27 @@ ${occasionText}
                         <span>معاينة</span>
                       </button>
 
+                      {onSaveLibraryDoc && (
+                        <button
+                          type="button"
+                          disabled={isSavingToLibrary}
+                          onClick={() => {
+                            const studentObj: Student = students.find(s => s.id === cert.studentId) || ({
+                              id: cert.studentId,
+                              name: cert.studentName,
+                              halaqahId: cert.halaqahId,
+                              halaqahName: cert.halaqahName
+                            } as any);
+                            handleSaveCertificateToLibrary(studentObj, 0, cert);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl border border-b-2 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-all active:translate-y-[1px] shrink-0"
+                          title="حفظ في المكتبة (مجلد الشهادات على Google Drive)"
+                        >
+                          <BookmarkCheck className="w-3.5 h-3.5" />
+                          <span>حفظ في المكتبة</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handleDownloadArchiveSinglePdf(cert)}
@@ -2819,6 +2986,39 @@ ${occasionText}
                   </span>
                 </button>
 
+                {/* Save to Library (Google Drive -> الشهادات) */}
+                {onSaveLibraryDoc && (
+                  <button
+                    type="button"
+                    disabled={isSavingToLibrary}
+                    onClick={async () => {
+                      const curStd = targetStudents[previewStudentIndex] || targetStudents[0];
+                      if (curStd) {
+                        await handleSaveCertificateToLibrary(curStd, previewStudentIndex);
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-[1px] disabled:opacity-60"
+                    title="حفظ الشهادة باسم الطالب في مجلد الشهادات بمكتبة Google Drive"
+                  >
+                    <BookmarkCheck className="w-4 h-4" />
+                    <span>{isSavingToLibrary ? 'جاري الحفظ...' : 'حفظ في المكتبة'}</span>
+                  </button>
+                )}
+
+                {/* Save All Certificates to Library (if multiple) */}
+                {onSaveLibraryDoc && targetStudents.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={isSavingToLibrary}
+                    onClick={handleSaveAllCertificatesToLibrary}
+                    className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 border-teal-300 border-b-teal-700 bg-teal-400 hover:bg-teal-300 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:translate-y-[1px] disabled:opacity-60"
+                    title="حفظ كافة الشهادات بأسماء الطلاب في مجلد الشهادات بمكتبة Google Drive"
+                  >
+                    <BookmarkCheck className="w-4 h-4" />
+                    <span>{isSavingToLibrary ? 'جاري الحفظ...' : `حفظ الكل في المكتبة (${targetStudents.length})`}</span>
+                  </button>
+                )}
+
                 {/* Save All Certificates (if multiple) */}
                 {targetStudents.length > 1 && (
                   <button
@@ -3194,6 +3394,25 @@ ${occasionText}
                       : 'حفظ الشهادة'}
                   </span>
                 </button>
+
+                {/* Save Certificate to Library (Google Drive -> مجلد الشهادات) */}
+                {onSaveLibraryDoc && (
+                  <button
+                    type="button"
+                    disabled={isSavingToLibrary}
+                    onClick={async () => {
+                      const curStd = targetStudents[previewStudentIndex] || targetStudents[0];
+                      if (curStd) {
+                        await handleSaveCertificateToLibrary(curStd, previewStudentIndex);
+                      }
+                    }}
+                    className="px-4 py-2.5 rounded-xl border-2 border-b-4 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-[2px] disabled:opacity-60"
+                    title="حفظ الشهادة باسم الطالب في مجلد الشهادات بمكتبة Google Drive"
+                  >
+                    <BookmarkCheck className="w-4 h-4" />
+                    <span>{isSavingToLibrary ? 'جاري الحفظ في المكتبة...' : 'حفظ في المكتبة'}</span>
+                  </button>
+                )}
 
                 {/* Download as Image PNG */}
                 <button

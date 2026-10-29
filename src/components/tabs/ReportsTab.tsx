@@ -25,7 +25,9 @@ import {
   ChevronLeft,
   MessageSquare,
   Send,
-  Copy
+  Copy,
+  BookmarkCheck,
+  Loader2
 } from 'lucide-react';
 import { Student, AttendanceRecord, StudentEvaluation, AppSettings, getStudentParentPhone, QuranComplex, LibraryDocument } from '../../types';
 import { getSurahInfo } from '../../data/quranData';
@@ -47,7 +49,10 @@ interface ReportsTabProps {
   teacherName?: string;
   activeComplex?: QuranComplex | null;
   certificates?: any[];
-  onSaveLibraryDoc?: (doc: LibraryDocument) => Promise<void>;
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: { blob?: Blob; htmlContent?: string; mimeType?: string; fileExtension?: string }
+  ) => Promise<void>;
 }
 
 export const ReportsTab: React.FC<ReportsTabProps> = ({
@@ -107,6 +112,101 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
 
   // Search in Student Roster
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [isSavingReportToLibrary, setIsSavingReportToLibrary] = useState(false);
+
+  const handleSavePeriodicReportToLibrary = async () => {
+    if (!onSaveLibraryDoc || isSavingReportToLibrary) return;
+    setIsSavingReportToLibrary(true);
+    try {
+      const todayIso = new Date().toISOString().split('T')[0];
+      const todayArabic = new Intl.DateTimeFormat('ar-SA', { dateStyle: 'long' }).format(new Date());
+      const complexTitle = activeComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
+      const halaqahTitle = settings.halaqahName || 'الحلقة القرآنية';
+      const supervisorTeacher = teacherName || settings.teacherName || 'معلم الحلقة';
+
+      const rowsHtml = students
+        .map((st, idx) => {
+          const rec = getStudentLatestRecitations(st);
+          const stAtt = attendance.filter(a => a.studentId === st.id);
+          const pres = stAtt.filter(a => a.status === 'حاضر').length;
+          const attPct = stAtt.length > 0 ? Math.round((pres / stAtt.length) * 100) : 100;
+          const pagesInfo = calculateStudentCompletedPages(st, evaluations);
+          return `<tr>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:700;">${idx + 1}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;font-weight:800;">${st.name}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;">${rec.latestNew}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;">${rec.latestReview}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${pagesInfo.totalPagesCount}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:700;">${attPct}%</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:800;">${st.points || 0}</td>
+          </tr>`;
+        })
+        .join('');
+
+      const htmlContent = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>التقرير الدوري الشامل - ${halaqahTitle} - ${todayIso}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Cairo',sans-serif;background:#f8fafc;color:#0f172a;padding:32px;direction:rtl;">
+  <div style="max-width:1020px;margin:0 auto;background:#ffffff;border:3px solid #065f46;border-radius:20px;padding:28px;">
+    <div style="border-bottom:2px solid #e2e8f0;padding-bottom:16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h1 style="margin:0;color:#064e3b;font-size:22px;font-weight:900;">${complexTitle}</h1>
+        <p style="margin:6px 0 0;color:#475569;font-size:14px;font-weight:700;">التقرير الإحصائي الدوري الشامل • ${halaqahTitle}</p>
+      </div>
+      <div style="text-align:left;font-size:13px;color:#334155;font-weight:700;">
+        <div>التاريخ: ${todayArabic} (${todayIso})</div>
+        <div>المعلم المشرف: ${supervisorTeacher}</div>
+        <div>إجمالي الطلاب: ${students.length} طالب</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#064e3b;color:#ffffff;">
+          <th style="padding:10px;border:1px solid #064e3b;">#</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">اسم الطالب</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">آخر حفظ جديد</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">آخر مراجعة</th>
+          <th style="padding:10px;border:1px solid #064e3b;">الأوجه</th>
+          <th style="padding:10px;border:1px solid #064e3b;">المواظبة</th>
+          <th style="padding:10px;border:1px solid #064e3b;">النقاط</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+      const docPayload: LibraryDocument = {
+        id: `lib_rep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        title: `التقرير الدوري الشامل - ${halaqahTitle} - ${todayIso}`,
+        type: 'periodic_report',
+        sectionCategory: 'reports',
+        halaqahName: halaqahTitle,
+        complexId: activeComplex?.id,
+        createdAt: new Date().toISOString(),
+        createdBy: supervisorTeacher,
+        htmlContent,
+        summaryText: `تقرير إحصائي دوري شامل لـ ${students.length} طالب في ${halaqahTitle} بتاريخ ${todayIso}`
+      };
+
+      await onSaveLibraryDoc(docPayload, {
+        htmlContent,
+        mimeType: 'text/html',
+        fileExtension: '.html'
+      });
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        console.warn('Failed saving periodic report to library:', err);
+      }
+    } finally {
+      setIsSavingReportToLibrary(false);
+    }
+  };
 
   // Save work days setting
   const handleSaveWorkDays = async (days: number) => {
@@ -304,6 +404,23 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Save Periodic Report to Library (Google Drive) */}
+          {onSaveLibraryDoc && (
+            <button
+              type="button"
+              disabled={isSavingReportToLibrary}
+              onClick={handleSavePeriodicReportToLibrary}
+              className="px-4 py-2.5 rounded-2xl border-2 border-b-4 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-[2px] disabled:opacity-60"
+            >
+              {isSavingReportToLibrary ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <BookmarkCheck className="w-4 h-4" />
+              )}
+              <span>{isSavingReportToLibrary ? 'جاري الحفظ...' : 'حفظ في المكتبة'}</span>
+            </button>
+          )}
+
           {/* Custom Report Builder Button with Duolingo 3D styling */}
           <button
             type="button"

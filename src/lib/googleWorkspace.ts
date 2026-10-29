@@ -2,7 +2,23 @@ import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db, OmranDataService, DEFAULT_HALAQAHS } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Exam, ExamQuestion, ExamSubmission, ExamSubmissionAnswer, GoogleOAuthConfig, FullBackupData, Student, TeacherAccount, AttendanceRecord, StudentEvaluation, Halaqah } from '../types';
+import {
+  Exam,
+  ExamQuestion,
+  ExamSubmission,
+  ExamSubmissionAnswer,
+  GoogleOAuthConfig,
+  FullBackupData,
+  Student,
+  TeacherAccount,
+  AttendanceRecord,
+  StudentEvaluation,
+  Halaqah,
+  LibraryDocument,
+  LibraryDocumentType,
+  LibraryDriveSection,
+  DriveSectionFolderMeta
+} from '../types';
 import { ApiConfig } from './apiConfig';
 
 export const GOOGLE_SCOPES = [
@@ -11,8 +27,6 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/forms.body',
-  'https://www.googleapis.com/auth/forms.responses.readonly',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -422,116 +436,181 @@ export function encodeEmailForGmail(
     .replace(/=+$/, '');
 }
 
-const LOCAL_STORAGE_OAUTH_KEY = 'omran_google_oauth_v2';
-let inMemoryGoogleAccessToken: string | null = null;
-let inMemoryGoogleAuthConfig: GoogleOAuthConfig | null = null;
+const LOCAL_OAUTH_META_PREFIX = 'omran_google_oauth_meta_v3_';
+const inMemoryTokensByComplex = new Map<string, { accessToken: string; expiresAt: number }>();
+const inMemoryConfigsByComplex = new Map<string, GoogleOAuthConfig>();
+
+export const DRIVE_SECTION_NAMES: Record<LibraryDriveSection, string> = {
+  certificates: 'الشهادات',
+  attendance: 'الحضور والغياب',
+  exams: 'الاختبارات',
+  reports: 'التقارير الدورية',
+  general: 'ملفات عامة'
+};
 
 export class GoogleWorkspaceService {
-  static getCachedAccessToken(): string | null {
-    return inMemoryGoogleAccessToken;
+  static resolveComplexKey(complexId?: string | null): string {
+    const raw = (complexId || OmranDataService.getActiveComplexId() || 'default-complex').trim();
+    return raw || 'default-complex';
   }
 
-  static setCachedAccessToken(token: string | null) {
-    inMemoryGoogleAccessToken = token;
-    if (inMemoryGoogleAuthConfig) {
-      inMemoryGoogleAuthConfig.accessToken = token || undefined;
+  private static getLocalMetaKey(complexKey: string): string {
+    const safe = complexKey.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 90);
+    return `${LOCAL_OAUTH_META_PREFIX}${safe || 'default_complex'}`;
+  }
+
+  private static sanitizeConfigMetadata(config: GoogleOAuthConfig, complexKey: string): GoogleOAuthConfig {
+    const { accessToken: _omitToken, ...rest } = config;
+    return {
+      ...rest,
+      complexId: complexKey,
+      isLinked: Boolean(config.isLinked)
+    };
+  }
+
+  static getCachedAccessToken(complexId?: string | null): string | null {
+    const complexKey = this.resolveComplexKey(complexId);
+    const entry = inMemoryTokensByComplex.get(complexKey);
+    if (!entry) return null;
+    if (entry.expiresAt && Date.now() >= entry.expiresAt) {
+      inMemoryTokensByComplex.delete(complexKey);
+      return null;
+    }
+    return entry.accessToken;
+  }
+
+  static setCachedAccessToken(token: string | null, complexId?: string | null) {
+    const complexKey = this.resolveComplexKey(complexId);
+    if (token) {
+      inMemoryTokensByComplex.set(complexKey, {
+        accessToken: token,
+        expiresAt: Date.now() + 3500 * 1000
+      });
+    } else {
+      inMemoryTokensByComplex.delete(complexKey);
     }
   }
 
-  // Load persistent Google Account status & token from Firestore cloud database + localStorage cache
-  static async loadGoogleAuthConfig(): Promise<GoogleOAuthConfig> {
-    // 1. Check in-memory cache
-    if (inMemoryGoogleAuthConfig && inMemoryGoogleAuthConfig.isLinked) {
-      return inMemoryGoogleAuthConfig;
+  // Load persistent Google Account metadata strictly scoped to the given Complex (never shares across complexes)
+  static async loadGoogleAuthConfig(complexId?: string | null, forceCloud = false): Promise<GoogleOAuthConfig> {
+    const complexKey = this.resolveComplexKey(complexId);
+
+    // 1. Check in-memory cache for this specific complex
+    if (!forceCloud) {
+      const memConfig = inMemoryConfigsByComplex.get(complexKey);
+      if (memConfig) {
+        return {
+          ...memConfig,
+          complexId: complexKey
+        };
+      }
     }
 
-    // 2. Check localStorage cache for instant availability
+    // 2. Check complex-scoped localStorage metadata (non-sensitive metadata only)
     let localConfig: GoogleOAuthConfig | null = null;
     try {
       if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem(LOCAL_STORAGE_OAUTH_KEY);
+        const stored = localStorage.getItem(this.getLocalMetaKey(complexKey));
         if (stored) {
-          localConfig = JSON.parse(stored) as GoogleOAuthConfig;
-          if (localConfig?.accessToken && !inMemoryGoogleAccessToken) {
-            inMemoryGoogleAccessToken = localConfig.accessToken;
-            inMemoryGoogleAuthConfig = localConfig;
+          const parsed = JSON.parse(stored) as GoogleOAuthConfig;
+          if (!parsed.complexId || parsed.complexId === complexKey) {
+            localConfig = this.sanitizeConfigMetadata(parsed, complexKey);
           }
         }
       }
     } catch (e) {
-      console.warn('Could not read google auth from localStorage:', e);
+      console.warn('Could not read complex google auth metadata from localStorage:', e);
     }
 
-    // 3. Check Firestore cloud database (Source of Truth)
+    // 3. Check Firestore cloud database strictly under settings/google_oauth_${complexKey}
     try {
-      const snap = await getDoc(doc(db, 'settings', 'google_oauth'));
+      const activeDb = OmranDataService.getActiveDb();
+      const docId = OmranDataService.getComplexGoogleOAuthDocId(complexKey);
+      const snap = await getDoc(doc(activeDb, 'settings', docId));
       if (snap.exists()) {
-        const cloudData = snap.data() as GoogleOAuthConfig;
-        if (cloudData.isLinked) {
-          if (cloudData.accessToken) {
-            inMemoryGoogleAccessToken = cloudData.accessToken;
-          }
-          inMemoryGoogleAuthConfig = cloudData;
-          // Sync to localStorage
+        const rawCloud = snap.data() as GoogleOAuthConfig;
+        if (!rawCloud.complexId || rawCloud.complexId === complexKey) {
+          const cleanCloud = this.sanitizeConfigMetadata(rawCloud, complexKey);
+          inMemoryConfigsByComplex.set(complexKey, cleanCloud);
           try {
             if (typeof window !== 'undefined') {
-              localStorage.setItem(LOCAL_STORAGE_OAUTH_KEY, JSON.stringify(cloudData));
+              localStorage.setItem(this.getLocalMetaKey(complexKey), JSON.stringify(cleanCloud));
             }
           } catch {
-            // Ignore local storage error
+            // Ignore local storage quota errors
           }
-          return cloudData;
+          return cleanCloud;
         }
       }
     } catch (e) {
-      console.warn('Could not load google auth config from Firestore:', e);
+      console.warn('Could not load complex google auth config from Firestore:', e);
     }
 
-    if (localConfig && localConfig.isLinked) {
+    if (localConfig) {
+      inMemoryConfigsByComplex.set(complexKey, localConfig);
       return localConfig;
     }
 
-    return { isLinked: false };
+    const unlinked: GoogleOAuthConfig = { isLinked: false, complexId: complexKey };
+    inMemoryConfigsByComplex.set(complexKey, unlinked);
+    return unlinked;
   }
 
-  // Save persistent Google Account status & token to Firestore cloud database forever + localStorage
-  static async saveGoogleAuthConfig(config: GoogleOAuthConfig): Promise<void> {
-    const configToSave: GoogleOAuthConfig = {
-      ...config,
-      savedInCloud: true,
-      lastSyncAt: new Date().toISOString(),
-      expiresAt: config.expiresAt || (Date.now() + 3500 * 1000)
-    };
+  // Save persistent Google Account metadata strictly for a single Complex (accessToken stays strictly in RAM)
+  static async saveGoogleAuthConfig(config: GoogleOAuthConfig, complexId?: string | null): Promise<void> {
+    const complexKey = this.resolveComplexKey(complexId || config.complexId);
+    const expiresAt = config.expiresAt || Date.now() + 3500 * 1000;
 
-    inMemoryGoogleAuthConfig = configToSave;
-    if (configToSave.accessToken) {
-      inMemoryGoogleAccessToken = configToSave.accessToken;
+    if (config.accessToken) {
+      inMemoryTokensByComplex.set(complexKey, {
+        accessToken: config.accessToken,
+        expiresAt
+      });
+    } else if (!config.isLinked) {
+      inMemoryTokensByComplex.delete(complexKey);
     }
 
-    // Save to localStorage immediately
+    const metadataToPersist: GoogleOAuthConfig = this.sanitizeConfigMetadata(
+      {
+        ...config,
+        complexId: complexKey,
+        savedInCloud: true,
+        lastSyncAt: new Date().toISOString(),
+        expiresAt
+      },
+      complexKey
+    );
+
+    inMemoryConfigsByComplex.set(complexKey, metadataToPersist);
+
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_STORAGE_OAUTH_KEY, JSON.stringify(configToSave));
+        localStorage.setItem(this.getLocalMetaKey(complexKey), JSON.stringify(metadataToPersist));
       }
     } catch (e) {
-      console.warn('Could not save to localStorage:', e);
+      console.warn('Could not save complex google metadata to localStorage:', e);
     }
 
-    // Save to Firestore cloud database forever
     try {
-      await setDoc(doc(db, 'settings', 'google_oauth'), {
-        ...configToSave,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch {
-      // Gracefully silent
+      const activeDb = OmranDataService.getActiveDb();
+      const docId = OmranDataService.getComplexGoogleOAuthDocId(complexKey);
+      const cleanFirestoreDoc = JSON.parse(
+        JSON.stringify({
+          ...metadataToPersist,
+          updatedAt: new Date().toISOString()
+        })
+      );
+      await setDoc(doc(activeDb, 'settings', docId), cleanFirestoreDoc);
+    } catch (e) {
+      console.warn('Could not save complex google auth config to Firestore:', e);
     }
   }
 
-  // Silent Background Token Refresh (keeps Google Sheets connection active forever without showing popups)
-  static async silentRefreshToken(): Promise<string | null> {
+  // Silent Background Token Refresh strictly for the given Complex's connected Google email
+  static async silentRefreshToken(complexId?: string | null): Promise<string | null> {
     if (typeof window === 'undefined' || !firebaseConfig.oAuthClientId) return null;
-    const config = await this.loadGoogleAuthConfig();
+    const complexKey = this.resolveComplexKey(complexId);
+    const config = await this.loadGoogleAuthConfig(complexKey);
     if (!config.isLinked || !config.connectedEmail) return null;
 
     try {
@@ -545,15 +624,21 @@ export class GoogleWorkspaceService {
       );
 
       if (refreshRes?.accessToken) {
-        inMemoryGoogleAccessToken = refreshRes.accessToken;
-        const updatedConfig: GoogleOAuthConfig = {
-          ...config,
+        const expiresAt = Date.now() + 3500 * 1000;
+        inMemoryTokensByComplex.set(complexKey, {
           accessToken: refreshRes.accessToken,
-          lastSyncAt: new Date().toISOString(),
-          savedInCloud: true,
-          expiresAt: Date.now() + 3500 * 1000
-        };
-        await this.saveGoogleAuthConfig(updatedConfig);
+          expiresAt
+        });
+        await this.saveGoogleAuthConfig(
+          {
+            ...config,
+            complexId: complexKey,
+            lastSyncAt: new Date().toISOString(),
+            savedInCloud: true,
+            expiresAt
+          },
+          complexKey
+        );
         return refreshRes.accessToken;
       }
     } catch (err) {
@@ -562,59 +647,63 @@ export class GoogleWorkspaceService {
     return null;
   }
 
-  // Retrieve valid access token from memory or persistent Firestore + silent auto-refresh if close to expiry
-  static async getValidAccessToken(): Promise<string | null> {
-    const config = await this.loadGoogleAuthConfig();
-
-    // If we have an access token and it's not expired yet, return it
-    if (inMemoryGoogleAccessToken) {
-      const isExpired = config.expiresAt ? Date.now() >= config.expiresAt : false;
-      if (!isExpired) {
-        return inMemoryGoogleAccessToken;
-      }
+  // Retrieve valid access token strictly for the specified Complex from RAM or GIS silent refresh
+  static async getValidAccessToken(complexId?: string | null): Promise<string | null> {
+    const complexKey = this.resolveComplexKey(complexId);
+    const config = await this.loadGoogleAuthConfig(complexKey);
+    if (!config.isLinked) {
+      inMemoryTokensByComplex.delete(complexKey);
+      return null;
     }
 
-    // If config has token and not expired
-    if (config.isLinked && config.accessToken) {
-      const isExpired = config.expiresAt ? Date.now() >= config.expiresAt : false;
-      if (!isExpired) {
-        inMemoryGoogleAccessToken = config.accessToken;
-        return config.accessToken;
+    const cached = inMemoryTokensByComplex.get(complexKey);
+    if (cached && cached.accessToken) {
+      if (Date.now() < cached.expiresAt) {
+        return cached.accessToken;
       }
+      inMemoryTokensByComplex.delete(complexKey);
     }
 
-    // Token is missing or expired, attempt silent background refresh using Google GIS
-    if (config.isLinked && config.connectedEmail) {
-      const silentToken = await this.silentRefreshToken();
+    if (config.connectedEmail) {
+      const silentToken = await this.silentRefreshToken(complexKey);
       if (silentToken) {
         return silentToken;
       }
     }
 
-    // If silent refresh failed but we still have the stored token, return it as fallback
-    if (config.accessToken) {
-      inMemoryGoogleAccessToken = config.accessToken;
-      return config.accessToken;
-    }
-
     return null;
   }
 
-  // Save manual access token entered by user
-  static async setManualAccessToken(token: string, email = 'حساب Google اليدوي'): Promise<void> {
+  // Save manual access token strictly for the active/specified Complex (token stays in RAM only)
+  static async setManualAccessToken(
+    token: string,
+    email = 'حساب Google اليدوي',
+    complexId?: string | null,
+    complexName?: string
+  ): Promise<void> {
     const cleanToken = token.trim();
     if (!cleanToken) throw new Error('يرجى إدخال رمز التفويض.');
-    inMemoryGoogleAccessToken = cleanToken;
-    const config: GoogleOAuthConfig = {
+    const complexKey = this.resolveComplexKey(complexId);
+    const expiresAt = Date.now() + 3500 * 1000;
+    inMemoryTokensByComplex.set(complexKey, { accessToken: cleanToken, expiresAt });
+
+    const baseConfig: GoogleOAuthConfig = {
+      complexId: complexKey,
+      complexName,
       connectedEmail: email,
       connectedAt: new Date().toISOString(),
       isLinked: true,
       lastSyncAt: new Date().toISOString(),
       accessToken: cleanToken,
       savedInCloud: true,
-      expiresAt: Date.now() + 3500 * 1000
+      expiresAt
     };
-    await this.saveGoogleAuthConfig(config);
+    await this.saveGoogleAuthConfig(baseConfig, complexKey);
+    try {
+      await this.ensureComplexLibraryFolders(complexKey, complexName, cleanToken);
+    } catch (folderErr) {
+      console.warn('Could not auto-initialize Drive folders with manual token:', folderErr);
+    }
   }
 
   // Send real email via Gmail API using active OAuth access token or server proxy
@@ -1315,19 +1404,9 @@ export class GoogleWorkspaceService {
     const cleanEmail = googleUser.email.trim().toLowerCase();
     const cleanName = googleUser.displayName ? googleUser.displayName.trim() : '';
 
-    // Cache and persist Google OAuth token if acquired
-    if (acquiredAccessToken) {
-      inMemoryGoogleAccessToken = acquiredAccessToken;
-      this.saveGoogleAuthConfig({
-        connectedEmail: cleanEmail,
-        connectedAt: new Date().toISOString(),
-        isLinked: true,
-        lastSyncAt: new Date().toISOString(),
-        accessToken: acquiredAccessToken,
-        savedInCloud: true,
-        expiresAt: Date.now() + 3500 * 1000
-      }).catch(e => console.warn('Could not auto-save google auth config:', e));
-    }
+    // Note: Do NOT auto-link or overwrite any Complex's Google Workspace configuration upon user login.
+    // Complex Google linking (Forms, Sheets, Library Drive) is strictly explicit per Complex.
+    void acquiredAccessToken;
 
     // 1. Check if matches any teacher / supervisor / developer by linked Google Email, UID, or developer account
     let matchedTeacher = existingTeachers.find(
@@ -1453,231 +1532,15 @@ export class GoogleWorkspaceService {
     };
   }
 
-  // Look up Google Form response for a student by their registered Google email/name and save score automatically
-  static async fetchAndRecordStudentGoogleFormScore(
-    exam: Exam,
-    student: Student,
-    existingSubmissions: ExamSubmission[] = []
-  ): Promise<{
-    found: boolean;
-    submission?: ExamSubmission;
-    message: string;
-  }> {
-    if (!exam.googleFormId) {
-      return { found: false, message: 'هذا الاختبار غير مرتبط بنموذج Google Form بعد.' };
-    }
+  // Link Complex Google Account with Google Drive and Sheets permissions (strictly isolated per complexId)
+  static async linkGoogleAccount(
+    complexId?: string | null,
+    complexName?: string
+  ): Promise<{ email: string; accessToken: string; config: GoogleOAuthConfig }> {
+    const complexKey = this.resolveComplexKey(complexId);
+    let linkedEmail = '';
+    let linkedToken = '';
 
-    // Strict registration check: only linked, registered platform students can take exams and record scores
-    if (!student.isGoogleLinked || !student.googleEmail) {
-      return {
-        found: false,
-        message: 'لا يمكن احتساب النتيجة: يجب أن يكون حسابك مسجلاً ومربوطاً بحساب Google على المنصة. فقط طلاب المنصة المسجلين هم من يستطيعون أداء الاختبار.'
-      };
-    }
-
-    const token = await this.getValidAccessToken();
-    if (!token) {
-      return {
-        found: false,
-        message: 'يتطلب فحص نتائج Google Forms سحابياً اتصال وتفويض حساب المعلم أو المشرف بـ Google Workspace.'
-      };
-    }
-
-    try {
-      // 1. Fetch form structure
-      const formMetaRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!formMetaRes.ok) {
-        throw new Error('تعذر الاتصال بخدمة Google Forms لجلب بيانات النموذج.');
-      }
-      const formMeta = await formMetaRes.json();
-      const items: any[] = formMeta.items || [];
-
-      // 2. Fetch responses
-      const responsesRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}/responses`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!responsesRes.ok) {
-        throw new Error('تعذر استيراد الردود من Google Forms.');
-      }
-      const responsesData = await responsesRes.json();
-      const responses: any[] = responsesData.responses || [];
-
-      if (responses.length === 0) {
-        return {
-          found: false,
-          message: 'لم يتم العثور على أي تسليمات مسجلة في نموذج Google حتى الآن. تأكد من إكمال النموذج والضغط على (إرسال / Submit).'
-        };
-      }
-
-      const cleanStudentEmail = (student.googleEmail || '').trim().toLowerCase();
-      const normStudentName = normalizeArabicText(student.name);
-
-      // Map question IDs
-      const questionMap: Record<string, ExamQuestion> = {};
-      let studentNameQId: string | null = null;
-      let emailQId: string | null = null;
-
-      items.forEach(item => {
-        const qId = item.questionItem?.question?.questionId;
-        const title = item.title || '';
-        if (!qId) return;
-        if (title.includes('اسم')) {
-          studentNameQId = qId;
-        } else if (title.includes('بريد') || title.includes('إيميل') || title.toLowerCase().includes('email')) {
-          emailQId = qId;
-        } else {
-          const matched = exam.questions.find(eq => title.includes(eq.title) || eq.title.includes(title));
-          if (matched) questionMap[qId] = matched;
-        }
-      });
-
-      // Find the student's response (newest first)
-      const sortedResponses = [...responses].reverse();
-
-      // 1. First priority: Match by authenticated Google email (whichever name was typed in form is linked directly to this student)
-      let matchedResponse = sortedResponses.find(resp => {
-        const respondentEmail = (resp.respondentEmail || '').trim().toLowerCase();
-        if (cleanStudentEmail && respondentEmail && respondentEmail === cleanStudentEmail) {
-          return true;
-        }
-
-        const answersObj = resp.answers || {};
-        if (emailQId && answersObj[emailQId]) {
-          const val = answersObj[emailQId].textAnswers?.answers?.[0]?.value?.trim().toLowerCase();
-          if (val && cleanStudentEmail && val === cleanStudentEmail) {
-            return true;
-          }
-        }
-        return false;
-      });
-
-      // 2. Secondary fallback (only if Google Forms settings did not record respondent email):
-      if (!matchedResponse && normStudentName) {
-        matchedResponse = sortedResponses.find(resp => {
-          const answersObj = resp.answers || {};
-          let respName = '';
-          if (studentNameQId && answersObj[studentNameQId]) {
-            respName = answersObj[studentNameQId].textAnswers?.answers?.[0]?.value?.trim() || '';
-          }
-          if (!respName) {
-            for (const qId of Object.keys(answersObj)) {
-              const it = items.find(i => i.questionItem?.question?.questionId === qId);
-              if (it?.title?.includes('اسم')) {
-                respName = answersObj[qId].textAnswers?.answers?.[0]?.value?.trim() || '';
-                break;
-              }
-            }
-          }
-
-          if (respName) {
-            const normRespName = normalizeArabicText(respName);
-            return normRespName === normStudentName || normRespName.includes(normStudentName) || normStudentName.includes(normRespName);
-          }
-          return false;
-        });
-      }
-
-      if (!matchedResponse) {
-        return {
-          found: false,
-          message: `لم يتم العثور على تسليم مسجل بحساب Google الخاص بك (${cleanStudentEmail}). يرجى التأكد من تسليم النموذج من نفس حساب Google المسجل في المنصة والضغط على زر الإرسال (Submit).`
-        };
-      }
-
-      // Calculate score
-      const answersObj = matchedResponse.answers || {};
-      const answers: ExamSubmissionAnswer[] = [];
-      let totalScore = 0;
-      let hasPendingEssay = false;
-
-      if (typeof matchedResponse.totalSubmittedGrade === 'number') {
-        totalScore = matchedResponse.totalSubmittedGrade;
-      }
-
-      exam.questions.forEach(q => {
-        let studentAnsText = '';
-        for (const [formQId, examQ] of Object.entries(questionMap)) {
-          if (examQ.id === q.id && answersObj[formQId]) {
-            const txt = answersObj[formQId].textAnswers?.answers || [];
-            studentAnsText = txt.map((a: any) => a.value).join(', ');
-            break;
-          }
-        }
-
-        const isAuto = q.type === 'multiple_choice' || q.type === 'true_false';
-        let isCorrect = false;
-        let points = 0;
-
-        if (isAuto && q.correctAnswer !== undefined) {
-          if (studentAnsText.toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) {
-            isCorrect = true;
-            points = q.points;
-          }
-        } else if (!isAuto) {
-          hasPendingEssay = true;
-        }
-
-        if (typeof matchedResponse.totalSubmittedGrade !== 'number' && isCorrect) {
-          totalScore += points;
-        }
-
-        answers.push({
-          questionId: q.id,
-          questionTitle: q.title,
-          questionType: q.type,
-          studentAnswer: studentAnsText || 'تمت الإجابة في Google Forms',
-          isAutoGraded: isAuto,
-          isCorrect: isAuto ? isCorrect : undefined,
-          pointsEarned: points,
-          maxPoints: q.points
-        });
-      });
-
-      const maxPossibleScore = exam.totalPoints || exam.questions.reduce((s, q) => s + q.points, 0) || 100;
-      const percentage = Math.round((totalScore / maxPossibleScore) * 100);
-
-      const previousAttempts = existingSubmissions.filter(s => s.examId === exam.id && s.studentId === student.id);
-      const attemptNumber = previousAttempts.length + 1;
-
-      const submission: ExamSubmission = {
-        id: `sub-${exam.id}-${student.id}-${Date.now()}`,
-        examId: exam.id,
-        examTitle: exam.title,
-        studentId: student.id,
-        studentName: student.name,
-        studentGoogleEmail: cleanStudentEmail,
-        halaqahId: student.halaqahId || '',
-        halaqahName: student.halaqahName || 'الحلقة',
-        attemptNumber,
-        answers,
-        totalScoreEarned: totalScore,
-        maxPossibleScore,
-        percentage,
-        pointsGrantedForLeaderboard: exam.grantsLeaderboardPoints ? totalScore : 0,
-        status: hasPendingEssay ? 'needs_grading' : 'completed',
-        submittedAt: matchedResponse.lastSubmittedTime || matchedResponse.createTime || new Date().toISOString()
-      };
-
-      // Save submission directly to Firestore
-      await OmranDataService.saveSubmission(submission);
-
-      return {
-        found: true,
-        submission,
-        message: `تم العثور على إجاباتك بحسابك Google بنجاح! درجتك المحصلة: ${totalScore} من ${maxPossibleScore} (${percentage}%) وتم قيدها في سجلك ولوحة الشرف فوراً!`
-      };
-    } catch (err: any) {
-      return {
-        found: false,
-        message: `حدث خطأ أثناء فحص النتيجة من Google Forms: ${err?.message || 'يرجى المحاولة مجدداً.'}`
-      };
-    }
-  }
-
-  // Link Supervisor Google Account with Google Forms and Sheets permissions
-  static async linkGoogleAccount(): Promise<{ email: string; accessToken: string }> {
     // 1. Try Google Identity Services (GIS) first if oAuthClientId is present
     if (typeof window !== 'undefined' && firebaseConfig.oAuthClientId) {
       try {
@@ -1685,87 +1548,123 @@ export class GoogleWorkspaceService {
         if (window.google?.accounts?.oauth2) {
           const gisRes = await requestAccessTokenViaGIS(firebaseConfig.oAuthClientId, GOOGLE_SCOPES);
           if (gisRes?.accessToken) {
-            inMemoryGoogleAccessToken = gisRes.accessToken;
-            const config: GoogleOAuthConfig = {
-              connectedEmail: gisRes.email,
-              connectedAt: new Date().toISOString(),
-              isLinked: true,
-              lastSyncAt: new Date().toISOString(),
-              accessToken: gisRes.accessToken,
-              savedInCloud: true
-            };
-            await this.saveGoogleAuthConfig(config);
-            return gisRes;
+            linkedEmail = gisRes.email;
+            linkedToken = gisRes.accessToken;
           }
         }
       } catch (gisErr: any) {
-        console.warn('GIS Token client attempt notice:', gisErr?.message || gisErr);
+        const msg = gisErr?.message || String(gisErr || '');
+        if (msg.includes('popup_closed') || msg.includes('access_denied')) {
+          throw new PopupClosedByUserError();
+        }
+        console.warn('GIS Token client attempt notice:', msg);
       }
     }
 
-    // 2. Firebase Auth popup fallback
+    // 2. Firebase Auth popup fallback if GIS didn't return token
+    if (!linkedToken) {
+      try {
+        const provider = new GoogleAuthProvider();
+        GOOGLE_SCOPES.forEach(scope => provider.addScope(scope));
+        provider.setCustomParameters({
+          prompt: 'select_account'
+        });
+
+        const result = await signInWithPopup(auth, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const accessToken = credential?.accessToken;
+
+        if (!accessToken) {
+          throw new Error('لم نتمكن من الحصول على رمز تفويض حساب Google.');
+        }
+
+        linkedToken = accessToken;
+        linkedEmail = result.user.email || 'حساب Google المتصل';
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        if (err?.code === 'auth/unauthorized-domain' || errMsg.includes('auth/unauthorized-domain')) {
+          const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'النطاق الحالي';
+          console.warn(`[Firebase Auth Notice] Unauthorized domain detected: ${currentDomain}`);
+          throw new UnauthorizedDomainError(currentDomain, firebaseConfig.projectId);
+        }
+        if (err?.code === 'auth/popup-closed-by-user' || errMsg.includes('auth/popup-closed-by-user')) {
+          console.warn('[Firebase Auth Notice] Popup closed by user or environment before sign-in completed.');
+          throw new PopupClosedByUserError();
+        }
+        if (err?.code === 'auth/popup-blocked' || errMsg.includes('auth/popup-blocked')) {
+          console.warn('[Firebase Auth Notice] Popup blocked by browser.');
+          throw new PopupBlockedError();
+        }
+        if (err?.code === 'auth/cancelled-popup-request' || errMsg.includes('auth/cancelled-popup-request')) {
+          throw new Error('تم إلغاء طلب تسجيل الدخول نظراً لفتح نافذة جديدة. يرجى المحاولة مجدداً.');
+        }
+        throw err;
+      }
+    }
+
+    const expiresAt = Date.now() + 3500 * 1000;
+    inMemoryTokensByComplex.set(complexKey, { accessToken: linkedToken, expiresAt });
+
+    // Check if switching Google accounts on the same complex — if email changed, reset cached folder IDs so folders are created in the new Google Drive
+    const prevConfig = await this.loadGoogleAuthConfig(complexKey);
+    const sameEmail =
+      prevConfig.connectedEmail &&
+      prevConfig.connectedEmail.trim().toLowerCase() === linkedEmail.trim().toLowerCase();
+
+    let nextConfig: GoogleOAuthConfig = {
+      complexId: complexKey,
+      complexName: complexName || prevConfig.complexName,
+      connectedEmail: linkedEmail,
+      connectedAt: new Date().toISOString(),
+      isLinked: true,
+      lastSyncAt: new Date().toISOString(),
+      accessToken: linkedToken,
+      savedInCloud: true,
+      expiresAt,
+      driveRootFolderId: sameEmail ? prevConfig.driveRootFolderId : undefined,
+      driveRootFolderName: sameEmail ? prevConfig.driveRootFolderName : undefined,
+      driveRootFolderUrl: sameEmail ? prevConfig.driveRootFolderUrl : undefined,
+      driveSectionFolders: sameEmail ? prevConfig.driveSectionFolders : undefined
+    };
+
+    await this.saveGoogleAuthConfig(nextConfig, complexKey);
+
+    // Immediately initialize / verify Complex Library folders on Google Drive
     try {
-      const provider = new GoogleAuthProvider();
-      GOOGLE_SCOPES.forEach(scope => provider.addScope(scope));
-      provider.setCustomParameters({
-        prompt: 'select_account'
-      });
-
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken;
-
-      if (!accessToken) {
-        throw new Error('لم نتمكن من الحصول على رمز تفويض حساب Google.');
-      }
-
-      inMemoryGoogleAccessToken = accessToken;
-      const email = result.user.email || 'حساب Google المتصل';
-
-      const config: GoogleOAuthConfig = {
-        connectedEmail: email,
-        connectedAt: new Date().toISOString(),
-        isLinked: true,
-        lastSyncAt: new Date().toISOString(),
-        accessToken: accessToken,
-        savedInCloud: true
+      const folderSetup = await this.ensureComplexLibraryFolders(complexKey, complexName, linkedToken);
+      nextConfig = {
+        ...nextConfig,
+        driveRootFolderId: folderSetup.rootFolder.id,
+        driveRootFolderName: folderSetup.rootFolder.name,
+        driveRootFolderUrl: folderSetup.rootFolder.webViewLink,
+        driveSectionFolders: folderSetup.sectionFolders
       };
-
-      await this.saveGoogleAuthConfig(config);
-      return { email, accessToken };
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      if (err?.code === 'auth/unauthorized-domain' || errMsg.includes('auth/unauthorized-domain')) {
-        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'النطاق الحالي';
-        console.warn(`[Firebase Auth Notice] Unauthorized domain detected: ${currentDomain}`);
-        throw new UnauthorizedDomainError(currentDomain, firebaseConfig.projectId);
-      }
-      if (err?.code === 'auth/popup-closed-by-user' || errMsg.includes('auth/popup-closed-by-user')) {
-        console.warn('[Firebase Auth Notice] Popup closed by user or environment before sign-in completed.');
-        throw new PopupClosedByUserError();
-      }
-      if (err?.code === 'auth/popup-blocked' || errMsg.includes('auth/popup-blocked')) {
-        console.warn('[Firebase Auth Notice] Popup blocked by browser.');
-        throw new PopupBlockedError();
-      }
-      if (err?.code === 'auth/cancelled-popup-request' || errMsg.includes('auth/cancelled-popup-request')) {
-        throw new Error('تم إلغاء طلب تسجيل الدخول نظراً لفتح نافذة جديدة. يرجى المحاولة مجدداً.');
-      }
-      throw err;
+    } catch (driveInitErr) {
+      console.warn('Initial Drive Library folder provisioning notice:', driveInitErr);
     }
+
+    const sanitized = this.sanitizeConfigMetadata(nextConfig, complexKey);
+    return { email: linkedEmail, accessToken: linkedToken, config: sanitized };
   }
 
-  // Disconnect Google Account from Firestore
-  static async disconnectGoogleAccount(): Promise<void> {
-    inMemoryGoogleAccessToken = null;
+  // Disconnect Google Account strictly for the specified Complex
+  static async disconnectGoogleAccount(complexId?: string | null): Promise<void> {
+    const complexKey = this.resolveComplexKey(complexId);
+    inMemoryTokensByComplex.delete(complexKey);
+    inMemoryConfigsByComplex.delete(complexKey);
     const config: GoogleOAuthConfig = {
+      complexId: complexKey,
       isLinked: false,
       connectedEmail: undefined,
       accessToken: undefined,
+      driveRootFolderId: undefined,
+      driveRootFolderName: undefined,
+      driveRootFolderUrl: undefined,
+      driveSectionFolders: undefined,
       lastSyncAt: new Date().toISOString(),
       savedInCloud: true
     };
-    await this.saveGoogleAuthConfig(config);
+    await this.saveGoogleAuthConfig(config, complexKey);
   }
 
   // Developer Feature: Select or switch to ANY Google Account for Complex Database Migration
@@ -1837,396 +1736,6 @@ export class GoogleWorkspaceService {
     }
   }
 
-  // Create Google Form and linked Google Sheet for an Exam
-  static async createGoogleFormAndSheet(exam: Exam, tokenOverride?: string): Promise<{
-    formId: string;
-    formEditUrl: string;
-    responderUrl: string;
-    spreadsheetId?: string;
-    spreadsheetUrl?: string;
-  }> {
-    const token = tokenOverride || (await this.getValidAccessToken());
-    if (!token) {
-      throw new Error('يرجى ربط حساب Google أولاً لإنشاء نموذج Google Form وجدول Google Sheets.');
-    }
-
-    // 1. Create the Form
-    const omranFormTitle = `﷽ ${exam.title} - منصة عُمْرَان القرآنية`;
-    const createFormRes = await fetch('https://forms.googleapis.com/v1/forms', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        info: {
-          title: exam.title,
-          documentTitle: omranFormTitle
-        }
-      })
-    });
-
-    if (!createFormRes.ok) {
-      const errText = await createFormRes.text();
-      throw new Error(`تعذر إنشاء نموذج Google Forms: ${errText}`);
-    }
-
-    const formData = await createFormRes.json();
-    const formId = formData.formId;
-    const formEditUrl = `https://docs.google.com/forms/d/${formId}/edit`;
-    const responderUrl = formData.responderUri || `https://docs.google.com/forms/d/e/${formId}/viewform`;
-
-    const descriptionText = [
-      '۞ مَنَصَّةُ عُمْرَانَ لِحِلَقِ القُرْآنِ الكَرِيمِ ۞',
-      '═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═',
-      `• عنوان الاختبار: ${exam.title}`,
-      `• إجمالي درجات الاختبار: ${exam.totalPoints} درجات`,
-      exam.description ? `• إرشادات وتوجيهات المعلم: ${exam.description}` : '',
-      '═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═',
-      '【تعليمات هامة للطالب الكريم】:',
-      '1. اكتب اسمك الرباعي الكامل المسجل في منصة عمران بدقة لاحتساب درجاتك تلقائياً في لوحة الشرف.',
-      '2. أجب عن كافة الأسئلة ثم اضغط زر (إرسال / Submit).',
-      '3. ستنتقل درجاتك فوراً إلى سجلك في لوحة شرف المنصة بعد المزامنة.'
-    ].filter(Boolean).join('\n');
-
-    // 2. Prepare items for Google Form batchUpdate
-    const requests: any[] = [
-      {
-        updateFormInfo: {
-          info: {
-            title: omranFormTitle,
-            description: descriptionText
-          },
-          updateMask: 'title,description'
-        }
-      },
-      {
-        createItem: {
-          item: {
-            title: 'اسم الطالب الثلاثي الكامل (كما هو مسجل في منصة عُمْرَان)',
-            description: 'يرجى كتابة اسمك الثلاثي بدقة لاحتساب نتيجتك ونقاطك في لوحة شرف المنصة تلقائياً',
-            questionItem: {
-              question: {
-                required: true,
-                textQuestion: {
-                  paragraph: false
-                }
-              }
-            }
-          },
-          location: {
-            index: 0
-          }
-        }
-      }
-    ];
-
-    // Add each exam question to Google Form
-    if (exam.questions && exam.questions.length > 0) {
-      exam.questions.forEach((q, idx) => {
-        const questionIndex = idx + 1;
-        if (q.type === 'multiple_choice' || q.type === 'true_false') {
-          const rawOptions = q.options && q.options.length > 0
-            ? q.options
-            : q.type === 'true_false'
-            ? ['صح', 'خطأ']
-            : ['الخيار 1', 'الخيار 2'];
-          
-          const cleanOptions = Array.from(new Set(rawOptions.map(o => String(o || '').trim()).filter(Boolean)));
-          const finalOptions = cleanOptions.length > 0 ? cleanOptions : ['الخيار 1', 'الخيار 2'];
-
-          requests.push({
-            createItem: {
-              item: {
-                title: `${q.title} (${q.points} درجات)`,
-                questionItem: {
-                  question: {
-                    required: true,
-                    choiceQuestion: {
-                      type: 'RADIO',
-                      options: finalOptions.map(opt => ({ value: opt })),
-                      shuffle: false
-                    }
-                  }
-                }
-              },
-              location: {
-                index: questionIndex
-              }
-            }
-          });
-        } else {
-          requests.push({
-            createItem: {
-              item: {
-                title: `${q.title} (${q.points} درجات - سؤال كتابي)`,
-                description: q.explanation ? `إرشاد: ${q.explanation}` : undefined,
-                questionItem: {
-                  question: {
-                    required: true,
-                    textQuestion: {
-                      paragraph: q.type === 'essay'
-                    }
-                  }
-                }
-              },
-              location: {
-                index: questionIndex
-              }
-            }
-          });
-        }
-      });
-    }
-
-    try {
-      const updateRes = await fetch(`https://forms.googleapis.com/v1/forms/${formId}:batchUpdate`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ requests })
-      });
-
-      if (!updateRes.ok) {
-        console.warn('Google Form batch update warning:', await updateRes.text());
-      }
-    } catch (updateErr) {
-      console.warn('Batch update to Google Form encountered an issue:', updateErr);
-    }
-
-    // 3. Create linked Google Spreadsheet without unsupported locale
-    let spreadsheetId: string | undefined;
-    let spreadsheetUrl: string | undefined;
-
-    try {
-      const createSheetRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          properties: {
-            title: `نتائج: ${exam.title} - منصة عُمْرَان القرآنية`
-            // DO NOT include locale: 'ar_SA' (causes 400 INVALID_ARGUMENT)
-          },
-          sheets: [
-            {
-              properties: {
-                title: 'التسليمات والدرجات',
-                gridProperties: {
-                  frozenRowCount: 1
-                },
-                rightToLeft: true
-              }
-            }
-          ]
-        })
-      });
-
-      if (createSheetRes.ok) {
-        const sheetData = await createSheetRes.json();
-        spreadsheetId = sheetData.spreadsheetId;
-        spreadsheetUrl = sheetData.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
-
-        // Write header row
-        const headers = [
-          'اسم الطالب',
-          'الحلقة',
-          'رقم المحاولة',
-          'تاريخ ووقت التسليم',
-          'الدرجة المحصلة',
-          'الدرجة القصوى',
-          'النسبة المئوية',
-          'نقاط لوحة الشرف',
-          'حالة التصحيح',
-          'ملاحظات المعلم'
-        ];
-
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:J1?valueInputOption=USER_ENTERED`, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            range: 'A1:J1',
-            majorDimension: 'ROWS',
-            values: [headers]
-          })
-        });
-      }
-    } catch (sheetErr) {
-      console.warn('Could not create Google Sheet:', sheetErr);
-    }
-
-    return {
-      formId,
-      formEditUrl,
-      responderUrl,
-      spreadsheetId,
-      spreadsheetUrl
-    };
-  }
-
-  // Update an existing Google Form on Google's cloud with updated exam title, description, and questions
-  static async updateGoogleForm(
-    exam: Exam,
-    tokenOverride?: string
-  ): Promise<{ success: boolean; message: string }> {
-    if (!exam.googleFormId) {
-      return { success: false, message: 'لا يوجد مُعرّف نموذج Google Form لهذا الاختبار.' };
-    }
-
-    const token = tokenOverride || (await this.getValidAccessToken());
-    if (!token) {
-      return { success: false, message: 'يرجى ربط حساب Google أولاً لتحديث النموذج سحابياً.' };
-    }
-
-    try {
-      // 1. Fetch current items from Google Forms API so we can replace them cleanly
-      const formMetaRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!formMetaRes.ok) {
-        const errText = await formMetaRes.text();
-        return { success: false, message: `تعذر جلب تفاصيل النموذج من Google: ${errText}` };
-      }
-
-      const formMetaData = await formMetaRes.json();
-      const existingItems: any[] = formMetaData.items || [];
-
-      const omranFormTitle = `﷽ ${exam.title} - منصة عُمْرَان القرآنية`;
-      const descriptionText = [
-        '۞ مَنَصَّةُ عُمْرَانَ لِحِلَقِ القُرْآنِ الكَرِيمِ ۞',
-        '═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═',
-        `• عنوان الاختبار: ${exam.title}`,
-        `• إجمالي درجات الاختبار: ${exam.totalPoints} درجات`,
-        exam.description ? `• إرشادات وتوجيهات المعلم: ${exam.description}` : '',
-        '═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═ ═',
-        '【تعليمات هامة للطالب الكريم】:',
-        '1. اكتب اسمك الرباعي الكامل المسجل في منصة عمران بدقة لاحتساب درجاتك تلقائياً في لوحة الشرف.',
-        '2. أجب عن كافة الأسئلة ثم اضغط زر (إرسال / Submit).',
-        '3. ستنتقل درجاتك فوراً إلى سجلك في لوحة شرف المنصة بعد المزامنة.'
-      ].filter(Boolean).join('\n');
-
-      const requests: any[] = [
-        {
-          updateFormInfo: {
-            info: {
-              title: omranFormTitle,
-              description: descriptionText
-            },
-            updateMask: 'title,description'
-          }
-        }
-      ];
-
-      // Delete old items in reverse order to keep indexes valid
-      for (let i = existingItems.length - 1; i >= 0; i--) {
-        requests.push({
-          deleteItem: {
-            location: { index: i }
-          }
-        });
-      }
-
-      // Re-create Student Name Item at index 0
-      requests.push({
-        createItem: {
-          item: {
-            title: 'اسم الطالب الثلاثي الكامل (كما هو مسجل في منصة عُمْرَان)',
-            description: 'يرجى كتابة اسمك الثلاثي بدقة لاحتساب نتيجتك ونقاطك في لوحة شرف المنصة تلقائياً',
-            questionItem: {
-              question: {
-                required: true,
-                textQuestion: {
-                  paragraph: false
-                }
-              }
-            }
-          },
-          location: { index: 0 }
-        }
-      });
-
-      // Add each updated question
-      if (exam.questions && exam.questions.length > 0) {
-        exam.questions.forEach((q, idx) => {
-          const questionIndex = idx + 1;
-          if (q.type === 'multiple_choice' || q.type === 'true_false') {
-            const rawOptions = q.options && q.options.length > 0
-              ? q.options
-              : q.type === 'true_false'
-              ? ['صح', 'خطأ']
-              : ['الخيار 1', 'الخيار 2'];
-            const cleanOptions = Array.from(new Set(rawOptions.map(o => String(o || '').trim()).filter(Boolean)));
-            const finalOptions = cleanOptions.length > 0 ? cleanOptions : ['الخيار 1', 'الخيار 2'];
-
-            requests.push({
-              createItem: {
-                item: {
-                  title: `${q.title} (${q.points} درجات)`,
-                  questionItem: {
-                    question: {
-                      required: true,
-                      choiceQuestion: {
-                        type: 'RADIO',
-                        options: finalOptions.map(opt => ({ value: opt })),
-                        shuffle: false
-                      }
-                    }
-                  }
-                },
-                location: { index: questionIndex }
-              }
-            });
-          } else {
-            requests.push({
-              createItem: {
-                item: {
-                  title: `${q.title} (${q.points} درجات - سؤال كتابي)`,
-                  description: q.explanation ? `إرشاد: ${q.explanation}` : undefined,
-                  questionItem: {
-                    question: {
-                      required: true,
-                      textQuestion: {
-                        paragraph: q.type === 'essay'
-                      }
-                    }
-                  }
-                },
-                location: { index: questionIndex }
-              }
-            });
-          }
-        });
-      }
-
-      // Execute batchUpdate on Google Forms API
-      const batchRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}:batchUpdate`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ requests })
-      });
-
-      if (!batchRes.ok) {
-        const errText = await batchRes.text();
-        return { success: false, message: `تعذر إرسال التحديث لـ Google Forms: ${errText}` };
-      }
-
-      return { success: true, message: 'تم تحديث نموذج Google Forms سحابياً بنجاح.' };
-    } catch (e: any) {
-      return { success: false, message: e?.message || 'فشل الاتصال بـ Google Forms لتحديث الاختبار.' };
-    }
-  }
-
   // Sync Submissions to Google Sheet
   static async syncSubmissionsToSheet(
     spreadsheetId: string,
@@ -2272,255 +1781,18 @@ export class GoogleWorkspaceService {
     }
   }
 
-  // Import / Sync Responses directly from Google Form API
-  static async importResponsesFromGoogleForm(
-    exam: Exam,
-    allStudents: { id: string; name: string; halaqahId?: string }[],
-    existingSubmissions: ExamSubmission[] = [],
-    tokenOverride?: string
-  ): Promise<{ newCount: number; updatedCount: number; importedSubmissions: ExamSubmission[] }> {
-    const token = tokenOverride || (await this.getValidAccessToken());
-    if (!token) {
-      throw new Error('يرجى تسجيل الدخول بحساب Google أولاً لمزامنة إجابات Google Forms.');
-    }
-    if (!exam.googleFormId) {
-      throw new Error('هذا الاختبار غير مرتبط بنموذج Google Forms بعد.');
-    }
-
-    // 1. Fetch form metadata to map item IDs to questions
-    const formMetaRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!formMetaRes.ok) {
-      throw new Error(`تعذر قراءة بيانات النموذج: ${await formMetaRes.text()}`);
-    }
-    const formMeta = await formMetaRes.json();
-    const items: any[] = formMeta.items || [];
-
-    const questionMap: { [questionId: string]: { examQ: ExamQuestion; title: string } } = {};
-    let studentNameQuestionId: string | null = null;
-
-    items.forEach(item => {
-      const qTitle = item.title || '';
-      const qId = item.questionItem?.question?.questionId;
-      if (!qId) return;
-
-      if (qTitle.includes('اسم الطالب')) {
-        studentNameQuestionId = qId;
-      } else {
-        const matched = exam.questions.find(
-          eq => qTitle.includes(eq.title) || eq.title.includes(qTitle)
-        );
-        if (matched) {
-          questionMap[qId] = { examQ: matched, title: qTitle };
-        }
-      }
-    });
-
-    // 2. Fetch responses
-    const responsesRes = await fetch(`https://forms.googleapis.com/v1/forms/${exam.googleFormId}/responses`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!responsesRes.ok) {
-      throw new Error(`تعذر استيراد الردود من Google Forms: ${await responsesRes.text()}`);
-    }
-    const responsesData = await responsesRes.json();
-    const responses: any[] = responsesData.responses || [];
-
-    let newCount = 0;
-    let updatedCount = 0;
-    const importedSubmissions: ExamSubmission[] = [];
-
-    for (const resp of responses) {
-      const respId = resp.responseId;
-      const submittedAt = resp.lastSubmittedTime || resp.createTime || new Date().toISOString();
-      const answersObj = resp.answers || {};
-
-      let studentName = '';
-      if (studentNameQuestionId && answersObj[studentNameQuestionId]) {
-        const textAnswers = answersObj[studentNameQuestionId].textAnswers?.answers || [];
-        if (textAnswers.length > 0) {
-          studentName = textAnswers[0].value?.trim() || '';
-        }
-      }
-
-      if (!studentName) {
-        for (const qId of Object.keys(answersObj)) {
-          const item = items.find(it => it.questionItem?.question?.questionId === qId);
-          if (item?.title?.includes('اسم')) {
-            const val = answersObj[qId].textAnswers?.answers?.[0]?.value?.trim();
-            if (val) {
-              studentName = val;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!studentName) {
-        studentName = `طالب (${respId.slice(0, 6)})`;
-      }
-
-      const normInput = normalizeArabicText(studentName);
-      const matchedStudent = allStudents.find(st => {
-        const normSt = normalizeArabicText(st.name);
-        return normSt === normInput ||
-               normSt.includes(normInput) ||
-               normInput.includes(normSt);
-      });
-
-      const studentId = matchedStudent?.id || `ext_${respId}`;
-      const halaqahId = matchedStudent?.halaqahId || 'unassigned';
-      const halaqahName = (matchedStudent as any)?.halaqahName || 'الحلقة المعتمدة';
-
-      const submissionAnswers: any[] = [];
-      let totalEarned = 0;
-      let hasEssayPending = false;
-
-      exam.questions.forEach(q => {
-        let studentAnsText = '';
-        for (const [formQId, qMeta] of Object.entries(questionMap)) {
-          if (qMeta.examQ.id === q.id && answersObj[formQId]) {
-            const txtAns = answersObj[formQId].textAnswers?.answers || [];
-            studentAnsText = txtAns.map((a: any) => a.value).join(', ');
-            break;
-          }
-        }
-
-        const isAutoGraded = q.type === 'multiple_choice' || q.type === 'true_false';
-        let isCorrect = false;
-        let pointsEarned = 0;
-
-        if (isAutoGraded && studentAnsText) {
-          const expected = String(q.correctAnswer || '').trim().toLowerCase();
-          const actual = studentAnsText.trim().toLowerCase();
-          if (actual === expected) {
-            isCorrect = true;
-            pointsEarned = q.points;
-          }
-        } else if (q.type === 'essay') {
-          hasEssayPending = true;
-        }
-
-        totalEarned += pointsEarned;
-
-        submissionAnswers.push({
-          questionId: q.id,
-          questionTitle: q.title,
-          questionType: q.type,
-          studentAnswer: studentAnsText,
-          isAutoGraded,
-          isCorrect: isAutoGraded ? isCorrect : undefined,
-          pointsEarned,
-          maxPoints: q.points
-        });
-      });
-
-      const maxPossibleScore = exam.totalPoints;
-      const percentage = maxPossibleScore > 0 ? Math.round((totalEarned / maxPossibleScore) * 100) : 0;
-      const pointsGrantedForLeaderboard = exam.grantsLeaderboardPoints ? totalEarned : 0;
-
-      const existingIdx = existingSubmissions.findIndex(
-        s => s.id === `gform_${respId}` || (s.studentId === studentId && s.examId === exam.id && s.submittedAt === submittedAt)
-      );
-
-      const submissionData: ExamSubmission = {
-        id: `gform_${respId}`,
-        examId: exam.id,
-        examTitle: exam.title,
-        studentId,
-        studentName: matchedStudent?.name || studentName,
-        halaqahId,
-        halaqahName,
-        attemptNumber: 1,
-        answers: submissionAnswers,
-        totalScoreEarned: totalEarned,
-        maxPossibleScore,
-        percentage,
-        status: hasEssayPending ? 'needs_grading' : 'completed',
-        pointsGrantedForLeaderboard,
-        submittedAt
-      };
-
-      if (existingIdx >= 0) {
-        updatedCount++;
-      } else {
-        newCount++;
-      }
-      importedSubmissions.push(submissionData);
-    }
-
-    for (const sub of importedSubmissions) {
-      await setDoc(doc(db, 'exam_submissions', sub.id), JSON.parse(JSON.stringify(sub)));
-    }
-
-    return {
-      newCount,
-      updatedCount,
-      importedSubmissions
-    };
-  }
-
-  // Batch sync responses for ALL active Google Form exams at once
-  static async syncAllGoogleFormExams(
-    exams: Exam[],
-    allStudents: { id: string; name: string; halaqahId?: string; halaqahName?: string }[],
-    existingSubmissions: ExamSubmission[] = [],
-    tokenOverride?: string
-  ): Promise<{
-    syncedExamsCount: number;
-    totalNewCount: number;
-    totalUpdatedCount: number;
-    errors: string[];
-  }> {
-    const token = tokenOverride || (await this.getValidAccessToken());
-    if (!token) {
-      throw new Error('يرجى تسجيل الدخول بحساب Google أولاً لمزامنة إجابات Google Forms.');
-    }
-
-    const gformExams = exams.filter(
-      ex => ex.deliveryMode === 'google_form' && Boolean(ex.googleFormId)
-    );
-
-    let totalNewCount = 0;
-    let totalUpdatedCount = 0;
-    let syncedExamsCount = 0;
-    const errors: string[] = [];
-
-    for (const ex of gformExams) {
-      try {
-        const res = await this.importResponsesFromGoogleForm(
-          ex,
-          allStudents,
-          existingSubmissions,
-          token
-        );
-        totalNewCount += res.newCount;
-        totalUpdatedCount += res.updatedCount;
-        syncedExamsCount++;
-      } catch (err: any) {
-        console.warn(`Could not sync Google Form responses for exam ${ex.title}:`, err);
-        errors.push(`${ex.title}: ${err?.message || 'تعذر جلب الردود'}`);
-      }
-    }
-
-    return {
-      syncedExamsCount,
-      totalNewCount,
-      totalUpdatedCount,
-      errors
-    };
-  }
-
   // Export any Exam results / Student Submissions directly to a brand new Google Spreadsheet
   static async exportExamResultsToGoogleSheet(
     title: string,
     submissions: ExamSubmission[],
-    tokenOverride?: string
+    tokenOverride?: string,
+    complexId?: string | null,
+    complexName?: string
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-    const token = tokenOverride || (await this.getValidAccessToken());
+    const complexKey = this.resolveComplexKey(complexId);
+    const token = tokenOverride || (await this.getValidAccessToken(complexKey));
     if (!token) {
-      throw new Error('يرجى ربط وتفويض حساب Google أولاً لتصدير النتائج إلى Google Sheets.');
+      throw new Error('يرجى ربط وتفويض حساب Google الخاص بالمجمع أولاً لتصدير النتائج إلى Google Sheets.');
     }
 
     const createSheetRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
@@ -2609,6 +1881,12 @@ export class GoogleWorkspaceService {
 
     if (!valuesRes.ok) {
       console.warn('Values update response not ok:', await valuesRes.text());
+    }
+
+    try {
+      await this.moveDriveFileToSectionFolder(spreadsheetId, 'exams', complexKey, complexName, token);
+    } catch (moveErr) {
+      console.warn('Could not move exported exam sheet into Complex Exams folder:', moveErr);
     }
 
     return { spreadsheetId, spreadsheetUrl };
@@ -2708,15 +1986,18 @@ export class GoogleWorkspaceService {
     return { spreadsheetId, spreadsheetUrl };
   }
 
-  // Export Attendance Log to Google Sheets
+  // Export Attendance Log to Google Sheets (and place in Complex Drive 'الحضور والغياب' folder)
   static async exportAttendanceToGoogleSheet(
     attendance: AttendanceRecord[],
     students: Student[],
-    tokenOverride?: string
+    tokenOverride?: string,
+    complexId?: string | null,
+    complexName?: string
   ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-    const token = tokenOverride || (await this.getValidAccessToken());
+    const complexKey = this.resolveComplexKey(complexId);
+    const token = tokenOverride || (await this.getValidAccessToken(complexKey));
     if (!token) {
-      throw new Error('يرجى ربط وتفويض حساب Google أولاً لتصدير سجل الحضور إلى Google Sheets.');
+      throw new Error('يرجى ربط وتفويض حساب Google الخاص بالمجمع أولاً لتصدير سجل الحضور إلى Google Sheets.');
     }
 
     const studentMap = new Map<string, Student>();
@@ -2786,6 +2067,12 @@ export class GoogleWorkspaceService {
         })
       }
     );
+
+    try {
+      await this.moveDriveFileToSectionFolder(spreadsheetId, 'attendance', complexKey, complexName, token);
+    } catch (moveErr) {
+      console.warn('Could not move exported attendance sheet into Complex Attendance folder:', moveErr);
+    }
 
     return { spreadsheetId, spreadsheetUrl };
   }
@@ -2955,69 +2242,38 @@ export class GoogleWorkspaceService {
 
   /**
    * Export JSON Backup directly into Google Drive in a dedicated timestamped file
-   * (النسخ الاحتياطي في Google Drive مع التاريخ والساعة في مجلد مخصص)
+   * (النسخ الاحتياطي في Google Drive مع التاريخ والساعة في مجلد مخصص للمجمع)
    */
   static async exportBackupToGoogleDrive(
     backup: FullBackupData,
-    authConfig?: GoogleOAuthConfig
+    authConfig?: GoogleOAuthConfig,
+    complexId?: string | null
   ): Promise<{ fileId: string; fileName: string; folderName: string; webViewLink: string }> {
-    const token = await this.getValidAccessToken();
+    const complexKey = this.resolveComplexKey(complexId || authConfig?.complexId);
+    const token = await this.getValidAccessToken(complexKey);
     if (!token) {
-      throw new Error('حساب Google غير متصل أو انتهت صلاحية الجلسة. يرجى ربط حساب Google أولاً.');
+      throw new Error('حساب Google غير متصل لهذا المجمع أو انتهت صلاحية الجلسة. يرجى ربط حساب Google أولاً.');
     }
 
-    const folderName = 'نسخ منصة عمران القرآنية الاحتياطية';
+    const folderName = authConfig?.complexName
+      ? `نسخ احتياطية - ${authConfig.complexName}`
+      : 'نسخ منصة عمران القرآنية الاحتياطية';
 
-    // 1. Search for existing backup folder or create it
-    let folderId: string | null = null;
-    try {
-      const searchRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`)}&fields=files(id,name)`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+    const folderInfo = await this.findOrCreateDriveFolder(
+      token,
+      folderName,
+      undefined,
+      'مجلد مخصص لحفظ النسخ الاحتياطية لمنصة عمران القرآنية'
+    );
 
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        if (searchData.files && searchData.files.length > 0) {
-          folderId = searchData.files[0].id;
-        }
-      }
-    } catch (e) {
-      console.warn('Error searching for backup folder:', e);
-    }
-
-    if (!folderId) {
-      const createFolderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: folderName,
-          mimeType: 'application/vnd.google-apps.folder',
-          description: 'مجلد مخصص لحفظ النسخ الاحتياطية لمنصة عمران القرآنية'
-        })
-      });
-
-      if (!createFolderRes.ok) {
-        const err = await createFolderRes.json().catch(() => ({}));
-        throw new Error(`تعذر إنشاء مجلد النسخ في Google Drive: ${err?.error?.message || createFolderRes.statusText}`);
-      }
-      const folderData = await createFolderRes.json();
-      folderId = folderData.id;
-    }
-
-    // 2. Prepare timestamped file name
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
     const timeFormatted = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
     const fileName = `omran_backup_${timeFormatted}.json`;
 
-    // 3. Upload JSON file to Google Drive via multipart
     const metadata = {
       name: fileName,
-      parents: folderId ? [folderId] : [],
+      parents: [folderInfo.id],
       mimeType: 'application/json',
       description: `نسخة احتياطية كاملة لمنصة عمران القرآنية تم تصديرها بتاريخ ${now.toLocaleString('ar-SA')}`
     };
@@ -3025,7 +2281,6 @@ export class GoogleWorkspaceService {
     const boundary = '-------314159265358979323846';
     const delimiter = `\r\n--${boundary}\r\n`;
     const closeDelimiter = `\r\n--${boundary}--`;
-
     const jsonContent = JSON.stringify(backup, null, 2);
 
     const multipartRequestBody =
@@ -3067,62 +2322,49 @@ export class GoogleWorkspaceService {
   }
 
   /**
-   * Upload PDF document or custom report directly to Google Drive
+   * Upload PDF document or custom report directly to Google Drive (inside Complex's structured folder)
    */
   static async uploadPDFToDrive(
     pdfBlob: Blob,
     fileName: string,
-    folderName: string = 'تقارير منصة عمران القرآنية'
+    folderName: string = 'التقارير الدورية',
+    complexId?: string | null,
+    complexName?: string
   ): Promise<{ fileId: string; fileName: string; folderName: string; webViewLink: string }> {
-    const token = await this.getValidAccessToken();
+    const complexKey = this.resolveComplexKey(complexId);
+    const token = await this.getValidAccessToken(complexKey);
     if (!token) {
-      throw new Error('حساب Google غير متصل أو انتهت صلاحية الجلسة. يرجى ربط حساب Google أولاً.');
+      throw new Error('حساب Google غير متصل لهذا المجمع أو انتهت صلاحية الجلسة. يرجى ربط المكتبة بحساب Google أولاً.');
     }
 
-    // 1. Search for existing reports folder or create it
-    let folderId: string | null = null;
+    let targetFolderId: string | undefined;
+    let resolvedFolderName = folderName;
+
     try {
-      const searchRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`)}&fields=files(id,name)`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        if (searchData.files && searchData.files.length > 0) {
-          folderId = searchData.files[0].id;
-        }
+      const setup = await this.ensureComplexLibraryFolders(complexKey, complexName, token);
+      let section: LibraryDriveSection = 'reports';
+      if (folderName.includes('شهاد')) section = 'certificates';
+      else if (folderName.includes('حضور') || folderName.includes('غياب')) section = 'attendance';
+      else if (folderName.includes('اختبار')) section = 'exams';
+      const secMeta = setup.sectionFolders[section];
+      if (secMeta?.id) {
+        targetFolderId = secMeta.id;
+        resolvedFolderName = secMeta.name;
       }
-    } catch (e) {
-      console.warn('Error searching for reports folder:', e);
+    } catch {
+      const fallback = await this.findOrCreateDriveFolder(token, folderName);
+      targetFolderId = fallback.id;
+      resolvedFolderName = fallback.name;
     }
 
-    if (!folderId) {
-      const createFolderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: folderName,
-          mimeType: 'application/vnd.google-apps.folder',
-          description: 'مجلد مخصص لحفظ وأرشفة تقارير وشهادات منصة عمران القرآنية'
-        })
-      });
+    const cleanFileName = fileName.replace(/[\\/]/g, '-').trim();
+    const finalName = cleanFileName.endsWith('.pdf') ? cleanFileName : `${cleanFileName}.pdf`;
 
-      if (createFolderRes.ok) {
-        const folderData = await createFolderRes.json();
-        folderId = folderData.id;
-      }
-    }
-
-    // 2. Upload file via multipart request
     const metadata = {
-      name: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`,
-      parents: folderId ? [folderId] : [],
+      name: finalName,
+      parents: targetFolderId ? [targetFolderId] : [],
       mimeType: 'application/pdf',
-      description: `تقرير قرآني صادر ومؤرشف من منصة عمران بتاريخ ${new Date().toLocaleString('ar-SA')}`
+      description: `مستند صادر ومؤرشف من منصة عمران بتاريخ ${new Date().toLocaleString('ar-SA')}`
     };
 
     const boundary = '-------314159265358979323846';
@@ -3132,10 +2374,10 @@ export class GoogleWorkspaceService {
     const metadataPart = new Blob(
       [
         delimiter +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        JSON.stringify(metadata) +
-        delimiter +
-        'Content-Type: application/pdf\r\n\r\n'
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) +
+          delimiter +
+          'Content-Type: application/pdf\r\n\r\n'
       ],
       { type: 'text/plain' }
     );
@@ -3158,7 +2400,7 @@ export class GoogleWorkspaceService {
 
     if (!uploadRes.ok) {
       const err = await uploadRes.json().catch(() => ({}));
-      throw new Error(`فشل رفع التقرير إلى Google Drive: ${err?.error?.message || uploadRes.statusText}`);
+      throw new Error(`فشل رفع الملف إلى Google Drive: ${err?.error?.message || uploadRes.statusText}`);
     }
 
     const uploadData = await uploadRes.json();
@@ -3167,9 +2409,625 @@ export class GoogleWorkspaceService {
 
     return {
       fileId,
-      fileName: metadata.name,
-      folderName,
+      fileName: finalName,
+      folderName: resolvedFolderName,
       webViewLink
     };
+  }
+
+  // ============================================================================
+  // COMPLEX GOOGLE DRIVE LIBRARY HIERARCHY & SYNCHRONIZATION
+  // ============================================================================
+
+  static resolveDocSection(docItem: Partial<LibraryDocument>): LibraryDriveSection {
+    if (docItem.sectionCategory) return docItem.sectionCategory;
+    switch (docItem.type) {
+      case 'certificate':
+        return 'certificates';
+      case 'attendance_sheet':
+        return 'attendance';
+      case 'google_form':
+      case 'google_sheet':
+      case 'exam_archive':
+        return 'exams';
+      case 'pdf_report':
+        return 'reports';
+      default:
+        return 'general';
+    }
+  }
+
+  static getSectionArabicTitle(section: LibraryDriveSection): string {
+    return DRIVE_SECTION_NAMES[section] || 'ملفات عامة';
+  }
+
+  private static async isDriveFolderAlive(token: string, folderId: string): Promise<boolean> {
+    if (!folderId) return false;
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,trashed`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return false;
+      const data = await res.json();
+      return Boolean(data.id) && !data.trashed;
+    } catch {
+      return false;
+    }
+  }
+
+  static async findOrCreateDriveFolder(
+    token: string,
+    folderName: string,
+    parentId?: string,
+    description?: string
+  ): Promise<DriveSectionFolderMeta> {
+    const escapedName = folderName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const parentClause = parentId ? ` and '${parentId}' in parents` : '';
+    const q = `mimeType='application/vnd.google-apps.folder' and name='${escapedName}'${parentClause} and trashed=false`;
+
+    try {
+      const searchRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=5`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (Array.isArray(searchData.files) && searchData.files.length > 0) {
+          const f = searchData.files[0];
+          return {
+            id: f.id,
+            name: f.name || folderName,
+            webViewLink: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Drive folder search notice:', e);
+    }
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        ...(parentId ? { parents: [parentId] } : {}),
+        description: description || `مجلد أرشيف ومكتبة منصة عمران القرآنية - ${folderName}`
+      })
+    });
+
+    if (!createRes.ok) {
+      const err = await createRes.json().catch(() => ({}));
+      throw new Error(`تعذر إنشاء مجلد "${folderName}" على Google Drive: ${err?.error?.message || createRes.statusText}`);
+    }
+
+    const created = await createRes.json();
+    return {
+      id: created.id,
+      name: created.name || folderName,
+      webViewLink: created.webViewLink || `https://drive.google.com/drive/folders/${created.id}`
+    };
+  }
+
+  /**
+   * Ensures the Complex's root Library folder ("مكتبة <اسم المجمع>") and all 5 organized section folders
+   * ("الشهادات", "الحضور والغياب", "الاختبارات", "التقارير الدورية", "ملفات عامة") exist on Google Drive.
+   */
+  static async ensureComplexLibraryFolders(
+    complexId?: string | null,
+    complexName?: string,
+    tokenOverride?: string
+  ): Promise<{
+    rootFolder: DriveSectionFolderMeta;
+    sectionFolders: Record<LibraryDriveSection, DriveSectionFolderMeta>;
+  }> {
+    const complexKey = this.resolveComplexKey(complexId);
+    const config = await this.loadGoogleAuthConfig(complexKey);
+    const token = tokenOverride || (await this.getValidAccessToken(complexKey));
+    if (!token) {
+      throw new Error('يرجى ربط حساب Google الخاص بالمجمع لتفعيل مجلدات المكتبة على Google Drive.');
+    }
+
+    const resolvedComplexTitle = (complexName || config.complexName || 'المجمع القرآني').trim();
+    const rootFolderName = resolvedComplexTitle.startsWith('مكتبة')
+      ? resolvedComplexTitle
+      : `مكتبة ${resolvedComplexTitle}`;
+
+    const allSections: LibraryDriveSection[] = ['certificates', 'attendance', 'exams', 'reports', 'general'];
+
+    // Fast path: check if root folder and all 5 section folders are already cached & alive
+    if (config.driveRootFolderId && config.driveSectionFolders) {
+      const hasAllCached = allSections.every(sec => Boolean(config.driveSectionFolders?.[sec]?.id));
+      if (hasAllCached && (await this.isDriveFolderAlive(token, config.driveRootFolderId))) {
+        return {
+          rootFolder: {
+            id: config.driveRootFolderId,
+            name: config.driveRootFolderName || rootFolderName,
+            webViewLink:
+              config.driveRootFolderUrl || `https://drive.google.com/drive/folders/${config.driveRootFolderId}`
+          },
+          sectionFolders: config.driveSectionFolders as Record<LibraryDriveSection, DriveSectionFolderMeta>
+        };
+      }
+    }
+
+    // Create or locate Root Folder on Google Drive
+    const rootFolder = await this.findOrCreateDriveFolder(
+      token,
+      rootFolderName,
+      undefined,
+      `المكتبة والأرشيف السحابي الرسمي لـ ${resolvedComplexTitle}`
+    );
+
+    // Create or locate each Section Folder inside the Root Folder in parallel
+    const sectionEntries = await Promise.all(
+      allSections.map(async sec => {
+        const secTitle = DRIVE_SECTION_NAMES[sec];
+        const folderMeta = await this.findOrCreateDriveFolder(
+          token,
+          secTitle,
+          rootFolder.id,
+          `قسم ${secTitle} في ${rootFolderName}`
+        );
+        return [sec, folderMeta] as const;
+      })
+    );
+
+    const sectionFolders = Object.fromEntries(sectionEntries) as Record<
+      LibraryDriveSection,
+      DriveSectionFolderMeta
+    >;
+
+    const foldersChanged =
+      config.driveRootFolderId !== rootFolder.id ||
+      allSections.some(sec => config.driveSectionFolders?.[sec]?.id !== sectionFolders[sec]?.id);
+
+    // Only write to Firestore when folder IDs were newly created or changed (prevents echo subscription loops)
+    if (foldersChanged) {
+      await this.saveGoogleAuthConfig(
+        {
+          ...config,
+          complexId: complexKey,
+          complexName: resolvedComplexTitle,
+          isLinked: true,
+          driveRootFolderId: rootFolder.id,
+          driveRootFolderName: rootFolder.name,
+          driveRootFolderUrl: rootFolder.webViewLink,
+          driveSectionFolders: sectionFolders
+        },
+        complexKey
+      );
+    }
+
+    return { rootFolder, sectionFolders };
+  }
+
+  /**
+   * Moves an existing Google Drive file (e.g. Google Form or Google Sheet) into the Complex's section folder.
+   */
+  static async moveDriveFileToSectionFolder(
+    fileId: string,
+    section: LibraryDriveSection,
+    complexId?: string | null,
+    complexName?: string,
+    tokenOverride?: string
+  ): Promise<{ fileId: string; folderId: string; folderName: string; webViewLink: string }> {
+    const complexKey = this.resolveComplexKey(complexId);
+    const token = tokenOverride || (await this.getValidAccessToken(complexKey));
+    if (!token) {
+      throw new Error('يرجى ربط المكتبة بحساب Google أولاً.');
+    }
+
+    const { sectionFolders } = await this.ensureComplexLibraryFolders(complexKey, complexName, token);
+    const targetFolder = sectionFolders[section] || sectionFolders.general;
+
+    let previousParents = '';
+    try {
+      const metaRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,parents,webViewLink`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (Array.isArray(meta.parents) && !meta.parents.includes(targetFolder.id)) {
+          previousParents = meta.parents.join(',');
+        } else if (Array.isArray(meta.parents) && meta.parents.includes(targetFolder.id)) {
+          return {
+            fileId,
+            folderId: targetFolder.id,
+            folderName: targetFolder.name,
+            webViewLink: meta.webViewLink || `https://drive.google.com/file/d/${fileId}/view`
+          };
+        }
+      }
+    } catch {
+      // Proceed with addParents only
+    }
+
+    const queryParams = new URLSearchParams({
+      addParents: targetFolder.id,
+      fields: 'id,name,webViewLink'
+    });
+    if (previousParents) {
+      queryParams.set('removeParents', previousParents);
+    }
+
+    const patchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${queryParams.toString()}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+
+    let webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
+    if (patchRes.ok) {
+      const patched = await patchRes.json();
+      if (patched.webViewLink) webViewLink = patched.webViewLink;
+    }
+
+    return {
+      fileId,
+      folderId: targetFolder.id,
+      folderName: targetFolder.name,
+      webViewLink
+    };
+  }
+
+  private static buildRtlHtmlDocument(title: string, bodyContent: string, complexName?: string): string {
+    const trimmed = (bodyContent || '').trim();
+    if (trimmed.toLowerCase().includes('<html') || trimmed.toLowerCase().includes('<!doctype')) {
+      return trimmed;
+    }
+    return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: 'Tajawal', 'Cairo', 'Amiri', system-ui, sans-serif;
+      direction: rtl;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 32px;
+      line-height: 1.8;
+    }
+    .card {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 24px;
+      border: 2px solid #e2e8f0;
+      padding: 32px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    }
+    .header {
+      border-bottom: 2px solid #10b981;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    h1 { margin: 0 0 8px 0; color: #064e3b; font-size: 24px; }
+    .meta { color: #64748b; font-size: 13px; }
+    .content { white-space: pre-wrap; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${title}</h1>
+      <div class="meta">${complexName || 'المجمع القرآني'} • تاريخ الأرشفة: ${new Date().toLocaleString('ar-SA')}</div>
+    </div>
+    <div class="content">${trimmed}</div>
+  </div>
+</body>
+</html>`;
+  }
+
+  /**
+   * Uploads or moves any LibraryDocument into its matching section folder on the Complex's Google Drive
+   * ("الشهادات", "الحضور والغياب", "الاختبارات", "التقارير الدورية", "ملفات عامة") and returns the Drive-enriched document.
+   */
+  static async uploadLibraryDocumentToComplexDrive(params: {
+    doc: LibraryDocument;
+    blob?: Blob;
+    htmlContent?: string;
+    mimeType?: string;
+    fileExtension?: string;
+    complexId?: string | null;
+    complexName?: string;
+    tokenOverride?: string;
+  }): Promise<LibraryDocument> {
+    const complexKey = this.resolveComplexKey(params.complexId || params.doc.complexId);
+    let token = params.tokenOverride || (await this.getValidAccessToken(complexKey));
+    if (!token) {
+      // If complex is marked linked in Firestore, re-authorize interactively with Google to obtain fresh session token
+      const cfg = await this.loadGoogleAuthConfig(complexKey);
+      if (cfg.isLinked) {
+        const relink = await this.linkGoogleAccount(complexKey, params.complexName || cfg.complexName);
+        token = relink.accessToken;
+      }
+    }
+
+    if (!token) {
+      throw new Error('LIBRARY_NOT_LINKED');
+    }
+
+    const section = this.resolveDocSection(params.doc);
+    const { sectionFolders } = await this.ensureComplexLibraryFolders(complexKey, params.complexName, token);
+    const targetFolder = sectionFolders[section] || sectionFolders.general;
+
+    // Case 1: Existing Google Form or Google Sheet (already on Google Drive) without binary blob upload
+    const existingNativeId =
+      params.doc.driveFileId || params.doc.googleSpreadsheetId || params.doc.googleFormId;
+    if (existingNativeId && !params.blob && !params.htmlContent && !params.doc.htmlContent) {
+      const moved = await this.moveDriveFileToSectionFolder(
+        existingNativeId,
+        section,
+        complexKey,
+        params.complexName,
+        token
+      );
+      const finalUrl = params.doc.googleUrl || moved.webViewLink;
+      return {
+        ...params.doc,
+        complexId: complexKey,
+        sectionCategory: section,
+        driveFileId: moved.fileId,
+        driveFolderId: moved.folderId,
+        driveFolderName: moved.folderName,
+        driveWebViewLink: finalUrl,
+        googleUrl: finalUrl
+      };
+    }
+
+    // Case 2: Upload file (PDF Certificate, Attendance Sheet, Report, Custom Document) directly into Target Section Folder
+    let uploadBlob: Blob;
+    let resolvedMime = params.mimeType || 'text/html';
+    let resolvedExt = params.fileExtension || '';
+
+    if (params.blob) {
+      uploadBlob = params.blob;
+      resolvedMime = params.mimeType || params.blob.type || 'application/pdf';
+      if (!resolvedExt) {
+        if (resolvedMime.includes('pdf')) resolvedExt = '.pdf';
+        else if (resolvedMime.includes('spreadsheet') || resolvedMime.includes('excel')) resolvedExt = '.xlsx';
+        else if (resolvedMime.includes('html')) resolvedExt = '.html';
+        else resolvedExt = '.pdf';
+      }
+    } else {
+      const rawHtml =
+        params.htmlContent ||
+        params.doc.htmlContent ||
+        this.buildRtlHtmlDocument(
+          params.doc.title,
+          params.doc.description || params.doc.title,
+          params.complexName
+        );
+      const fullHtml = this.buildRtlHtmlDocument(params.doc.title, rawHtml, params.complexName);
+      uploadBlob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+      resolvedMime = 'text/html';
+      resolvedExt = '.html';
+    }
+
+    const sanitizedTitle = (params.doc.title || 'مستند محفوظ')
+      .replace(/[\\/:*?"<>|]/g, ' - ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const fileName = sanitizedTitle.toLowerCase().endsWith(resolvedExt.toLowerCase())
+      ? sanitizedTitle
+      : `${sanitizedTitle}${resolvedExt}`;
+
+    const metadata = {
+      name: fileName,
+      parents: [targetFolder.id],
+      mimeType: resolvedMime,
+      description:
+        params.doc.description ||
+        `محفوظ في قسم (${targetFolder.name}) عبر منصة عمران القرآنية - ${params.complexName || ''}`
+    };
+
+    const boundary = '-------314159265358979323846';
+    const delimiter = `\r\n--${boundary}\r\n`;
+    const closeDelimiter = `\r\n--${boundary}--`;
+
+    const metadataPart = new Blob(
+      [
+        delimiter +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) +
+          delimiter +
+          `Content-Type: ${resolvedMime}\r\n\r\n`
+      ],
+      { type: 'text/plain' }
+    );
+    const closePart = new Blob([closeDelimiter], { type: 'text/plain' });
+    const multipartBody = new Blob([metadataPart, uploadBlob, closePart], {
+      type: `multipart/related; boundary=${boundary}`
+    });
+
+    const uploadRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: multipartBody
+      }
+    );
+
+    if (!uploadRes.ok) {
+      const err = await uploadRes.json().catch(() => ({}));
+      throw new Error(`فشل حفظ الملف على Google Drive: ${err?.error?.message || uploadRes.statusText}`);
+    }
+
+    const uploaded = await uploadRes.json();
+    const driveFileId = uploaded.id as string;
+    const webViewLink =
+      uploaded.webViewLink || `https://drive.google.com/file/d/${driveFileId}/view`;
+
+    return {
+      ...params.doc,
+      complexId: complexKey,
+      sectionCategory: section,
+      driveFileId,
+      driveFolderId: targetFolder.id,
+      driveFolderName: targetFolder.name,
+      driveWebViewLink: webViewLink,
+      driveMimeType: uploaded.mimeType || resolvedMime,
+      googleUrl: webViewLink
+    };
+  }
+
+  /**
+   * Fetches all Library files directly from the Complex's Google Drive folders so the Library reflects real Drive state.
+   */
+  static async fetchComplexDriveLibraryDocuments(
+    complexId?: string | null,
+    complexName?: string
+  ): Promise<{ driveDocs: LibraryDocument[]; config: GoogleOAuthConfig; needsSessionAuth?: boolean }> {
+    const complexKey = this.resolveComplexKey(complexId);
+    const config = await this.loadGoogleAuthConfig(complexKey);
+    if (!config.isLinked) {
+      return { driveDocs: [], config };
+    }
+
+    const token = await this.getValidAccessToken(complexKey);
+    if (!token) {
+      return { driveDocs: [], config, needsSessionAuth: true };
+    }
+
+    const allSections: LibraryDriveSection[] = ['certificates', 'attendance', 'exams', 'reports', 'general'];
+    const hasCachedFolders =
+      Boolean(config.driveRootFolderId) &&
+      Boolean(config.driveSectionFolders) &&
+      allSections.every(sec => Boolean(config.driveSectionFolders?.[sec]?.id));
+
+    let rootFolder: DriveSectionFolderMeta;
+    let sectionFolders: Record<LibraryDriveSection, DriveSectionFolderMeta>;
+
+    if (hasCachedFolders && config.driveRootFolderId && config.driveSectionFolders) {
+      rootFolder = {
+        id: config.driveRootFolderId,
+        name: config.driveRootFolderName || `مكتبة ${complexName || config.complexName || 'المجمع القرآني'}`,
+        webViewLink:
+          config.driveRootFolderUrl || `https://drive.google.com/drive/folders/${config.driveRootFolderId}`
+      };
+      sectionFolders = config.driveSectionFolders as Record<LibraryDriveSection, DriveSectionFolderMeta>;
+    } else {
+      const ensured = await this.ensureComplexLibraryFolders(
+        complexKey,
+        complexName || config.complexName,
+        token
+      );
+      rootFolder = ensured.rootFolder;
+      sectionFolders = ensured.sectionFolders;
+    }
+
+    const folderIdToSection = new Map<string, { section: LibraryDriveSection; name: string }>();
+    (Object.keys(sectionFolders) as LibraryDriveSection[]).forEach(sec => {
+      const meta = sectionFolders[sec];
+      if (meta?.id) {
+        folderIdToSection.set(meta.id, { section: sec, name: meta.name });
+      }
+    });
+
+    const parentIds = [rootFolder.id, ...Array.from(folderIdToSection.keys())].filter(Boolean);
+    if (parentIds.length === 0) {
+      return { driveDocs: [], config };
+    }
+
+    const parentsQuery = parentIds.map(id => `'${id}' in parents`).join(' or ');
+    const q = `(${parentsQuery}) and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
+
+    const listRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,createdTime,modifiedTime,parents,description)&orderBy=createdTime desc&pageSize=200`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!listRes.ok) {
+      return { driveDocs: [], config };
+    }
+
+    const data = await listRes.json();
+    const files: any[] = Array.isArray(data.files) ? data.files : [];
+
+    const driveDocs: LibraryDocument[] = files.map(file => {
+      const parentId = Array.isArray(file.parents) ? file.parents[0] : rootFolder.id;
+      const folderInfo = folderIdToSection.get(parentId) || {
+        section: 'general' as LibraryDriveSection,
+        name: rootFolder.name
+      };
+
+      let docType: LibraryDocumentType = 'custom_note';
+      const mime = String(file.mimeType || '');
+      if (mime === 'application/vnd.google-apps.spreadsheet') {
+        docType = folderInfo.section === 'attendance' ? 'attendance_sheet' : 'google_sheet';
+      } else if (folderInfo.section === 'certificates') {
+        docType = 'certificate';
+      } else if (folderInfo.section === 'attendance') {
+        docType = 'attendance_sheet';
+      } else if (folderInfo.section === 'exams') {
+        docType = 'exam_archive';
+      } else if (folderInfo.section === 'reports' || mime.includes('pdf')) {
+        docType = 'pdf_report';
+      }
+
+      const rawName = String(file.name || 'ملف محفوظ في Drive').replace(/\.(pdf|html|xlsx|json)$/i, '');
+      const webViewLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
+
+      return {
+        id: `drive_${file.id}`,
+        complexId: complexKey,
+        title: rawName,
+        type: docType,
+        sectionCategory: folderInfo.section,
+        description: file.description || `محفوظ في Google Drive داخل مجلد (${folderInfo.name})`,
+        googleSpreadsheetId: mime === 'application/vnd.google-apps.spreadsheet' ? file.id : undefined,
+        googleUrl: webViewLink,
+        driveFileId: file.id,
+        driveFolderId: parentId,
+        driveFolderName: folderInfo.name,
+        driveWebViewLink: webViewLink,
+        driveMimeType: mime,
+        createdBy: config.connectedEmail || 'Google Drive',
+        createdAt: file.createdTime || file.modifiedTime || new Date().toISOString()
+      };
+    });
+
+    return { driveDocs, config };
+  }
+
+  /**
+   * Deletes a file from the Complex's Google Drive when confirmed by the user.
+   */
+  static async deleteLibraryFileFromDrive(
+    driveFileId: string,
+    complexId?: string | null
+  ): Promise<boolean> {
+    if (!driveFileId) return false;
+    const complexKey = this.resolveComplexKey(complexId);
+    const token = await this.getValidAccessToken(complexKey);
+    if (!token) return false;
+
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveFileId)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      return res.ok || res.status === 204 || res.status === 404;
+    } catch (e) {
+      console.warn('Could not delete file from Google Drive:', e);
+      return false;
+    }
   }
 }

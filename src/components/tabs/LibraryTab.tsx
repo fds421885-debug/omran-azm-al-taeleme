@@ -1,12 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
-  BookOpen,
   FileText,
   FileSpreadsheet,
   Download,
   Printer,
   Search,
-  Filter,
   Calendar,
   Layers,
   Plus,
@@ -16,26 +14,33 @@ import {
   Eye,
   CheckCircle2,
   AlertCircle,
-  Share2,
-  Send,
-  Sparkles,
   FileCheck,
   FolderArchive,
+  FolderOpen,
+  HardDrive,
+  Link2,
+  Unlink,
+  ShieldCheck,
+  Award,
+  ClipboardCheck,
+  Upload,
+  Building2,
   X
 } from 'lucide-react';
 import {
   LibraryDocument,
   LibraryDocumentType,
+  LibraryDriveSection,
   Student,
   Halaqah,
   Exam,
   AttendanceRecord,
   StudentEvaluation,
-  QuranComplex
+  QuranComplex,
+  GoogleOAuthConfig
 } from '../../types';
-import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
+import { GoogleWorkspaceService, DRIVE_SECTION_NAMES } from '../../lib/googleWorkspace';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
-import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
 interface LibraryTabProps {
   libraryDocs: LibraryDocument[];
@@ -49,8 +54,19 @@ interface LibraryTabProps {
   isSupervisor: boolean;
   isDeveloper?: boolean;
   activeComplex?: QuranComplex | null;
-  onSaveDocument: (doc: LibraryDocument) => Promise<void>;
-  onDeleteDocument: (docId: string) => Promise<void>;
+  googleAuthConfig?: GoogleOAuthConfig;
+  driveUploadVersion?: number;
+  onRefreshGoogleAuth?: () => Promise<void>;
+  onSaveDocument: (
+    doc: LibraryDocument,
+    options?: {
+      blob?: Blob;
+      htmlContent?: string;
+      mimeType?: string;
+      fileExtension?: string;
+    }
+  ) => Promise<void>;
+  onDeleteDocument: (docId: string, driveFileId?: string) => Promise<void>;
   initialHighlightId?: string;
   initialSearchQuery?: string;
 }
@@ -62,33 +78,68 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
   teacherHalaqahs = [],
   exams = [],
   attendance = [],
-  evaluations = [],
   currentUserName,
   isSupervisor = false,
   isDeveloper = false,
   activeComplex,
+  googleAuthConfig,
+  driveUploadVersion = 0,
+  onRefreshGoogleAuth,
   onSaveDocument,
   onDeleteDocument,
   initialHighlightId,
   initialSearchQuery
 }) => {
-  const [activeFilterType, setActiveFilterType] = useState<string>('all');
+  const [activeSectionFilter, setActiveSectionFilter] = useState<'all' | LibraryDriveSection>('all');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
   const [selectedHalaqahFilter, setSelectedHalaqahFilter] = useState<string>('all');
 
-  const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
-  const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
-  const themeCard = activeComplex?.theme?.cardColor || activeComplex?.theme?.surfaceColor || '#203843';
-  const themeBg = activeComplex?.theme?.backgroundColor || '#131f24';
-  const themeAccent = activeComplex?.theme?.accentColor || '#ffc800';
-  const themeAccentShadow = darkenHex(themeAccent, 0.28);
-  const themeCardShadow = darkenHex(themeCard, 0.35);
-  const themeBorder = lightenHex(themeCard, 0.18);
-  const themeBorderBottom = darkenHex(themeCard, 0.35);
-  const themeText = activeComplex?.theme?.textColor || '#ffffff';
-  const themeSubtext = activeComplex?.theme?.subtextColor || lightenHex(themeAccent, 0.25);
-  const themeContrastText = getContrastTextColor(themeAccent);
+  // Drive live state
+  const [driveDocs, setDriveDocs] = useState<LibraryDocument[]>([]);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
+  const [needsSessionRefresh, setNeedsSessionRefresh] = useState(false);
+  const [isLinkingAccount, setIsLinkingAccount] = useState(false);
+  const [isUnlinkingAccount, setIsUnlinkingAccount] = useState(false);
+  const [confirmUnlinkModal, setConfirmUnlinkModal] = useState(false);
+
+  // Preview Modal
+  const [previewDoc, setPreviewDoc] = useState<LibraryDocument | null>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // New Document / Upload Modal
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+  const [docSection, setDocSection] = useState<LibraryDriveSection>('reports');
+  const [docDescription, setDocDescription] = useState('');
+  const [docHalaqahId, setDocHalaqahId] = useState('all');
+  const [docContent, setDocContent] = useState('');
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [isSavingDoc, setIsSavingDoc] = useState(false);
+
+  // Delete Confirmation Modal
+  const [docToDelete, setDocToDelete] = useState<LibraryDocument | null>(null);
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+
+  // Status Toast
+  const [statusToast, setStatusToast] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    link?: string;
+  } | null>(null);
+
+  const showToast = useCallback((type: 'success' | 'error', text: string, link?: string) => {
+    setStatusToast({ type, text, link });
+    setTimeout(() => setStatusToast(null), 6000);
+  }, []);
+
+  const complexId = activeComplex?.id || 'default-complex';
+  const complexName = activeComplex?.name || 'المجمع القرآني';
+
+  const isComplexGoogleLinked = Boolean(
+    googleAuthConfig?.isLinked &&
+      (!googleAuthConfig.complexId || googleAuthConfig.complexId === complexId)
+  );
 
   useEffect(() => {
     if (initialSearchQuery) {
@@ -101,6 +152,111 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
     }
   }, [initialHighlightId, initialSearchQuery]);
 
+  // Refs to guarantee zero infinite refresh loops:
+  // Only fetch once when opening a linked complex, OR when THIS user uploads a new file (driveUploadVersion increments), OR manual click.
+  const isFetchingDriveRef = useRef(false);
+  const loadedDriveComplexKeyRef = useRef<string>('');
+  const lastHandledUploadVersionRef = useRef<number>(driveUploadVersion);
+
+  const syncFromComplexGoogleDrive = useCallback(
+    async (interactiveIfNeeded = false) => {
+      if (!isComplexGoogleLinked) {
+        setDriveDocs([]);
+        return;
+      }
+      if (isFetchingDriveRef.current) return;
+
+      isFetchingDriveRef.current = true;
+      setIsSyncingDrive(true);
+      try {
+        if (interactiveIfNeeded) {
+          await GoogleWorkspaceService.linkGoogleAccount(complexId, complexName);
+          if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
+        }
+        const res = await GoogleWorkspaceService.fetchComplexDriveLibraryDocuments(
+          complexId,
+          complexName
+        );
+        setDriveDocs(res.driveDocs || []);
+        setNeedsSessionRefresh(Boolean(res.needsSessionAuth));
+      } catch (err: any) {
+        showToast('error', err?.message || 'تعذر مزامنة ملفات Google Drive الخاصة بالمجمع.');
+      } finally {
+        isFetchingDriveRef.current = false;
+        setIsSyncingDrive(false);
+      }
+    },
+    [isComplexGoogleLinked, complexId, complexName, onRefreshGoogleAuth, showToast]
+  );
+
+  // 1. Initial load ONLY ONCE per linked complex (no polling, no state-update loop)
+  const linkedAccountIdentity = isComplexGoogleLinked
+    ? `${complexId}:${googleAuthConfig?.connectedEmail || 'linked'}`
+    : '';
+
+  useEffect(() => {
+    if (!linkedAccountIdentity) {
+      loadedDriveComplexKeyRef.current = '';
+      setDriveDocs([]);
+      setNeedsSessionRefresh(false);
+      return;
+    }
+    if (loadedDriveComplexKeyRef.current === linkedAccountIdentity) {
+      return;
+    }
+    loadedDriveComplexKeyRef.current = linkedAccountIdentity;
+    syncFromComplexGoogleDrive(false);
+  }, [linkedAccountIdentity, syncFromComplexGoogleDrive]);
+
+  // 2. Refresh ONLY for this user when they upload/save a new file
+  useEffect(() => {
+    if (driveUploadVersion > lastHandledUploadVersionRef.current) {
+      lastHandledUploadVersionRef.current = driveUploadVersion;
+      if (isComplexGoogleLinked) {
+        syncFromComplexGoogleDrive(false);
+      }
+    }
+  }, [driveUploadVersion, isComplexGoogleLinked, syncFromComplexGoogleDrive]);
+
+  const handleLinkComplexLibrary = async () => {
+    setIsLinkingAccount(true);
+    try {
+      const res = await GoogleWorkspaceService.linkGoogleAccount(complexId, complexName);
+      loadedDriveComplexKeyRef.current = `${complexId}:${res.email || 'linked'}`;
+      if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
+      const driveRes = await GoogleWorkspaceService.fetchComplexDriveLibraryDocuments(
+        complexId,
+        complexName
+      );
+      setDriveDocs(driveRes.driveDocs || []);
+      setNeedsSessionRefresh(false);
+      showToast(
+        'success',
+        `تم ربط مكتبة (${complexName}) بحساب Google (${res.email}) وإنشاء مجلدات الأقسام على Google Drive بنجاح!`,
+        res.config.driveRootFolderUrl
+      );
+    } catch (err: any) {
+      showToast('error', err?.message || 'لم يكتمل ربط حساب Google للمجمع.');
+    } finally {
+      setIsLinkingAccount(false);
+    }
+  };
+
+  const handleConfirmUnlinkComplex = async () => {
+    setIsUnlinkingAccount(true);
+    try {
+      await GoogleWorkspaceService.disconnectGoogleAccount(complexId);
+      setDriveDocs([]);
+      setConfirmUnlinkModal(false);
+      if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
+      showToast('success', `تم إلغاء ربط حساب Google عن (${complexName}) بشكل مستقل دون التأثير على أي مجمع آخر.`);
+    } catch (err: any) {
+      showToast('error', err?.message || 'تعذر إلغاء ربط الحساب.');
+    } finally {
+      setIsUnlinkingAccount(false);
+    }
+  };
+
   // Teacher specific halaqahs
   const effectiveTeacherHalaqahs = useMemo(() => {
     if (isSupervisor || isDeveloper) return halaqahs;
@@ -111,489 +267,873 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
     return new Set(effectiveTeacherHalaqahs.map(h => h.id));
   }, [effectiveTeacherHalaqahs]);
 
-  // Preview Modal
-  const [previewDoc, setPreviewDoc] = useState<LibraryDocument | null>(null);
+  // Combine live Google Drive files + Firestore Complex Library metadata (deduplicated by driveFileId)
+  const combinedDocuments = useMemo(() => {
+    if (!isComplexGoogleLinked) return [];
 
-  // New Document Modal
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
-  const [docType, setDocType] = useState<LibraryDocumentType>('pdf_report');
-  const [docDate, setDocDate] = useState(new Date().toISOString().split('T')[0]);
-  const [docHalaqahId, setDocHalaqahId] = useState(() => {
-    if (!isSupervisor && !isDeveloper && effectiveTeacherHalaqahs.length > 0) {
-      return effectiveTeacherHalaqahs[0].id;
-    }
-    return '';
-  });
-  const [docGoogleUrl, setDocGoogleUrl] = useState('');
-  const [docDescription, setDocDescription] = useState('');
+    const byDriveId = new Map<string, LibraryDocument>();
+    const standaloneDocs: LibraryDocument[] = [];
 
-  // Syncing state
-  const [syncingDocId, setSyncingDocId] = useState<string | null>(null);
-  const [docToDelete, setDocToDelete] = useState<LibraryDocument | null>(null);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+    // 1. Live Google Drive files (authoritative Drive links & folders)
+    driveDocs.forEach(dDoc => {
+      if (dDoc.driveFileId) {
+        byDriveId.set(dDoc.driveFileId, dDoc);
+      }
+    });
 
-  // Filtered list strictly isolated for teachers to their own halaqahs
+    // 2. Enrich with Firestore metadata (halaqahName, studentName, htmlContent, createdBy) strictly for this complex
+    libraryDocs
+      .filter(doc => !doc.complexId || doc.complexId === complexId)
+      .forEach(metaDoc => {
+        const key =
+          metaDoc.driveFileId ||
+          metaDoc.googleSpreadsheetId ||
+          metaDoc.googleFormId;
+        if (key && byDriveId.has(key)) {
+          const driveEntry = byDriveId.get(key)!;
+          byDriveId.set(key, {
+            ...driveEntry,
+            ...metaDoc,
+            driveFileId: driveEntry.driveFileId,
+            driveFolderId: driveEntry.driveFolderId || metaDoc.driveFolderId,
+            driveFolderName: driveEntry.driveFolderName || metaDoc.driveFolderName,
+            driveWebViewLink: driveEntry.driveWebViewLink || metaDoc.driveWebViewLink || metaDoc.googleUrl,
+            googleUrl: driveEntry.driveWebViewLink || metaDoc.googleUrl,
+            sectionCategory:
+              metaDoc.sectionCategory ||
+              driveEntry.sectionCategory ||
+              GoogleWorkspaceService.resolveDocSection(metaDoc)
+          });
+        } else if (key) {
+          byDriveId.set(key, {
+            ...metaDoc,
+            sectionCategory:
+              metaDoc.sectionCategory || GoogleWorkspaceService.resolveDocSection(metaDoc)
+          });
+        } else {
+          standaloneDocs.push({
+            ...metaDoc,
+            sectionCategory:
+              metaDoc.sectionCategory || GoogleWorkspaceService.resolveDocSection(metaDoc)
+          });
+        }
+      });
+
+    // 3. Also surface Complex Exams linked to Google Sheets inside 'الاختبارات'
+    exams
+      .filter(ex => (!ex.complexId || ex.complexId === complexId) && ex.googleSpreadsheetId)
+      .forEach(ex => {
+        if (ex.googleSpreadsheetId && !byDriveId.has(ex.googleSpreadsheetId)) {
+          byDriveId.set(ex.googleSpreadsheetId, {
+            id: `auto-sheet-${ex.id}`,
+            complexId,
+            title: `جدول نتائج: ${ex.title}`,
+            type: 'google_sheet',
+            sectionCategory: 'exams',
+            driveFileId: ex.googleSpreadsheetId,
+            driveFolderName: DRIVE_SECTION_NAMES.exams,
+            halaqahId: ex.targetHalaqat?.[0] || 'all',
+            description: 'جدول بيانات Google Sheets لدرجات الطلاب في الاختبار',
+            googleSpreadsheetId: ex.googleSpreadsheetId,
+            googleUrl: ex.googleSpreadsheetUrl,
+            driveWebViewLink: ex.googleSpreadsheetUrl,
+            createdBy: ex.createdByName || 'النظام الآلي',
+            createdAt: ex.createdAt
+          });
+        }
+      });
+
+    const all = [...Array.from(byDriveId.values()), ...standaloneDocs];
+
+    // Role-based visibility
+    const scoped =
+      isSupervisor || isDeveloper
+        ? all
+        : all.filter(doc => {
+            if (!doc.halaqahId || doc.halaqahId === 'all') return true;
+            return teacherHalaqahIds.has(doc.halaqahId);
+          });
+
+    return scoped.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [
+    isComplexGoogleLinked,
+    driveDocs,
+    libraryDocs,
+    exams,
+    complexId,
+    isSupervisor,
+    isDeveloper,
+    teacherHalaqahIds
+  ]);
+
+  // Section counts
+  const sectionCounts = useMemo(() => {
+    const counts: Record<'all' | LibraryDriveSection, number> = {
+      all: combinedDocuments.length,
+      certificates: 0,
+      attendance: 0,
+      exams: 0,
+      reports: 0,
+      general: 0
+    };
+    combinedDocuments.forEach(doc => {
+      const sec = doc.sectionCategory || GoogleWorkspaceService.resolveDocSection(doc);
+      counts[sec] = (counts[sec] || 0) + 1;
+    });
+    return counts;
+  }, [combinedDocuments]);
+
+  // Filtered Documents
   const filteredDocs = useMemo(() => {
-    return libraryDocs.filter(d => {
-      // If user is a regular teacher (not supervisor and not developer):
-      // They can ONLY see documents belonging to their assigned halaqah(s) or created by them!
-      if (!isSupervisor && !isDeveloper) {
-        const isMyHalaqah = d.halaqahId && teacherHalaqahIds.has(d.halaqahId);
-        const isMyDoc = d.createdByName && currentUserName && (
-          d.createdByName.trim() === currentUserName.trim() ||
-          d.createdByName.toLowerCase().includes(currentUserName.toLowerCase()) ||
-          currentUserName.toLowerCase().includes(d.createdByName.toLowerCase())
-        );
-        if (!isMyHalaqah && !isMyDoc) {
+    return combinedDocuments.filter(doc => {
+      const sec = doc.sectionCategory || GoogleWorkspaceService.resolveDocSection(doc);
+      if (activeSectionFilter !== 'all' && sec !== activeSectionFilter) {
+        return false;
+      }
+      if (selectedHalaqahFilter !== 'all') {
+        if (doc.halaqahId && doc.halaqahId !== 'all' && doc.halaqahId !== selectedHalaqahFilter) {
           return false;
         }
       }
-
-      const matchesType = activeFilterType === 'all' || d.type === activeFilterType;
-      const matchesDate = !selectedDateFilter || d.date === selectedDateFilter;
-      const matchesHalaqah = selectedHalaqahFilter === 'all' || d.halaqahId === selectedHalaqahFilter;
-      const query = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !query ||
-        d.title.toLowerCase().includes(query) ||
-        (d.description && d.description.toLowerCase().includes(query)) ||
-        (d.halaqahName && d.halaqahName.toLowerCase().includes(query)) ||
-        (d.createdByName && d.createdByName.toLowerCase().includes(query));
-
-      return matchesType && matchesDate && matchesHalaqah && matchesSearch;
+      if (selectedDateFilter) {
+        const docDate = (doc.createdAt || '').split('T')[0];
+        if (docDate !== selectedDateFilter) return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = doc.title.toLowerCase().includes(q);
+        const matchDesc = (doc.description || '').toLowerCase().includes(q);
+        const matchFolder = (doc.driveFolderName || '').toLowerCase().includes(q);
+        const matchStudent = (doc.studentName || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchFolder && !matchStudent) return false;
+      }
+      return true;
     });
-  }, [libraryDocs, activeFilterType, selectedDateFilter, selectedHalaqahFilter, searchQuery, isSupervisor, isDeveloper, teacherHalaqahIds, currentUserName]);
+  }, [
+    combinedDocuments,
+    activeSectionFilter,
+    selectedHalaqahFilter,
+    selectedDateFilter,
+    searchQuery
+  ]);
 
-  // Statistics
-  const pdfCount = libraryDocs.filter(d => d.type === 'pdf_report' || d.type === 'attendance_sheet').length;
-  const sheetsCount = libraryDocs.filter(d => d.type === 'google_sheet' || d.type === 'exam_results').length;
-  const formsCount = libraryDocs.filter(d => d.type === 'google_form').length;
-
-  // Handle Syncing Google Sheet / Form linked doc
-  const handleSyncLinkedDoc = async (docItem: LibraryDocument) => {
-    setSyncingDocId(docItem.id);
-    setStatusMessage(null);
-    try {
-      const token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        throw new Error('يرجى تسجيل الدخول أو ربط حساب Google لتحديث ورقة البيانات.');
-      }
-
-      if (docItem.googleSpreadsheetId) {
-        // Find matching exam submissions if applicable
-        const relevantSubmissions = docItem.halaqahId
-          ? evaluations.map(e => ({ studentName: e.studentName }))
-          : [];
-
-        await GoogleWorkspaceService.syncSubmissionsToSheet(docItem.googleSpreadsheetId, relevantSubmissions as any, token);
-      }
-
-      setStatusMessage({
-        type: 'success',
-        text: `تم تحديث ومزامنة "${docItem.title}" مع Google Sheets بنجاح دون الحاجة لإنشاء ملف جديد!`
-      });
-      setTimeout(() => setStatusMessage(null), 5000);
-    } catch (e: any) {
-      setStatusMessage({
-        type: 'error',
-        text: e.message || 'حدث خطأ أثناء تحديث المستند.'
-      });
-      setTimeout(() => setStatusMessage(null), 5000);
-    } finally {
-      setSyncingDocId(null);
+  const sectionTypeFromCategory = (sec: LibraryDriveSection): LibraryDocumentType => {
+    switch (sec) {
+      case 'certificates':
+        return 'certificate';
+      case 'attendance':
+        return 'attendance_sheet';
+      case 'exams':
+        return 'exam_archive';
+      case 'reports':
+        return 'pdf_report';
+      default:
+        return 'custom_note';
     }
   };
 
-  // Add Document Submission
-  const handleCreateDocument = async (e: React.FormEvent) => {
+  // Save / Upload new file into Library & Google Drive section folder
+  const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!docTitle.trim()) {
-      setStatusMessage({ type: 'error', text: 'يرجى كتابة عنوان التقرير أو المستند.' });
+    const resolvedTitle = docTitle.trim() || selectedUploadFile?.name?.replace(/\.[^/.]+$/, '') || '';
+    if (!resolvedTitle) {
+      showToast('error', 'يرجى كتابة اسم الملف أو اختيار ملف للرفع.');
       return;
     }
 
-    setIsSubmitting(true);
+    setIsSavingDoc(true);
     try {
-      const chosenHalaqah = halaqahs.find(h => h.id === docHalaqahId);
+      const selectedHalaqah = effectiveTeacherHalaqahs.find(h => h.id === docHalaqahId);
       const newDoc: LibraryDocument = {
-        id: `lib-doc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-        title: docTitle.trim(),
-        type: docType,
-        date: docDate || new Date().toISOString().split('T')[0],
-        createdAt: new Date().toISOString(),
-        createdByName: currentUserName || 'المعلم / المشرف',
-        complexId: activeComplex?.id,
-        complexName: activeComplex?.name,
-        halaqahId: docHalaqahId || undefined,
-        halaqahName: chosenHalaqah?.name,
-        googleUrl: docGoogleUrl.trim() || undefined,
-        description: docDescription.trim() || undefined
+        id: `lib-${Date.now()}`,
+        complexId,
+        title: resolvedTitle,
+        type: sectionTypeFromCategory(docSection),
+        sectionCategory: docSection,
+        halaqahId: docHalaqahId,
+        halaqahName: docHalaqahId === 'all' ? 'جميع الحلقات' : selectedHalaqah?.name,
+        description: docDescription.trim() || `محفوظ في مجلد (${DRIVE_SECTION_NAMES[docSection]})`,
+        htmlContent: !selectedUploadFile ? docContent.trim() || docDescription.trim() || resolvedTitle : undefined,
+        createdBy: currentUserName,
+        createdAt: new Date().toISOString()
       };
 
-      await onSaveDocument(newDoc);
-      setStatusMessage({ type: 'success', text: `تم حفظ وأرشفة "${docTitle}" في المكتبة بنجاح!` });
-      setIsAddModalOpen(false);
+      const fileExt = selectedUploadFile?.name?.includes('.')
+        ? `.${selectedUploadFile.name.split('.').pop()}`
+        : undefined;
+
+      await onSaveDocument(newDoc, {
+        blob: selectedUploadFile || undefined,
+        htmlContent: !selectedUploadFile ? newDoc.htmlContent : undefined,
+        mimeType: selectedUploadFile?.type || undefined,
+        fileExtension: fileExt
+      });
+
       setDocTitle('');
       setDocDescription('');
-      setDocGoogleUrl('');
-      setTimeout(() => setStatusMessage(null), 4000);
-    } catch (e: any) {
-      setStatusMessage({ type: 'error', text: e.message || 'حدث خطأ أثناء الحفظ.' });
+      setDocContent('');
+      setSelectedUploadFile(null);
+      setIsAddModalOpen(false);
+      showToast('success', `تم حفظ الملف في المكتبة ومجلد (${DRIVE_SECTION_NAMES[docSection]}) على Google Drive بنجاح!`);
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        showToast('error', err?.message || 'تعذر حفظ الملف في Google Drive.');
+      }
     } finally {
-      setIsSubmitting(false);
+      setIsSavingDoc(false);
     }
   };
 
-  // Confirm Delete
+  // Export Attendance directly to Complex Google Drive 'الحضور والغياب' folder
+  const [isExportingAttendance, setIsExportingAttendance] = useState(false);
+  const handleExportAttendanceToDrive = async () => {
+    setIsExportingAttendance(true);
+    try {
+      const res = await GoogleWorkspaceService.exportAttendanceToGoogleSheet(
+        attendance,
+        students,
+        undefined,
+        complexId,
+        complexName
+      );
+
+      const sheetDoc: LibraryDocument = {
+        id: `lib-att-${Date.now()}`,
+        complexId,
+        title: `الحضور والغياب - ${complexName} (${new Date().toLocaleDateString('ar-SA')})`,
+        type: 'attendance_sheet',
+        sectionCategory: 'attendance',
+        halaqahId: 'all',
+        halaqahName: 'جميع الحلقات',
+        description: `كشف حضور وغياب إلكتروني محفوظ في مجلد (الحضور والغياب) على Google Drive`,
+        googleSpreadsheetId: res.spreadsheetId,
+        driveFileId: res.spreadsheetId,
+        driveFolderName: DRIVE_SECTION_NAMES.attendance,
+        googleUrl: res.spreadsheetUrl,
+        driveWebViewLink: res.spreadsheetUrl,
+        createdBy: currentUserName,
+        createdAt: new Date().toISOString()
+      };
+
+      await onSaveDocument(sheetDoc);
+      showToast('success', 'تم حفظ كشف الحضور والغياب في مجلد (الحضور والغياب) على Google Drive!', res.spreadsheetUrl);
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        showToast('error', err?.message || 'تعذر تصدير وحفظ كشف الحضور في Google Drive.');
+      }
+    } finally {
+      setIsExportingAttendance(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!docToDelete) return;
+    setIsDeletingDoc(true);
     try {
-      await onDeleteDocument(docToDelete.id);
-      setStatusMessage({ type: 'success', text: `تم حذف "${docToDelete.title}" من أرشيف المكتبة.` });
+      await onDeleteDocument(docToDelete.id, docToDelete.driveFileId);
+      setDriveDocs(prev =>
+        prev.filter(
+          d =>
+            d.id !== docToDelete.id &&
+            (!docToDelete.driveFileId || d.driveFileId !== docToDelete.driveFileId)
+        )
+      );
       setDocToDelete(null);
-      setTimeout(() => setStatusMessage(null), 3000);
-    } catch (e: any) {
-      setStatusMessage({ type: 'error', text: 'فشل حذف المستند.' });
+      showToast('success', 'تم حذف الملف من المكتبة ومن Google Drive بنجاح.');
+    } catch (err: any) {
+      showToast('error', err?.message || 'حدث خطأ أثناء حذف الملف.');
+    } finally {
+      setIsDeletingDoc(false);
     }
   };
 
-  const getDocTypeBadge = (type: LibraryDocumentType) => {
-    switch (type) {
-      case 'pdf_report':
-        return { label: 'تقرير PDF معتمد', icon: FileText, bg: 'bg-rose-950/80 text-rose-300 border-rose-600/40' };
-      case 'google_sheet':
-      case 'exam_results':
-        return { label: 'جدول Google Sheets', icon: FileSpreadsheet, bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' };
-      case 'google_form':
-        return { label: 'نموذج Google Forms', icon: FileCheck, bg: 'bg-blue-950/80 text-blue-300 border-blue-500/40' };
-      case 'attendance_sheet':
-        return { label: 'سجل حضور رسمي', icon: Calendar, bg: 'bg-amber-950/80 text-amber-300 border-amber-500/40' };
-      case 'certificate_batch':
-        return { label: 'دفعة شهادات', icon: Sparkles, bg: 'bg-purple-950/80 text-purple-300 border-purple-500/40' };
-      default:
-        return { label: 'مستند سحابي', icon: FileText, bg: 'bg-slate-900 text-slate-300 border-slate-700' };
+  const handlePrintPreview = () => {
+    const win = previewIframeRef.current?.contentWindow;
+    if (win) {
+      win.focus();
+      win.print();
     }
   };
+
+  const getSectionBadgeMeta = (sec: LibraryDriveSection) => {
+    switch (sec) {
+      case 'certificates':
+        return {
+          label: 'مجلد الشهادات',
+          icon: Award,
+          badgeCls: 'bg-[#ffc800]/20 text-[#ffc800] border-[#ffc800]/50'
+        };
+      case 'attendance':
+        return {
+          label: 'مجلد الحضور والغياب',
+          icon: ClipboardCheck,
+          badgeCls: 'bg-[#58cc02]/20 text-[#58cc02] border-[#58cc02]/50'
+        };
+      case 'exams':
+        return {
+          label: 'مجلد الاختبارات',
+          icon: FileSpreadsheet,
+          badgeCls: 'bg-[#ce82ff]/20 text-[#ce82ff] border-[#ce82ff]/50'
+        };
+      case 'reports':
+        return {
+          label: 'مجلد التقارير الدورية',
+          icon: FileText,
+          badgeCls: 'bg-[#1cb0f6]/20 text-[#1cb0f6] border-[#1cb0f6]/50'
+        };
+      default:
+        return {
+          label: 'مجلد ملفات عامة',
+          icon: FolderOpen,
+          badgeCls: 'bg-slate-500/20 text-slate-200 border-slate-400/40'
+        };
+    }
+  };
+
+  // ============================================================================
+  // LOCKED STATE: COMPLEX GOOGLE ACCOUNT NOT LINKED YET (DUOLINGO 3D + COMPLEX THEME)
+  // ============================================================================
+  if (!isComplexGoogleLinked) {
+    return (
+      <div className="space-y-6 pb-12" dir="rtl">
+        {statusToast && (
+          <div
+            className={`p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 ${
+              statusToast.type === 'success'
+                ? 'bg-[#58cc02]/15 border-[#58cc02]/60 text-white'
+                : 'bg-[#ff4b4b]/15 border-[#ff4b4b]/60 text-rose-100'
+            }`}
+          >
+            <div className="flex items-center gap-3 text-sm font-extrabold">
+              {statusToast.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-[#58cc02] shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-[#ff4b4b] shrink-0" />
+              )}
+              <span>{statusToast.text}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusToast(null)}
+              className="text-slate-300 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        <div className="rounded-[36px] bg-[var(--complex-card,#203843)] border-2 border-b-[8px] border-[var(--complex-accent,#ffc800)] p-6 sm:p-10 shadow-2xl text-[var(--complex-text,#ffffff)]">
+          <div className="max-w-3xl mx-auto text-center space-y-6">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] text-[var(--complex-accent,#ffc800)] text-xs sm:text-sm font-black">
+              <Building2 className="w-4 h-4" />
+              <span>{complexName} • حساب Google مستقل ومعزول لهذا المجمع</span>
+            </div>
+
+            <div className="w-24 h-24 mx-auto rounded-[28px] bg-[var(--complex-accent,#ffc800)] text-slate-950 border-2 border-b-[6px] border-amber-600/70 flex items-center justify-center shadow-xl">
+              <FolderArchive className="w-12 h-12 stroke-[2.4]" />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl sm:text-3xl font-black text-white">
+                يرجى ربط المكتبة بحساب Google للمجمع
+              </h2>
+              <p className="text-sm sm:text-base font-bold text-slate-300 leading-relaxed max-w-2xl mx-auto">
+                تعمل المكتبة السحابية حصرياً عند ربط حساب Google الخاص بـ ({complexName})، وهو نفس الربط المعتمد لقسم الاختبارات ونماذج وجداول Google في هذا المجمع دون أي تداخل مع المجمعات الأخرى.
+              </p>
+            </div>
+
+            {/* Automatic Drive Folders Preview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-right pt-2">
+              <div className="rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-4">
+                <div className="w-10 h-10 rounded-xl bg-[#ffc800]/20 text-[#ffc800] flex items-center justify-center mb-2.5">
+                  <Award className="w-5 h-5" />
+                </div>
+                <h4 className="font-black text-sm text-white">مجلد الشهادات</h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  حفظ كافة الشهادات بأسماء الطلاب ومناسباتهم على Google Drive
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-4">
+                <div className="w-10 h-10 rounded-xl bg-[#58cc02]/20 text-[#58cc02] flex items-center justify-center mb-2.5">
+                  <ClipboardCheck className="w-5 h-5" />
+                </div>
+                <h4 className="font-black text-sm text-white">مجلد الحضور والغياب</h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  حفظ كشوف حضور الطلاب وتحضير المعلمين بالتاريخ والحلقة
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-4">
+                <div className="w-10 h-10 rounded-xl bg-[#ce82ff]/20 text-[#ce82ff] flex items-center justify-center mb-2.5">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <h4 className="font-black text-sm text-white">مجلد الاختبارات</h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  حفظ كشوف وجداول الدرجات ونتائج الاختبارات تلقائياً
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-4">
+                <div className="w-10 h-10 rounded-xl bg-[#1cb0f6]/20 text-[#1cb0f6] flex items-center justify-center mb-2.5">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <h4 className="font-black text-sm text-white">مجلد التقارير الدورية</h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  حفظ تقارير الإنجاز القرآني وتقارير المساعد الذكي والـ PDF
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={handleLinkComplexLibrary}
+                disabled={isLinkingAccount}
+                className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-[#58cc02] hover:bg-[#61e002] text-white font-black text-base border-2 border-b-[6px] border-[#46a302] active:translate-y-[2px] active:border-b-2 transition-all flex items-center justify-center gap-3 shadow-xl disabled:opacity-60 cursor-pointer"
+              >
+                {isLinkingAccount ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>جاري ربط حساب Google وتجهيز مجلدات Drive...</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-5 h-5 stroke-[2.6]" />
+                    <span>ربط حساب Google وتفعيل مكتبة المجمع الآن</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-slate-400">
+              <ShieldCheck className="w-4 h-4 text-[#58cc02]" />
+              <span>كل مجمع يحتفظ بحساب Google ومجلد Drive مستقل تماماً 100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // ACTIVE STATE: COMPLEX GOOGLE ACCOUNT IS LINKED — LIVE GOOGLE DRIVE LIBRARY
+  // ============================================================================
+  const sectionFoldersMeta = googleAuthConfig?.driveSectionFolders;
+  const rootFolderUrl =
+    googleAuthConfig?.driveRootFolderUrl ||
+    (googleAuthConfig?.driveRootFolderId
+      ? `https://drive.google.com/drive/folders/${googleAuthConfig.driveRootFolderId}`
+      : undefined);
+
+  const sectionCards: {
+    id: 'all' | LibraryDriveSection;
+    title: string;
+    subtitle: string;
+    icon: React.ComponentType<{ className?: string }>;
+    accentBorder: string;
+    iconBg: string;
+    driveUrl?: string;
+  }[] = [
+    {
+      id: 'all',
+      title: 'كافة ملفات المكتبة',
+      subtitle: 'جميع الأقسام على Drive',
+      icon: FolderArchive,
+      accentBorder: 'border-[var(--complex-accent,#ffc800)]',
+      iconBg: 'bg-[var(--complex-accent,#ffc800)] text-slate-950',
+      driveUrl: rootFolderUrl
+    },
+    {
+      id: 'certificates',
+      title: 'الشهادات',
+      subtitle: 'بأسماء الطلاب والمناسبات',
+      icon: Award,
+      accentBorder: 'border-[#ffc800]',
+      iconBg: 'bg-[#ffc800]/20 text-[#ffc800]',
+      driveUrl: sectionFoldersMeta?.certificates?.webViewLink
+    },
+    {
+      id: 'attendance',
+      title: 'الحضور والغياب',
+      subtitle: 'حضور الطلاب والمعلمين',
+      icon: ClipboardCheck,
+      accentBorder: 'border-[#58cc02]',
+      iconBg: 'bg-[#58cc02]/20 text-[#58cc02]',
+      driveUrl: sectionFoldersMeta?.attendance?.webViewLink
+    },
+    {
+      id: 'exams',
+      title: 'الاختبارات',
+      subtitle: 'كشوف وجداول الدرجات',
+      icon: FileSpreadsheet,
+      accentBorder: 'border-[#ce82ff]',
+      iconBg: 'bg-[#ce82ff]/20 text-[#ce82ff]',
+      driveUrl: sectionFoldersMeta?.exams?.webViewLink
+    },
+    {
+      id: 'reports',
+      title: 'التقارير الدورية',
+      subtitle: 'تقارير الحلقات والـ PDF',
+      icon: FileText,
+      accentBorder: 'border-[#1cb0f6]',
+      iconBg: 'bg-[#1cb0f6]/20 text-[#1cb0f6]',
+      driveUrl: sectionFoldersMeta?.reports?.webViewLink
+    }
+  ];
 
   return (
-    <div className="space-y-6" dir="rtl">
-      {/* Top Banner with Duolingo 3D Styling */}
-      <div
-        className="rounded-[32px] border-2 border-b-4 p-6 shadow-xl relative overflow-hidden transition-all"
-        style={{
-          backgroundColor: themeCard,
-          borderColor: themeBorder,
-          borderBottomColor: themeBorderBottom
-        }}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div
-              className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black shadow-lg shrink-0"
-              style={{
-                backgroundColor: themeAccent,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow,
-                color: themeContrastText
-              }}
+    <div className="space-y-6 pb-12" dir="rtl">
+      {/* Status Toast */}
+      {statusToast && (
+        <div
+          className={`p-4 rounded-2xl border-2 border-b-4 flex flex-wrap items-center justify-between gap-3 ${
+            statusToast.type === 'success'
+              ? 'bg-[#58cc02]/15 border-[#58cc02]/60 text-white'
+              : 'bg-[#ff4b4b]/15 border-[#ff4b4b]/60 text-rose-100'
+          }`}
+        >
+          <div className="flex items-center gap-3 text-sm font-extrabold">
+            {statusToast.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-[#58cc02] shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-[#ff4b4b] shrink-0" />
+            )}
+            <span>{statusToast.text}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {statusToast.link && (
+              <a
+                href={statusToast.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-[#58cc02] text-white font-black text-xs border-b-2 border-[#46a302] flex items-center gap-1.5"
+              >
+                <span>فتح في Google Drive</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setStatusToast(null)}
+              className="text-slate-300 hover:text-white p-1"
             >
-              <FolderArchive className="w-7 h-7" />
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Session Re-auth Notice if browser restarted */}
+      {needsSessionRefresh && (
+        <div className="rounded-2xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-[var(--complex-accent,#ffc800)] p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-xs sm:text-sm font-extrabold text-white">
+            <HardDrive className="w-5 h-5 text-[var(--complex-accent,#ffc800)] shrink-0" />
+            <span>
+              لتحديث أحدث الملفات مباشرة من Google Drive ({googleAuthConfig?.connectedEmail})، اضغط لتنشيط الجلسة السحابية:
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => syncFromComplexGoogleDrive(true)}
+            disabled={isSyncingDrive}
+            className="px-4 py-2 rounded-xl bg-[var(--complex-accent,#ffc800)] text-slate-950 font-black text-xs border-2 border-b-4 border-amber-600/70 active:translate-y-[2px] transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncingDrive ? 'animate-spin' : ''}`} />
+            <span>تنشيط ومزامنة Google Drive الآن</span>
+          </button>
+        </div>
+      )}
+
+      {/* Top Header Banner with Connected Complex Google Drive Controls */}
+      <div className="rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[var(--complex-border,#2b4550)] p-6 sm:p-7 shadow-xl">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+          <div className="flex items-start gap-4">
+            <div className="w-15 h-15 rounded-2xl bg-[var(--complex-accent,#ffc800)] text-slate-950 border-2 border-b-4 border-amber-600/70 flex items-center justify-center shrink-0 p-3.5 shadow-md">
+              <FolderArchive className="w-8 h-8 stroke-[2.3]" />
             </div>
             <div>
-              <h2 className="text-xl font-black font-heading text-white flex items-center gap-2">
-                <span>المكتبة والأرشيف السحابي الشامل</span>
-                <span
-                  className="text-xs px-2.5 py-0.5 rounded-full border font-mono font-bold"
-                  style={{
-                    backgroundColor: `${themeAccent}25`,
-                    color: themeAccent,
-                    borderColor: `${themeAccent}60`
-                  }}
-                >
-                  {libraryDocs.length} مستند
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  المكتبة والأرشيف السحابي (Google Drive)
+                </h2>
+                <span className="px-3 py-1 rounded-xl bg-[#58cc02]/20 border border-[#58cc02]/50 text-[#58cc02] text-xs font-black flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>مربوط بـ {googleAuthConfig?.connectedEmail || 'Google Drive'}</span>
                 </span>
-              </h2>
-              <p className="text-xs text-slate-300 mt-0.5 font-bold">
-                أرشيف مركزي دائم لتقارير الحلقات، ملفات الـ PDF، جداول Google Sheets، ونماذج الاختبارات مع إمكانية التحديث المباشر للملفات القائمة.
+              </div>
+              <p className="text-xs sm:text-sm font-bold text-slate-300">
+                مكتبة مستقلة خاصة بـ <span className="text-[var(--complex-accent,#ffc800)] font-black">{complexName}</span> — تُحفظ كافة الملفات وتُجلب مباشرة من مجلدات Google Drive الخاصة بهذا المجمع.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-lg cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110"
-              style={{
-                backgroundColor: themeAccent,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow,
-                color: themeContrastText
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              <span>أرشفة تقرير / ملف جديد</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Summary Counts */}
-        <div
-          className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t"
-          style={{ borderColor: themeBorder }}
-        >
-          <div
-            className="p-3 rounded-2xl border-2 border-b-2"
-            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
-          >
-            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>تقارير PDF محفوظة:</span>
-            <span className="text-base font-black text-white font-mono">{pdfCount}</span>
-          </div>
-          <div
-            className="p-3 rounded-2xl border-2 border-b-2"
-            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
-          >
-            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>جداول Google Sheets:</span>
-            <span className="text-base font-black text-white font-mono">{sheetsCount}</span>
-          </div>
-          <div
-            className="p-3 rounded-2xl border-2 border-b-2"
-            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
-          >
-            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>نماذج Google Forms:</span>
-            <span className="text-base font-black text-white font-mono">{formsCount}</span>
-          </div>
-          <div
-            className="p-3 rounded-2xl border-2 border-b-2"
-            style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
-          >
-            <span className="text-[11px] block font-bold" style={{ color: themeSubtext }}>المجمع الحالي:</span>
-            <span className="text-xs font-bold truncate block" style={{ color: themeAccent }}>{activeComplex?.name || 'الرئيسي'}</span>
-          </div>
-        </div>
-
-        {/* Toast Notification */}
-        {statusMessage && (
-          <div
-            className={`mt-4 p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/50 text-[#86efac]'
-                : 'bg-red-950/90 border-red-500/50 text-red-300'
-            }`}
-          >
-            {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-            )}
-            <span>{statusMessage.text}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Filter and Search Bar with Duolingo 3D buttons */}
-      <div
-        className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-3xl border-2 border-b-4 shadow-md"
-        style={{
-          backgroundColor: themeCard,
-          borderColor: themeBorder,
-          borderBottomColor: themeBorderBottom
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { id: 'all', label: `الكل (${libraryDocs.length})` },
-            { id: 'pdf_report', label: 'تقارير PDF' },
-            { id: 'google_sheet', label: 'جداول Sheets' },
-            { id: 'google_form', label: 'نماذج Forms' }
-          ].map(f => (
-            <button
-              key={f.id}
-              onClick={() => setActiveFilterType(f.id)}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5"
-              style={
-                activeFilterType === f.id
-                  ? {
-                      backgroundColor: themeAccent,
-                      color: themeContrastText,
-                      borderColor: themeAccent,
-                      borderBottomColor: themeAccentShadow
-                    }
-                  : {
-                      backgroundColor: themeSecondary,
-                      color: '#cbd5e1',
-                      borderColor: themeBorder,
-                      borderBottomColor: themeBorderBottom
-                    }
-              }
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          {/* Date Picker Filter */}
-          <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2"
-            style={{
-              backgroundColor: themeSecondary,
-              borderColor: themeBorder
-            }}
-          >
-            <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
-            <input
-              type="date"
-              value={selectedDateFilter}
-              onChange={e => setSelectedDateFilter(e.target.value)}
-              className="bg-transparent text-xs text-white outline-none cursor-pointer font-bold"
-              title="تصفية حسب تاريخ التقرير"
-            />
-            {selectedDateFilter && (
-              <button
-                onClick={() => setSelectedDateFilter('')}
-                className="text-[10px] text-red-300 hover:text-white"
-                title="إلغاء تصفية التاريخ"
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {rootFolderUrl && (
+              <a
+                href={rootFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] hover:brightness-110 text-[var(--complex-accent,#ffc800)] font-black text-xs border-2 border-b-4 border-[var(--complex-border,#2b4550)] active:translate-y-[2px] transition-all flex items-center gap-2"
               >
-                ✕
+                <HardDrive className="w-4 h-4" />
+                <span>فتح مجلد المجمع في Drive</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+
+            <button
+              type="button"
+              onClick={() => syncFromComplexGoogleDrive(needsSessionRefresh)}
+              disabled={isSyncingDrive}
+              className="px-4 py-2.5 rounded-2xl bg-[#1cb0f6] hover:brightness-105 text-white font-black text-xs border-2 border-b-4 border-[#1899d6] active:translate-y-[2px] transition-all flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncingDrive ? 'animate-spin' : ''}`} />
+              <span>{isSyncingDrive ? 'جاري الجلب من Drive...' : 'تحديث من Drive'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportAttendanceToDrive}
+              disabled={isExportingAttendance}
+              className="px-4 py-2.5 rounded-2xl bg-[#58cc02] hover:bg-[#61e002] text-white font-black text-xs border-2 border-b-4 border-[#46a302] active:translate-y-[2px] transition-all flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+            >
+              {isExportingAttendance ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4" />
+              )}
+              <span>حفظ كشف الحضور في المكتبة</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-[var(--complex-accent,#ffc800)] hover:brightness-105 text-slate-950 font-black text-xs border-2 border-b-4 border-amber-600/70 active:translate-y-[2px] transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[2.6]" />
+              <span>حفظ ملف جديد في المكتبة</span>
+            </button>
+
+            {(isSupervisor || isDeveloper) && (
+              <button
+                type="button"
+                onClick={() => setConfirmUnlinkModal(true)}
+                className="px-3.5 py-2.5 rounded-2xl bg-[#ff4b4b]/15 hover:bg-[#ff4b4b]/25 text-[#ff4b4b] font-black text-xs border-2 border-b-4 border-[#ff4b4b]/40 active:translate-y-[2px] transition-all flex items-center gap-1.5 cursor-pointer"
+                title="إلغاء ربط حساب Google عن هذا المجمع فقط"
+              >
+                <Unlink className="w-4 h-4" />
+                <span>إلغاء الربط</span>
               </button>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Search Box */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-[#86efac] absolute right-3 top-2.5" />
+      {/* Organized Google Drive Section Folders (Duolingo 3D Cards) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        {sectionCards.map(card => {
+          const IconComp = card.icon;
+          const isSelected = activeSectionFilter === card.id;
+          return (
+            <div
+              key={card.id}
+              onClick={() => setActiveSectionFilter(card.id)}
+              className={`group rounded-3xl p-4 border-2 border-b-[5px] transition-all cursor-pointer flex flex-col justify-between ${
+                isSelected
+                  ? `bg-[var(--complex-secondary,#1b2e35)] ${card.accentBorder} shadow-lg -translate-y-0.5`
+                  : 'bg-[var(--complex-card,#203843)] border-[var(--complex-border,#2b4550)] hover:brightness-105'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${card.iconBg}`}>
+                  <IconComp className="w-5 h-5" />
+                </div>
+                <span className="px-2.5 py-1 rounded-xl bg-[var(--complex-primary,#131f24)] text-white font-black text-xs border border-[var(--complex-border,#2b4550)]">
+                  {sectionCounts[card.id] || 0} ملف
+                </span>
+              </div>
+
+              <div className="mt-3">
+                <h3 className="font-black text-sm text-white">{card.title}</h3>
+                <p className="text-[11px] font-bold text-slate-400 mt-0.5">{card.subtitle}</p>
+              </div>
+
+              {card.driveUrl && (
+                <div className="mt-3 pt-2.5 border-t border-[var(--complex-border,#2b4550)] flex items-center justify-between">
+                  <a
+                    href={card.driveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-[11px] font-black text-[var(--complex-accent,#ffc800)] hover:underline flex items-center gap-1"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    <span>فتح المجلد في Drive</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Search & Filters Bar */}
+      <div className="rounded-3xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="md:col-span-5 relative">
+            <Search className="w-4 h-4 text-[var(--complex-accent,#ffc800)] absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="بحث في الأرشيف..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pr-9 pl-3 py-2 bg-[#064e3b]/80 border border-[#065f46] rounded-xl text-xs text-white placeholder-[#86efac]/50 focus:border-[#fbbf24] focus:outline-none"
+              placeholder="ابحث باسم الشهادة، الطالب، كشف الحضور، الاختبار، أو التقرير..."
+              className="w-full rounded-2xl py-2.5 pr-10 pl-4 text-xs sm:text-sm font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)] focus:outline-none focus:border-[var(--complex-accent,#ffc800)]"
             />
+          </div>
+
+          <div className="md:col-span-4 relative">
+            <Layers className="w-4 h-4 text-[var(--complex-accent,#ffc800)] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select
+              value={selectedHalaqahFilter}
+              onChange={e => setSelectedHalaqahFilter(e.target.value)}
+              className="w-full rounded-2xl py-2.5 pr-10 pl-4 text-xs sm:text-sm font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)] focus:outline-none focus:border-[var(--complex-accent,#ffc800)] appearance-none"
+            >
+              <option value="all">جميع الحلقات المتاحة</option>
+              {effectiveTeacherHalaqahs.map(h => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-3 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Calendar className="w-4 h-4 text-[var(--complex-accent,#ffc800)] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="date"
+                value={selectedDateFilter}
+                onChange={e => setSelectedDateFilter(e.target.value)}
+                className="w-full rounded-2xl py-2.5 pr-10 pl-3 text-xs font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)] focus:outline-none focus:border-[var(--complex-accent,#ffc800)]"
+              />
+            </div>
+            {selectedDateFilter && (
+              <button
+                type="button"
+                onClick={() => setSelectedDateFilter('')}
+                className="px-3 py-2.5 rounded-2xl bg-[#ff4b4b]/20 text-[#ff4b4b] text-xs font-black border border-[#ff4b4b]/40 cursor-pointer"
+              >
+                مسح
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Documents Grid / List */}
-      {filteredDocs.length === 0 ? (
-        <div className="text-center py-16 px-4 rounded-3xl bg-[#022c22]/60 border border-[#065f46] space-y-3">
-          <BookOpen className="w-12 h-12 text-[#86efac]/40 mx-auto" />
-          <h3 className="text-base font-bold text-white">لا توجد ملفات أو تقارير في هذا القسم</h3>
-          <p className="text-xs text-[#86efac]/70 max-w-sm mx-auto">
-            عندما تقوم باستخراج تقارير الطلاب الدورية أو تصدير جداول الاختبارات، ستُحفظ تلقائياً في هذا الأرشيف لسهولة الوصول إليها وطباعتها وتحديثها.
+      {/* Documents Grid */}
+      {isSyncingDrive && filteredDocs.length === 0 ? (
+        <div className="rounded-3xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-12 text-center">
+          <RefreshCw className="w-10 h-10 text-[var(--complex-accent,#ffc800)] animate-spin mx-auto mb-3" />
+          <h3 className="text-lg font-black text-white">جاري جلب ملفات المكتبة من Google Drive...</h3>
+          <p className="text-xs font-bold text-slate-400 mt-1">
+            يتم فحص مجلدات الشهادات، الحضور والغياب، الاختبارات، والتقارير الدورية
           </p>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] text-xs font-black shadow-md cursor-pointer hover:bg-amber-300 transition"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>إضافة مستند أو تقرير للأرشيف</span>
-          </button>
+        </div>
+      ) : filteredDocs.length === 0 ? (
+        <div className="rounded-3xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-[var(--complex-border,#2b4550)] p-12 text-center space-y-3">
+          <div className="w-16 h-16 rounded-3xl bg-[var(--complex-secondary,#1b2e35)] border-2 border-[var(--complex-border,#2b4550)] flex items-center justify-center mx-auto text-[var(--complex-accent,#ffc800)]">
+            <FolderOpen className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-black text-white">لا توجد ملفات محفوظة في هذا القسم حالياً</h3>
+          <p className="text-xs sm:text-sm font-bold text-slate-400 max-w-md mx-auto">
+            أي شهادة، كشف حضور وغياب، اختبار، أو تقرير تضغط عليه «حفظ في المكتبة» سيُرفع فوراً إلى مجلده المخصص في Google Drive ويظهر هنا تلقائياً.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDocs.map(docItem => {
-            const badge = getDocTypeBadge(docItem.type);
-            const BadgeIcon = badge.icon;
-            const isSyncing = syncingDocId === docItem.id;
+          {filteredDocs.map(doc => {
+            const sec = doc.sectionCategory || GoogleWorkspaceService.resolveDocSection(doc);
+            const secBadge = getSectionBadgeMeta(sec);
+            const BadgeIcon = secBadge.icon;
+            const driveHref = doc.driveWebViewLink || doc.googleUrl;
+            const isAutoExam = doc.id.startsWith('auto-');
 
             return (
               <div
-                key={docItem.id}
-                id={`library-item-${docItem.id}`}
-                data-item-id={docItem.id}
-                className="bg-[#022c22]/90 border border-[#065f46] hover:border-amber-400/50 rounded-2xl p-4.5 flex flex-col justify-between gap-4 shadow-lg transition-all group"
+                key={doc.id}
+                id={`item-${doc.id}`}
+                data-highlight-id={doc.id}
+                className="rounded-3xl bg-[var(--complex-card,#203843)] border-2 border-b-[5px] border-[var(--complex-border,#2b4550)] hover:border-[var(--complex-accent,#ffc800)] p-5 flex flex-col justify-between transition-all shadow-lg"
               >
-                <div className="space-y-3">
-                  {/* Top Badge and Date */}
-                  <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-3">
                     <span
-                      className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full border font-bold ${badge.bg}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-black border ${secBadge.badgeCls}`}
                     >
-                      <BadgeIcon className="w-3 h-3" />
-                      <span>{badge.label}</span>
+                      <BadgeIcon className="w-3.5 h-3.5" />
+                      <span>{doc.driveFolderName ? `مجلد ${doc.driveFolderName}` : secBadge.label}</span>
                     </span>
 
-                    <span className="text-[11px] font-mono text-[#86efac]/80 flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-amber-400" />
-                      <span>{docItem.date}</span>
-                    </span>
-                  </div>
-
-                  {/* Document Title & Description */}
-                  <div>
-                    <h3 className="font-bold text-white text-sm sm:text-base group-hover:text-amber-300 transition-colors line-clamp-2">
-                      {docItem.title}
-                    </h3>
-                    {docItem.description && (
-                      <p className="text-xs text-[#86efac]/70 mt-1 line-clamp-2">
-                        {docItem.description}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Metadata: Author & Halaqah */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#065f46]/60 text-[11px] text-emerald-200/80">
-                    <span>المصدر: {docItem.createdByName}</span>
-                    {docItem.halaqahName && (
-                      <>
-                        <span>•</span>
-                        <span className="text-amber-300">{docItem.halaqahName}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions Toolbar */}
-                <div className="pt-3 border-t border-[#065f46] flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {/* Preview / View */}
-                    <button
-                      onClick={() => setPreviewDoc(docItem)}
-                      className="px-2.5 py-1.5 rounded-xl bg-[#064e3b] hover:bg-[#065f46] text-[#86efac] hover:text-white border border-[#065f46] text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-sm"
-                      title="معاينة وقراءة المستند"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-amber-400" />
-                      <span>معاينة</span>
-                    </button>
-
-                    {/* Google Link or External Sheet */}
-                    {docItem.googleUrl && (
-                      <a
-                        href={docItem.googleUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 rounded-xl bg-blue-950 hover:bg-blue-900 text-blue-200 border border-blue-500/40 text-xs font-bold flex items-center gap-1 transition shadow-sm"
-                        title="فتح في Google Drive / Sheets"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>فتح الرابط</span>
-                      </a>
-                    )}
-
-                    {/* One-Click Sync for Google Docs */}
-                    {(docItem.googleSpreadsheetId || docItem.googleFormId || docItem.type === 'google_sheet') && (
+                    {!isAutoExam && (
                       <button
-                        onClick={() => handleSyncLinkedDoc(docItem)}
-                        disabled={isSyncing}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-900 hover:bg-emerald-800 text-emerald-200 border border-emerald-500/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition shadow-sm"
-                        title="تحديث ورقة البيانات القائمة ومزامنة السجلات فورياً"
+                        type="button"
+                        onClick={() => setDocToDelete(doc)}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-[#ff4b4b] hover:bg-[#ff4b4b]/10 transition-colors cursor-pointer"
+                        title="حذف الملف من المكتبة و Google Drive"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 text-[#fbbf24] ${isSyncing ? 'animate-spin' : ''}`} />
-                        <span>{isSyncing ? 'جارٍ التحديث...' : 'تحديث البيانات'}</span>
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
 
-                  {/* Delete Button */}
-                  {(isSupervisor || isDeveloper || (docItem.halaqahId && teacherHalaqahIds.has(docItem.halaqahId)) || (docItem.createdByName === currentUserName)) && (
-                    <button
-                      onClick={() => setDocToDelete(docItem)}
-                      className="p-1.5 rounded-lg text-rose-300 hover:text-white hover:bg-rose-950/60 transition cursor-pointer"
-                      title="حذف هذا المستند من الأرشيف"
+                  <h3 className="font-black text-base text-white leading-snug mb-1.5 line-clamp-2">
+                    {doc.title}
+                  </h3>
+
+                  {doc.description && (
+                    <p className="text-xs font-bold text-slate-300 line-clamp-2 mb-3 leading-relaxed">
+                      {doc.description}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-300 mb-4">
+                    {doc.halaqahName && (
+                      <span className="px-2.5 py-1 rounded-lg bg-[var(--complex-primary,#131f24)] border border-[var(--complex-border,#2b4550)]">
+                        الحلقة: {doc.halaqahName}
+                      </span>
+                    )}
+                    <span className="px-2.5 py-1 rounded-lg bg-[var(--complex-primary,#131f24)] border border-[var(--complex-border,#2b4550)]">
+                      {new Date(doc.createdAt).toLocaleDateString('ar-SA')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[var(--complex-border,#2b4550)] flex items-center gap-2">
+                  {driveHref && (
+                    <a
+                      href={driveHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2.5 px-3 rounded-2xl bg-[#58cc02] hover:bg-[#61e002] text-white font-black text-xs border-2 border-b-4 border-[#46a302] active:translate-y-[2px] transition-all flex items-center justify-center gap-1.5"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <HardDrive className="w-3.5 h-3.5" />
+                      <span>فتح في Google Drive</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+
+                  {doc.htmlContent && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc(doc)}
+                      className="py-2.5 px-3 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] hover:brightness-110 text-[var(--complex-accent,#ffc800)] font-black text-xs border-2 border-b-4 border-[var(--complex-border,#2b4550)] active:translate-y-[2px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>معاينة</span>
                     </button>
                   )}
                 </div>
@@ -603,145 +1143,200 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
         </div>
       )}
 
-      {/* ADD / ARCHIVE DOCUMENT MODAL */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-2xl bg-[#064e3b] border border-[#fbbf24]/50 rounded-3xl shadow-2xl shadow-emerald-950/80 flex flex-col max-h-[90vh] my-auto overflow-hidden animate-fadeIn">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#022c22]/90">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 flex items-center justify-center text-[#fbbf24]">
-                  <FolderArchive className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black font-heading text-white">
-                    أرشفة تقرير أو مستند جديد
-                  </h3>
-                  <p className="text-xs text-[#86efac]/90 mt-0.5">
-                    إضافة تقرير PDF أو رابط Google Sheets/Forms إلى أرشيف المكتبة
-                  </p>
-                </div>
+      {/* Preview Modal (In-App Safe Iframe without window.open) */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[var(--complex-accent,#ffc800)] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 bg-[var(--complex-secondary,#1b2e35)] border-b-2 border-[var(--complex-border,#2b4550)] flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-black text-base sm:text-lg text-white truncate">
+                  {previewDoc.title}
+                </h3>
+                <p className="text-xs font-bold text-slate-400">
+                  {previewDoc.driveFolderName ? `مجلد ${previewDoc.driveFolderName} • ` : ''}
+                  {new Date(previewDoc.createdAt).toLocaleString('ar-SA')}
+                </p>
               </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePrintPreview}
+                  className="px-4 py-2 rounded-xl bg-[var(--complex-accent,#ffc800)] text-slate-950 font-black text-xs border-2 border-b-4 border-amber-600/70 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة / PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-2 rounded-xl bg-[var(--complex-card,#203843)] text-slate-300 hover:text-white border border-[var(--complex-border,#2b4550)] cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 bg-white overflow-hidden min-h-[420px]">
+              <iframe
+                ref={previewIframeRef}
+                title={previewDoc.title}
+                srcDoc={previewDoc.htmlContent || `<html dir="rtl"><body><h2>${previewDoc.title}</h2><p>${previewDoc.description || ''}</p></body></html>`}
+                className="w-full h-[65vh] border-0"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Upload File to Library & Google Drive Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[var(--complex-accent,#ffc800)] overflow-hidden shadow-2xl">
+            <div className="px-6 py-4 bg-[var(--complex-secondary,#1b2e35)] border-b-2 border-[var(--complex-border,#2b4550)] flex items-center justify-between">
+              <h3 className="font-black text-lg text-white flex items-center gap-2">
+                <Upload className="w-5 h-5 text-[var(--complex-accent,#ffc800)]" />
+                <span>حفظ ملف جديد في المكتبة و Google Drive</span>
+              </h3>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#064e3b] transition-colors"
+                className="text-slate-400 hover:text-white p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleCreateDocument} className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-right">
+            <form onSubmit={handleAddDocument} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-emerald-200 mb-1">
-                  عنوان التقرير أو المستند <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={docTitle}
-                  onChange={e => setDocTitle(e.target.value)}
-                  placeholder="مثال: تقرير التسميع والحضور الفصلي - جمادى الأولى"
-                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl p-3 text-xs sm:text-sm text-white outline-none font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    نوع المستند:
-                  </label>
-                  <select
-                    value={docType}
-                    onChange={e => setDocType(e.target.value as LibraryDocumentType)}
-                    className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl px-3 py-2.5 text-xs text-white font-bold outline-none cursor-pointer"
-                  >
-                    <option value="pdf_report">تقرير PDF معتمد</option>
-                    <option value="google_sheet">جدول بيانات Google Sheets</option>
-                    <option value="google_form">نموذج Google Forms</option>
-                    <option value="attendance_sheet">سجل حضور رسمي</option>
-                    <option value="exam_results">نتائج اختبارات</option>
-                    <option value="certificate_batch">دفعة شهادات معتمدة</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    تاريخ التقرير / الأرشفة:
-                  </label>
-                  <input
-                    type="date"
-                    value={docDate}
-                    onChange={e => setDocDate(e.target.value)}
-                    className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl px-3 py-2 text-xs text-white font-mono outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-emerald-200 mb-1">
-                  الحلقة المخصصة {(!isSupervisor && !isDeveloper) ? <span className="text-amber-400">* (حساب المعلم مقيد بحلقته)</span> : '(اختياري)'}:
+                <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                  اختر مجلد القسم في Google Drive *
                 </label>
                 <select
-                  value={docHalaqahId}
-                  onChange={e => setDocHalaqahId(e.target.value)}
-                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl px-3 py-2.5 text-xs text-white font-bold outline-none cursor-pointer"
-                  required={!isSupervisor && !isDeveloper}
+                  value={docSection}
+                  onChange={e => setDocSection(e.target.value as LibraryDriveSection)}
+                  className="w-full rounded-2xl p-3 text-sm font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)] focus:outline-none focus:border-[var(--complex-accent,#ffc800)]"
                 >
-                  {(isSupervisor || isDeveloper) && (
-                    <option value="">-- عام لكافة الحلقات --</option>
-                  )}
-                  {effectiveTeacherHalaqahs.map(h => (
-                    <option key={h.id} value={h.id}>
-                      {h.name} {h.primaryTeacherName ? `(${h.primaryTeacherName})` : ''}
-                    </option>
-                  ))}
+                  <option value="certificates">مجلد الشهادات</option>
+                  <option value="attendance">مجلد الحضور والغياب</option>
+                  <option value="exams">مجلد الاختبارات</option>
+                  <option value="reports">مجلد التقارير الدورية</option>
+                  <option value="general">مجلد ملفات عامة</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-emerald-200 mb-1">
-                  رابط Google Drive / Sheets / Forms (اختياري):
+                <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                  اسم الملف في المكتبة و Google Drive *
                 </label>
                 <input
-                  type="url"
-                  value={docGoogleUrl}
-                  onChange={e => setDocGoogleUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl p-2.5 text-xs text-white font-mono outline-none"
-                  dir="ltr"
+                  type="text"
+                  required={!selectedUploadFile}
+                  value={docTitle}
+                  onChange={e => setDocTitle(e.target.value)}
+                  placeholder="مثال: شهادة الطالب عبدالله أحمد / كشف حضور حلقة الفجر..."
+                  className="w-full rounded-2xl p-3 text-sm font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)] focus:outline-none focus:border-[var(--complex-accent,#ffc800)]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-emerald-200 mb-1">
-                  ملاحظات أو وصف إضافي:
+                <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                  رفع ملف مباشر إلى Google Drive (اختياري: PDF، صورة، جدول، مستند)
                 </label>
-                <textarea
-                  rows={2}
-                  value={docDescription}
-                  onChange={e => setDocDescription(e.target.value)}
-                  placeholder="وصف مختصر لمحتوى التقرير أو الإحصائيات المشمولة..."
-                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl p-2.5 text-xs text-white outline-none"
-                />
+                <label className="w-full rounded-2xl p-3.5 bg-[var(--complex-primary,#131f24)] border-2 border-dashed border-[var(--complex-border,#2b4550)] hover:border-[var(--complex-accent,#ffc800)] flex items-center justify-between gap-3 cursor-pointer transition-colors">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Download className="w-4 h-4 text-[var(--complex-accent,#ffc800)] shrink-0" />
+                    <span className="text-xs font-bold text-slate-300 truncate">
+                      {selectedUploadFile
+                        ? `تم اختيار: ${selectedUploadFile.name}`
+                        : 'اضغط لاختيار ملف من جهازك لرفعه إلى المجلد'}
+                    </span>
+                  </div>
+                  <input
+                    type="file"
+                    onChange={e => {
+                      const f = e.target.files?.[0] || null;
+                      setSelectedUploadFile(f);
+                      if (f && !docTitle.trim()) {
+                        setDocTitle(f.name.replace(/\.[^/.]+$/, ''));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
               </div>
 
-              {/* Footer */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#065f46]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                    الحلقة المرتبطة
+                  </label>
+                  <select
+                    value={docHalaqahId}
+                    onChange={e => setDocHalaqahId(e.target.value)}
+                    className="w-full rounded-2xl p-2.5 text-xs font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)]"
+                  >
+                    <option value="all">جميع الحلقات</option>
+                    {effectiveTeacherHalaqahs.map(h => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                    وصف مختصر
+                  </label>
+                  <input
+                    type="text"
+                    value={docDescription}
+                    onChange={e => setDocDescription(e.target.value)}
+                    placeholder="ملاحظة توضيحية..."
+                    className="w-full rounded-2xl p-2.5 text-xs font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)]"
+                  />
+                </div>
+              </div>
+
+              {!selectedUploadFile && (
+                <div>
+                  <label className="block text-xs font-black text-[var(--complex-accent,#ffc800)] mb-1.5">
+                    محتوى المستند النصي (إن لم ترفع ملفاً جاهزاً)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={docContent}
+                    onChange={e => setDocContent(e.target.value)}
+                    placeholder="اكتب محتوى التقرير أو البيان ليتم حفظه كملف منسق داخل مجلد Google Drive..."
+                    className="w-full rounded-2xl p-3 text-xs font-bold bg-[var(--complex-primary,#131f24)] text-white border-2 border-[var(--complex-border,#2b4550)]"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-[#86efac] hover:text-white hover:bg-[#064e3b] text-xs font-bold cursor-pointer transition"
+                  disabled={isSavingDoc}
+                  className="px-5 py-2.5 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] text-slate-300 font-extrabold text-xs border-2 border-b-4 border-[var(--complex-border,#2b4550)]"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs sm:text-sm shadow-md cursor-pointer transition"
+                  disabled={isSavingDoc}
+                  className="px-6 py-2.5 rounded-2xl bg-[#58cc02] hover:bg-[#61e002] text-white font-black text-xs sm:text-sm border-2 border-b-4 border-[#46a302] active:translate-y-[2px] flex items-center gap-2 disabled:opacity-60 cursor-pointer"
                 >
-                  {isSubmitting ? 'جارٍ الحفظ...' : 'حفظ في الأرشيف'}
+                  {isSavingDoc ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>جاري الحفظ في Drive...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileCheck className="w-4 h-4" />
+                      <span>حفظ في المكتبة و Drive</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -749,163 +1344,76 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
         </div>
       )}
 
-      {/* PREVIEW MODAL */}
-      {previewDoc && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-3xl bg-[#064e3b] border border-emerald-400/50 rounded-3xl shadow-2xl shadow-emerald-950/90 flex flex-col max-h-[90vh] my-auto overflow-hidden animate-fadeIn text-[#f0f9f6]">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#022c22]/95">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
-                  <FileText className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black font-heading text-white">
-                    {previewDoc.title}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-[#86efac]/90 mt-0.5">
-                    <span>التاريخ: {previewDoc.date}</span>
-                    <span>•</span>
-                    <span>المصدر: {previewDoc.createdByName}</span>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewDoc(null)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#064e3b] transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {/* Mandatory Confirmation Modal: Delete File from Library & Google Drive */}
+      {docToDelete && (
+        <div className="fixed inset-0 z-[210] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[#ff4b4b] p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 rounded-3xl bg-[#ff4b4b]/15 border-2 border-[#ff4b4b]/40 text-[#ff4b4b] flex items-center justify-center mx-auto">
+              <Trash2 className="w-8 h-8" />
             </div>
-
-            {/* Content Preview */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-right">
-              <div className="bg-[#022c22]/80 p-5 rounded-2xl border border-[#065f46] space-y-3">
-                <h4 className="font-bold text-amber-300 text-sm flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  <span>تفاصيل المستند والأرشيف</span>
-                </h4>
-                <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed">
-                  {previewDoc.description || 'مستند رسمي مؤرشف في منظومة عُمْرَان لإدارة الحلقات والمجمعات القرآنية.'}
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-[#065f46]/60 text-xs">
-                  <div>
-                    <span className="text-[#86efac]/80 block">المجمع القرآني:</span>
-                    <strong className="text-white">{previewDoc.complexName || activeComplex?.name || 'المجمع الرئيسي'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#86efac]/80 block">الحلقة:</span>
-                    <strong className="text-white">{previewDoc.halaqahName || 'كافة الحلقات'}</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Live Styled Quranic Report Document Embed */}
-              {previewDoc.fileUrl && previewDoc.fileUrl.startsWith('data:text/html') && (
-                <div className="rounded-2xl border-2 border-[#065f46] overflow-hidden bg-white shadow-xl">
-                  <div className="bg-[#022c22] p-2.5 px-4 flex items-center justify-between border-b border-[#065f46]">
-                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>المعاينة الحية للتقرير القرآني الموثق بأعلى جودة</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          const rawHtml = decodeURIComponent(previewDoc.fileUrl!.replace(/^data:text\/html[^,]*,/, ''));
-                          const win = window.open('', '_blank');
-                          if (win) {
-                            win.document.open();
-                            win.document.write(rawHtml);
-                            win.document.close();
-                          }
-                        } catch (e) {
-                          console.warn('Open doc window notice:', e);
-                        }
-                      }}
-                      className="px-3 py-1 bg-[#064e3b] text-emerald-200 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 border border-emerald-500/30 cursor-pointer"
-                    >
-                      <span>فتح في صفحة مستقلة</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <iframe
-                    src={previewDoc.fileUrl}
-                    title={previewDoc.title}
-                    className="w-full h-[460px] border-0 bg-slate-50"
-                  />
-                </div>
-              )}
-
-              {previewDoc.googleUrl && (
-                <div className="p-4 rounded-2xl bg-blue-950/60 border border-blue-500/40 flex items-center justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-blue-200 block">رابط الملف السحابي المتزامن:</span>
-                    <span className="text-[11px] font-mono text-blue-300/80 truncate block max-w-sm" dir="ltr">
-                      {previewDoc.googleUrl}
-                    </span>
-                  </div>
-                  <a
-                    href={previewDoc.googleUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow shrink-0"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>فتح الملف</span>
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95">
+            <h3 className="text-xl font-black text-white">تأكيد حذف الملف نهائياً</h3>
+            <p className="text-xs sm:text-sm font-bold text-slate-300 leading-relaxed">
+              هل أنت متأكد من حذف الملف <span className="text-[var(--complex-accent,#ffc800)]">«{docToDelete.title}»</span> من المكتبة ومن مجلد Google Drive الخاص بالمجمع؟
+            </p>
+            <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-[#064e3b] hover:bg-[#022c22] text-amber-300 border border-amber-400/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                onClick={handleConfirmDelete}
+                disabled={isDeletingDoc}
+                className="flex-1 py-3 rounded-2xl bg-[#ff4b4b] hover:brightness-105 text-white font-black text-xs sm:text-sm border-2 border-b-4 border-[#ea2b2b] active:translate-y-[2px] flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>طباعة التقرير</span>
+                {isDeletingDoc ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>نعم، حذف من المكتبة و Drive</span>
               </button>
-
               <button
                 type="button"
-                onClick={() => setPreviewDoc(null)}
-                className="px-6 py-2 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs font-black cursor-pointer shadow-md"
+                onClick={() => setDocToDelete(null)}
+                disabled={isDeletingDoc}
+                className="flex-1 py-3 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] text-slate-300 font-extrabold text-xs sm:text-sm border-2 border-b-4 border-[var(--complex-border,#2b4550)] cursor-pointer"
               >
-                إغلاق
+                تراجع
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
-      {docToDelete && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border border-rose-500/60 rounded-3xl p-6 max-w-md w-full shadow-2xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
+      {/* Mandatory Confirmation Modal: Unlink Complex Google Account */}
+      {confirmUnlinkModal && (
+        <div className="fixed inset-0 z-[210] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[#ff4b4b] p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 rounded-3xl bg-[#ff4b4b]/15 border-2 border-[#ff4b4b]/40 text-[#ff4b4b] flex items-center justify-center mx-auto">
+              <Unlink className="w-8 h-8" />
             </div>
-            <h3 className="text-base font-bold text-white">تأكيد حذف المستند من الأرشيف</h3>
-            <p className="text-xs text-rose-200/80">
-              هل أنت متأكد من رغبتك في حذف "{docToDelete.title}" من مكتبة وأرشيف المنظومة؟
+            <h3 className="text-xl font-black text-white">تأكيد إلغاء ربط حساب Google للمجمع</h3>
+            <p className="text-xs sm:text-sm font-bold text-slate-300 leading-relaxed">
+              سيتم فصل حساب Google ({googleAuthConfig?.connectedEmail}) عن <span className="text-[var(--complex-accent,#ffc800)]">{complexName}</span> فقط، وستتوقف المكتبة ونماذج Google في هذا المجمع لحين ربط حساب جديد (دون حذف ملفاتك الموجودة في Google Drive).
             </p>
-            <div className="flex items-center justify-center gap-3 pt-2">
+            <div className="flex items-center gap-3 pt-2">
               <button
-                onClick={() => setDocToDelete(null)}
-                className="px-4 py-2 rounded-xl bg-[#064e3b] text-white text-xs font-bold cursor-pointer"
+                type="button"
+                onClick={handleConfirmUnlinkComplex}
+                disabled={isUnlinkingAccount}
+                className="flex-1 py-3 rounded-2xl bg-[#ff4b4b] text-white font-black text-xs sm:text-sm border-2 border-b-4 border-[#ea2b2b] active:translate-y-[2px] flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
-                إلغاء
+                {isUnlinkingAccount ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Unlink className="w-4 h-4" />
+                )}
+                <span>نعم، إلغاء ربط هذا المجمع</span>
               </button>
               <button
-                onClick={handleConfirmDelete}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow-lg cursor-pointer"
+                type="button"
+                onClick={() => setConfirmUnlinkModal(false)}
+                disabled={isUnlinkingAccount}
+                className="flex-1 py-3 rounded-2xl bg-[var(--complex-secondary,#1b2e35)] text-slate-300 font-extrabold text-xs sm:text-sm border-2 border-b-4 border-[var(--complex-border,#2b4550)] cursor-pointer"
               >
-                تأكيد الحذف
+                إلغاء
               </button>
             </div>
           </div>

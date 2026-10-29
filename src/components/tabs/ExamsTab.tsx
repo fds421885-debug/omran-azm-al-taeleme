@@ -28,7 +28,6 @@ import {
   BookOpen,
   Send,
   FileSpreadsheet,
-  Link,
   ShieldCheck,
   CheckSquare,
   Hourglass,
@@ -41,7 +40,10 @@ import {
   Download,
   Info,
   Printer,
-  X
+  X,
+  BookmarkCheck,
+  Unlink,
+  Loader2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import {
@@ -50,7 +52,6 @@ import {
   ExamQuestionType,
   ExamSubmission,
   ExamTimeLimitMode,
-  ExamDeliveryMode,
   Student,
   Halaqah,
   LeaderboardSettings,
@@ -84,6 +85,10 @@ interface ExamsTabProps {
   onSaveLeaderboardSettings: (settings: LeaderboardSettings) => Promise<void>;
   onRefreshGoogleAuth?: () => Promise<void>;
   onSaveCertificate?: (cert: any) => Promise<void>;
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: { blob?: Blob; htmlContent?: string; mimeType?: string; fileExtension?: string }
+  ) => Promise<void>;
 }
 
 // Helper to format Arabic date preview
@@ -127,7 +132,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   onSaveLeaderboardSettings,
   onRefreshGoogleAuth,
   activeComplex,
-  onSaveCertificate
+  onSaveCertificate,
+  onSaveLibraryDoc
 }) => {
   const currentTheme = activeComplex?.theme;
   const themePrimary = currentTheme?.primaryColor || 'var(--complex-primary, #131f24)';
@@ -151,8 +157,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string; linkUrl?: string } | null>(null);
   const [modelAnswerExam, setModelAnswerExam] = useState<Exam | null>(null);
 
-  // Teachers and supervisors can manage Google Forms and Exam account linking
-  const canManageGoogleForms = Boolean(isSupervisor || currentUserName);
+  // Teachers and supervisors can manage Google Sheets & Library account linking for the complex
+  const canManageGoogleAccount = Boolean(isSupervisor || currentUserName);
 
   // Deletion Confirmation Modal State (Exams & Submissions)
   const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
@@ -195,19 +201,9 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   const [formGrantsPoints, setFormGrantsPoints] = useState(true);
   const [formTargetHalaqat, setFormTargetHalaqat] = useState<string[]>(['all']);
 
-  // Delivery Mode: Platform vs Google Forms
-  const [formDeliveryMode, setFormDeliveryMode] = useState<ExamDeliveryMode>('platform');
-  const [formAutoCreateGoogleForm, setFormAutoCreateGoogleForm] = useState(true);
-  const [formGoogleFormId, setFormGoogleFormId] = useState('');
+  // Linked Google Sheet for Exam Results (if exported)
   const [formGoogleSpreadsheetId, setFormGoogleSpreadsheetId] = useState('');
-  const [formGoogleFormNameEntryId, setFormGoogleFormNameEntryId] = useState('');
-  const [formGoogleFormResponderUrl, setFormGoogleFormResponderUrl] = useState('');
-  const [formGoogleFormUrl, setFormGoogleFormUrl] = useState('');
   const [formGoogleSpreadsheetUrl, setFormGoogleSpreadsheetUrl] = useState('');
-  const [isGeneratingGoogleForm, setIsGeneratingGoogleForm] = useState(false);
-  const [isUpdatingGoogleFormInCloud, setIsUpdatingGoogleFormInCloud] = useState(false);
-  const [isSyncingFormResponses, setIsSyncingFormResponses] = useState<string | null>(null);
-  const [isSyncingAllForms, setIsSyncingAllForms] = useState(false);
 
   // Questions List in Exam Builder
   const [questions, setQuestions] = useState<ExamQuestion[]>([
@@ -241,21 +237,30 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
     setTimeout(() => setCopiedDomain(false), 3000);
   };
 
+  const [isUnlinkConfirmOpen, setIsUnlinkConfirmOpen] = useState(false);
+  const [isUnlinkingGoogle, setIsUnlinkingGoogle] = useState(false);
+  const [isSavingExamToLibrary, setIsSavingExamToLibrary] = useState(false);
+
   const handleSaveManualToken = async () => {
     if (!manualTokenInput.trim()) return;
     setIsSavingManualToken(true);
     try {
-      await GoogleWorkspaceService.setManualAccessToken(manualTokenInput.trim());
+      await GoogleWorkspaceService.setManualAccessToken(
+        manualTokenInput.trim(),
+        undefined,
+        activeComplex?.id,
+        activeComplex?.name
+      );
       if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
       setShowDomainHelpModal(false);
       setShowPopupHelpModal(false);
       setManualTokenInput('');
       setStatusMessage({
         type: 'success',
-        text: 'تم حفظ وتفعيل رمز تفويض Google بنجاح سحابياً!'
+        text: `تم حفظ وتفعيل رمز تفويض Google لمجمع (${activeComplex?.name || 'المجمع الحالي'}) بنجاح!`
       });
     } catch (err: any) {
-      alert(`فشل حفظ الرمز: ${err.message || err}`);
+      setStatusMessage({ type: 'error', text: `فشل حفظ الرمز: ${err.message || err}` });
     } finally {
       setIsSavingManualToken(false);
     }
@@ -274,7 +279,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setShowDomainHelpModal(true);
       setStatusMessage({
         type: 'error',
-        text: `يحتاج نطاق المنصة الحالي (${currentHostDomain}) إلى إضافة في قائمة النطاقات المصرح بها (Authorized Domains) أو يمكنك لصق رابط نموذج Google Form جاهز مباشرة.`
+        text: `يحتاج نطاق المنصة الحالي (${currentHostDomain}) إلى إضافة في قائمة النطاقات المصرح بها (Authorized Domains).`
       });
       return;
     }
@@ -326,14 +331,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setEditingExamId(examToEdit.id);
       setFormTitle(examToEdit.title);
       setFormDescription(examToEdit.description || '');
-      const isGoogleForm = examToEdit.deliveryMode === 'google_form' || Boolean(examToEdit.googleFormId || examToEdit.googleFormResponderUrl);
-      setFormDeliveryMode(isGoogleForm ? 'google_form' : 'platform');
-      setFormAutoCreateGoogleForm(examToEdit.autoCreateGoogleForm ?? true);
-      setFormGoogleFormId(examToEdit.googleFormId || '');
       setFormGoogleSpreadsheetId(examToEdit.googleSpreadsheetId || '');
-      setFormGoogleFormNameEntryId(examToEdit.googleFormNameEntryId || '');
-      setFormGoogleFormResponderUrl(examToEdit.googleFormResponderUrl || '');
-      setFormGoogleFormUrl(examToEdit.googleFormUrl || '');
       setFormGoogleSpreadsheetUrl(examToEdit.googleSpreadsheetUrl || '');
       setFormScheduleType(examToEdit.scheduleType);
       setFormStartDate(examToEdit.startDate || new Date().toISOString().slice(0, 16));
@@ -352,13 +350,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setEditingExamId(null);
       setFormTitle('');
       setFormDescription('');
-      setFormDeliveryMode('platform');
-      setFormAutoCreateGoogleForm(true);
-      setFormGoogleFormId('');
       setFormGoogleSpreadsheetId('');
-      setFormGoogleFormNameEntryId('');
-      setFormGoogleFormResponderUrl('');
-      setFormGoogleFormUrl('');
       setFormGoogleSpreadsheetUrl('');
       setFormScheduleType('now');
       setFormStartDate(new Date().toISOString().slice(0, 16));
@@ -405,7 +397,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
 
   const handleRemoveQuestion = (qId: string) => {
     if (questions.length <= 1) {
-      alert('يجب أن يحتوي الاختبار على سؤال واحد على الأقل.');
+      setStatusMessage({ type: 'error', text: 'يجب أن يحتوي الاختبار على سؤال واحد على الأقل.' });
       return;
     }
     setQuestions(questions.filter(q => q.id !== qId));
@@ -415,18 +407,18 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   const handleSaveExamSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) {
-      alert('يرجى كتابة اسم الاختبار (إلزامي).');
+      setStatusMessage({ type: 'error', text: 'يرجى كتابة اسم الاختبار (إلزامي).' });
       return;
     }
 
     if (questions.length === 0) {
-      alert('يرجى إضافة سؤال واحد على الأقل للاختبار.');
+      setStatusMessage({ type: 'error', text: 'يرجى إضافة سؤال واحد على الأقل للاختبار.' });
       return;
     }
 
     for (let i = 0; i < questions.length; i++) {
       if (!questions[i].title.trim()) {
-        alert(`يرجى كتابة نص السؤال رقم (${i + 1}).`);
+        setStatusMessage({ type: 'error', text: `يرجى كتابة نص السؤال رقم (${i + 1}).` });
         return;
       }
     }
@@ -439,21 +431,14 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       const examId = editingExamId || `exam-${Date.now()}`;
       const existingExam = editingExamId ? exams.find(ex => ex.id === editingExamId) : null;
 
-      const targetFormId = formGoogleFormId || existingExam?.googleFormId;
       const targetSpreadsheetId = formGoogleSpreadsheetId || existingExam?.googleSpreadsheetId;
-      const targetNameEntryId = formGoogleFormNameEntryId.trim() || existingExam?.googleFormNameEntryId;
 
       const examObj: Exam = {
         id: examId,
         title: formTitle.trim(),
         description: formDescription.trim(),
-        deliveryMode: formDeliveryMode,
-        autoCreateGoogleForm: formAutoCreateGoogleForm,
-        googleFormId: targetFormId,
+        deliveryMode: 'platform',
         googleSpreadsheetId: targetSpreadsheetId,
-        googleFormNameEntryId: targetNameEntryId,
-        googleFormUrl: formGoogleFormUrl.trim() || existingExam?.googleFormUrl || undefined,
-        googleFormResponderUrl: formGoogleFormResponderUrl.trim() || existingExam?.googleFormResponderUrl || undefined,
         googleSpreadsheetUrl: formGoogleSpreadsheetUrl.trim() || existingExam?.googleSpreadsheetUrl || undefined,
         scheduleType: formScheduleType,
         startDate: formScheduleType === 'scheduled' ? formStartDate : new Date().toISOString(),
@@ -477,337 +462,17 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
         updatedAt: new Date().toISOString()
       };
 
-      let cloudSyncNotice = '';
-
-      // If deliveryMode is google_form:
-      if (formDeliveryMode === 'google_form') {
-        try {
-          const token = await GoogleWorkspaceService.getValidAccessToken();
-          if (token) {
-            // If already has Google Form ID, update questions in cloud!
-            if (examObj.googleFormId) {
-              const updateRes = await GoogleWorkspaceService.updateGoogleForm(examObj, token);
-              if (updateRes.success) {
-                cloudSyncNotice = ' وتم تحديث نموذج Google Forms السحابي تلقائياً بالأسئلة والتعديلات الجديدة!';
-              }
-            } else if (formAutoCreateGoogleForm && !examObj.googleFormResponderUrl) {
-              // Create new Google Form and Sheet
-              const formRes = await GoogleWorkspaceService.createGoogleFormAndSheet(examObj, token);
-              examObj.googleFormId = formRes.formId;
-              examObj.googleFormUrl = formRes.formEditUrl;
-              examObj.googleFormResponderUrl = formRes.responderUrl;
-              examObj.googleSpreadsheetId = formRes.spreadsheetId;
-              examObj.googleSpreadsheetUrl = formRes.spreadsheetUrl;
-              cloudSyncNotice = ' وتم إنشاء نموذج Google Forms وجدول Sheets سحابياً وأرشفتهما في المكتبة بنجاح!';
-
-              // Save Form to Library
-              const targetHalaqahId = examObj.targetHalaqat && examObj.targetHalaqat.length === 1 && examObj.targetHalaqat[0] !== 'all' ? examObj.targetHalaqat[0] : undefined;
-              const targetHalaqahName = targetHalaqahId ? halaqahs.find(h => h.id === targetHalaqahId)?.name : 'كافة الحلقات';
-
-              try {
-                const formLibDoc: LibraryDocument = {
-                  id: `lib-form-${formRes.formId}`,
-                  title: `نموذج Google Forms: ${examObj.title}`,
-                  type: 'google_form',
-                  date: new Date().toISOString().split('T')[0],
-                  description: `نموذج اختبار إلكتروني تم إنشاؤه لاختبار "${examObj.title}"`,
-                  fileUrl: formRes.responderUrl || formRes.formEditUrl,
-                  googleUrl: formRes.responderUrl || formRes.formEditUrl,
-                  googleFormId: formRes.formId,
-                  halaqahId: targetHalaqahId,
-                  halaqahName: targetHalaqahName,
-                  complexId: activeComplex?.id,
-                  complexName: activeComplex?.name,
-                  createdByName: currentUserName,
-                  createdAt: new Date().toISOString(),
-                  tags: ['اختبار', 'Google Forms', targetHalaqahName]
-                };
-                await OmranDataService.saveLibraryDocument(formLibDoc);
-
-                if (formRes.spreadsheetId) {
-                  const sheetLibDoc: LibraryDocument = {
-                    id: `lib-sheet-${formRes.spreadsheetId}`,
-                    title: `جدول Google Sheets لدرجات: ${examObj.title}`,
-                    type: 'google_sheet',
-                    date: new Date().toISOString().split('T')[0],
-                    description: `جدول درجات ورصد نتائج اختبار "${examObj.title}" على Google Sheets`,
-                    fileUrl: formRes.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${formRes.spreadsheetId}/edit`,
-                    googleUrl: formRes.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${formRes.spreadsheetId}/edit`,
-                    googleSpreadsheetId: formRes.spreadsheetId,
-                    halaqahId: targetHalaqahId,
-                    halaqahName: targetHalaqahName,
-                    complexId: activeComplex?.id,
-                    complexName: activeComplex?.name,
-                    createdByName: currentUserName,
-                    createdAt: new Date().toISOString(),
-                    tags: ['اختبار', 'Google Sheets', targetHalaqahName]
-                  };
-                  await OmranDataService.saveLibraryDocument(sheetLibDoc);
-                }
-              } catch (libErr) {
-                console.warn('Auto-save form to library notice:', libErr);
-              }
-            }
-          }
-        } catch (gfErr: any) {
-          console.warn('Google Form cloud sync notice:', gfErr);
-        }
-      }
-
       await onSaveExam(examObj);
       setIsCreatingExam(false);
       setStatusMessage({
         type: 'success',
-        text: `تم حفظ اختبار "${examObj.title}" بنجاح في المنصة${cloudSyncNotice}`
+        text: `تم حفظ اختبار "${examObj.title}" بنجاح في المنصة`
       });
       setTimeout(() => setStatusMessage(null), 6000);
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: `حدث خطأ أثناء حفظ الاختبار: ${err.message || err}` });
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  // Dedicated button to update existing Google Form in cloud on-demand from the modal
-  const handleUpdateGoogleFormNow = async () => {
-    const targetFormId = formGoogleFormId || (editingExamId ? exams.find(e => e.id === editingExamId)?.googleFormId : undefined);
-    if (!targetFormId) {
-      alert('لا يوجد معرّف نموذج Google Form مرتبط لتحديثه. يمكنك توليد نموذج جديد أو حفظ الاختبار أولاً.');
-      return;
-    }
-
-    setIsUpdatingGoogleFormInCloud(true);
-    setStatusMessage(null);
-    try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount();
-        token = accessToken;
-        if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
-      }
-
-      const tempExam: Exam = {
-        id: editingExamId || `exam-${Date.now()}`,
-        title: formTitle.trim(),
-        description: formDescription.trim(),
-        totalPoints: questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0),
-        questions,
-        scheduleType: formScheduleType,
-        hasDeadline: formHasDeadline,
-        attemptLimitType: formAttemptType,
-        timeLimitMode: formTimeLimitMode,
-        gradeVisibility: formGradeVisibility,
-        grantsLeaderboardPoints: formGrantsPoints,
-        targetHalaqat: formTargetHalaqat,
-        googleFormId: targetFormId,
-        createdById: currentUserId,
-        createdByName: currentUserName,
-        createdAt: new Date().toISOString()
-      };
-
-      const res = await GoogleWorkspaceService.updateGoogleForm(tempExam, token);
-      if (res.success) {
-        setStatusMessage({
-          type: 'success',
-          text: `تم تحديث نموذج Google Form السحابي بنجاح (${questions.length} سؤال)! التعديلات أصبحت فعالة وفورية في الرابط.`
-        });
-      }
-    } catch (err: any) {
-      handleGoogleAuthError(err, 'تحديث نموذج Google Forms');
-    } finally {
-      setIsUpdatingGoogleFormInCloud(false);
-    }
-  };
-
-  // Generate Form inside the Exam Builder modal before saving
-  const handleGenerateFormInModal = async () => {
-    if (!canManageGoogleForms) {
-      alert('عذراً، يرجى تسجيل الدخول بحساب معلم أو مشرف لربط حسابات الاختبار وإنشاء نماذج Google Forms.');
-      return;
-    }
-    if (!formTitle.trim()) {
-      alert('يرجى كتابة عنوان الاختبار أولاً.');
-      return;
-    }
-    if (questions.length === 0) {
-      alert('يرجى إضافة سؤال واحد على الأقل قبل إنشاء النموذج.');
-      return;
-    }
-
-    setIsGeneratingGoogleForm(true);
-    setStatusMessage(null);
-    try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount();
-        token = accessToken;
-        if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
-      }
-
-      const tempExam: Exam = {
-        id: editingExamId || `exam-${Date.now()}`,
-        title: formTitle.trim(),
-        description: formDescription.trim(),
-        totalPoints: questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0),
-        questions,
-        scheduleType: formScheduleType,
-        hasDeadline: formHasDeadline,
-        attemptLimitType: formAttemptType,
-        timeLimitMode: formTimeLimitMode,
-        gradeVisibility: formGradeVisibility,
-        grantsLeaderboardPoints: formGrantsPoints,
-        targetHalaqat: formTargetHalaqat,
-        createdById: currentUserId,
-        createdByName: currentUserName,
-        createdAt: new Date().toISOString()
-      };
-
-      const res = await GoogleWorkspaceService.createGoogleFormAndSheet(tempExam, token);
-      setFormGoogleFormResponderUrl(res.responderUrl);
-      setFormGoogleFormUrl(res.formEditUrl);
-      if (res.spreadsheetUrl) setFormGoogleSpreadsheetUrl(res.spreadsheetUrl);
-      setStatusMessage({
-        type: 'success',
-        text: 'تم إنشاء نموذج Google Forms وجدول Google Sheets بنجاح سحابياً وتم ربطهما بالاختبار!',
-        linkUrl: res.responderUrl
-      });
-    } catch (err: any) {
-      handleGoogleAuthError(err, 'إنشاء نموذج Google Forms');
-    } finally {
-      setIsGeneratingGoogleForm(false);
-    }
-  };
-
-  // Generate Google Form and Sheet on-demand for an existing Exam
-  const handleGenerateGoogleFormForExam = async (targetExam: Exam) => {
-    if (!canManageGoogleForms) {
-      alert('عذراً، يرجى تسجيل الدخول بحساب معلم أو مشرف لربط وإنشاء نماذج الاختبار.');
-      return;
-    }
-    setIsSaving(true);
-    setStatusMessage(null);
-    try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount();
-        token = accessToken;
-        if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
-      }
-
-      setStatusMessage({
-        type: 'success',
-        text: `جارٍ إنشاء نموذج Google Form وجدول Google Sheets للاختبار "${targetExam.title}"...`
-      });
-
-      const res = await GoogleWorkspaceService.createGoogleFormAndSheet(targetExam, token);
-      const updatedExam: Exam = {
-        ...targetExam,
-        deliveryMode: 'google_form',
-        googleFormId: res.formId,
-        googleFormUrl: res.formEditUrl,
-        googleFormResponderUrl: res.responderUrl,
-        googleSpreadsheetId: res.spreadsheetId,
-        googleSpreadsheetUrl: res.spreadsheetUrl,
-        updatedAt: new Date().toISOString()
-      };
-
-      await onSaveExam(updatedExam);
-
-      // Save Form and Sheet to Library
-      const targetHalaqahId = updatedExam.targetHalaqat && updatedExam.targetHalaqat.length === 1 && updatedExam.targetHalaqat[0] !== 'all' ? updatedExam.targetHalaqat[0] : undefined;
-      const targetHalaqahName = targetHalaqahId ? halaqahs.find(h => h.id === targetHalaqahId)?.name : 'كافة الحلقات';
-      try {
-        const formLibDoc: LibraryDocument = {
-          id: `lib-form-${res.formId}`,
-          title: `نموذج Google Forms: ${updatedExam.title}`,
-          type: 'google_form',
-          date: new Date().toISOString().split('T')[0],
-          description: `نموذج اختبار إلكتروني Google Forms لاختبار "${updatedExam.title}"`,
-          fileUrl: res.responderUrl || res.formEditUrl,
-          googleUrl: res.responderUrl || res.formEditUrl,
-          googleFormId: res.formId,
-          halaqahId: targetHalaqahId,
-          halaqahName: targetHalaqahName,
-          complexId: activeComplex?.id,
-          complexName: activeComplex?.name,
-          createdByName: currentUserName,
-          createdAt: new Date().toISOString(),
-          tags: ['اختبار', 'Google Forms', targetHalaqahName]
-        };
-        await OmranDataService.saveLibraryDocument(formLibDoc);
-
-        if (res.spreadsheetId) {
-          const sheetLibDoc: LibraryDocument = {
-            id: `lib-sheet-${res.spreadsheetId}`,
-            title: `جدول Google Sheets لدرجات: ${updatedExam.title}`,
-            type: 'google_sheet',
-            date: new Date().toISOString().split('T')[0],
-            description: `جدول درجات ورصد نتائج اختبار "${updatedExam.title}" على Google Sheets`,
-            fileUrl: res.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${res.spreadsheetId}/edit`,
-            googleUrl: res.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${res.spreadsheetId}/edit`,
-            googleSpreadsheetId: res.spreadsheetId,
-            halaqahId: targetHalaqahId,
-            halaqahName: targetHalaqahName,
-            complexId: activeComplex?.id,
-            complexName: activeComplex?.name,
-            createdByName: currentUserName,
-            createdAt: new Date().toISOString(),
-            tags: ['اختبار', 'Google Sheets', targetHalaqahName]
-          };
-          await OmranDataService.saveLibraryDocument(sheetLibDoc);
-        }
-      } catch (libErr) {
-        console.warn('Auto-save form to library notice:', libErr);
-      }
-
-      setStatusMessage({
-        type: 'success',
-        text: `تم إنشاء نموذج Google Form بنجاح للاختبار "${targetExam.title}" وجدول النتائج وحفظهما في المكتبة!`,
-        linkUrl: res.responderUrl
-      });
-    } catch (err: any) {
-      handleGoogleAuthError(err, 'إنشاء نموذج Google Form للاختبار');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Sync / Import Responses directly from Google Form
-  const handleSyncGoogleFormResponses = async (targetExam: Exam) => {
-    if (!targetExam.googleFormId) {
-      alert('هذا الاختبار غير مرتبط بنموذج Google Form بعد.');
-      return;
-    }
-
-    setIsSyncingFormResponses(targetExam.id);
-    setStatusMessage(null);
-    try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) {
-        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount();
-        token = accessToken;
-        if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
-      }
-
-      const { newCount, updatedCount, importedSubmissions } = await GoogleWorkspaceService.importResponsesFromGoogleForm(
-        targetExam,
-        students,
-        submissions,
-        token
-      );
-
-      for (const sub of importedSubmissions) {
-        await onSaveSubmission(sub);
-      }
-
-      setStatusMessage({
-        type: 'success',
-        text: `تمت مزامنة ردود Google Forms سحابياً بنجاح: تم استيراد (${newCount}) تسليم جديد، وتحديث (${updatedCount}) تسليم.`
-      });
-    } catch (err: any) {
-      handleGoogleAuthError(err, 'مزامنة ردود Google Forms');
-    } finally {
-      setIsSyncingFormResponses(null);
     }
   };
 
@@ -888,75 +553,139 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
     }
   };
 
-  // Auto-sync Google Form responses for teacher on page return/focus or periodically
-  useEffect(() => {
-    let intervalId: any = null;
-
-    const autoSyncGoogleForms = async () => {
-      const gfExams = exams.filter(e => e.deliveryMode === 'google_form' && e.googleFormId);
-      if (gfExams.length === 0) return;
-
-      const token = await GoogleWorkspaceService.getValidAccessToken();
-      if (!token) return;
-
-      for (const exam of gfExams) {
-        try {
-          const { newCount, updatedCount, importedSubmissions } = await GoogleWorkspaceService.importResponsesFromGoogleForm(
-            exam,
-            students,
-            submissions,
-            token
-          );
-          if ((newCount > 0 || updatedCount > 0) && importedSubmissions.length > 0) {
-            for (const sub of importedSubmissions) {
-              await onSaveSubmission(sub);
-            }
-          }
-        } catch {
-          // Silent catch for background auto-sync
-        }
-      }
-    };
-
-    const handleFocusOrVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        autoSyncGoogleForms();
-      }
-    };
-
-    window.addEventListener('focus', handleFocusOrVisibility);
-    document.addEventListener('visibilitychange', handleFocusOrVisibility);
-
-    if (activeSubTab === 'submissions') {
-      intervalId = setInterval(autoSyncGoogleForms, 25000);
-    }
-
-    return () => {
-      window.removeEventListener('focus', handleFocusOrVisibility);
-      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [activeSubTab, exams, students, submissions]);
-
-  // Connect Google Account for Sheets Export
+  // Connect Google Account strictly isolated for this Complex (used for Google Sheets + Drive Library)
   const handleConnectGoogle = async () => {
-    if (!canManageGoogleForms) {
-      alert('عذراً، يرجى تسجيل الدخول بحساب معلم أو مشرف لربط وتفويض حسابات الاختبار وGoogle Workspace.');
+    if (!canManageGoogleAccount) {
+      setStatusMessage({
+        type: 'error',
+        text: 'عذراً، يرجى تسجيل الدخول بحساب معلم أو مشرف لربط وتفويض حساب Google الخاص بالمجمع.'
+      });
       return;
     }
     setIsSaving(true);
     try {
-      const { email } = await GoogleWorkspaceService.linkGoogleAccount();
+      const { email } = await GoogleWorkspaceService.linkGoogleAccount(activeComplex?.id, activeComplex?.name);
+      await GoogleWorkspaceService.ensureComplexLibraryFolders(activeComplex?.id, activeComplex?.name).catch(() => {});
       if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
       setStatusMessage({
         type: 'success',
-        text: `تم ربط وتفويض حساب Google (${email}) بنجاح لتصدير الجداول سحابياً.`
+        text: `تم ربط حساب Google (${email}) بمجمع "${activeComplex?.name || 'المجمع الحالي'}" بشكل مستقل وتفعيل المكتبة والاختبارات!`
       });
       setTimeout(() => setStatusMessage(null), 5000);
     } catch (err: any) {
-      handleGoogleAuthError(err, 'ربط حساب Google');
+      handleGoogleAuthError(err, 'ربط حساب Google للمجمع');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleConfirmUnlinkGoogle = async () => {
+    setIsUnlinkingGoogle(true);
+    try {
+      await GoogleWorkspaceService.disconnectGoogleAccount(activeComplex?.id);
+      if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
+      setIsUnlinkConfirmOpen(false);
+      setStatusMessage({
+        type: 'success',
+        text: `تم إلغاء ربط حساب Google عن مجمع "${activeComplex?.name || 'المجمع الحالي'}" فقط دون المساس ببقية المجمعات.`
+      });
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: `تعذر إلغاء الربط: ${err?.message || err}` });
+    } finally {
+      setIsUnlinkingGoogle(false);
+    }
+  };
+
+  // Save Exam Results directly into Complex's Library (Google Drive -> مجلد الاختبارات)
+  const handleSaveExamResultsToLibrary = async (targetExam?: Exam) => {
+    if (!onSaveLibraryDoc || isSavingExamToLibrary) return;
+    const relevantSubmissions = targetExam
+      ? submissions.filter(s => s.examId === targetExam.id)
+      : filteredSubmissions.length > 0 && !targetExam
+      ? filteredSubmissions
+      : submissions;
+
+    const titleLabel = targetExam ? targetExam.title : 'كافة اختبارات المجمع';
+    const todayIso = new Date().toISOString().split('T')[0];
+    const complexLabel = activeComplex?.name || 'مجمع تحفيظ القرآن الكريم';
+
+    setIsSavingExamToLibrary(true);
+    try {
+      const rowsHtml = relevantSubmissions
+        .map(
+          (sub, idx) => `<tr>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:700;">${idx + 1}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;font-weight:800;">${sub.studentName}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;">${sub.halaqahName || 'الحلقة'}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;">${sub.examTitle}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:800;">${sub.totalScoreEarned} / ${sub.maxPossibleScore}</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;font-weight:800;">${sub.percentage}%</td>
+            <td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${sub.status === 'completed' ? 'معتمد' : 'قيد المراجعة'}</td>
+          </tr>`
+        )
+        .join('');
+
+      const htmlContent = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>كشف نتائج الاختبارات - ${titleLabel} - ${todayIso}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Cairo',sans-serif;background:#f8fafc;color:#0f172a;padding:32px;direction:rtl;">
+  <div style="max-width:1000px;margin:0 auto;background:#ffffff;border:3px solid #065f46;border-radius:20px;padding:28px;">
+    <h1 style="margin:0 0 8px;color:#064e3b;font-size:22px;font-weight:900;">${complexLabel} • كشف نتائج الاختبارات</h1>
+    <p style="margin:0 0 18px;color:#475569;font-size:14px;font-weight:700;">الاختبار: ${titleLabel} • التاريخ: ${todayIso} • عدد التسليمات: ${relevantSubmissions.length}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#064e3b;color:#ffffff;">
+          <th style="padding:10px;border:1px solid #064e3b;">#</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">الطالب</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">الحلقة</th>
+          <th style="padding:10px;border:1px solid #064e3b;text-align:right;">الاختبار</th>
+          <th style="padding:10px;border:1px solid #064e3b;">الدرجة</th>
+          <th style="padding:10px;border:1px solid #064e3b;">النسبة</th>
+          <th style="padding:10px;border:1px solid #064e3b;">الحالة</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml || '<tr><td colspan="7" style="padding:16px;text-align:center;">لا توجد تسليمات مسجلة بعد</td></tr>'}</tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+      const libDoc: LibraryDocument = {
+        id: `lib_exam_res_${targetExam?.id || 'all'}_${Date.now()}`,
+        title: `كشف نتائج الاختبار - ${titleLabel} - ${todayIso}`,
+        type: 'pdf_report',
+        sectionCategory: 'exams',
+        complexId: activeComplex?.id,
+        complexName: activeComplex?.name,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUserName,
+        createdByName: currentUserName,
+        htmlContent,
+        summaryText: `كشف نتائج (${relevantSubmissions.length}) تسليم لاختبار "${titleLabel}" بتاريخ ${todayIso}`
+      };
+
+      await onSaveLibraryDoc(libDoc, {
+        htmlContent,
+        mimeType: 'text/html',
+        fileExtension: '.html'
+      });
+
+      setStatusMessage({
+        type: 'success',
+        text: `تم حفظ كشف نتائج "${titleLabel}" بنجاح في مكتبة المجمع داخل مجلد الاختبارات على Google Drive!`
+      });
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch (err: any) {
+      if (err?.message !== 'LIBRARY_NOT_LINKED') {
+        setStatusMessage({ type: 'error', text: `تعذر الحفظ في المكتبة: ${err?.message || err}` });
+      }
+    } finally {
+      setIsSavingExamToLibrary(false);
     }
   };
 
@@ -979,9 +708,9 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
     setStatusMessage(null);
 
     try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
+      let token = await GoogleWorkspaceService.getValidAccessToken(activeComplex?.id);
       if (!token) {
-        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount();
+        const { accessToken } = await GoogleWorkspaceService.linkGoogleAccount(activeComplex?.id, activeComplex?.name);
         token = accessToken;
         if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
       }
@@ -998,8 +727,14 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
           linkUrl: spreadsheetUrl
         });
       } else {
-        // Create new sheet and link to the exam
-        const result = await GoogleWorkspaceService.exportExamResultsToGoogleSheet(title, relevantSubmissions, token);
+        // Create new sheet inside this Complex's 'exams' Drive folder and link to the exam
+        const result = await GoogleWorkspaceService.exportExamResultsToGoogleSheet(
+          title,
+          relevantSubmissions,
+          token,
+          activeComplex?.id,
+          activeComplex?.name
+        );
         if (targetExam && onSaveExam) {
           await onSaveExam({
             ...targetExam,
@@ -1016,6 +751,9 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
             id: `lib-sheet-${result.spreadsheetId}`,
             title: `جدول درجات: ${title}`,
             type: 'google_sheet',
+            sectionCategory: 'exams',
+            driveFileId: result.spreadsheetId,
+            driveWebViewLink: result.spreadsheetUrl,
             date: new Date().toISOString().split('T')[0],
             description: `كشف درجات ونتائج (${relevantSubmissions.length}) طالب تم تصديره وأرشفته على Google Sheets`,
             fileUrl: result.spreadsheetUrl,
@@ -1027,7 +765,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
             complexName: activeComplex?.name,
             createdByName: currentUserName,
             createdAt: new Date().toISOString(),
-            tags: ['اختبار', 'Google Sheets', targetHalaqahName]
+            tags: ['اختبار', 'Google Sheets', targetHalaqahName || 'كافة الحلقات']
           };
           await OmranDataService.saveLibraryDocument(sheetLibDoc);
         } catch (libErr) {
@@ -1036,7 +774,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
 
         setStatusMessage({
           type: 'success',
-          text: `تم إنشاء جدول Google Sheets وحفظه في المكتبة وتصدير (${relevantSubmissions.length}) تسليم بنجاح!`,
+          text: `تم إنشاء جدول Google Sheets وحفظه في مكتبة المجمع (مجلد الاختبارات) وتصدير (${relevantSubmissions.length}) تسليم بنجاح!`,
           linkUrl: result.spreadsheetUrl
         });
       }
@@ -1054,7 +792,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       : submissions;
 
     if (relevantSubmissions.length === 0) {
-      alert('لا توجد تسليمات مسجلة للتحميل.');
+      setStatusMessage({ type: 'error', text: 'لا توجد تسليمات مسجلة للتحميل.' });
       return;
     }
 
@@ -1425,17 +1163,10 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                       {/* Top Badges */}
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {exam.deliveryMode === 'google_form' ? (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-blue-950/90 text-blue-300 border border-blue-500/50 flex items-center gap-1">
-                              <ExternalLink className="w-3 h-3 text-blue-400" />
-                              نموذج Google Forms
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                              <CheckSquare className="w-3 h-3 text-emerald-400" />
-                              منصة عُمْرَان
-                            </span>
-                          )}
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                            <CheckSquare className="w-3 h-3 text-emerald-400" />
+                            منصة عُمْرَان
+                          </span>
 
                           {isExpired ? (
                             <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-950/80 text-rose-300 border border-rose-600/40">
@@ -1513,21 +1244,9 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                         </div>
                       </div>
 
-                      {/* Google Forms & Cloud Actions for this exam */}
+                      {/* Cloud & Export Actions for this exam */}
                       <div className="mt-4 pt-3 border-t border-emerald-900/60 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {exam.deliveryMode === 'google_form' && (exam.googleFormResponderUrl || exam.googleFormUrl) && (
-                            <a
-                              href={exam.googleFormResponderUrl || exam.googleFormUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] px-2.5 py-1.5 rounded-xl bg-blue-900/70 hover:bg-blue-800 text-blue-200 border border-blue-500/50 flex items-center gap-1 font-bold transition-all"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5 text-blue-300" />
-                              <span>فتح Google Form</span>
-                            </a>
-                          )}
-
                           {exam.googleSpreadsheetUrl && (
                             <a
                               href={exam.googleSpreadsheetUrl}
@@ -1536,36 +1255,25 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                               className="text-[11px] px-2.5 py-1.5 rounded-xl bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-600/50 flex items-center gap-1 font-bold transition-all"
                             >
                               <FileSpreadsheet className="w-3.5 h-3.5 text-[#fbbf24]" />
-                              <span>جدول الردود</span>
+                              <span>جدول الدرجات</span>
                             </a>
-                          )}
-
-                          {exam.deliveryMode === 'google_form' && exam.googleFormId && (
-                            <button
-                              onClick={() => handleSyncGoogleFormResponses(exam)}
-                              disabled={isSyncingFormResponses === exam.id}
-                              className="text-[11px] px-2.5 py-1.5 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-white border border-[#fbbf24]/40 hover:border-[#fbbf24] flex items-center gap-1 font-bold transition-all cursor-pointer shadow-sm"
-                              title="مزامنة ردود الطلاب من نموذج Google Form إلى منصة عُمْرَان سحابياً"
-                            >
-                              <RefreshCw className={`w-3.5 h-3.5 text-[#fbbf24] ${isSyncingFormResponses === exam.id ? 'animate-spin' : ''}`} />
-                              <span>{isSyncingFormResponses === exam.id ? 'جارٍ المزامنة...' : 'مزامنة الردود'}</span>
-                            </button>
-                          )}
-
-                          {!exam.googleFormId && !exam.googleFormResponderUrl && (
-                            <button
-                              onClick={() => handleGenerateGoogleFormForExam(exam)}
-                              disabled={isSaving}
-                              className="text-[11px] px-2.5 py-1.5 rounded-xl bg-blue-900/50 hover:bg-blue-800 text-blue-200 border border-blue-600/40 flex items-center gap-1 font-bold transition-all cursor-pointer"
-                              title="إنشاء نموذج Google Form وجدول Google Sheets فوري لهذا الاختبار"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-blue-300" />
-                              <span>إنشاء Google Form</span>
-                            </button>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {onSaveLibraryDoc && (
+                            <button
+                              type="button"
+                              onClick={() => handleSaveExamResultsToLibrary(exam)}
+                              disabled={isSavingExamToLibrary}
+                              className="text-[11px] px-3 py-1.5 rounded-xl border border-b-2 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center gap-1.5 transition-all cursor-pointer font-black shadow-sm active:translate-y-[1px]"
+                              title="حفظ نتائج الاختبار في المكتبة (مجلد الاختبارات على Google Drive)"
+                            >
+                              <BookmarkCheck className="w-3.5 h-3.5" />
+                              <span>حفظ في المكتبة</span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => handleExportToGoogleSheet(exam)}
                             disabled={isExportingSheets}
@@ -1680,6 +1388,27 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   ))}
                 </select>
               </div>
+
+              {onSaveLibraryDoc && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetEx = selectedExamForSubmissions !== 'all'
+                      ? exams.find(ex => ex.id === selectedExamForSubmissions)
+                      : undefined;
+                    handleSaveExamResultsToLibrary(targetEx);
+                  }}
+                  disabled={isSavingExamToLibrary}
+                  className="px-3.5 py-2 rounded-xl border-2 border-b-4 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-[1px]"
+                >
+                  {isSavingExamToLibrary ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                  )}
+                  <span>حفظ في المكتبة</span>
+                </button>
+              )}
 
               <button
                 onClick={() => handleExportToGoogleSheet()}
@@ -1833,15 +1562,43 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {onSaveLibraryDoc && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveExamResultsToLibrary()}
+                  disabled={isSavingExamToLibrary}
+                  className="px-4 py-2.5 rounded-2xl border-2 border-b-4 border-emerald-400 border-b-emerald-700 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-md transition-all cursor-pointer active:translate-y-[2px]"
+                >
+                  {isSavingExamToLibrary ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <BookmarkCheck className="w-4 h-4" />
+                  )}
+                  <span>حفظ في المكتبة</span>
+                </button>
+              )}
+
               <button
                 onClick={handleConnectGoogle}
                 disabled={isSaving}
                 className="px-4 py-2.5 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] font-bold text-xs sm:text-sm flex items-center gap-2 border border-[#fbbf24]/40 hover:border-[#fbbf24] cursor-pointer shadow-sm transition-all"
               >
                 <ShieldCheck className="w-4 h-4 text-[#fbbf24]" />
-                <span>{googleAuthConfig?.isLinked ? 'تحديث ربط حساب Google' : 'ربط حساب Google'}</span>
+                <span>{googleAuthConfig?.isLinked ? 'تحديث ربط حساب Google للمجمع' : 'ربط حساب Google للمجمع'}</span>
               </button>
+
+              {googleAuthConfig?.isLinked && (
+                <button
+                  type="button"
+                  onClick={() => setIsUnlinkConfirmOpen(true)}
+                  className="px-3.5 py-2.5 rounded-2xl border-2 border-b-4 border-rose-500/60 border-b-rose-800 bg-rose-950/70 hover:bg-rose-900 text-rose-200 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px]"
+                  title="فك ربط حساب Google عن هذا المجمع فقط"
+                >
+                  <Unlink className="w-4 h-4" />
+                  <span>إلغاء الربط</span>
+                </button>
+              )}
 
               <button
                 onClick={() => handleExportToGoogleSheet()}
@@ -1854,8 +1611,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
             </div>
           </div>
 
-          {/* Connection Status Card */}
-          <div className="p-5 rounded-2xl bg-[#064e3b]/50 border border-emerald-800/60 flex items-center justify-between">
+          {/* Connection Status Card (Strictly Isolated Per Complex) */}
+          <div className="p-5 rounded-2xl bg-[#064e3b]/50 border border-emerald-800/60 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div
                 className={`w-3.5 h-3.5 rounded-full ${
@@ -1864,10 +1621,13 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
               />
               <div>
                 <h4 className="text-xs font-bold text-white">
-                  حالة الاتصال: {googleAuthConfig?.isLinked ? 'متصل ومحفوظ سحابياً' : 'غير متصل'}
+                  حالة ربط Google لمجمع ({activeComplex?.name || 'المجمع الحالي'}):{' '}
+                  {googleAuthConfig?.isLinked ? 'مرتبط ومفعل للمكتبة والاختبارات' : 'غير مرتبط بهذا المجمع'}
                 </h4>
                 <p className="text-[11px] text-emerald-300/80 mt-0.5">
-                  {googleAuthConfig?.connectedEmail || 'لم يتم ربط بريد إلكتروني بعد (يمكنك التصدير كملف CSV محلياً بدون ربط)'}
+                  {googleAuthConfig?.isLinked
+                    ? `${googleAuthConfig.connectedEmail || 'حساب Google مرتبط'} • مستقل تماماً عن أي مجمع آخر ومتصل تلقائياً بقسم المكتبة`
+                    : 'لم يتم ربط حساب Google لهذا المجمع بعد (حساب هذا المجمع مستقل تماماً عن المجمعات الأخرى)'}
                 </p>
               </div>
             </div>
@@ -1878,6 +1638,43 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
               </span>
             )}
           </div>
+
+          {/* Unlink Confirmation Modal for this Complex */}
+          {isUnlinkConfirmOpen && (
+            <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="w-full max-w-md rounded-3xl border-2 border-b-4 border-rose-500/60 border-b-rose-900 bg-slate-900 p-6 text-right shadow-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                    <Unlink className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-black text-white">تأكيد إلغاء ربط حساب Google للمجمع</h4>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      سيتم فك ربط الحساب ({googleAuthConfig?.connectedEmail}) عن مجمع <strong className="text-amber-300">{activeComplex?.name || 'المجمع الحالي'}</strong> فقط، وستتوقف المكتبة وتصدير النماذج في هذا المجمع إلى حين إعادة الربط.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsUnlinkConfirmOpen(false)}
+                    className="px-4 py-2 rounded-xl border-2 border-b-4 border-slate-700 border-b-slate-950 bg-slate-800 text-slate-200 text-xs font-black cursor-pointer"
+                  >
+                    تراجع
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUnlinkingGoogle}
+                    onClick={handleConfirmUnlinkGoogle}
+                    className="px-4 py-2 rounded-xl border-2 border-b-4 border-rose-400 border-b-rose-800 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isUnlinkingGoogle && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>تأكيد إلغاء الربط</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quick Export Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -1978,148 +1775,30 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   />
                 </div>
 
-                {/* Delivery Mode Selector: Platform vs Google Forms */}
-                <div className="sm:col-span-2 p-4 rounded-2xl bg-[#064e3b]/50 border border-emerald-700/60 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <label className="block text-xs font-bold text-[#fbbf24] flex items-center gap-1.5">
-                      <Layers className="w-4 h-4" />
-                      <span>طريقة أداء الاختبار للطالب وتوجيهه</span>
+                {formGoogleSpreadsheetUrl && (
+                  <div className="sm:col-span-2 p-3.5 rounded-2xl bg-[#064e3b]/50 border border-emerald-700/60">
+                    <label className="block text-[11px] font-bold text-emerald-300 mb-1.5">
+                      جدول Google Sheets المرتبط لنتائج هذا الاختبار:
                     </label>
-                    <span className="text-[11px] text-emerald-300">
-                      حدد هل يؤدي الطالب الاختبار داخل المنصة أم يتم توجيهه لنموذج Google Forms
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    {/* Option 1: Native Platform Exam */}
-                    <button
-                      type="button"
-                      onClick={() => setFormDeliveryMode('platform')}
-                      className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer ${
-                        formDeliveryMode === 'platform'
-                          ? 'bg-emerald-900/90 border-[#fbbf24] ring-2 ring-[#fbbf24]/50 text-white shadow-md'
-                          : 'bg-[#022c22] border-[#fbbf24]/30 text-[#f0f9f6]/80 hover:bg-[#064e3b] hover:border-[#fbbf24]/60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2 font-bold text-xs">
-                          <CheckSquare className="w-4 h-4 text-[#fbbf24]" />
-                          <span>نظام المنصة التفاعلي الذكي</span>
-                        </div>
-                        {formDeliveryMode === 'platform' && (
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#fbbf24]" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                        يؤدي الطالب الاختبار مباشرة داخل واجهة منصة عُمْرَان، مع مؤقت زمني وتصحيح آلي فوري واعتماد درجات لوحة الشرف فوراً.
-                      </p>
-                    </button>
-
-                    {/* Option 2: Google Forms */}
-                    <button
-                      type="button"
-                      onClick={() => setFormDeliveryMode('google_form')}
-                      className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer ${
-                        formDeliveryMode === 'google_form'
-                          ? 'bg-blue-950/90 border-blue-400 ring-2 ring-blue-500/50 text-white shadow-md'
-                          : 'bg-[#022c22] border-[#fbbf24]/30 text-[#f0f9f6]/80 hover:bg-[#064e3b] hover:border-[#fbbf24]/60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2 font-bold text-xs">
-                          <ExternalLink className="w-4 h-4 text-blue-300" />
-                          <span>نموذج Google Forms سحابي</span>
-                        </div>
-                        {formDeliveryMode === 'google_form' && (
-                          <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                        يتم توجيه الطالب تلقائياً لنموذج Google Forms رسمي، مع توليد النموذج وجدول النتائج سحابياً وإمكانية مزامنة الردود بنقرة واحدة.
-                      </p>
-                    </button>
-                  </div>
-
-                  {/* Specific Controls when Google Forms is Selected */}
-                  {formDeliveryMode === 'google_form' && (
-                    <div className="p-3.5 rounded-xl bg-[#022c22]/90 border border-blue-500/30 space-y-3 mt-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-blue-200">
-                          <input
-                            type="checkbox"
-                            checked={formAutoCreateGoogleForm}
-                            onChange={e => setFormAutoCreateGoogleForm(e.target.checked)}
-                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <span>توليد نموذج Google Form وجدول Google Sheets سحابياً تلقائياً عند الحفظ</span>
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={handleGenerateFormInModal}
-                          disabled={isGeneratingGoogleForm}
-                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
-                        >
-                          <Sparkles className={`w-3.5 h-3.5 ${isGeneratingGoogleForm ? 'animate-spin' : ''}`} />
-                          <span>{isGeneratingGoogleForm ? 'جارٍ الإنشاء السحابي...' : 'توليد نموذج Google Form الآن'}</span>
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-bold text-blue-300 mb-1">
-                            رابط أداء الاختبار للطلاب (Google Form Responder):
-                          </label>
-                          <input
-                            type="url"
-                            placeholder="https://docs.google.com/forms/d/e/.../viewform"
-                            value={formGoogleFormResponderUrl}
-                            onChange={e => setFormGoogleFormResponderUrl(e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-xl bg-[#064e3b] border border-blue-500/40 text-white text-xs placeholder:text-emerald-400/40 focus:border-blue-400 focus:outline-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-bold text-blue-300 mb-1">
-                            رابط تعديل النموذج للمعلم (Google Form Edit):
-                          </label>
-                          <input
-                            type="url"
-                            placeholder="https://docs.google.com/forms/d/.../edit"
-                            value={formGoogleFormUrl}
-                            onChange={e => setFormGoogleFormUrl(e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-xl bg-[#064e3b] border border-blue-500/40 text-white text-xs placeholder:text-emerald-400/40 focus:border-blue-400 focus:outline-none"
-                          />
-                        </div>
-
-                        {formGoogleSpreadsheetUrl && (
-                          <div className="sm:col-span-2">
-                            <label className="block text-[11px] font-bold text-emerald-300 mb-1">
-                              رابط جدول Google Sheets المرتبط للنتائج:
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="url"
-                                readOnly
-                                value={formGoogleSpreadsheetUrl}
-                                className="w-full px-3 py-1.5 rounded-xl bg-[#064e3b]/80 border border-emerald-600/40 text-emerald-200 text-xs focus:outline-none"
-                              />
-                              <a
-                                href={formGoogleSpreadsheetUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-3 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shrink-0"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span>فتح الجدول</span>
-                              </a>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        readOnly
+                        value={formGoogleSpreadsheetUrl}
+                        className="w-full px-3 py-1.5 rounded-xl bg-[#064e3b]/80 border border-emerald-600/40 text-emerald-200 text-xs focus:outline-none"
+                      />
+                      <a
+                        href={formGoogleSpreadsheetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>فتح الجدول</span>
+                      </a>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Scheduling */}
                 <div>
@@ -2894,7 +2573,10 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                 } as unknown as Student}
                 currentAttemptNumber={1}
                 onFinishSubmission={async sub => {
-                  alert(`تمت تجربة الاختبار بنجاح! الدرجة المحسوبة: ${sub.totalScoreEarned} من ${sub.maxPossibleScore} (${sub.percentage}%)`);
+                  setStatusMessage({
+                    type: 'success',
+                    text: `تمت تجربة الاختبار بنجاح! الدرجة المحسوبة: ${sub.totalScoreEarned} من ${sub.maxPossibleScore} (${sub.percentage}%)`
+                  });
                   setPreviewingExam(null);
                   setPreviewInteractive(false);
                 }}
@@ -2985,7 +2667,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                     تأكيد تفويض نطاق المنصة (Google Cloud)
                   </h3>
                   <p className="text-xs text-emerald-300/80">
-                    خطوة واحدة سريعة لتفعيل ربط وتوليد نماذج Google Forms وجداول Sheets سحابياً
+                    خطوة واحدة سريعة لتفعيل ربط مكتبة Google Drive وجداول Google Sheets سحابياً
                   </p>
                 </div>
               </div>
@@ -3068,19 +2750,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
               </div>
             </div>
 
-            {/* Alternative 1: Ready Google Form Link */}
-            <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-xs text-emerald-200 space-y-1.5">
-              <h5 className="font-bold text-white flex items-center gap-1.5">
-                <Link className="w-3.5 h-3.5 text-emerald-400" />
-                <span>حل فوري مباشر (بدون الحاجة لأي تفويض):</span>
-              </h5>
-              <p className="text-emerald-300/80 leading-relaxed">
-                إذا كان لديك نموذج Google Form أنشأته سابقاً أو تفضل إنشاءه بنفسك، يمكنك فقط نسخ رابطه ولصقه في خانة{' '}
-                <strong className="text-white">"رابط أداء الاختبار (Google Forms)"</strong> في نافذة إنشاء الاختبار، وسيعمل الاختبار فوراً لجميع الطلاب دون أي تفويض!
-              </p>
-            </div>
-
-            {/* Alternative 2: Manual Access Token */}
+            {/* Alternative: Manual Access Token */}
             <div className="space-y-2 pt-1 border-t border-emerald-800/60">
               <label className="block text-xs font-bold text-emerald-200">
                 أو إدخال رمز تفويض Google يدوياً (OAuth Access Token):
@@ -3200,19 +2870,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
               </button>
             </div>
 
-            {/* Action 3: Ready Google Form Direct Link */}
-            <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-xs text-emerald-200 space-y-1.5">
-              <h5 className="font-bold text-white flex items-center gap-1.5">
-                <Link className="w-3.5 h-3.5 text-emerald-400" />
-                <span>الحل الثالث: وضع رابط نموذج Google Form جاهز مباشرة</span>
-              </h5>
-              <p className="text-emerald-300/80 leading-relaxed">
-                لا تحتاج بالضرورة لتسجيل الدخول السحابي؛ يمكنك فقط نسخ رابط أي نموذج Google Form من حسابك ولصقه في خانة{' '}
-                <strong className="text-white">"رابط أداء الاختبار (Google Forms)"</strong> في نافذة الاختبار، وسيقوم النظام بتوجيه الطلاب إليه فوراً وبشكل مثالي!
-              </p>
-            </div>
-
-            {/* Action 4: Manual Access Token */}
+            {/* Action 3: Manual Access Token */}
             <div className="space-y-2 pt-1 border-t border-emerald-800/60">
               <label className="block text-xs font-bold text-emerald-200">
                 أو إدخال رمز تفويض Google يدوياً (OAuth Access Token):
@@ -3576,11 +3234,16 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                       // Handled silently
                     }
 
-                    if (cleanPhone) {
-                      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
-                    } else {
-                      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-                    }
+                    const waUrl = cleanPhone
+                      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`
+                      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+                    const waLink = document.createElement('a');
+                    waLink.href = waUrl;
+                    waLink.target = '_blank';
+                    waLink.rel = 'noopener noreferrer';
+                    document.body.appendChild(waLink);
+                    waLink.click();
+                    document.body.removeChild(waLink);
                   }}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:brightness-110 text-white font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
                 >
@@ -3636,7 +3299,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                 </span>
                 <span className="w-1 h-1 rounded-full bg-emerald-600" />
                 <span className="text-emerald-200">
-                  نمط الاختبار: <strong className="text-white">{modelAnswerExam.deliveryMode === 'google_form' ? 'Google Forms' : 'منصة عُمْرَان'}</strong>
+                  نمط الاختبار: <strong className="text-white">منصة عُمْرَان</strong>
                 </span>
               </div>
               <button

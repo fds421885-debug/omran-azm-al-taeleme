@@ -88,6 +88,7 @@ import { GoogleWorkspaceService, normalizeArabicText } from './lib/googleWorkspa
 import { LoginModal } from './components/LoginModal';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
+import { LibraryLinkRequiredModal } from './components/modals/LibraryLinkRequiredModal';
 import {
   TopProgressBar,
   LiveSyncButton,
@@ -369,9 +370,7 @@ export function App() {
   const [leaderboardSettings, setLeaderboardSettings] = useState<LeaderboardSettings | null>(() =>
     getLocalCache(OMRAN_CACHE_KEYS.LEADERBOARD, DEFAULT_LEADERBOARD_SETTINGS)
   );
-  const [googleAuthConfig, setGoogleAuthConfig] = useState<GoogleOAuthConfig>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.GOOGLE_AUTH, { isLinked: false })
-  );
+  const [googleAuthConfig, setGoogleAuthConfig] = useState<GoogleOAuthConfig>({ isLinked: false });
   const [recordings, setRecordings] = useState<SurahRecording[]>([]);
   const [recordingsConfig, setRecordingsConfig] = useState<RecordingsConfig>(() =>
     getLocalCache(OMRAN_CACHE_KEYS.RECORDINGS_CONFIG, DEFAULT_RECORDINGS_CONFIG)
@@ -382,9 +381,18 @@ export function App() {
   const [listeningLogs, setListeningLogs] = useState<StudentListeningLog[]>(() =>
     getLocalCache(OMRAN_CACHE_KEYS.LISTENING_LOGS, [])
   );
-  const [libraryDocs, setLibraryDocs] = useState<LibraryDocument[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, [])
-  );
+  const [libraryDocs, setLibraryDocs] = useState<LibraryDocument[]>([]);
+  const [libraryDriveUploadVersion, setLibraryDriveUploadVersion] = useState(0);
+  const [isLibraryLinkModalOpen, setIsLibraryLinkModalOpen] = useState(false);
+  const [pendingLibrarySave, setPendingLibrarySave] = useState<{
+    docItem: LibraryDocument;
+    blob?: Blob;
+    htmlContent?: string;
+    mimeType?: string;
+    fileExtension?: string;
+  } | null>(null);
+  const [isLinkingLibraryModal, setIsLinkingLibraryModal] = useState(false);
+  const [libraryLinkModalError, setLibraryLinkModalError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isInitialAppBoot, setIsInitialAppBoot] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -587,13 +595,13 @@ export function App() {
         OmranDataService.loadExams(),
         OmranDataService.loadSubmissions(),
         OmranDataService.loadLeaderboardSettings(),
-        OmranDataService.loadGoogleOAuthConfig(),
+        GoogleWorkspaceService.loadGoogleAuthConfig(OmranDataService.getActiveComplexId(), true),
         OmranDataService.loadRecordings(),
         OmranDataService.loadRecordingsConfig(),
         OmranDataService.loadComplexes(),
         OmranDataService.loadCertificates(),
         OmranDataService.loadListeningLogs(),
-        OmranDataService.loadLibraryDocuments()
+        OmranDataService.loadLibraryDocuments(OmranDataService.getActiveComplexId())
       ]);
 
       setStudents(loadedStudents);
@@ -943,6 +951,10 @@ export function App() {
     // 1. Tell OmranDataService to set active complex and resolve its Firestore instance
     OmranDataService.setActiveComplex(activeComplex);
 
+    // Immediately reset Google OAuth & Library state when switching complexes to guarantee zero cross-complex leakage
+    setGoogleAuthConfig({ isLinked: false, complexId: activeComplex?.id });
+    setLibraryDocs([]);
+
     // 2. Load all data from the active database
     loadAllData();
 
@@ -1040,8 +1052,19 @@ export function App() {
       if (isMounted) setLeaderboardSettings(newLead);
     });
     const unsubGoogle = OmranDataService.subscribeGoogleOAuthConfig(newGoogle => {
-      if (isMounted) setGoogleAuthConfig(newGoogle);
-    });
+      if (!isMounted) return;
+      setGoogleAuthConfig(prev => {
+        if (
+          prev.isLinked === newGoogle.isLinked &&
+          prev.connectedEmail === newGoogle.connectedEmail &&
+          prev.complexId === newGoogle.complexId &&
+          prev.driveRootFolderId === newGoogle.driveRootFolderId
+        ) {
+          return prev;
+        }
+        return newGoogle;
+      });
+    }, activeComplex?.id);
     const unsubRecordings = OmranDataService.subscribeRecordings(newRecordings => {
       if (isMounted) setRecordings(newRecordings);
     });
@@ -1056,7 +1079,7 @@ export function App() {
     });
     const unsubLibraryDocs = OmranDataService.subscribeLibraryDocuments(newDocs => {
       if (isMounted) setLibraryDocs(newDocs);
-    });
+    }, activeComplex?.id);
     const unsubTombstones = OmranDataService.subscribeTombstones(tombstones => {
       if (!isMounted) return;
       setStudents(prev => prev.filter(s => s?.id && !tombstones.deletedStudents.has(s.id)));
@@ -1105,7 +1128,9 @@ export function App() {
       } else if (type === 'student-deleted' && payload) {
         setStudents(prev => prev.filter(s => s.id !== payload));
       } else if (type === 'library' && payload) {
-        setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+        if (!activeComplex?.id || !payload.complexId || payload.complexId === activeComplex.id) {
+          setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+        }
       } else if (type === 'library-deleted' && payload) {
         setLibraryDocs(prev => prev.filter(d => d.id !== payload));
       } else if (type === 'certificate' && payload) {
@@ -1152,7 +1177,9 @@ export function App() {
           return Array.from(map.values());
         });
       } else if (type === 'library' && payload) {
-        setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+        if (!activeComplex?.id || !payload.complexId || payload.complexId === activeComplex.id) {
+          setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
+        }
       } else if (type === 'library-deleted' && payload) {
         setLibraryDocs(prev => prev.filter(d => d.id !== payload));
       } else if (type === 'certificate' && payload) {
@@ -2721,9 +2748,25 @@ export function App() {
     await OmranDataService.saveLeaderboardSettings(settings);
   };
 
-  const handleRefreshGoogleAuth = async () => {
-    const cfg = await OmranDataService.loadGoogleOAuthConfig();
-    setGoogleAuthConfig(cfg);
+  const handleRefreshGoogleAuth = useCallback(async () => {
+    const cfg = await GoogleWorkspaceService.loadGoogleAuthConfig(activeComplex?.id, true);
+    setGoogleAuthConfig(prev => {
+      if (
+        prev.isLinked === cfg.isLinked &&
+        prev.connectedEmail === cfg.connectedEmail &&
+        prev.complexId === cfg.complexId &&
+        prev.driveRootFolderId === cfg.driveRootFolderId
+      ) {
+        return prev;
+      }
+      return cfg;
+    });
+  }, [activeComplex?.id]);
+
+  const handleRequestLinkLibrary = (pendingDoc?: LibraryDocument) => {
+    setPendingLibrarySave(pendingDoc ? { docItem: pendingDoc } : null);
+    setLibraryLinkModalError(null);
+    setIsLibraryLinkModalOpen(true);
   };
 
   // Certificate Handlers
@@ -2761,22 +2804,140 @@ export function App() {
     }
   };
 
-  // Library Handlers (المكتبة والأرشيف السحابي)
-  const handleSaveLibraryDoc = async (docItem: LibraryDocument) => {
-    setLibraryDocs(prev => [docItem, ...prev.filter(d => d.id !== docItem.id)]);
+  // Library Handlers (المكتبة والأرشيف السحابي على Google Drive الخاص بالمجمع)
+  const handleSaveLibraryDoc = async (
+    docItem: LibraryDocument,
+    options?: {
+      blob?: Blob;
+      htmlContent?: string;
+      mimeType?: string;
+      fileExtension?: string;
+    }
+  ): Promise<void> => {
+    const targetComplexId = activeComplex?.id || docItem.complexId || 'default-complex';
+    const targetComplexName = activeComplex?.name || settings.complexName || 'المجمع القرآني';
+
+    const currentCfg =
+      googleAuthConfig?.complexId === targetComplexId && googleAuthConfig.isLinked
+        ? googleAuthConfig
+        : await GoogleWorkspaceService.loadGoogleAuthConfig(targetComplexId);
+
+    if (!currentCfg?.isLinked) {
+      setPendingLibrarySave({
+        docItem: { ...docItem, complexId: targetComplexId },
+        blob: options?.blob,
+        htmlContent: options?.htmlContent,
+        mimeType: options?.mimeType,
+        fileExtension: options?.fileExtension
+      });
+      setLibraryLinkModalError(null);
+      setIsLibraryLinkModalOpen(true);
+      throw new Error('LIBRARY_NOT_LINKED');
+    }
+
+    const enrichedDoc = await GoogleWorkspaceService.uploadLibraryDocumentToComplexDrive({
+      doc: { ...docItem, complexId: targetComplexId },
+      blob: options?.blob,
+      htmlContent: options?.htmlContent || docItem.htmlContent,
+      mimeType: options?.mimeType,
+      fileExtension: options?.fileExtension,
+      complexId: targetComplexId,
+      complexName: targetComplexName
+    });
+
+    setLibraryDocs(prev => [
+      enrichedDoc,
+      ...prev.filter(
+        d =>
+          d.id !== enrichedDoc.id &&
+          (!enrichedDoc.driveFileId || d.driveFileId !== enrichedDoc.driveFileId)
+      )
+    ]);
+
+    await OmranDataService.saveLibraryDocument(enrichedDoc);
+    // Notify ONLY this user's Library view to fetch the newly uploaded file from Google Drive
+    setLibraryDriveUploadVersion(v => v + 1);
+    triggerCloudSyncIndicator(
+      `تم الحفظ في المكتبة و Google Drive داخل مجلد (${enrichedDoc.driveFolderName || 'الأرشيف'}) ✓`
+    );
+  };
+
+  const handleLinkAndCompletePendingSave = async () => {
+    const targetComplexId = activeComplex?.id || pendingLibrarySave?.docItem.complexId || 'default-complex';
+    const targetComplexName = activeComplex?.name || settings.complexName || 'المجمع القرآني';
+    setIsLinkingLibraryModal(true);
+    setLibraryLinkModalError(null);
     try {
-      await OmranDataService.saveLibraryDocument(docItem);
-    } catch (e) {
-      console.warn('Save library document notice:', e);
+      const linkRes = await GoogleWorkspaceService.linkGoogleAccount(targetComplexId, targetComplexName);
+      setGoogleAuthConfig(linkRes.config);
+
+      if (pendingLibrarySave) {
+        const enrichedDoc = await GoogleWorkspaceService.uploadLibraryDocumentToComplexDrive({
+          doc: { ...pendingLibrarySave.docItem, complexId: targetComplexId },
+          blob: pendingLibrarySave.blob,
+          htmlContent: pendingLibrarySave.htmlContent || pendingLibrarySave.docItem.htmlContent,
+          mimeType: pendingLibrarySave.mimeType,
+          fileExtension: pendingLibrarySave.fileExtension,
+          complexId: targetComplexId,
+          complexName: targetComplexName,
+          tokenOverride: linkRes.accessToken
+        });
+
+        setLibraryDocs(prev => [
+          enrichedDoc,
+          ...prev.filter(
+            d =>
+              d.id !== enrichedDoc.id &&
+              (!enrichedDoc.driveFileId || d.driveFileId !== enrichedDoc.driveFileId)
+          )
+        ]);
+        await OmranDataService.saveLibraryDocument(enrichedDoc);
+        setLibraryDriveUploadVersion(v => v + 1);
+        triggerCloudSyncIndicator(
+          `تم ربط المكتبة وحفظ الملف في مجلد (${enrichedDoc.driveFolderName || 'Google Drive'}) ✓`
+        );
+      } else {
+        triggerCloudSyncIndicator('تم ربط المكتبة بحساب Google للمجمع بنجاح ✓');
+      }
+
+      setPendingLibrarySave(null);
+      setIsLibraryLinkModalOpen(false);
+    } catch (err: any) {
+      setLibraryLinkModalError(
+        err?.message || 'تعذر إتمام ربط حساب Google. يرجى المحاولة مرة أخرى والموافقة على أذونات Google Drive.'
+      );
+    } finally {
+      setIsLinkingLibraryModal(false);
     }
   };
 
-  const handleDeleteLibraryDoc = async (docId: string) => {
-    setLibraryDocs(prev => prev.filter(d => d.id !== docId));
-    try {
-      await OmranDataService.deleteLibraryDocument(docId);
-    } catch (e) {
-      console.warn('Delete library document notice:', e);
+  const handleDeleteLibraryDoc = async (docId: string, driveFileId?: string) => {
+    const existing = libraryDocs.find(d => d.id === docId);
+    const resolvedDriveId =
+      driveFileId ||
+      existing?.driveFileId ||
+      (docId.startsWith('drive_') ? docId.replace(/^drive_/, '') : undefined);
+
+    setLibraryDocs(prev =>
+      prev.filter(
+        d => d.id !== docId && (!resolvedDriveId || d.driveFileId !== resolvedDriveId)
+      )
+    );
+
+    if (resolvedDriveId) {
+      try {
+        await GoogleWorkspaceService.deleteLibraryFileFromDrive(resolvedDriveId, activeComplex?.id);
+      } catch (e) {
+        console.warn('Delete Drive file notice:', e);
+      }
+    }
+
+    if (!docId.startsWith('drive_')) {
+      try {
+        await OmranDataService.deleteLibraryDocument(docId, activeComplex?.id);
+      } catch (e) {
+        console.warn('Delete library document notice:', e);
+      }
     }
   };
 
@@ -3755,6 +3916,7 @@ export function App() {
                 halaqahName={halaqahs.find(h => h.id === activeHalaqahId)?.name || scopedSettings.halaqahName}
                 isSyncing={isSyncing}
                 onRefreshData={() => loadAllData(true)}
+                onSaveLibraryDoc={handleSaveLibraryDoc}
               />
             )}
 
@@ -3797,6 +3959,7 @@ export function App() {
                 onSaveLeaderboardSettings={handleSaveLeaderboardSettings}
                 onRefreshGoogleAuth={handleRefreshGoogleAuth}
                 onSaveCertificate={handleSaveCertificate}
+                onSaveLibraryDoc={handleSaveLibraryDoc}
               />
             )}
 
@@ -3819,6 +3982,7 @@ export function App() {
                 activeComplex={activeComplex}
                 submissions={scopedSubmissions}
                 initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
+                onSaveLibraryDoc={handleSaveLibraryDoc}
               />
             )}
 
@@ -3832,6 +3996,7 @@ export function App() {
                 activeComplex={activeComplex}
                 initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
                 halaqahs={scopedHalaqahs}
+                onSaveLibraryDoc={handleSaveLibraryDoc}
               />
             )}
 
@@ -3945,6 +4110,9 @@ export function App() {
                 isSupervisor={isSupervisor}
                 isDeveloper={isDeveloper}
                 activeComplex={activeComplex}
+                googleAuthConfig={googleAuthConfig}
+                driveUploadVersion={libraryDriveUploadVersion}
+                onRefreshGoogleAuth={handleRefreshGoogleAuth}
                 onSaveDocument={handleSaveLibraryDoc}
                 onDeleteDocument={handleDeleteLibraryDoc}
                 initialHighlightId={navMeta?.highlightId || navMeta?.itemId}
@@ -4151,6 +4319,28 @@ export function App() {
         isOpen={isLoginSyncing}
         userName={loginSyncUser}
         activeComplex={activeComplex}
+      />
+
+      {/* Global Duolingo 3D 'يرجى ربط المكتبة' Modal for Unlinked Complex Library Saves */}
+      <LibraryLinkRequiredModal
+        isOpen={isLibraryLinkModalOpen}
+        complex={activeComplex}
+        pendingDoc={pendingLibrarySave?.docItem || null}
+        isLinking={isLinkingLibraryModal}
+        errorMessage={libraryLinkModalError}
+        onClose={() => {
+          if (!isLinkingLibraryModal) {
+            setIsLibraryLinkModalOpen(false);
+            setPendingLibrarySave(null);
+            setLibraryLinkModalError(null);
+          }
+        }}
+        onLinkAndSaveNow={handleLinkAndCompletePendingSave}
+        onNavigateToLibrary={() => {
+          setIsLibraryLinkModalOpen(false);
+          setLibraryLinkModalError(null);
+          handleNavigateTab('library');
+        }}
       />
 
       {/* Complex Portal & Registration Applications Modal for Supervisor & Developer */}

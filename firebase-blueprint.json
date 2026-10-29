@@ -114,14 +114,19 @@
     },
     "LibraryDocument": {
       "title": "LibraryDocument",
-      "description": "Exported report, certificate template or curriculum document in platform archive",
+      "description": "Exported report, certificate, attendance sheet, or exam file stored on the Complex's Google Drive and indexed in the Library",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "title": { "type": "string", "maxLength": 250 },
         "type": { "type": "string", "maxLength": 50 },
+        "sectionCategory": { "type": "string", "enum": ["certificates", "attendance", "exams", "reports", "general"] },
         "date": { "type": "string", "maxLength": 30 },
         "complexId": { "type": "string", "maxLength": 128 },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "driveFolderId": { "type": "string", "maxLength": 200 },
+        "driveFolderName": { "type": "string", "maxLength": 150 },
+        "googleUrl": { "type": "string", "maxLength": 1000 },
         "fileData": { "type": "string" }
       },
       "required": ["title", "type"]

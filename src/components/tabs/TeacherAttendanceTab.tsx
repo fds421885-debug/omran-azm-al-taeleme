@@ -25,7 +25,8 @@ import {
   UserPlus,
   Eye,
   Globe,
-  Laptop
+  Laptop,
+  FolderArchive
 } from 'lucide-react';
 import { MosqueLocationMapModal } from '../MosqueLocationMapModal';
 import {
@@ -36,7 +37,8 @@ import {
   TeacherAttendanceStatus,
   calculateHaversineDistanceMeters,
   QuranComplex,
-  Halaqah
+  Halaqah,
+  LibraryDocument
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
@@ -70,6 +72,15 @@ interface TeacherAttendanceTabProps {
   activeComplex?: QuranComplex | null;
   initialHighlightId?: string;
   halaqahs?: Halaqah[];
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: {
+      blob?: Blob;
+      htmlContent?: string;
+      mimeType?: string;
+      fileExtension?: string;
+    }
+  ) => Promise<void>;
 }
 
 export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
@@ -80,10 +91,12 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
   isDeveloper = false,
   activeComplex,
   initialHighlightId,
-  halaqahs = []
+  halaqahs = [],
+  onSaveLibraryDoc
 }) => {
   const isSupervisorOrDev = isSupervisor || isDeveloper;
   const todayStr = new Date().toISOString().split('T')[0];
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
 
   const themePrimary = activeComplex?.theme?.primaryColor || '#131f24';
   const themeSecondary = activeComplex?.theme?.secondaryColor || '#1b2e35';
@@ -1374,6 +1387,121 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
             <UserCheck className="w-3.5 h-3.5" />
             <span>تسجيل حضوري</span>
           </button>
+
+          {isSupervisorOrDev && onSaveLibraryDoc && (
+            <button
+              type="button"
+              disabled={isSavingToLibrary}
+              onClick={async () => {
+                setIsSavingToLibrary(true);
+                try {
+                  const complexTitle = activeComplex?.name || 'المجمع القرآني';
+                  const dayRecords = attendanceRecords.filter(r => r.date === selectedDate);
+                  const rowsHtml =
+                    dayRecords.length > 0
+                      ? dayRecords
+                          .map(
+                            (r, idx) => `<tr>
+                              <td>${idx + 1}</td>
+                              <td><strong>${r.teacherName}</strong></td>
+                              <td>${r.shiftName || '-'}</td>
+                              <td>${r.mosqueName || '-'}</td>
+                              <td>${r.status}</td>
+                              <td>${r.checkInTime || '-'}</td>
+                              <td>${r.checkOutTime || '-'}</td>
+                              <td>${r.note || '-'}</td>
+                            </tr>`
+                          )
+                          .join('')
+                      : teachers
+                          .map(
+                            (t, idx) => `<tr>
+                              <td>${idx + 1}</td>
+                              <td><strong>${t.name}</strong></td>
+                              <td>-</td>
+                              <td>${complexTitle}</td>
+                              <td>لم يُسجل بعد</td>
+                              <td>-</td>
+                              <td>-</td>
+                              <td>-</td>
+                            </tr>`
+                          )
+                          .join('');
+
+                  const htmlSheet = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>تحضير المعلمين - ${complexTitle} - ${selectedDate}</title>
+  <style>
+    body { font-family: 'Tajawal', 'Cairo', sans-serif; direction: rtl; padding: 28px; background: #f8fafc; color: #0f172a; }
+    .box { max-width: 960px; margin: 0 auto; background: #fff; border-radius: 20px; border: 2px solid #cbd5e1; padding: 24px; }
+    h1 { margin: 0 0 6px; color: #064e3b; font-size: 22px; }
+    .meta { color: #475569; font-size: 13px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #064e3b; color: #fbbf24; padding: 10px; border: 1px solid #064e3b; text-align: right; }
+    td { padding: 8px 10px; border: 1px solid #cbd5e1; }
+    tr:nth-child(even) td { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>كشف تحضير المعلمين والمشرفين - ${complexTitle}</h1>
+    <div class="meta">التاريخ: ${selectedDate} • تم الاستخراج بواسطة: ${currentUserName || 'المشرف'}</div>
+    <table>
+      <thead><tr><th>#</th><th>اسم المعلم</th><th>الفترة / المناوبة</th><th>الجامع</th><th>الحالة</th><th>وقت الحضور</th><th>وقت الانصراف</th><th>ملاحظات</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+                  const docObj: LibraryDocument = {
+                    id: `lib-tatt-${Date.now()}`,
+                    complexId: activeComplex?.id,
+                    complexName: complexTitle,
+                    title: `الحضور والغياب (المعلمون) - ${complexTitle} - ${selectedDate}`,
+                    type: 'attendance_sheet',
+                    sectionCategory: 'attendance',
+                    description: `سجل تحضير وانصراف معلمي (${complexTitle}) ليوم ${selectedDate}`,
+                    htmlContent: htmlSheet,
+                    createdBy: currentUserName || 'المشرف',
+                    createdAt: new Date().toISOString()
+                  };
+
+                  await onSaveLibraryDoc(docObj, {
+                    blob: new Blob([htmlSheet], { type: 'text/html;charset=utf-8' }),
+                    htmlContent: htmlSheet,
+                    mimeType: 'text/html',
+                    fileExtension: '.html'
+                  });
+                  setToastMessage({
+                    type: 'success',
+                    text: 'تم حفظ كشف تحضير المعلمين في المكتبة ومجلد «الحضور والغياب» على Google Drive بنجاح ✓'
+                  });
+                  setTimeout(() => setToastMessage(null), 4000);
+                } catch (err: any) {
+                  if (err?.message !== 'LIBRARY_NOT_LINKED') {
+                    setToastMessage({
+                      type: 'error',
+                      text: err?.message || 'تعذر حفظ كشف التحضير في المكتبة.'
+                    });
+                    setTimeout(() => setToastMessage(null), 4000);
+                  }
+                } finally {
+                  setIsSavingToLibrary(false);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 bg-[#58cc02] hover:bg-[#61e002] text-white border-2 border-b-4 border-[#46a302] active:translate-y-0.5 disabled:opacity-60"
+            >
+              {isSavingToLibrary ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FolderArchive className="w-3.5 h-3.5" />
+              )}
+              <span>حفظ في المكتبة</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -1473,7 +1473,23 @@ export interface LeaderboardSettings {
   updatedAt: string;
 }
 
+export type LibraryDriveSection =
+  | 'certificates'
+  | 'attendance'
+  | 'exams'
+  | 'reports'
+  | 'general';
+
+export interface DriveSectionFolderMeta {
+  id: string;
+  name: string;
+  url?: string;
+  webViewLink?: string;
+}
+
 export interface GoogleOAuthConfig {
+  complexId?: string;
+  complexName?: string;
   connectedEmail?: string;
   displayName?: string;
   photoURL?: string | null;
@@ -1483,6 +1499,10 @@ export interface GoogleOAuthConfig {
   accessToken?: string;
   savedInCloud?: boolean;
   expiresAt?: number;
+  driveRootFolderId?: string;
+  driveRootFolderName?: string;
+  driveRootFolderUrl?: string;
+  driveSectionFolders?: Partial<Record<LibraryDriveSection, DriveSectionFolderMeta>>;
 }
 
 export interface SurahRecordingSegment {
@@ -1894,32 +1914,46 @@ export function calculateHaversineDistanceMeters(
 
 export type LibraryDocumentType =
   | 'pdf_report'
+  | 'periodic_report'
   | 'exam_results'
+  | 'exam_archive'
   | 'attendance_sheet'
+  | 'certificate'
   | 'certificate_batch'
   | 'google_form'
   | 'google_sheet'
+  | 'custom_note'
   | 'custom_file';
 
 export interface LibraryDocument {
   id: string;
   title: string;
   type: LibraryDocumentType;
-  date: string; // YYYY-MM-DD
+  sectionCategory?: LibraryDriveSection;
+  date?: string; // YYYY-MM-DD
   createdAt: string;
-  createdByName: string;
+  createdBy?: string;
+  createdByName?: string;
+  studentId?: string;
+  studentName?: string;
   complexId?: string;
   complexName?: string;
   halaqahId?: string;
   halaqahName?: string;
   fileUrl?: string; // Data URL or Blob URL or External Link
   googleUrl?: string;
+  driveFileId?: string;
+  driveFolderId?: string;
+  driveFolderName?: string;
+  driveWebViewLink?: string;
+  driveMimeType?: string;
   htmlContent?: string; // Rich printable HTML representation for instant in-app previews
   googleSpreadsheetId?: string;
   googleFormId?: string;
   fileSize?: string;
   pageCount?: number;
   description?: string;
+  summaryText?: string;
   tags?: string[];
 }
 

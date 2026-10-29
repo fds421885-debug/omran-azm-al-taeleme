@@ -25,7 +25,8 @@ import {
   Send,
   Award,
   Sparkles,
-  Loader2
+  Loader2,
+  FolderArchive
 } from 'lucide-react';
 import {
   Student,
@@ -35,7 +36,8 @@ import {
   AbsenceMessageTemplate,
   getStudentParentPhone,
   getStudentFirstGivenName,
-  QuranComplex
+  QuranComplex,
+  LibraryDocument
 } from '../../types';
 import { PrintableQuranicReport } from '../reports/PrintableQuranicReport';
 import { LiveSyncButton } from '../loading/ModernLoadingSuite';
@@ -68,6 +70,15 @@ interface AttendanceTabProps {
   halaqahName?: string;
   isSyncing?: boolean;
   onRefreshData?: () => void | Promise<void>;
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: {
+      blob?: Blob;
+      htmlContent?: string;
+      mimeType?: string;
+      fileExtension?: string;
+    }
+  ) => Promise<void>;
 }
 
 export const AttendanceTab: React.FC<AttendanceTabProps> = ({
@@ -82,13 +93,15 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   activeComplex,
   halaqahName,
   isSyncing,
-  onRefreshData
+  onRefreshData,
+  onSaveLibraryDoc
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -699,31 +712,112 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
             <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3" />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={handleMarkAllPresent}
-              className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5"
-              style={{
-                backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                borderColor: 'var(--complex-border, #2b4550)',
-                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                color: 'var(--complex-text, #ffffff)'
-              }}
+              className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5 bg-[var(--complex-secondary,#1b2e35)] border-[var(--complex-border,#2b4550)] text-[var(--complex-text,#ffffff)]"
             >
               <CheckCheck className="w-4 h-4 text-[#58cc02]" />
               <span>تحديد الجميع حاضر</span>
             </button>
 
+            {onSaveLibraryDoc && (
+              <button
+                type="button"
+                disabled={isSavingToLibrary}
+                onClick={async () => {
+                  setIsSavingToLibrary(true);
+                  try {
+                    const effectiveHalaqah = halaqahName || settings?.halaqahName || 'الحلقة القرآنية';
+                    const effectiveComplexName = activeComplex?.name || complexName || 'المجمع القرآني';
+                    const rowsHtml = students
+                      .map((st, i) => {
+                        const stStatus = statusMap[st.id]?.status || 'حاضر';
+                        const stNote = statusMap[st.id]?.note || '-';
+                        return `<tr>
+                          <td>${i + 1}</td>
+                          <td><strong>${st.name}</strong></td>
+                          <td>${st.halaqahName || effectiveHalaqah}</td>
+                          <td>${stStatus}</td>
+                          <td>${stNote}</td>
+                        </tr>`;
+                      })
+                      .join('');
+
+                    const htmlSheet = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>الحضور والغياب - ${effectiveHalaqah} - ${selectedDate}</title>
+  <style>
+    body { font-family: 'Tajawal', 'Cairo', sans-serif; direction: rtl; padding: 28px; background: #f8fafc; color: #0f172a; }
+    .box { max-width: 920px; margin: 0 auto; background: #fff; border-radius: 20px; border: 2px solid #cbd5e1; padding: 24px; }
+    h1 { margin: 0 0 6px; color: #064e3b; font-size: 22px; }
+    .meta { color: #475569; font-size: 13px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #064e3b; color: #fbbf24; padding: 10px; border: 1px solid #064e3b; text-align: right; }
+    td { padding: 8px 10px; border: 1px solid #cbd5e1; }
+    tr:nth-child(even) td { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>كشف الحضور والغياب - ${effectiveHalaqah}</h1>
+    <div class="meta">${effectiveComplexName} • التاريخ: ${selectedDate} • إشراف: ${teacherName || settings?.teacherName || 'معلم الحلقة'}</div>
+    <table>
+      <thead><tr><th>#</th><th>اسم الطالب</th><th>الحلقة</th><th>حالة الحضور</th><th>ملاحظات</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+                    const docObj: LibraryDocument = {
+                      id: `lib-att-sheet-${Date.now()}`,
+                      complexId: activeComplex?.id,
+                      complexName: effectiveComplexName,
+                      title: `الحضور والغياب - ${effectiveHalaqah} - ${selectedDate}`,
+                      type: 'attendance_sheet',
+                      sectionCategory: 'attendance',
+                      halaqahName: effectiveHalaqah,
+                      description: `كشف حضور وغياب طلاب (${effectiveHalaqah}) ليوم ${selectedDate}`,
+                      htmlContent: htmlSheet,
+                      createdBy: teacherName || settings?.teacherName || 'معلم الحلقة',
+                      createdAt: new Date().toISOString()
+                    };
+
+                    await onSaveLibraryDoc(docObj, {
+                      blob: new Blob([htmlSheet], { type: 'text/html;charset=utf-8' }),
+                      htmlContent: htmlSheet,
+                      mimeType: 'text/html',
+                      fileExtension: '.html'
+                    });
+                    setSaveMessage('تم حفظ كشف الحضور والغياب في المكتبة ومجلد «الحضور والغياب» على Google Drive بنجاح ✓');
+                    setTimeout(() => setSaveMessage(''), 4000);
+                  } catch (err: any) {
+                    if (err?.message !== 'LIBRARY_NOT_LINKED') {
+                      setSaveMessage(err?.message || 'تعذر حفظ الكشف في المكتبة.');
+                      setTimeout(() => setSaveMessage(''), 4000);
+                    }
+                  } finally {
+                    setIsSavingToLibrary(false);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-2xl bg-[#58cc02] hover:bg-[#61e002] text-white border-2 border-b-4 border-[#46a302] text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer active:translate-y-0.5 disabled:opacity-60"
+              >
+                {isSavingToLibrary ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FolderArchive className="w-4 h-4" />
+                )}
+                <span>حفظ في المكتبة</span>
+              </button>
+            )}
+
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--complex-accent, #ffc800)',
-                color: 'var(--complex-primary, #131f24)',
-                borderColor: 'var(--complex-accent, #ffc800)',
-                borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
-              }}
+              className="px-5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-lg transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110 disabled:opacity-50 bg-[var(--complex-accent,#ffc800)] text-[var(--complex-primary,#131f24)] border-[var(--complex-accent,#ffc800)]"
             >
               <Save className="w-4 h-4" />
               <span>{isSaving ? 'جاري الحفظ...' : 'حفظ كشف الحضور'}</span>
@@ -1610,6 +1704,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
           teacherName={teacherName || settings.teacherName}
           selectedDate={selectedDate}
           complex={activeComplex}
+          onSaveDocument={onSaveLibraryDoc}
         />
       )}
     </div>

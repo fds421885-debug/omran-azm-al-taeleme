@@ -182,7 +182,10 @@ interface QuranAIAssistantProps {
   onDeleteTeacher?: (teacherId: string) => Promise<void>;
   onSaveViolation?: (violation: any) => Promise<void>;
   onNavigateTab?: (tab: string, meta?: any) => void;
-  onSaveLibraryDoc?: (doc: LibraryDocument) => Promise<void>;
+  onSaveLibraryDoc?: (
+    doc: LibraryDocument,
+    options?: { blob?: Blob; htmlContent?: string; mimeType?: string; fileExtension?: string }
+  ) => Promise<void>;
   onOpenThemeCustomizer?: (complexId?: string) => void;
   certificates?: IssuedCertificate[];
   onSaveCertificate?: (cert: IssuedCertificate) => Promise<void>;
@@ -2474,25 +2477,34 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         id: `lib_rep_${Date.now()}`,
         title,
         type: tableType === 'attendance' ? 'attendance_sheet' : 'pdf_report',
+        sectionCategory: tableType === 'attendance' ? 'attendance' : 'reports',
         date: new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
+        createdBy: effectiveName,
         createdByName: effectiveName,
         htmlContent: styledReportHtml,
         complexId: activeComplex?.id,
-        complexName: activeComplex?.name || 'مجمع النور',
+        complexName: activeComplex?.name || 'مجمع تحفيظ القرآن الكريم',
         fileSize: `${rows.length} سجل`,
         tags: [tableType, 'المساعد_الذكي', 'تقرير'],
       };
 
       if (onSaveLibraryDoc) {
-        await onSaveLibraryDoc(libDoc);
+        await onSaveLibraryDoc(libDoc, {
+          htmlContent: styledReportHtml,
+          mimeType: 'text/html',
+          fileExtension: '.html'
+        });
       } else {
         await OmranDataService.saveLibraryDocument(libDoc);
       }
 
       setSavedLibraryReports(prev => new Set([...prev, `lib_${msgId}`]));
-      showToast('تم حفظ التقرير بنجاح في مكتبة المنصة 📚✓');
-    } catch {
+      showToast('تم حفظ التقرير بنجاح في مكتبة المجمع على Google Drive 📚✓');
+    } catch (err: any) {
+      if (err?.message === 'LIBRARY_NOT_LINKED') {
+        return;
+      }
       showToast('تعذر حفظ التقرير في المكتبة');
     }
   };
@@ -6405,7 +6417,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                   className="px-2.5 py-1.5 rounded-lg bg-teal-800 hover:bg-teal-700 text-white font-bold text-[11px] flex items-center gap-1 shadow cursor-pointer transition-all"
                                 >
                                   <Bookmark className="w-3.5 h-3.5" />
-                                  <span>حفظ بالمكتبة 💾</span>
+                                  <span>حفظ في المكتبة</span>
                                 </button>
                               </div>
                             </div>

@@ -528,15 +528,17 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setDriveExportResult(null);
 
     try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
+      const targetCompId = activeComplex?.id || googleAuthConfig?.complexId;
+      const targetCompName = activeComplex?.name || googleAuthConfig?.complexName;
+      let token = await GoogleWorkspaceService.getValidAccessToken(targetCompId);
       if (!token) {
-        const linkRes = await GoogleWorkspaceService.linkGoogleAccount();
+        const linkRes = await GoogleWorkspaceService.linkGoogleAccount(targetCompId, targetCompName);
         token = linkRes.accessToken;
         if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
       }
 
       const backupData = await OmranDataService.exportFullBackup();
-      const res = await GoogleWorkspaceService.exportBackupToGoogleDrive(backupData, googleAuthConfig);
+      const res = await GoogleWorkspaceService.exportBackupToGoogleDrive(backupData, googleAuthConfig, targetCompId);
       setDriveExportResult(res);
 
       setStatusMsg({
@@ -562,9 +564,11 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setSheetsExportResult(null);
 
     try {
-      let token = await GoogleWorkspaceService.getValidAccessToken();
+      const targetCompId = activeComplex?.id || googleAuthConfig?.complexId;
+      const targetCompName = activeComplex?.name || googleAuthConfig?.complexName;
+      let token = await GoogleWorkspaceService.getValidAccessToken(targetCompId);
       if (!token) {
-        const linkRes = await GoogleWorkspaceService.linkGoogleAccount();
+        const linkRes = await GoogleWorkspaceService.linkGoogleAccount(targetCompId, targetCompName);
         token = linkRes.accessToken;
         if (onRefreshGoogleAuth) await onRefreshGoogleAuth();
       }
@@ -847,8 +851,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setAutoLinkProgressText('جاري فتح نافذة تسجيل الدخول الآمن بحساب Google والمصادقة...');
 
     try {
-      // Step 1: Sign in with Google
-      const authResult = await GoogleWorkspaceService.linkGoogleAccount();
+      // Step 1: Sign in with Google (strictly isolated to the target Complex)
+      const authResult = await GoogleWorkspaceService.linkGoogleAccount(complexToLink?.id, complexToLink?.name);
       const connectedEmail = authResult.email || 'حساب Google المعتمد';
 
       // Step 2: Configure database credentials automatically

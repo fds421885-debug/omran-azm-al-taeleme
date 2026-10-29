@@ -3389,10 +3389,12 @@ export class OmranDataService {
         await setDoc(doc(targetDb, 'settings', 'leaderboard'), lbSnap.data());
       }
 
-      // 3. Google OAuth Settings
-      const oauthSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'));
+      // 3. Google OAuth Settings (Strictly scoped per complexId)
+      const oauthDocId = this.getComplexGoogleOAuthDocId(complex.id);
+      const oauthSnap = await safeGetDoc(doc(this.getActiveDb(), 'settings', oauthDocId));
       if (oauthSnap && oauthSnap.exists()) {
-        await setDoc(doc(targetDb, 'settings', 'google_oauth'), oauthSnap.data());
+        const { accessToken: _omitToken, ...safeOAuth } = (oauthSnap.data() || {}) as any;
+        await setDoc(doc(targetDb, 'settings', oauthDocId), cleanFirestoreData({ ...safeOAuth, complexId: complex.id }));
       }
 
       // 4. Recordings Config
@@ -5076,41 +5078,75 @@ export class OmranDataService {
     }
   }
 
-  // Load Google OAuth Configuration
-  static async loadGoogleOAuthConfig(): Promise<GoogleOAuthConfig> {
+  // Resolve strict per-complex Firestore document ID for Google OAuth
+  static getComplexGoogleOAuthDocId(complexId?: string | null): string {
+    const rawId = (complexId || this.activeComplexId || 'default-complex').trim();
+    const safeId = rawId.replace(/[\/\\.#$\[\]]/g, '_').slice(0, 96) || 'default-complex';
+    return `google_oauth_${safeId}`;
+  }
+
+  // Load Google OAuth Configuration strictly scoped to the specified or active Complex
+  static async loadGoogleOAuthConfig(complexId?: string): Promise<GoogleOAuthConfig> {
+    const effectiveComplexId = (complexId || this.activeComplexId || 'default-complex').trim();
+    const docId = this.getComplexGoogleOAuthDocId(effectiveComplexId);
     try {
-      const snap = await safeGetDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'));
+      const snap = await safeGetDoc(doc(this.getActiveDb(), 'settings', docId));
       if (snap.exists()) {
-        return snap.data() as GoogleOAuthConfig;
+        const data = snap.data() as GoogleOAuthConfig;
+        if (data.complexId && data.complexId !== effectiveComplexId) {
+          return { isLinked: false, complexId: effectiveComplexId };
+        }
+        return { ...data, complexId: effectiveComplexId };
       }
-      return { isLinked: false };
+      return { isLinked: false, complexId: effectiveComplexId };
     } catch (e) {
-      handleFirestoreError(e, OperationType.GET, 'settings/google_oauth');
-      return { isLinked: false };
+      handleFirestoreError(e, OperationType.GET, `settings/${docId}`);
+      return { isLinked: false, complexId: effectiveComplexId };
     }
   }
 
-  // Save Google OAuth Configuration
-  static async saveGoogleOAuthConfig(config: GoogleOAuthConfig): Promise<void> {
+  // Save Google OAuth Configuration strictly scoped to the specified or active Complex (without storing raw access tokens)
+  static async saveGoogleOAuthConfig(config: GoogleOAuthConfig, complexId?: string): Promise<void> {
+    const effectiveComplexId = (complexId || config.complexId || this.activeComplexId || 'default-complex').trim();
+    const docId = this.getComplexGoogleOAuthDocId(effectiveComplexId);
+    const { accessToken: _omitAccessToken, ...safeConfig } = config;
     try {
-      await setDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'), config);
+      await setDoc(
+        doc(this.getActiveDb(), 'settings', docId),
+        cleanFirestoreData({
+          ...safeConfig,
+          complexId: effectiveComplexId,
+          updatedAt: new Date().toISOString()
+        }),
+        { merge: true }
+      );
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, 'settings/google_oauth');
+      handleFirestoreError(e, OperationType.WRITE, `settings/${docId}`);
       throw e;
     }
   }
 
-  // Subscribe to Google OAuth Configuration in Real-time
-  static subscribeGoogleOAuthConfig(callback: (config: GoogleOAuthConfig) => void): () => void {
+  // Subscribe to Google OAuth Configuration in Real-time strictly for the specified or active Complex
+  static subscribeGoogleOAuthConfig(
+    callback: (config: GoogleOAuthConfig) => void,
+    complexId?: string
+  ): () => void {
+    const effectiveComplexId = (complexId || this.activeComplexId || 'default-complex').trim();
+    const docId = this.getComplexGoogleOAuthDocId(effectiveComplexId);
     try {
-      return onSnapshot(doc(this.getActiveDb(), 'settings', 'google_oauth'), snap => {
+      return onSnapshot(doc(this.getActiveDb(), 'settings', docId), snap => {
         if (snap.exists()) {
-          callback(snap.data() as GoogleOAuthConfig);
+          const data = snap.data() as GoogleOAuthConfig;
+          if (data.complexId && data.complexId !== effectiveComplexId) {
+            callback({ isLinked: false, complexId: effectiveComplexId });
+            return;
+          }
+          callback({ ...data, complexId: effectiveComplexId });
         } else {
-          callback({ isLinked: false });
+          callback({ isLinked: false, complexId: effectiveComplexId });
         }
       }, err => {
-        handleFirestoreError(err, OperationType.GET, 'settings/google_oauth');
+        handleFirestoreError(err, OperationType.GET, `settings/${docId}`);
       });
     } catch (e) {
       return () => {};
@@ -5694,7 +5730,9 @@ export class OmranDataService {
       await setDoc(doc(this.getActiveDb(), 'settings', 'leaderboard'), cleanFirestoreData(leaderboardSettings));
     }
     if (backup.googleOAuth) {
-      await setDoc(doc(this.getActiveDb(), 'settings', 'google_oauth'), cleanFirestoreData(backup.googleOAuth));
+      const { accessToken: _omitAccessToken, ...safeOAuth } = backup.googleOAuth;
+      const oauthDocId = this.getComplexGoogleOAuthDocId(safeOAuth.complexId || this.activeComplexId);
+      await setDoc(doc(this.getActiveDb(), 'settings', oauthDocId), cleanFirestoreData(safeOAuth));
     }
     if (recordingsConfig) {
       await setDoc(doc(this.getActiveDb(), 'settings', 'recordings_config'), cleanFirestoreData(recordingsConfig));
@@ -6051,30 +6089,44 @@ export class OmranDataService {
   // Library & Documents Archive Management (المكتبة والأرشيف السحابي الشامل)
   // =========================================================================
   static async loadLibraryDocuments(complexId?: string): Promise<LibraryDocument[]> {
-    const local = getLocalCache<LibraryDocument[]>(OMRAN_CACHE_KEYS.LIBRARY_DOCS, []);
+    const effectiveComplexId = (complexId || this.activeComplexId || '').trim();
+    const scopedCacheKey = effectiveComplexId
+      ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
+      : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
+    const local = getLocalCache<LibraryDocument[]>(scopedCacheKey, []);
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'library_docs'));
       const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as LibraryDocument));
-      if (list.length > 0) {
-        setLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, list);
-        return complexId ? list.filter(d => !d.complexId || d.complexId === complexId) : list;
-      }
+      const filtered = effectiveComplexId
+        ? list.filter(d => d.complexId === effectiveComplexId)
+        : list;
+      setLocalCache(scopedCacheKey, filtered);
+      return filtered;
     } catch (e) {
       // quiet fallback
     }
-    return complexId ? local.filter(d => !d.complexId || d.complexId === complexId) : local;
+    return effectiveComplexId ? local.filter(d => d.complexId === effectiveComplexId) : local;
   }
 
   static async saveLibraryDocument(documentItem: LibraryDocument): Promise<void> {
-    const local = getLocalCache<LibraryDocument[]>(OMRAN_CACHE_KEYS.LIBRARY_DOCS, []);
-    const updated = [documentItem, ...local.filter(d => d.id !== documentItem.id)];
-    setLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, updated);
-    broadcastDataUpdate('library', documentItem);
+    const effectiveComplexId = (documentItem.complexId || this.activeComplexId || '').trim();
+    const normalizedDoc: LibraryDocument = {
+      ...documentItem,
+      complexId: effectiveComplexId || documentItem.complexId,
+      complexName: documentItem.complexName || this.activeComplex?.name
+    };
+    const scopedCacheKey = effectiveComplexId
+      ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
+      : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
+    const local = getLocalCache<LibraryDocument[]>(scopedCacheKey, []);
+    const updated = [normalizedDoc, ...local.filter(d => d.id !== normalizedDoc.id)];
+    setLocalCache(scopedCacheKey, updated);
+    broadcastDataUpdate('library', normalizedDoc);
     try {
-      await setDoc(doc(this.getActiveDb(), 'library_docs', documentItem.id), cleanFirestoreData(documentItem), { merge: true });
+      await setDoc(doc(this.getActiveDb(), 'library_docs', normalizedDoc.id), cleanFirestoreData(normalizedDoc), { merge: true });
       if (this.getActiveDb() !== this.getCentralDb()) {
         try {
-          await setDoc(doc(this.getCentralDb(), 'library_docs', documentItem.id), cleanFirestoreData(documentItem), { merge: true });
+          await setDoc(doc(this.getCentralDb(), 'library_docs', normalizedDoc.id), cleanFirestoreData(normalizedDoc), { merge: true });
         } catch {}
       }
     } catch (e) {
@@ -6082,9 +6134,13 @@ export class OmranDataService {
     }
   }
 
-  static async deleteLibraryDocument(documentId: string): Promise<void> {
-    const local = getLocalCache<LibraryDocument[]>(OMRAN_CACHE_KEYS.LIBRARY_DOCS, []);
-    setLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, local.filter(d => d.id !== documentId));
+  static async deleteLibraryDocument(documentId: string, complexId?: string): Promise<void> {
+    const effectiveComplexId = (complexId || this.activeComplexId || '').trim();
+    const scopedCacheKey = effectiveComplexId
+      ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
+      : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
+    const local = getLocalCache<LibraryDocument[]>(scopedCacheKey, []);
+    setLocalCache(scopedCacheKey, local.filter(d => d.id !== documentId));
     broadcastDataUpdate('library-deleted', documentId);
     try {
       await deleteDoc(doc(this.getActiveDb(), 'library_docs', documentId));
@@ -6098,18 +6154,28 @@ export class OmranDataService {
     }
   }
 
-  static subscribeLibraryDocuments(callback: (docs: LibraryDocument[]) => void): () => void {
+  static subscribeLibraryDocuments(
+    callback: (docs: LibraryDocument[]) => void,
+    complexId?: string
+  ): () => void {
+    const effectiveComplexId = (complexId || this.activeComplexId || '').trim();
+    const scopedCacheKey = effectiveComplexId
+      ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
+      : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
     const q = query(collection(this.getActiveDb(), 'library_docs'));
     return onSnapshot(
       q,
       snapshot => {
         const list = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as LibraryDocument));
-        setLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, list);
-        callback(list);
+        const filtered = effectiveComplexId
+          ? list.filter(d => d.complexId === effectiveComplexId)
+          : list;
+        setLocalCache(scopedCacheKey, filtered);
+        callback(filtered);
       },
       error => {
         console.warn('Library documents subscription fallback to local cache:', error);
-        callback(getLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, []));
+        callback(getLocalCache(scopedCacheKey, []));
       }
     );
   }

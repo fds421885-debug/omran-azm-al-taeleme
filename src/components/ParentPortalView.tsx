@@ -116,25 +116,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
   const [activeTakingAttemptNum, setActiveTakingAttemptNum] = useState<number>(1);
   const [viewingReviewSubmission, setViewingReviewSubmission] = useState<ExamSubmission | null>(null);
-  const [openedGoogleFormExam, setOpenedGoogleFormExam] = useState<Exam | null>(null);
-  const [googleFormModalData, setGoogleFormModalData] = useState<{
-    exam: Exam;
-    rawUrl: string;
-    prefilledUrl: string;
-    hasPrefill: boolean;
-  } | null>(null);
-  const [nameCopiedNotice, setNameCopiedNotice] = useState(false);
 
   // Student Google Authentication & Linking State
   const [currentStudent, setCurrentStudent] = useState<Student>(student);
   const [googleAuthGateExam, setGoogleAuthGateExam] = useState<Exam | null>(null);
   const [isLinkingGoogle, setIsLinkingGoogle] = useState(false);
   const [googleLinkError, setGoogleLinkError] = useState('');
-  const [isCheckingGoogleScore, setIsCheckingGoogleScore] = useState(false);
-  const [googleScoreFeedback, setGoogleScoreFeedback] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
 
   // Synchronize internal student state if props change
   React.useEffect(() => {
@@ -165,13 +152,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
       // If linking was triggered by clicking an exam, launch it now!
       if (targetExamAfterLink) {
-        if (targetExamAfterLink.deliveryMode === 'google_form') {
-          handleLaunchGoogleForm(targetExamAfterLink, updated);
-        } else {
-          const mySubs = submissions.filter(s => s.examId === targetExamAfterLink.id && s.studentId === updated.id);
-          setActiveTakingAttemptNum(mySubs.length + 1);
-          setActiveTakingExam(targetExamAfterLink);
-        }
+        const mySubs = submissions.filter(s => s.examId === targetExamAfterLink.id && s.studentId === updated.id);
+        setActiveTakingAttemptNum(mySubs.length + 1);
+        setActiveTakingExam(targetExamAfterLink);
       }
     } catch (err: any) {
       const errMsg = err?.message || String(err);
@@ -204,89 +187,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       setIsLinkingGoogle(false);
     }
   };
-
-  const handleCheckAndRecordGoogleScore = async (targetExam: Exam, isAuto: boolean = false) => {
-    if (!isAuto) {
-      setIsCheckingGoogleScore(true);
-      setGoogleScoreFeedback(null);
-    }
-    try {
-      const result = await GoogleWorkspaceService.fetchAndRecordStudentGoogleFormScore(
-        targetExam,
-        currentStudent,
-        submissions
-      );
-      if (result.found && result.submission) {
-        if (onSaveSubmission) {
-          await onSaveSubmission(result.submission);
-        }
-        setGoogleScoreFeedback({
-          success: true,
-          message: `تم رصد وتحديث درجتك بنجاح! الدرجة: ${result.submission.totalScoreEarned} من ${result.submission.maxPossibleScore} (${result.submission.percentage}%)`
-        });
-        if (googleFormModalData) {
-          setTimeout(() => {
-            setGoogleFormModalData(null);
-          }, 2500);
-        }
-      } else if (!isAuto) {
-        setGoogleScoreFeedback({
-          success: false,
-          message: result.message
-        });
-      }
-    } catch (err: any) {
-      if (!isAuto) {
-        setGoogleScoreFeedback({
-          success: false,
-          message: err?.message || 'تعذر التحقق من درجات Google Forms حالياً.'
-        });
-      }
-    } finally {
-      if (!isAuto) {
-        setIsCheckingGoogleScore(false);
-      }
-    }
-  };
-
-  // Auto-sync Google Form scores whenever student returns to this page or in background
-  useEffect(() => {
-    const checkActiveGoogleForms = async () => {
-      const gfExams = exams.filter(e => e.deliveryMode === 'google_form');
-      if (gfExams.length === 0) return;
-
-      if (googleFormModalData?.exam) {
-        await handleCheckAndRecordGoogleScore(googleFormModalData.exam, true);
-        return;
-      }
-
-      for (const ex of gfExams) {
-        await handleCheckAndRecordGoogleScore(ex, true);
-      }
-    };
-
-    const onFocusOrVisible = () => {
-      if (document.visibilityState === 'visible') {
-        checkActiveGoogleForms();
-      }
-    };
-
-    window.addEventListener('focus', onFocusOrVisible);
-    document.addEventListener('visibilitychange', onFocusOrVisible);
-
-    let pollInterval: any = null;
-    if (googleFormModalData?.exam) {
-      pollInterval = setInterval(() => {
-        handleCheckAndRecordGoogleScore(googleFormModalData.exam, true);
-      }, 8000);
-    }
-
-    return () => {
-      window.removeEventListener('focus', onFocusOrVisible);
-      document.removeEventListener('visibilitychange', onFocusOrVisible);
-      if (pollInterval) clearInterval(pollInterval);
-    };
-  }, [googleFormModalData, exams, currentStudent, submissions]);
 
   const studentAttendance = attendance.filter(a => a.studentId === student.id);
   const studentEvaluations = evaluations.filter(e => e.studentId === student.id);
@@ -568,43 +468,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   }, [recordings, currentStudent.currentSurah]);
 
   const activeRecording = recordings.find(r => r.id === selectedRecordingId) || recordings[0];
-
-  // Handle Google Form exam launch with student name prefill and auto-clipboard
-  const handleLaunchGoogleForm = (exam: Exam, targetStudent?: Student) => {
-    const activeSt = targetStudent || currentStudent;
-    const rawUrl = exam.googleFormResponderUrl || exam.googleFormUrl;
-    if (!rawUrl) {
-      alert('لم يتم ربط أو توليد رابط Google Form لهذا الاختبار بعد. يرجى التواصل مع المعلم.');
-      return;
-    }
-
-    let prefilledUrl = rawUrl;
-    let hasPrefill = false;
-
-    if (exam.googleFormNameEntryId) {
-      const entryKey = exam.googleFormNameEntryId.startsWith('entry.')
-        ? exam.googleFormNameEntryId
-        : `entry.${exam.googleFormNameEntryId}`;
-      const joinChar = rawUrl.includes('?') ? '&' : '?';
-      prefilledUrl = `${rawUrl}${joinChar}${entryKey}=${encodeURIComponent(activeSt.name)}`;
-      hasPrefill = true;
-    }
-
-    // Auto-copy the registered student name to clipboard so student never misspells it
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(activeSt.name).then(() => {
-        setNameCopiedNotice(true);
-        setTimeout(() => setNameCopiedNotice(false), 4000);
-      }).catch(() => {});
-    }
-
-    setGoogleFormModalData({
-      exam,
-      rawUrl,
-      prefilledUrl,
-      hasPrefill
-    });
-  };
 
   const handleLogoutAction = () => {
     if (onLogout) {
@@ -1096,16 +959,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-700">
                             {exam.questions.length} أسئلة • {exam.totalPoints} درجات
                           </span>
-                          {exam.deliveryMode === 'google_form' ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-900/80 text-blue-200 font-bold border border-blue-600/50 flex items-center gap-1">
-                              <ExternalLink className="w-3 h-3 text-blue-300" />
-                              Google Forms
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-600/40">
-                              نظام المنصة
-                            </span>
-                          )}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-600/40">
+                            نظام المنصة
+                          </span>
                         </div>
 
                         {isExpired ? (
@@ -1163,30 +1019,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 return;
                               }
 
-                              if (exam.deliveryMode === 'google_form') {
-                                handleLaunchGoogleForm(exam);
-                              } else {
-                                setActiveTakingAttemptNum(attemptsUsed + 1);
-                                setActiveTakingExam(exam);
-                              }
+                              setActiveTakingAttemptNum(attemptsUsed + 1);
+                              setActiveTakingExam(exam);
                             }}
-                            className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all ${
-                              exam.deliveryMode === 'google_form'
-                                ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                                : 'bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b]'
-                            }`}
+                            className="px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b]"
                           >
-                            {exam.deliveryMode === 'google_form' ? (
-                              <>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span>بدء الاختبار عبر Google Forms</span>
-                              </>
-                            ) : (
-                              <>
-                                <Play className="w-3.5 h-3.5 fill-current" />
-                                <span>ابدأ الاختبار الآن</span>
-                              </>
-                            )}
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>ابدأ الاختبار الآن</span>
                           </button>
                         )}
                       </div>
@@ -2041,225 +1880,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             بوابة الطالب وولي الأمر • متابعة الحفظ والتسميع والاختبارات
           </p>
         </footer>
-
-        {/* SMART GOOGLE FORM LAUNCH & PRE-FILL MODAL */}
-        {googleFormModalData && (
-          <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#022c22] border border-[#fbbf24]/60 rounded-3xl w-full max-w-lg p-6 sm:p-8 shadow-2xl space-y-5 text-right relative">
-              <button
-                onClick={() => setGoogleFormModalData(null)}
-                className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-3 border-b border-emerald-800/80 pb-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center shrink-0">
-                  <ExternalLink className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold font-heading text-white">
-                    بدء الاختبار عبر Google Forms
-                  </h3>
-                  <p className="text-xs text-[#fbbf24] font-bold mt-0.5">
-                    {googleFormModalData.exam.title}
-                  </p>
-                </div>
-              </div>
-
-              {/* Student Identity Card & Auto-prefill Status */}
-              <div className="p-4 rounded-2xl bg-[#064e3b]/60 border border-emerald-700/80 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-emerald-300 font-bold">
-                    حسابك والاسم المعتمد في المنصة:
-                  </span>
-                  <button
-                    onClick={() => {
-                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                        navigator.clipboard.writeText(currentStudent.name);
-                        setNameCopiedNotice(true);
-                        setTimeout(() => setNameCopiedNotice(false), 3000);
-                      }
-                    }}
-                    className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-900/80 hover:bg-emerald-800 text-emerald-100 flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    {nameCopiedNotice ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-[#fbbf24]" />
-                        <span className="text-[#fbbf24] font-bold">تم النسخ</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>نسخ الاسم</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="text-base sm:text-lg font-black text-white font-heading bg-[#022c22] p-3 rounded-xl border border-emerald-600/50 flex items-center justify-between">
-                    <span>{currentStudent.name}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-normal">
-                      مطابق لقوائم المركز
-                    </span>
-                  </div>
-                  {currentStudent.googleEmail && (
-                    <div className="text-xs text-emerald-300 bg-emerald-950/70 p-2 rounded-xl border border-emerald-700/50 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>الحساب المعتمد: <strong>{currentStudent.googleEmail}</strong></span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-xs leading-relaxed text-emerald-100/90 pt-1">
-                  <div className="flex items-start gap-2 text-emerald-300 bg-emerald-950/60 p-2.5 rounded-xl border border-emerald-600/40">
-                    <Sparkles className="w-4 h-4 text-[#fbbf24] shrink-0 mt-0.5" />
-                    <span>
-                      أجب على أسئلة النموذج بحسابك Google، وفور تسليمك اضغط على زر (احسب درجتي وسجلها) ليقوم النظام تلقائياً برصد درجتك دون الحاجة لمراجعة يدوية.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Automatic Scoring Feedback */}
-              {googleScoreFeedback && (
-                <div
-                  className={`p-3.5 rounded-2xl text-xs flex items-start gap-2.5 border ${
-                    googleScoreFeedback.success
-                      ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200'
-                      : 'bg-amber-950/80 border-amber-500/60 text-amber-200'
-                  }`}
-                >
-                  {googleScoreFeedback.success ? (
-                    <Award className="w-5 h-5 text-[#fbbf24] shrink-0" />
-                  ) : (
-                    <HelpCircle className="w-5 h-5 text-amber-400 shrink-0" />
-                  )}
-                  <div className="space-y-1">
-                    <p className="font-bold">{googleScoreFeedback.message}</p>
-                    {googleScoreFeedback.success && (
-                      <p className="text-[11px] text-[#86efac]">
-                        تم تحديث درجاتك في المنصة ولوحة الشرف بنجاح!
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-2.5 pt-2">
-                <button
-                  onClick={() => {
-                    window.open(googleFormModalData.prefilledUrl, '_blank');
-                  }}
-                  className="w-full py-3.5 px-4 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
-                >
-                  <ExternalLink className="w-4 h-4 text-[#064e3b]" />
-                  <span>1. فتح نموذج الاختبار في نافذة جديدة والبدء</span>
-                </button>
-
-                <button
-                  onClick={() => handleCheckAndRecordGoogleScore(googleFormModalData.exam)}
-                  disabled={isCheckingGoogleScore}
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 cursor-pointer transition-all disabled:opacity-60"
-                >
-                  {isCheckingGoogleScore ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      <span>جاري فحص إجاباتك من Google Forms وحساب الدرجة...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-4 h-4 text-emerald-200" />
-                      <span>2. أنهيت الإرسال - احسب درجتي وسجلها تلقائياً الآن</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setGoogleFormModalData(null);
-                    setGoogleScoreFeedback(null);
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-emerald-900/60 hover:bg-emerald-900 text-emerald-300 text-xs font-semibold cursor-pointer transition-colors text-center"
-                >
-                  إغلاق النافذة
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* GOOGLE FORM SUBMITTED CONFIRMATION MODAL */}
-        {openedGoogleFormExam && (
-          <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#022c22] border border-[#fbbf24]/50 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-4 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-7 h-7 text-[#fbbf24]" />
-              </div>
-              <h3 className="text-lg font-bold text-white">
-                بارك الله فيك ونفع بك!
-              </h3>
-              <p className="text-xs text-emerald-200/90 leading-relaxed">
-                تم تسجيل فتحك لاختبار <strong>"{openedGoogleFormExam.title}"</strong>.
-                <br />
-                فور تسليمك للنموذج، يمكنك الضغط على زر حساب الدرجة لتسجيلها تلقائياً في حسابك.
-              </p>
-
-              {googleScoreFeedback && (
-                <div
-                  className={`p-3 rounded-xl text-xs text-right border ${
-                    googleScoreFeedback.success
-                      ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200'
-                      : 'bg-amber-950/80 border-amber-500/60 text-amber-200'
-                  }`}
-                >
-                  {googleScoreFeedback.message}
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
-                <button
-                  onClick={() => handleCheckAndRecordGoogleScore(openedGoogleFormExam)}
-                  disabled={isCheckingGoogleScore}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-md cursor-pointer disabled:opacity-60"
-                >
-                  {isCheckingGoogleScore ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      <span>جاري الفحص...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>احسب درجتي وسجلها الآن</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    const url = openedGoogleFormExam.googleFormResponderUrl || openedGoogleFormExam.googleFormUrl;
-                    if (url) window.open(url, '_blank');
-                  }}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>فتح النموذج</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setOpenedGoogleFormExam(null);
-                    setGoogleScoreFeedback(null);
-                  }}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#fbbf24] text-[#064e3b] text-xs font-black cursor-pointer shadow-md hover:bg-[#f59e0b]"
-                >
-                  تم، العودة للحساب
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* MANDATORY GOOGLE AUTH GATEKEEPER MODAL BEFORE EXAM ENTRY */}
         {googleAuthGateExam && (
