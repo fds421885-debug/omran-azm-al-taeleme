@@ -1314,3 +1314,185 @@ export const QuranInlineLoader: React.FC<{ message?: string; activeComplex?: Qur
   );
 };
 
+/* ========================================================================= */
+/* 9. Modern Opening Splash Screen (شاشة الفتح والتحميل العصرية الفائقة)      */
+/* ========================================================================= */
+
+export interface ModernOpeningSplashProps {
+  title?: string;
+  subtitle?: string;
+  activeComplex?: QuranComplex | null;
+  onFinish?: () => void;
+  minDurationMs?: number;
+}
+
+export const ModernOpeningSplash: React.FC<ModernOpeningSplashProps> = ({
+  title = 'مَنْظُومَةُ عِمْرَانَ القُرْآنِيَّةِ',
+  subtitle = 'النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ',
+  activeComplex,
+  onFinish,
+  minDurationMs = 850
+}) => {
+  const [progress, setProgress] = useState(12);
+  const [stageText, setStageText] = useState('تَأْكِيدُ الِاتِّصَالِ السَّحَابِيِّ...');
+  const [isDone, setIsDone] = useState(false);
+
+  const safeAccent = resolveHexColor(activeComplex?.theme?.accentColor, '#ffc800');
+  const safePrimary = resolveHexColor(activeComplex?.theme?.primaryColor, '#0a1a15');
+  const safeCard = resolveHexColor(activeComplex?.theme?.cardColor, '#132c24');
+  const accentShadow = darkenHex(safeAccent, 0.35);
+
+  useEffect(() => {
+    let t1 = setTimeout(() => {
+      setProgress(42);
+      setStageText('مُزَامَنَةُ بَيَانَاتِ المَجْمَعِ وَالحَلَقَاتِ...');
+    }, minDurationMs * 0.25);
+
+    let t2 = setTimeout(() => {
+      setProgress(78);
+      setStageText('تَهْيِئَةُ البَوَّابَةِ وَالفَحْصِ الذَّكِيِّ...');
+    }, minDurationMs * 0.6);
+
+    let t3 = setTimeout(() => {
+      setProgress(100);
+      setStageText('اكْتَمَلَ التَّحْضِيرُ بِنَجَاحٍ ✓');
+    }, minDurationMs * 0.88);
+
+    let t4 = setTimeout(() => {
+      setIsDone(true);
+      if (onFinish) onFinish();
+    }, minDurationMs);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+    };
+  }, [minDurationMs, onFinish]);
+
+  if (isDone) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 select-none overflow-hidden"
+      style={{
+        background: `radial-gradient(circle at center, ${safeCard} 0%, ${safePrimary} 70%, #030a08 100%)`
+      }}
+      dir="rtl"
+    >
+      {/* Decorative Islamic Geometric Pattern Overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-5 bg-repeat"
+        style={{
+          backgroundImage: `radial-gradient(${safeAccent} 1.5px, transparent 1.5px)`,
+          backgroundSize: '28px 28px'
+        }}
+      />
+
+      {/* Radiant Central Glow */}
+      <div
+        className="absolute w-96 h-96 rounded-full blur-[110px] pointer-events-none opacity-25 animate-pulse"
+        style={{ backgroundColor: safeAccent }}
+      />
+
+      <div
+        className="relative z-10 max-w-md w-full border-2 border-b-4 rounded-[36px] p-8 sm:p-10 text-center space-y-7 shadow-2xl backdrop-blur-xl"
+        style={{
+          backgroundColor: `${safeCard}D5`,
+          borderColor: `${safeAccent}40`,
+          borderBottomColor: accentShadow
+        }}
+      >
+        {/* Animated Central Quran Crest */}
+        <div className="relative w-32 h-32 mx-auto flex items-center justify-center">
+          {/* Orbital Rotating Dash Ring */}
+          <svg
+            className="absolute inset-0 w-full h-full animate-spin pointer-events-none"
+            viewBox="0 0 100 100"
+            style={{ animationDuration: '3s', animationTimingFunction: 'linear' }}
+          >
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke="rgba(255, 255, 255, 0.12)"
+              strokeWidth="3.5"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              fill="none"
+              stroke={safeAccent}
+              strokeWidth="4"
+              strokeDasharray="90 190"
+              strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 10px ${safeAccent})` }}
+            />
+          </svg>
+
+          {/* Steadfast Book Emblem */}
+          <div
+            className="w-20 h-20 rounded-[24px] border-2 border-b-4 flex flex-col items-center justify-center shadow-2xl relative z-10"
+            style={{
+              backgroundColor: safePrimary,
+              borderColor: safeAccent,
+              borderBottomColor: accentShadow,
+              color: safeAccent
+            }}
+          >
+            <BookOpen className="w-9 h-9 drop-shadow-md stroke-[2.2]" />
+            <span className="text-[10px] font-black tracking-widest mt-1 opacity-90 font-quran">
+              عِمْرَان
+            </span>
+          </div>
+        </div>
+
+        {/* Headings */}
+        <div className="space-y-2">
+          <h2 className="text-xl sm:text-2xl font-black text-white font-heading tracking-wide">
+            {title}
+          </h2>
+          <p className="text-xs font-bold leading-relaxed opacity-90" style={{ color: safeAccent }}>
+            {subtitle}
+          </p>
+        </div>
+
+        {/* Progress Bar & Status Counter */}
+        <div className="space-y-2.5 pt-2">
+          <div className="flex items-center justify-between text-xs font-black">
+            <span className="text-slate-200 transition-all duration-300">
+              {stageText}
+            </span>
+            <span
+              className="font-mono px-2 py-0.5 rounded-full text-[11px] font-black shadow-inner"
+              style={{
+                backgroundColor: `${safeAccent}20`,
+                color: safeAccent,
+                border: `1px solid ${safeAccent}40`
+              }}
+            >
+              {progress}%
+            </span>
+          </div>
+
+          <div className="w-full h-3 rounded-full bg-black/50 border border-white/10 overflow-hidden p-0.5 shadow-inner">
+            <div
+              className="h-full rounded-full transition-all duration-300 ease-out relative"
+              style={{
+                width: `${progress}%`,
+                background: `linear-gradient(90deg, #1cb0f6 0%, ${safeAccent} 70%, #58cc02 100%)`,
+                boxShadow: `0 0 12px ${safeAccent}90`
+              }}
+            >
+              <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+

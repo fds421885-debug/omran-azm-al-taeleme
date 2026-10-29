@@ -3492,150 +3492,28 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                         )}
 
                         {/* ---------------------------------------------------- */}
-                        {/* 1. Interactive Student Registration Survey Card      */}
+                        {/* 1. Portal Registration Link Guidance Notice          */}
                         {/* ---------------------------------------------------- */}
                         {msg.action?.type === 'SHOW_REGISTRATION_SURVEY' && (
                           <div
-                            ref={() => initSurveyForm(msg.id, msg.action?.data)}
                             style={{
                               backgroundColor: `${primaryColor}F0`,
                               borderColor: accentColor,
                             }}
-                            className="mt-3 p-3 rounded-xl border border-dashed text-xs text-emerald-100 space-y-2.5"
+                            className="mt-3 p-4 rounded-xl border border-dashed text-xs text-emerald-100 space-y-2.5"
                           >
-                            <div className="flex items-center gap-1.5 font-bold border-b border-emerald-800 pb-1.5" style={{ color: accentColor }}>
+                            <div className="flex items-center gap-1.5 font-bold border-b border-emerald-800 pb-2" style={{ color: accentColor }}>
                               <Users className="w-4 h-4" />
-                              <span>استبيان تسجيل طالب جديد في المنظومة</span>
+                              <span>بوابة ورابط تسجيل المجمع الذكي</span>
                             </div>
-
-                            {surveyFormData[msg.id]?.isSuccess ? (
-                              <div className="bg-emerald-950/90 p-2.5 rounded-lg border border-emerald-500/60 text-emerald-200 text-center font-bold flex items-center justify-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                تم تسجيل الطالب بنجاح!
-                              </div>
-                            ) : (
-                              <>
-                                <div>
-                                  <label className="block text-[11px] text-emerald-300 mb-1">
-                                    اسم الطالب الرباعي (إلزامي):
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={surveyFormData[msg.id]?.name || ''}
-                                    onChange={e =>
-                                      setSurveyFormData(prev => ({
-                                        ...prev,
-                                        [msg.id]: { ...prev[msg.id], name: e.target.value, validationError: undefined },
-                                      }))
-                                    }
-                                    placeholder="مثال: محمد أحمد علي القرشي"
-                                    className="w-full bg-black/45 border border-emerald-700/60 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-emerald-600 focus:outline-none"
-                                    style={{ borderColor: `${accentColor}50` }}
-                                  />
-                                  <span className="text-[10px] text-emerald-400/80 mt-0.5 block">
-                                    * يُشترط أن يكون الاسم رباعياً وغير متكرر في المنظومة.
-                                  </span>
-                                </div>
-
-                                {surveyFormData[msg.id]?.validationError && (
-                                  <div className="p-2 rounded-lg bg-red-950/90 border border-red-700 text-red-200 text-[11px] leading-tight">
-                                    {surveyFormData[msg.id].validationError}
-                                  </div>
-                                )}
-
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div>
-                                    <label className="block text-[11px] text-emerald-300 mb-1">
-                                      كلمة المرور:
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={surveyFormData[msg.id]?.password || '123'}
-                                      onChange={e =>
-                                        setSurveyFormData(prev => ({
-                                          ...prev,
-                                          [msg.id]: { ...prev[msg.id], password: e.target.value },
-                                        }))
-                                      }
-                                      className="w-full bg-black/45 border rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:outline-none"
-                                      style={{ borderColor: `${accentColor}50` }}
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-[11px] text-emerald-300 mb-1">
-                                      المستوى:
-                                    </label>
-                                    <select
-                                      value={surveyFormData[msg.id]?.level || 'متوسط'}
-                                      onChange={e =>
-                                        setSurveyFormData(prev => ({
-                                          ...prev,
-                                          [msg.id]: {
-                                            ...prev[msg.id],
-                                            level: e.target.value as any,
-                                          },
-                                        }))
-                                      }
-                                      className="w-full bg-black/45 border border-emerald-700/60 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
-                                    >
-                                      <option value="مبتدئ">مبتدئ</option>
-                                      <option value="متوسط">متوسط</option>
-                                      <option value="متقدم">متقدم</option>
-                                      <option value="خاتم">خاتم</option>
-                                    </select>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <label className="block text-[11px] text-emerald-300 mb-1">
-                                    الحلقة المراد إلحاقه بها:
-                                  </label>
-                                  <select
-                                    value={surveyFormData[msg.id]?.halaqahId || (halaqahs[0]?.id || '')}
-                                    onChange={e =>
-                                      setSurveyFormData(prev => ({
-                                        ...prev,
-                                        [msg.id]: {
-                                          ...prev[msg.id],
-                                          halaqahId: e.target.value,
-                                        },
-                                      }))
-                                    }
-                                    className="w-full bg-black/45 border border-emerald-700/60 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
-                                  >
-                                    {halaqahs.map(h => (
-                                      <option key={h.id} value={h.id}>
-                                        {h.name} {h.teacherName ? `(المعلم: ${h.teacherName})` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  disabled={
-                                    !surveyFormData[msg.id]?.name?.trim() ||
-                                    surveyFormData[msg.id]?.isSubmitting
-                                  }
-                                  onClick={() => handleSurveySubmit(msg.id)}
-                                  style={{
-                                    backgroundColor: accentColor,
-                                    color: primaryColor,
-                                  }}
-                                  className="w-full py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow hover:brightness-110 disabled:opacity-50 transition-all"
-                                >
-                                  {surveyFormData[msg.id]?.isSubmitting ? (
-                                    <span>جارٍ التحقق والاعتماد...</span>
-                                  ) : (
-                                    <>
-                                      <Check className="w-3.5 h-3.5" />
-                                      <span>اعتماد وإضافة الطالب للمنظومة الآن</span>
-                                    </>
-                                  )}
-                                </button>
-                              </>
-                            )}
+                            <p className="text-slate-300 text-xs font-bold leading-relaxed">
+                              تم توحيد تسجيل واستقبال الطلاب ليتم حصراً عبر بوابة ورابط تسجيل المجمع، حيث يمر الطالب بفحص المقابلة التشخيصية الشاملة ثم تُرسل نتائجه مباشرة إلى المشرف لاعتماد تسكينه.
+                            </p>
+                            <div className="pt-1">
+                              <span className="text-[11px] font-bold text-amber-300 bg-amber-400/10 px-3 py-1.5 rounded-lg border border-amber-400/20 block text-center">
+                                يرجى استخدام زر «بوابة رابط تسجيل المجمع» في واجهة الطلاب لمشاركة الرابط واستقبال الطلبات
+                              </span>
+                            </div>
                           </div>
                         )}
 

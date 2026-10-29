@@ -94,7 +94,8 @@ import {
   TabSkeleton,
   GenericTabSkeleton,
   LoginSyncModalOverlay,
-  ModernQuranLoader
+  ModernQuranLoader,
+  ModernOpeningSplash
 } from './components/loading/ModernLoadingSuite';
 import { ComplexCustomPortalPage } from './components/portal/ComplexCustomPortalPage';
 import { ParentPortalView } from './components/ParentPortalView';
@@ -3193,6 +3194,18 @@ export function App() {
             window.history.pushState({}, '', url.pathname);
           } catch {}
         }}
+      />
+    );
+  }
+
+  // Priority 1.8: Modern Opening Splash Screen for Platform Visitors
+  if (isInitialAppBoot) {
+    return (
+      <ModernOpeningSplash
+        title="مَنْظُومَةُ عِمْرَانَ القُرْآنِيَّةِ"
+        subtitle="النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ"
+        onFinish={() => setIsInitialAppBoot(false)}
+        minDurationMs={850}
       />
     );
   }

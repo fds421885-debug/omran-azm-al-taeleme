@@ -37,7 +37,6 @@ import { getPageOfAyah } from '../../data/quranPagesData';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { OmranDataService } from '../../lib/firebase';
 import { ComplexPortalSettingsModal } from '../portal/ComplexPortalSettingsModal';
-import { StudentAIPlacementModal } from '../assistant/StudentAIPlacementModal';
 import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 
 function toArabicNumerals(num: number | string): string {
@@ -735,75 +734,29 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             </button>
           )}
 
-          {/* Bulk Add Students Button */}
-          <button
-            onClick={handleOpenBulkAddModal}
-            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-md flex items-center gap-2 transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
-            style={{
-              backgroundColor: cardBg,
-              borderColor: borderCol,
-              borderBottomColor: borderBottomCol,
-              color: accentCol
-            }}
-            title="إضافة دفعة من الطلاب دفعة واحدة بكتابة أسمائهم سطراً بسطر"
-          >
-            <Users className="w-4 h-4" style={{ color: accentCol }} />
-            <span>إضافة دفعة طلاب</span>
-          </button>
-
-          {/* Complex Dedicated Portal & Registration Link Button (للمشرف والمطور) */}
-          {(isSupervisor || isDeveloper) && activeComplex && (
+          {/* Complex Dedicated Portal & Registration Link Button (فقط بوابة رابط تسجيل المجمع) */}
+          {activeComplex && (
             <button
               type="button"
               onClick={() => setIsPortalSettingsOpen(true)}
-              className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-md flex items-center gap-2 transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
+              className="px-5 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black shadow-xl flex items-center gap-2 transition-all cursor-pointer active:translate-y-0.5 hover:brightness-110"
               style={{
-                backgroundColor: cardBg,
+                backgroundColor: accentCol,
                 borderColor: accentCol,
                 borderBottomColor: accentShadow,
-                color: '#ffffff'
+                color: primaryBg
               }}
-              title="تفعيل وإعداد رابط وبوابة التسجيل الخاصة بهذا المجمع وتفقد طلبات الانضمام"
+              title="إدارة وتفعيل رابط وبوابة تسجيل المجمع واستقبال طلبات الطلاب"
             >
-              <LinkIcon className="w-4 h-4" style={{ color: accentCol }} />
-              <span>بوابة ورابط تسجيل المجمع</span>
+              <LinkIcon className="w-4 h-4" />
+              <span>بوابة رابط تسجيل المجمع</span>
               {pendingAppsCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-900 shadow-sm animate-pulse">
-                  {pendingAppsCount} طلبات
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-300 text-slate-950 shadow-sm animate-pulse">
+                  {pendingAppsCount} طلبات جديدة
                 </span>
               )}
             </button>
           )}
-
-          {/* Register with AI Interview Button */}
-          <button
-            onClick={() => setIsAIPlacementModalOpen(true)}
-            className="px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-lg flex items-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5 hover:brightness-110"
-            style={{
-              backgroundColor: 'var(--complex-secondary, #1b2e35)',
-              color: accentCol,
-              borderColor: `${accentCol}80`,
-              borderBottomColor: accentShadow
-            }}
-          >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>تسجيل طالب بالمقابلة الذكية (AI)</span>
-          </button>
-
-          {/* Add Single Student Button */}
-          <button
-            onClick={openAddModal}
-            className="px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-xl flex items-center gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-0.5 hover:brightness-110"
-            style={{
-              backgroundColor: accentCol,
-              color: primaryBg,
-              borderColor: accentCol,
-              borderBottomColor: accentShadow
-            }}
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>إضافة طالب جديد</span>
-          </button>
         </div>
       </div>
 
@@ -2145,32 +2098,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           </div>
         );
       })()}
-
-      {/* AI Placement Interview Modal for Direct Supervisor Registration */}
-      <StudentAIPlacementModal
-        isOpen={isAIPlacementModalOpen}
-        onClose={() => setIsAIPlacementModalOpen(false)}
-        studentInitialData={{
-          name: '',
-          age: 12,
-          phone: '',
-          parentName: '',
-          parentPhones: [''],
-          complexId: activeComplex?.id
-        }}
-        complexes={activeComplex ? [activeComplex] : []}
-        halaqahs={halaqahs || []}
-        existingStudents={students}
-        onPlacementComplete={async (newStudent) => {
-          await OmranDataService.saveStudent(newStudent);
-          setIsAIPlacementModalOpen(false);
-          if (onAddStudent) onAddStudent(newStudent);
-        }}
-        onPlacedInWaitingList={(ticket) => {
-          setIsAIPlacementModalOpen(false);
-          alert(`تم إدراج الطالب في قائمة الانتظار للمجمع برقم: #${ticket.queueNumber}`);
-        }}
-      />
 
       {/* Delete Student Confirmation Modal */}
       {studentToDelete && (

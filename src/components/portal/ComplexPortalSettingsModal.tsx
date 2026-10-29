@@ -44,7 +44,7 @@ import {
   Timer,
   Mail,
   Key,
-  Database,
+  Cloud,
   ShieldCheck,
   BrainCircuit,
   Award,
@@ -72,7 +72,6 @@ import {
   loadSavedMailConfigFromCloud,
   SavedPortalMailConfig
 } from '../../lib/portalEmailService';
-import { PortalPreFlightChecklistModal } from './PortalPreFlightChecklistModal';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
 import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 import { calculatePortionFromPace } from '../../data/quranPagesData';
@@ -252,8 +251,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
   // Share link & Saved Cloud Mail state
   const [copiedLink, setCopiedLink] = useState(false);
-  const [isPreFlightOpen, setIsPreFlightOpen] = useState(false);
-  const [pendingPreFlightAction, setPendingPreFlightAction] = useState<(() => void) | null>(null);
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [savedMailConfig, setSavedMailConfig] = useState<SavedPortalMailConfig | null>(() => {
     if (complex.mailConfig?.user && complex.mailConfig?.pass) {
@@ -291,18 +288,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const portalUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname.replace(/\/+$/, '') || ''}/?complexPortal=${encodeURIComponent(complex.id)}&tab=register`
     : `?complexPortal=${encodeURIComponent(complex.id)}&tab=register`;
-
-  const executeWithPreFlightCheck = (action: () => void) => {
-    const hasMissingMosqueLoc = !complex.mosques || complex.mosques.length === 0 || complex.mosques.some(m => (!m.latitude && !m.longitude) || (!m.address && !m.locationName));
-    const hasMissingHalaqahCap = halaqahs.some(h => !h.capacity || h.capacity <= 0);
-
-    if (hasMissingMosqueLoc || hasMissingHalaqahCap) {
-      setPendingPreFlightAction(() => action);
-      setIsPreFlightOpen(true);
-    } else {
-      action();
-    }
-  };
 
   // Load and sync all applications for this complex (merging previous and incoming)
   const refreshAllApps = async (isManualClick: boolean = false) => {
@@ -529,24 +514,35 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
     }
   };
 
-  // Copy Link
+  // Copy Link directly and immediately
   const handleCopyLink = () => {
-    executeWithPreFlightCheck(() => {
-      if (typeof navigator !== 'undefined') {
-        navigator.clipboard.writeText(portalUrl);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(portalUrl).then(() => {
         setCopiedLink(true);
         setTimeout(() => setCopiedLink(false), 2500);
-      }
-    });
+      }).catch(() => {
+        // Fallback for older browsers
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = portalUrl;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          setCopiedLink(true);
+          setTimeout(() => setCopiedLink(false), 2500);
+        } catch (e) {
+          console.error('Copy failed', e);
+        }
+      });
+    }
   };
 
-  // Share via WhatsApp
+  // Share via WhatsApp directly
   const handleShareWhatsApp = () => {
-    executeWithPreFlightCheck(() => {
-      const text = `يسر مجمع ${complex.name} دعوة أولياء الأمور والطلاب للتسجيل أو تسجيل الدخول عبر البوابة الإلكترونية المخصصة للمجمع:\n${portalUrl}`;
-      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
-    });
+    const text = `يسر مجمع ${complex.name} دعوة أولياء الأمور والطلاب للتسجيل أو تسجيل الدخول عبر البوابة الإلكترونية المخصصة للمجمع:\n${portalUrl}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
   // Accept an application and create student record
@@ -936,7 +932,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   // Bulk delete selected applications permanently
   const handleBulkDeleteSelected = async () => {
     if (selectedAppIds.length === 0) return;
-    if (!confirm(`هل أنت متأكد من الحذف النهائي لـ (${selectedAppIds.length}) طلبات محددة؟ سيتم حذفها ومنع عودتها نهائياً من قاعدة البيانات والسيرفر.`)) return;
+    if (!confirm(`هل أنت متأكد من الحذف النهائي لـ (${selectedAppIds.length}) طلبات محددة؟ سيتم حذفها ومنع عودتها نهائياً من النظام السحابي والسيرفر.`)) return;
 
     setIsBulkProcessing(true);
     const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
@@ -1230,7 +1226,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
                   <button
                     type="button"
-                    onClick={() => executeWithPreFlightCheck(() => window.open(portalUrl, '_blank'))}
+                    onClick={() => window.open(portalUrl, '_blank')}
                     className="p-2.5 rounded-xl border-2 border-b-2 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0"
                     style={{
                       backgroundColor: themeCard,
@@ -1267,8 +1263,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         </span>
                         {savedMailConfig?.user && savedMailConfig?.pass ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            <Database className="w-3 h-3" />
-                            <span>محفوظ للأبد في قاعدة البيانات ✓</span>
+                            <Cloud className="w-3 h-3" />
+                            <span>محفوظ وفعال في النظام السحابي ✓</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
@@ -3279,7 +3275,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   {/* Pedagogical Note */}
                   <div className="p-4 rounded-2xl bg-[#022c22]/80 border border-white/10 space-y-1.5">
                     <span className="text-[11px] font-black text-amber-300 block">
-                      خارطة الطريق وقاعدة التثبيت المعتمدة:
+                      خارطة الطريق ومنهجية التثبيت المعتمدة:
                     </span>
                     <p className="text-slate-200 leading-relaxed text-xs font-bold">
                       {timeline.pedagogicalNote}
@@ -3789,23 +3785,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             </div>
           </div>
         )}
-        <PortalPreFlightChecklistModal
-          isOpen={isPreFlightOpen}
-          onClose={() => {
-            setIsPreFlightOpen(false);
-            setPendingPreFlightAction(null);
-          }}
-          complex={complex}
-          halaqahs={halaqahs}
-          onCompleteAndProceed={() => {
-            setIsPreFlightOpen(false);
-            if (pendingPreFlightAction) {
-              pendingPreFlightAction();
-              setPendingPreFlightAction(null);
-            }
-          }}
-          onSaveComplex={onUpdateComplex}
-        />
         {/* Quick Mail Setup Modal for Supervisor */}
         <QuickMailSetupModal
           isOpen={isMailModalOpen}
@@ -3824,7 +3803,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 updatedAt: new Date().toISOString()
               });
             }
-            setSaveSuccessMsg('تم حفظ وتحديث البريد والمفتاح في قاعدة البيانات للأبد بنجاح! ✅');
+            setSaveSuccessMsg('تم حفظ وتحديث البريد والمفتاح في النظام السحابي للأبد بنجاح! ✅');
             setTimeout(() => setSaveSuccessMsg(null), 4000);
           }}
         />

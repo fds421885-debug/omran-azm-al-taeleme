@@ -51,7 +51,7 @@ import {
 } from '../../types';
 import { OmranDataService, auth } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
-import { ModernQuranLoader } from '../loading/ModernLoadingSuite';
+import { ModernQuranLoader, ModernOpeningSplash } from '../loading/ModernLoadingSuite';
 import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
 import {
@@ -224,11 +224,36 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const showLogin = mode === 'login_and_register' || mode === 'login_only';
   const showRegister = mode === 'login_and_register' || mode === 'register_only';
 
-  // Registration Closing & Deadline Logic
+  // Splash opening screen state
+  const [isOpeningSplash, setIsOpeningSplash] = useState(true);
+
+  // Registration Closing & Deadline Logic (100% Reliable & Real-Time Reactive)
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const isClosedManually = Boolean(portalConfig.isRegistrationClosedManually);
   const deadlineDate = portalConfig.registrationDeadline ? new Date(portalConfig.registrationDeadline) : null;
-  const isPastDeadline = deadlineDate ? new Date() > deadlineDate : false;
+  const isPastDeadline = deadlineDate ? currentTime >= deadlineDate.getTime() : false;
   const isRegistrationClosed = isClosedManually || isPastDeadline;
+
+  // Real-time countdown text
+  const deadlineCountdown = useMemo(() => {
+    if (!deadlineDate || isPastDeadline || isClosedManually) return null;
+    const diff = Math.max(0, deadlineDate.getTime() - currentTime);
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const minutes = Math.floor((diff / (1000 * 60)) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
+    if (days > 0) return `${days} يوم و ${hours} ساعة و ${minutes} دقيقة و ${seconds} ثانية`;
+    if (hours > 0) return `${hours} ساعة و ${minutes} دقيقة و ${seconds} ثانية`;
+    return `${minutes} دقيقة و ${seconds} ثانية`;
+  }, [deadlineDate, isPastDeadline, isClosedManually, currentTime]);
 
   // Active top tab in the portal
   const [activeTab, setActiveTab] = useState<'login' | 'register' | 'track'>(() => {
@@ -924,6 +949,18 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
+  if (isOpeningSplash) {
+    return (
+      <ModernOpeningSplash
+        title={`بوابة ${complex.name}`}
+        subtitle="مرحباً بكم في البوابة الإلكترونية المخصصة للمجمع القرآني"
+        activeComplex={complex}
+        onFinish={() => setIsOpeningSplash(false)}
+        minDurationMs={800}
+      />
+    );
+  }
+
   return (
     <div
       dir="rtl"
@@ -1512,6 +1549,19 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 )}
 
+                {/* Live Deadline Countdown Banner */}
+                {deadlineCountdown && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-emerald-500/20 border-2 border-amber-400/40 text-amber-200 text-xs font-black flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-md">
+                    <div className="flex items-center gap-2">
+                      <Timer className="w-4 h-4 text-amber-400 animate-spin" />
+                      <span>الوقت المتبقي لغلق استقبال طلبات التسجيل:</span>
+                    </div>
+                    <span className="font-mono text-amber-300 font-black text-xs sm:text-sm bg-black/50 px-3 py-1 rounded-xl border border-amber-400/30">
+                      {deadlineCountdown}
+                    </span>
+                  </div>
+                )}
+
 
 
                 {/* 1. Student Full Name (سؤال مقالي) */}
@@ -1832,33 +1882,20 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 </div>
 
-                <div className={`grid grid-cols-1 ${showHalaqahQuestion ? 'sm:grid-cols-2' : ''} gap-4`}>
-                  {/* 5. Parent Name */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-200 block">اسم ولي الأمر:</label>
-                    <input
-                      type="text"
-                      value={parentName}
-                      onChange={e => setParentName(e.target.value)}
-                      placeholder="مثال: أحمد محمد السعيد"
-                      className="w-full border-2 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
-                      style={{
-                        backgroundColor: themeBg,
-                        borderColor: themeCardBorder
-                      }}
-                    />
-                  </div>
-
-                  {/* 6. AI Placement Notice (التوجيه والتسكين الذكي عبر المساعد) */}
-                  <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-white space-y-1.5 shadow-sm">
-                    <div className="flex items-center gap-2 text-amber-300 font-black text-xs">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span>تسكين وتوجيه ذكي عبر الذكاء الاصطناعي (AI Placement)</span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 font-bold leading-relaxed">
-                      💡 تم إلغاء الاختيار اليدوي للحلقة؛ بمجرد الضغط على إرسال سيتم وصلك بالمساعد الذكي في مقابلة فورية لتحديد مستوى الحفظ والتجويد واختيار الحلقة والمسجد والشيخ الأنسب لك.
-                    </p>
-                  </div>
+                {/* 5. Parent Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-200 block">اسم ولي الأمر:</label>
+                  <input
+                    type="text"
+                    value={parentName}
+                    onChange={e => setParentName(e.target.value)}
+                    placeholder="مثال: أحمد محمد السعيد"
+                    className="w-full border-2 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                    style={{
+                      backgroundColor: themeBg,
+                      borderColor: themeCardBorder
+                    }}
+                  />
                 </div>
 
                 {/* 7. DYNAMIC CUSTOM QUESTIONS (الأسئلة الإضافية المخصصة من المشرف) */}
