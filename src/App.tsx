@@ -380,7 +380,24 @@ export function App() {
     getLocalCache(OMRAN_CACHE_KEYS.LIBRARY_DOCS, [])
   );
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [isInitialAppBoot, setIsInitialAppBoot] = useState(true);
+  const [isInitialAppBoot, setIsInitialAppBoot] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (sessionStorage.getItem('omran_splash_shown') === 'true') {
+      return false;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('portal') || params.get('id') || params.get('complexPortal') || params.get('complex')) {
+      return false;
+    }
+    return true;
+  });
+
+  const handleFinishInitialBoot = useCallback(() => {
+    setIsInitialAppBoot(false);
+    try {
+      sessionStorage.setItem('omran_splash_shown', 'true');
+    } catch {}
+  }, []);
   const [isTabLoading, setIsTabLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('مُحدّث سحابياً');
@@ -511,9 +528,6 @@ export function App() {
 
   // Load all data from Firestore directly (central real-time database)
   const loadAllData = async (isManualSync = false) => {
-    // Purge any residual or legacy local storage cache keys to ensure Firestore is single source of truth
-    purgeAllLocalDataCaches();
-
     if (isManualSync) {
       setIsSyncing(true);
       triggerCloudSyncIndicator('جاري تحديث كافة السجلات من فايربيس...');
@@ -521,12 +535,12 @@ export function App() {
       triggerCloudSyncIndicator('جاري فحص وتحديث السجلات سحابياً...');
     }
 
-    // Safety auto-dismiss: ensure loading state never hangs indefinitely
+    // Safety auto-dismiss: ensure loading state never hangs indefinitely (fast 2500ms fallback)
     const safetyTimer = setTimeout(() => {
       setIsSyncing(false);
       setIsLoadingData(false);
       setIsInitialAppBoot(false);
-    }, 15000);
+    }, 2500);
 
     try {
       if (isManualSync) {
@@ -1861,7 +1875,7 @@ export function App() {
     return evaluations.filter(e => scopedStudentIds.has(e.studentId));
   }, [isDeveloper, evaluations, scopedStudentIds]);
 
-  // Save session on login with modern cloud sync confirmation
+  // Save session on login with modern snappy cloud sync confirmation
   const handleLoginSuccess = async (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => {
     setLoginSyncUser(user.username || 'المستخدم');
     setIsLoginSyncing(true);
@@ -1874,13 +1888,12 @@ export function App() {
     }
     localStorage.setItem('omran_session', JSON.stringify(user));
 
-    try {
-      await loadAllData(true);
-    } catch {}
+    // Refresh cloud data in the background non-blockingly so the UI opens instantly!
+    loadAllData(false).catch(() => {});
 
     setTimeout(() => {
       setIsLoginSyncing(false);
-    }, 700);
+    }, 350);
   };
 
   const handleLogout = () => {
@@ -3146,8 +3159,8 @@ export function App() {
         title={targetPortalComplex ? `بَوَّابَةُ ${targetPortalComplex.name}` : "مَنْظُومَةُ عِمْرَانَ القُرْآنِيَّةِ"}
         subtitle={targetPortalComplex ? "بَوَّابَةُ التَّسْجِيلِ وَالخِدْمَاتِ الإِلِكْتَرُونِيَّةِ الذَّكِيَّةِ" : "النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ"}
         activeComplex={targetPortalComplex || activeComplex}
-        onFinish={() => setIsInitialAppBoot(false)}
-        minDurationMs={900}
+        onFinish={handleFinishInitialBoot}
+        minDurationMs={500}
       />
     );
   }

@@ -141,7 +141,6 @@ export class FirebaseAuthService {
         },
       };
     } catch (err: any) {
-      console.warn('Firebase Auth upgrade notice (falling back gracefully):', err.message || err);
       // Graceful fallback to verified session so user is never locked out
       return {
         success: false,

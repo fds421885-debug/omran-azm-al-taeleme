@@ -372,45 +372,6 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
     };
     setCreatedStudent(studentObj);
     setIsWaitingList(false);
-
-    // Save Registration Application in Firebase directly for Supervisor review
-    try {
-      const appRecord: StudentRegistrationApplication = {
-        id: `app_${Date.now()}`,
-        complexId: complex.id,
-        complexName: complex.name,
-        trackingCode: generatedTicket,
-        studentName: studentInitialData.studentName,
-        age: studentInitialData.age,
-        phone: studentInitialData.phone,
-        email: studentInitialData.email || '',
-        parentName: studentInitialData.parentName,
-        parentPhone: studentInitialData.parentPhone,
-        appliedAt: new Date().toISOString(),
-        status: 'pending',
-        memorizedJuzCount: studentInitialData.memorizedJuzList?.length || 1,
-        memorizedJuzList: studentInitialData.memorizedJuzList || [30],
-        startingYear,
-        previousDirection: direction,
-        weakSurahs: selectedWeakSurahs,
-        healthOrEducationalNotes: healthNotes,
-        actualReachedPosition: {
-          surahNumber: reachedSurah,
-          surahName: getSurahInfo(reachedSurah).name,
-          ayahNumber: reachedAyah
-        },
-        placementTestSummary: summary,
-        conversationTranscript: transcript,
-        assignedHalaqahId: bestHalaqah?.id,
-        assignedHalaqahName: bestHalaqah?.name,
-        studentAcceptanceStatus: 'pending_student_response'
-      };
-
-      await OmranDataService.saveRegistrationApplication(appRecord);
-    } catch (saveErr) {
-      console.warn('Could not persist registration application:', saveErr);
-    }
-
     setCurrentPhase('result');
   };
 
@@ -444,7 +405,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-heading font-black text-sm sm:text-base text-white">
-                  محرك الفحص القرآني والتسكين الذكي
+                  محرك الفحص القرآني والتسكين
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#fbbf24] text-[#064e3b]">
                   {isKhatim ? 'مسار الخاتمين والإتقان' : 'مسار الحفظ والتثبيت'}
@@ -459,21 +420,22 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
           <button
             type="button"
             onClick={onCancel}
-            className="text-xs text-white/60 hover:text-white px-3 py-1.5 rounded-xl border border-white/10 hover:border-white/30 transition-all cursor-pointer"
+            title="إلغاء الجلسة ومغادرة المقابلة"
+            className="text-xs text-amber-200/90 hover:text-white px-3 py-1.5 rounded-xl border border-amber-400/30 hover:border-amber-400/60 bg-amber-500/10 hover:bg-amber-500/20 transition-all cursor-pointer font-bold"
           >
-            إغلاق
+            إلغاء الجلسة والخروج
           </button>
         </div>
 
         {/* =========================================================================
-            PHASE 1: SMART ADAPTIVE REGISTRATION & DIAGNOSTIC SETUP
+            PHASE 1: REGISTRATION & DIAGNOSTIC SETUP
            ========================================================================= */}
         {currentPhase === 'setup' && (
           <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-gradient-to-b from-[#022c22] via-[#01221a] to-[#022c22] text-white">
             <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-400/40 space-y-1 text-center">
               <h4 className="font-heading font-black text-base text-amber-300 flex items-center justify-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-400" />
-                التهيئة الذكية للفحص التشخيصي المباشر
+                التهيئة للفحص التشخيصي المباشر
               </h4>
               <p className="text-xs text-slate-300 leading-relaxed">
                 حدد خلفية مسيرتك القرآنية لنصمم لك اختباراً دقيقاً من 10 أسئلة أصيلة مع مهلة 8 ثوانٍ لكل سؤال.

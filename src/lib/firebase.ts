@@ -138,8 +138,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Resilient, non-blocking Firestore query helpers with automatic timeout (20s)
-export async function safeGetDocs(colRef: any, timeoutMs = 20000): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
+// Resilient, non-blocking Firestore query helpers with automatic responsive timeout (3s)
+export async function safeGetDocs(colRef: any, timeoutMs = 3000): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
   try {
     const fetchPromise = getDocs(colRef);
     // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
@@ -153,7 +153,7 @@ export async function safeGetDocs(colRef: any, timeoutMs = 20000): Promise<{ doc
   }
 }
 
-export async function safeGetDoc(docRef: any, timeoutMs = 20000): Promise<{ exists: () => boolean; data: () => any }> {
+export async function safeGetDoc(docRef: any, timeoutMs = 3000): Promise<{ exists: () => boolean; data: () => any }> {
   try {
     const fetchPromise = getDoc(docRef);
     // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
@@ -1453,7 +1453,10 @@ export function broadcastDataUpdate(type: string, payload?: any) {
 }
 
 // Persistent Tombstone Helpers to ensure permanent and irreversible deletion
-export async function syncTombstonesFromCloud(): Promise<{
+let lastTombstonesSyncTime = 0;
+let cachedTombstonesResult: any = null;
+
+export async function syncTombstonesFromCloud(force = false): Promise<{
   deletedStudents: Set<string>;
   deletedCertificates: Set<string>;
   deletedComplexes: Set<string>;
@@ -1478,8 +1481,15 @@ export async function syncTombstonesFromCloud(): Promise<{
   const teacherSet = new Set<string>(Array.isArray(localTeachers) ? localTeachers : []);
   const appSet = new Set<string>(Array.isArray(localApps) ? localApps : []);
 
+  // Return cached result if checked within the last 15 seconds to avoid duplicate parallel network calls
+  const now = Date.now();
+  if (!force && cachedTombstonesResult && now - lastTombstonesSyncTime < 15000) {
+    return cachedTombstonesResult;
+  }
+  lastTombstonesSyncTime = now;
+
   try {
-    const centralSnap = await getDoc(doc(OmranDataService.getCentralDb(), 'settings', 'deleted_records'));
+    const centralSnap = await safeGetDoc(doc(OmranDataService.getCentralDb(), 'settings', 'deleted_records'), 2500);
     if (centralSnap.exists()) {
       const data = centralSnap.data();
       if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
@@ -1493,7 +1503,7 @@ export async function syncTombstonesFromCloud(): Promise<{
 
     if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
       try {
-        const activeSnap = await getDoc(doc(OmranDataService.getActiveDb(), 'settings', 'deleted_records'));
+        const activeSnap = await safeGetDoc(doc(OmranDataService.getActiveDb(), 'settings', 'deleted_records'), 2000);
         if (activeSnap.exists()) {
           const data = activeSnap.data();
           if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
@@ -1518,7 +1528,7 @@ export async function syncTombstonesFromCloud(): Promise<{
   setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(teacherSet));
   setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(appSet));
 
-  return {
+  cachedTombstonesResult = {
     deletedStudents: studentSet,
     deletedCertificates: certSet,
     deletedComplexes: complexSet,
@@ -1527,6 +1537,8 @@ export async function syncTombstonesFromCloud(): Promise<{
     deletedTeachers: teacherSet,
     deletedApplications: appSet
   };
+
+  return cachedTombstonesResult;
 }
 
 async function writeTombstoneToBothDbs(field: string, id: string): Promise<void> {
@@ -1536,7 +1548,7 @@ async function writeTombstoneToBothDbs(field: string, id: string): Promise<void>
   }
   for (const targetDb of dbs) {
     try {
-      const snap = await getDoc(doc(targetDb, 'settings', 'deleted_records'));
+      const snap = await safeGetDoc(doc(targetDb, 'settings', 'deleted_records'), 2000);
       const existing: string[] = snap.exists() ? (snap.data()[field] || []) : [];
       if (!existing.includes(id)) {
         const merged = [...existing, id];
@@ -1555,7 +1567,7 @@ async function removeTombstoneFromBothDbs(field: string, id: string): Promise<vo
   }
   for (const targetDb of dbs) {
     try {
-      const snap = await getDoc(doc(targetDb, 'settings', 'deleted_records'));
+      const snap = await safeGetDoc(doc(targetDb, 'settings', 'deleted_records'), 2000);
       if (snap.exists()) {
         const existing: string[] = snap.data()[field] || [];
         const filtered = existing.filter(x => x !== id);
@@ -6774,11 +6786,11 @@ export class OmranDataService {
             emit(!isInitialLoad, newlyAddedApp);
           }
         },
-        err => console.warn('Registration apps collection snapshot notice:', err)
+        () => {}
       );
       unsubs.push(unsubCol);
     } catch (e) {
-      console.warn('Registration apps collection sub error:', e);
+      // non-blocking
     }
 
     // 2. Dual-redundant live subscription to doc(centralDb, 'settings', 'registration_applications')
@@ -6829,11 +6841,11 @@ export class OmranDataService {
             }
           }
         },
-        err => console.warn('Registration apps doc snapshot notice:', err)
+        () => {}
       );
       unsubs.push(unsubDoc);
     } catch (e) {
-      console.warn('Registration apps doc sub error:', e);
+      // non-blocking
     }
 
     // 3. ActiveDb collection subscription if different

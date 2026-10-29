@@ -365,6 +365,17 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const [isConnectingAI, setIsConnectingAI] = useState(false);
   const [isAIInterviewOpen, setIsAIInterviewOpen] = useState(false);
   const [interviewStudentData, setInterviewStudentData] = useState<any>(null);
+  const [draftApplication, setDraftApplication] = useState<any | null>(null);
+  const [sessionCancelledNotice, setSessionCancelledNotice] = useState<string | null>(null);
+  const [duolingoValidationModal, setDuolingoValidationModal] = useState<{
+    isOpen: boolean;
+    missingItems: Array<{ field: string; title: string; description: string; actionId: string }>;
+    completedItems: string[];
+  }>({
+    isOpen: false,
+    missingItems: [],
+    completedItems: []
+  });
   const [existingStudents, setExistingStudents] = useState<Student[]>([]);
 
   useEffect(() => {
@@ -618,128 +629,135 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
   const handleSubmitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setSessionCancelledNotice(null);
 
     if (isRegistrationClosed) {
       setFormError('عذراً، باب التسجيل مغلق حالياً ولا يمكن استقبال طلبات جديدة.');
       return;
     }
 
-    if (portalConfig.fieldConfig.studentNameRequired && (!studentName || studentName.trim().length < 4)) {
-      setFormError('يرجى كتابة اسم الطالب كاملاً (ثلاثي أو رباعي) للتسجيل.');
-      return;
+    // 1. Gather all validation requirements for the Duolingo-themed modal
+    const missingItems: Array<{ field: string; title: string; description: string; actionId: string }> = [];
+    const completedItems: string[] = [];
+
+    // Check Student Tripartite Name (at least 3 words)
+    const rawStudentName = (studentName || '').trim();
+    const nameParts = rawStudentName.split(/\s+/).filter(Boolean);
+    if (!rawStudentName || nameParts.length < 3) {
+      missingItems.push({
+        field: 'studentName',
+        title: 'اسم الطالب غير ثلاثي',
+        description: 'يرجى كتابة اسم الطالب ثلاثياً على الأقل (الاسم، واسم الأب، واسم العائلة أو الجد) لضمان صحة التسجيل والشهادات.',
+        actionId: 'reg-student-name-input'
+      });
+    } else {
+      completedItems.push(`الاسم الثلاثي مكتمل: ${rawStudentName}`);
     }
 
-    if (portalConfig.fieldConfig.parentPhoneRequired && (!parentPhone || parentPhone.replace(/\D/g, '').length < 8)) {
-      setFormError('يرجى إدخال رقم هاتف ولي الأمر (واتساب) للتواصل وتأكيد القبول.');
-      return;
+    // Check Email Verification (Must be verified with OTP or Google!)
+    const cleanEmail = (studentEmail || '').trim().toLowerCase();
+    const emailCheck = validateEmailAuthenticity(cleanEmail);
+    if (!cleanEmail || !emailCheck.isValid) {
+      missingItems.push({
+        field: 'studentEmail',
+        title: 'البريد الإلكتروني مفقود أو غير صحيح',
+        description: emailCheck.error || 'يرجى إدخال عنوان بريد إلكتروني صحيح لاستقبال تذكرة المتابعة ونتائج القبول.',
+        actionId: 'reg-student-email-input'
+      });
+    } else if (!isEmailVerified) {
+      missingItems.push({
+        field: 'emailVerification',
+        title: 'البريد الإلكتروني لم يتم توثيقه بعد',
+        description: 'اضغط على زر (تحقق وإرسال الرمز) أو سجل بحساب Google وأدخل رمز التحقق (OTP) لتأكيد بريدك أولاً.',
+        actionId: 'reg-email-otp-input'
+      });
+    } else {
+      completedItems.push(`البريد الإلكتروني موثق ومؤكد (${cleanEmail})`);
     }
 
-    // EMAIL VERIFICATION CHECK: Resilient, never blocks student if email is valid
-    if (!studentEmail || studentEmail.trim().length < 5) {
-      setFormError('يرجى إدخال البريد الإلكتروني لتلقي إشعار القبول ورقم متابعة الطلب.');
-      return;
+    // Check Parent Phone (WhatsApp)
+    const cleanPhone = (parentPhone || '').replace(/\D/g, '');
+    if (portalConfig.fieldConfig.parentPhoneRequired && cleanPhone.length < 8) {
+      missingItems.push({
+        field: 'parentPhone',
+        title: 'رقم هاتف ولي الأمر (واتساب)',
+        description: 'يرجى إدخال رقم هاتف ولي الأمر (8 أرقام على الأقل) للتواصل ومتابعة الحضور.',
+        actionId: 'reg-parent-phone-input'
+      });
+    } else if (cleanPhone.length >= 8) {
+      completedItems.push('رقم هاتف ولي الأمر مكتمل ومسجل');
     }
 
-    if (!isEmailVerified) {
-      const check = validateEmailAuthenticity(studentEmail);
-      if (!check.isValid) {
-        setFormError(check.error || 'يرجى كتابة بريد إلكتروني صحيح.');
-        return;
-      }
-      // Auto-verify valid email so student registration is smooth and unobstructed
-      setIsEmailVerified(true);
-      setEmailVerificationMethod('otp');
-    }
-
-    // Validate Required Custom Questions
+    // Check Required Custom Questions
     for (const q of activeCustomQuestions) {
       if (q.required) {
         const ans = customAnswers[q.id];
         if (ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0)) {
-          setFormError(`يرجى الإجابة على السؤال الإلزامي: "${q.label}".`);
-          return;
+          missingItems.push({
+            field: `custom_${q.id}`,
+            title: `إجابة السؤال الإلزامي: "${q.label}"`,
+            description: 'هذا السؤال مطلوب من إدارة المجمع لاستكمال متطلبات التسجيل.',
+            actionId: `reg-custom-q-${q.id}`
+          });
         }
       }
     }
 
-    setIsSubmitting(true);
-    try {
-      const randomDigits = Math.floor(100000 + Math.random() * 900000);
-      const trackingCode = `OMR-${randomDigits}`;
+    // If ANY validation requirement is missing, OPEN DUOLINGO MODAL!
+    if (missingItems.length > 0) {
+      setDuolingoValidationModal({
+        isOpen: true,
+        missingItems,
+        completedItems
+      });
+      return;
+    }
 
-      const selectedHalaqahObj = halaqahs.find(h => h.id === preferredHalaqahId);
-
-      // Build structured custom responses
-      const customQuestionResponses = activeCustomQuestions
+    // Validations all passed!
+    // CRITICAL: DO NOT CREATE OR DEDUCT TICKET YET!
+    // DO NOT SAVE TO FIRESTORE YET!
+    // DO NOT SEND EMAIL YET!
+    // The session is purely in-memory until the AI interview is fully completed.
+    const draft = {
+      studentName: rawStudentName,
+      age: Number(studentAge) || 10,
+      parentName: parentName.trim() || 'ولي الأمر',
+      parentPhone: parentPhone.trim(),
+      email: cleanEmail,
+      isEmailVerified: true,
+      emailVerificationMethod: emailVerificationMethod || 'otp',
+      memorizedJuzList: selectedJuz,
+      preferredHalaqahId: showHalaqahQuestion && preferredHalaqahId ? preferredHalaqahId : undefined,
+      notes: applicationNotes.trim() || undefined,
+      customAnswers,
+      customQuestionResponses: activeCustomQuestions
         .filter(q => customAnswers[q.id] !== undefined && customAnswers[q.id] !== '')
         .map(q => ({
           questionId: q.id,
           questionLabel: q.label,
           questionType: q.type,
           answer: customAnswers[q.id]
-        }));
+        }))
+    };
+    setDraftApplication(draft);
 
-      // Calculate queue number & pending ahead count for this complex
-      const allExisting = await OmranDataService.loadRegistrationApplications(complex.id);
-      const pendingAhead = allExisting.filter(a => a.status === 'pending').length;
-      const queueNumber = pendingAhead + 1;
-
-      const newApp: StudentRegistrationApplication = {
-        id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        trackingCode,
-        complexId: complex.id,
-        complexName: complex.name,
-        studentName: studentName.trim(),
-        age: Number(studentAge) || 10,
+    // Smooth transition to AI Placement Interview
+    setIsConnectingAI(true);
+    setTimeout(() => {
+      setIsConnectingAI(false);
+      setInterviewStudentData({
+        studentName: rawStudentName,
+        age: Number(studentAge) || 12,
+        phone: parentPhone.trim(),
         parentName: parentName.trim() || 'ولي الأمر',
         parentPhone: parentPhone.trim(),
-        email: studentEmail.trim().toLowerCase(),
-        isEmailVerified: true,
-        emailVerificationMethod: emailVerificationMethod || 'otp',
-        queueNumber,
-        pendingAheadCount: pendingAhead,
+        email: cleanEmail,
         memorizedJuzList: selectedJuz,
-        preferredHalaqahId: showHalaqahQuestion && preferredHalaqahId ? preferredHalaqahId : undefined,
-        preferredHalaqahName: showHalaqahQuestion
-          ? selectedHalaqahObj?.name || 'توجيه تلقائي من المشرف'
-          : 'توجيه تلقائي من المشرف (سؤال الحلقة معطل)',
         notes: applicationNotes.trim() || undefined,
-        status: 'pending',
-        appliedAt: new Date().toISOString(),
-        customAnswers,
-        customQuestionResponses
-      };
-
-      await OmranDataService.saveRegistrationApplication(newApp);
-
-      // Send Real Queue Status & Tracking Email to student/parent's personal inbox
-      const receivedEmailPayload = buildApplicationReceivedEmail(effectiveComplex, newApp, portalUrl);
-      sendRealPortalEmail(receivedEmailPayload).catch(err => console.warn('Could not send application email:', err));
-
-      setSubmitSuccessApp(newApp);
-
-      // Smooth transition to AI Placement Interview
-      setIsConnectingAI(true);
-      setTimeout(() => {
-        setIsConnectingAI(false);
-        setInterviewStudentData({
-          studentName: studentName.trim(),
-          age: Number(studentAge) || 12,
-          phone: parentPhone.trim(),
-          parentName: parentName.trim() || 'ولي الأمر',
-          parentPhone: parentPhone.trim(),
-          email: studentEmail.trim().toLowerCase(),
-          memorizedJuzList: selectedJuz,
-          notes: applicationNotes.trim() || undefined,
-          trackingCode
-        });
-        setIsAIInterviewOpen(true);
-      }, 1400);
-    } catch (err: any) {
-      setFormError('تعذر إرسال الطلب حالياً، يرجى المحاولة مرة أخرى.');
-    } finally {
-      setIsSubmitting(false);
-    }
+        trackingCode: '' // Will be officially generated only when the AI interview is fully completed!
+      });
+      setIsAIInterviewOpen(true);
+    }, 600);
   };
 
   // Handle Application Tracking Lookup
@@ -1535,12 +1553,28 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
               <form onSubmit={handleSubmitApplication} className="space-y-5">
                 <div className="space-y-1">
                   <h3 className="text-lg sm:text-xl font-black text-white font-heading">
-                    استمارة التسجيل وطلب الانضمام الذكي
+                    استمارة التسجيل وطلب الانضمام
                   </h3>
                   <p className="text-xs text-slate-300 font-bold">
                     يرجى تعبئة بيانات الطالب وتوثيق البريد الإلكتروني لتلقي إشعارات الدور والقبول
                   </p>
                 </div>
+
+                {sessionCancelledNotice && (
+                  <div className="p-4 rounded-2xl bg-amber-500/20 border-2 border-amber-400 text-amber-200 text-xs font-bold flex items-center justify-between gap-3 shadow-lg animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2.5">
+                      <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
+                      <span>{sessionCancelledNotice}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSessionCancelledNotice(null)}
+                      className="text-slate-300 hover:text-white text-xs font-bold px-2.5 py-1 rounded-xl bg-black/40 border border-white/10 cursor-pointer"
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                )}
 
                 {formError && (
                   <div className="p-3.5 rounded-2xl bg-red-500/20 border-2 border-red-500/40 text-red-200 text-xs font-bold flex items-center gap-2">
@@ -1562,21 +1596,20 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                   </div>
                 )}
 
-
-
                 {/* 1. Student Full Name (سؤال مقالي) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-200 flex items-center justify-between">
-                    <span>اسم الطالب كاملاً (رباعي):</span>
+                    <span>اسم الطالب كاملاً (ثلاثي):</span>
                     <span className="text-[10px] text-amber-400 font-bold">سؤال مقالي إلزامي *</span>
                   </label>
                   <div className="relative">
                     <input
+                      id="reg-student-name-input"
                       type="text"
                       required={portalConfig.fieldConfig.studentNameRequired}
                       value={studentName}
                       onChange={e => setStudentName(e.target.value)}
-                      placeholder="اكتب اسم الطالب رباعياً (مثال: عبد الرحمن أحمد محمد السعيد)"
+                      placeholder="اكتب اسم الطالب ثلاثياً (مثال: عبد الرحمن أحمد محمد السعيد)"
                       className="w-full border-2 rounded-2xl py-3 px-4 pr-11 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
                       style={{
                         backgroundColor: themeBg,
@@ -1684,6 +1717,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                         <div className="flex flex-col sm:flex-row gap-2">
                           <div className="relative flex-1">
                             <input
+                              id="reg-student-email-input"
                               type="email"
                               value={studentEmail}
                               onChange={e => {
@@ -1749,6 +1783,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                             <div className="flex gap-2">
                               <input
+                                id="reg-email-otp-input"
                                 type="text"
                                 maxLength={6}
                                 value={enteredOtp}
@@ -1865,6 +1900,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                     </label>
                     <div className="relative">
                       <input
+                        id="reg-parent-phone-input"
                         type="tel"
                         required={portalConfig.fieldConfig.parentPhoneRequired}
                         value={parentPhone}
@@ -2508,7 +2544,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
         }}
       >
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>{complex.name} • بوابة التسجيل والدخول الذكية الموحدة</span>
+          <span>{complex.name} • بوابة التسجيل والدخول الموحدة</span>
           <span className="text-[11px] text-slate-400 font-mono">
             نظام عُمْرَان لإدارة المجمعات والحلقات القرآنية
           </span>
@@ -2535,81 +2571,147 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           existingStudents={existingStudents}
           onPlacementSuccess={async (newStudent: Student) => {
             try {
+              setIsSubmitting(true);
+              const activeDraft = draftApplication || {
+                studentName: newStudent.name,
+                age: newStudent.age,
+                parentName: newStudent.parentName,
+                parentPhone: newStudent.parentPhone,
+                email: newStudent.googleEmail || studentEmail,
+                isEmailVerified: true,
+                emailVerificationMethod: emailVerificationMethod || 'otp',
+                memorizedJuzList: selectedJuz,
+                preferredHalaqahId: preferredHalaqahId,
+                notes: applicationNotes,
+                customAnswers,
+                customQuestionResponses: []
+              };
+
+              // NOW AND ONLY NOW: Issue official registration ticket upon successful interview completion!
+              const randomDigits = Math.floor(100000 + Math.random() * 900000);
+              const trackingCode = `OMR-${randomDigits}`;
+
+              const selectedHalaqahObj = halaqahs.find(h => h.id === newStudent.halaqahId || h.id === activeDraft.preferredHalaqahId);
+
+              // Calculate queue number & pending ahead count for this complex
+              const allExisting = await OmranDataService.loadRegistrationApplications(complex.id);
+              const pendingAhead = allExisting.filter(a => a.status === 'pending').length;
+              const queueNumber = pendingAhead + 1;
+
+              const finalApp: StudentRegistrationApplication = {
+                id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                trackingCode,
+                complexId: complex.id,
+                complexName: complex.name,
+                studentName: activeDraft.studentName,
+                age: activeDraft.age,
+                parentName: activeDraft.parentName,
+                parentPhone: activeDraft.parentPhone,
+                email: activeDraft.email,
+                isEmailVerified: true,
+                emailVerificationMethod: activeDraft.emailVerificationMethod,
+                queueNumber,
+                pendingAheadCount: pendingAhead,
+                memorizedJuzList: activeDraft.memorizedJuzList,
+                preferredHalaqahId: activeDraft.preferredHalaqahId,
+                preferredHalaqahName: selectedHalaqahObj?.name || 'توجيه تلقائي من المشرف',
+                notes: activeDraft.notes,
+                status: 'accepted',
+                studentAcceptanceStatus: 'confirmed_by_student',
+                assignedHalaqahId: newStudent.halaqahId,
+                assignedHalaqahName: newStudent.halaqahName,
+                assignedStudentId: newStudent.id,
+                admittedAt: new Date().toISOString(),
+                studentConfirmedAt: new Date().toISOString(),
+                reviewedAt: new Date().toISOString(),
+                reviewedByName: 'المساعد القرآني',
+                appliedAt: new Date().toISOString(),
+                customAnswers: activeDraft.customAnswers,
+                customQuestionResponses: activeDraft.customQuestionResponses
+              };
+
+              // 1. Persist the official registration ticket application to Firestore
+              await OmranDataService.saveRegistrationApplication(finalApp);
+
+              // 2. Persist the placed student
               await OmranDataService.saveStudent(newStudent);
               setExistingStudents(prev => [newStudent, ...prev.filter(s => s.id !== newStudent.id)]);
 
-              // Update registration application so supervisor dashboard immediately reflects admission!
-              const allApps = await OmranDataService.loadRegistrationApplications(complex.id);
-              const matchingApp = allApps.find(a => a.trackingCode === interviewStudentData.trackingCode || a.studentName === newStudent.name);
-              if (matchingApp) {
-                const updatedApp: StudentRegistrationApplication = {
-                  ...matchingApp,
-                  status: 'accepted',
-                  studentAcceptanceStatus: 'confirmed_by_student',
-                  assignedHalaqahId: newStudent.halaqahId,
-                  assignedHalaqahName: newStudent.halaqahName,
-                  assignedStudentId: newStudent.id,
-                  admittedAt: new Date().toISOString(),
-                  studentConfirmedAt: new Date().toISOString(),
-                  reviewedAt: new Date().toISOString(),
-                  reviewedByName: 'المساعد القرآني الذكي'
-                };
-                await OmranDataService.saveRegistrationApplication(updatedApp);
+              // 3. Send official confirmation email
+              const emailPayload = buildApplicationAcceptedEmail(effectiveComplex, finalApp, newStudent.halaqahName || 'الحلقة القرآنية', portalUrl);
+              sendRealPortalEmail(emailPayload).catch(() => {});
 
-                // Send immediate real confirmation email
-                const emailPayload = buildApplicationAcceptedEmail(effectiveComplex, updatedApp, newStudent.halaqahName || 'الحلقة القرآنية', portalUrl);
-                sendRealPortalEmail(emailPayload).catch(() => {});
-              }
+              // 4. Update success ticket screen
+              setSubmitSuccessApp(finalApp);
+              setIsAIInterviewOpen(false);
+              setDraftApplication(null);
 
               // Dispatch real-time student update event for any active supervisor session
               try {
                 window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: newStudent }));
               } catch (e) {}
 
-              setIsAIInterviewOpen(false);
               onLoginSuccess({ username: newStudent.name, role: 'student', studentId: newStudent.id }, undefined, newStudent);
             } catch (err) {
               console.warn('Placement save note:', err);
               setIsAIInterviewOpen(false);
               onLoginSuccess({ username: newStudent.name, role: 'student', studentId: newStudent.id }, undefined, newStudent);
+            } finally {
+              setIsSubmitting(false);
             }
           }}
           onWaitingListAdded={async (waitingEntry: WaitingListStudent) => {
             try {
+              // Officially generate ticket and save application only when interview outcome is reached
+              const trackingCode = `OMR-${Math.floor(100000 + Math.random() * 900000)}`;
+              const existingApps = await OmranDataService.loadRegistrationApplications(complex.id);
+              const queueNumber = existingApps.length + 1;
+
+              const appToSave: StudentRegistrationApplication = draftApplication ? {
+                ...draftApplication,
+                id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                trackingCode: trackingCode,
+                queueNumber: queueNumber,
+                status: 'pending',
+                notes: `${draftApplication.notes || ''} • مدرج في قائمة الانتظار للمجمع بالدور #${queueNumber}`.trim(),
+                createdAt: new Date().toISOString()
+              } : {
+                id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                complexId: complex.id,
+                studentName: waitingEntry.studentName,
+                trackingCode: trackingCode,
+                queueNumber: queueNumber,
+                status: 'pending',
+                notes: `مدرج في قائمة الانتظار بالدور #${queueNumber}`,
+                createdAt: new Date().toISOString()
+              };
+
+              await OmranDataService.saveRegistrationApplication(appToSave);
+
               const currentWait = effectiveComplex.waitingList || [];
-              const updatedWait = [...currentWait.filter(w => w.id !== waitingEntry.id), waitingEntry];
+              const updatedWaitEntry = { ...waitingEntry, applicationTrackingCode: trackingCode, queueNumber: queueNumber };
+              const updatedWait = [...currentWait.filter(w => w.id !== waitingEntry.id), updatedWaitEntry];
               const updatedComplex: QuranComplex = {
                 ...effectiveComplex,
                 waitingList: updatedWait
               };
               await OmranDataService.saveComplex(updatedComplex);
 
-              // Update registration application to reflect waiting list status
-              const allApps = await OmranDataService.loadRegistrationApplications(complex.id);
-              const matchingApp = allApps.find(a => a.trackingCode === waitingEntry.applicationTrackingCode);
-              if (matchingApp) {
-                const updatedApp: StudentRegistrationApplication = {
-                  ...matchingApp,
-                  status: 'pending',
-                  queueNumber: waitingEntry.queueNumber,
-                  notes: `${matchingApp.notes || ''} • مدرج في قائمة الانتظار للمجمع بالدور #${waitingEntry.queueNumber}`.trim()
-                };
-                await OmranDataService.saveRegistrationApplication(updatedApp);
-
-                // Send real waiting list confirmation email to student/parent
-                const targetEmail = interviewStudentData.email || matchingApp?.email;
-                if (targetEmail) {
-                  const waitPayload = buildWaitingListEmail(
-                    effectiveComplex,
-                    waitingEntry.applicationTrackingCode,
-                    waitingEntry.studentName,
-                    targetEmail,
-                    waitingEntry.queueNumber,
-                    portalUrl
-                  );
-                  sendRealPortalEmail(waitPayload).catch(err => console.warn('Could not send waiting list email:', err));
-                }
+              // Send real waiting list confirmation email to student/parent
+              const targetEmail = interviewStudentData.email || appToSave?.email;
+              if (targetEmail) {
+                const waitPayload = buildWaitingListEmail(
+                  effectiveComplex,
+                  trackingCode,
+                  waitingEntry.studentName,
+                  targetEmail,
+                  queueNumber,
+                  portalUrl
+                );
+                sendRealPortalEmail(waitPayload).catch(err => console.warn('Could not send waiting list email:', err));
               }
+
+              setDraftApplication(null);
             } catch (err) {
               console.warn('Waiting list save note:', err);
             }
@@ -2618,7 +2720,12 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
             setActiveTab('track');
             handleLookupApplication(undefined, waitingEntry.applicationTrackingCode);
           }}
-          onCancel={() => setIsAIInterviewOpen(false)}
+          onCancel={() => {
+            setIsAIInterviewOpen(false);
+            setInterviewStudentData(null);
+            setDraftApplication(null);
+            setSessionCancelledNotice('تم إلغاء الجلسة بالكامل. لم يتم إصدار أو خصم أي تذكرة تسجيل لعدم استكمال المقابلة.');
+          }}
         />
       )}
 
@@ -2644,6 +2751,125 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
           }}
         />
       )}
+
+      {/* Duolingo + Complex Themed Validation Notice Modal */}
+      <AnimatePresence>
+        {duolingoValidationModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="bg-white dark:bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden text-right"
+              dir="rtl"
+            >
+              {/* Duolingo-styled Top accent banner */}
+              <div
+                className="absolute top-0 left-0 right-0 h-3"
+                style={{ backgroundColor: themeAccent }}
+              />
+
+              {/* Character Badge / Mascot Visual */}
+              <div className="flex items-center gap-4 mb-5">
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 border-b-4 border-amber-600 shadow-lg text-3xl"
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    borderColor: '#D97706'
+                  }}
+                >
+                  <span role="img" aria-label="owl" className="animate-bounce inline-block">
+                    🦉
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                      تنبيه لطيف ومهم
+                    </span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                      {complex.name}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-white mt-1">
+                    بقي القليل لإكمال التسجيل بنجاح!
+                  </h3>
+                </div>
+              </div>
+
+              {/* Friendly message */}
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
+                حيّاك الله يا بطل! لضمان صحة بياناتك واعتماد حسابك في حلقات المجمع بدقة وموثوقية، يرجى استكمال المتطلبات التالية:
+              </p>
+
+              {/* Missing Requirements List - Duolingo Gamified Cards */}
+              <div className="space-y-2.5 mb-6">
+                {duolingoValidationModal.missingItems.map((item, idx) => (
+                  <div
+                    key={`missing-${idx}`}
+                    className="flex items-start gap-3 p-3.5 rounded-2xl bg-rose-50/90 dark:bg-rose-950/30 border-2 border-rose-200 dark:border-rose-900/60 shadow-sm transition-all"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-rose-500 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-sm mt-0.5">
+                      ✕
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-black text-rose-800 dark:text-rose-200 leading-snug">
+                        {item.title}
+                      </div>
+                      <div className="text-xs text-rose-700/80 dark:text-rose-300/80 mt-0.5 font-medium">
+                        {item.description}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Valid completed items for positive reinforcement */}
+                {duolingoValidationModal.completedItems.map((itemText, idx) => (
+                  <div
+                    key={`valid-${idx}`}
+                    className="flex items-center gap-3 p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 opacity-90"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
+                      ✓
+                    </div>
+                    <div className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                      {itemText}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Big Duolingo 3D Button: "حسناً، طيّب" */}
+              <button
+                type="button"
+                onClick={() => {
+                  const firstTargetId = duolingoValidationModal.missingItems[0]?.actionId;
+                  setDuolingoValidationModal(prev => ({ ...prev, isOpen: false }));
+                  if (firstTargetId) {
+                    setTimeout(() => {
+                      const el = document.getElementById(firstTargetId);
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        el.focus();
+                      }
+                    }, 150);
+                  }
+                }}
+                className="w-full py-4 px-6 rounded-2xl font-black text-lg transition-all transform active:translate-y-1 active:border-b-0 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                style={{
+                  backgroundColor: themeAccent,
+                  color: accentTextColor,
+                  borderBottom: `5px solid ${themeAccentShadow}`
+                }}
+              >
+                <span>حسناً، طيّب</span>
+                <span className="text-xl">👍</span>
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

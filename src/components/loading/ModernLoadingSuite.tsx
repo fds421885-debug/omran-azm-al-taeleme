@@ -1331,45 +1331,72 @@ export const ModernOpeningSplash: React.FC<ModernOpeningSplashProps> = ({
   subtitle = 'النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ',
   activeComplex,
   onFinish,
-  minDurationMs = 850
+  minDurationMs = 500
 }) => {
-  const [progress, setProgress] = useState(12);
+  const [progress, setProgress] = useState(25);
   const [stageText, setStageText] = useState('تَأْكِيدُ الِاتِّصَالِ السَّحَابِيِّ...');
   const [isDone, setIsDone] = useState(false);
+  const onFinishRef = React.useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   const safeAccent = resolveHexColor(activeComplex?.theme?.accentColor, '#ffc800');
   const safePrimary = resolveHexColor(activeComplex?.theme?.primaryColor, '#0a1a15');
   const safeCard = resolveHexColor(activeComplex?.theme?.cardColor, '#132c24');
   const accentShadow = darkenHex(safeAccent, 0.35);
 
+  const handleFinish = React.useCallback(() => {
+    setIsDone(true);
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('omran_splash_shown', 'true');
+      }
+    } catch {}
+    if (onFinishRef.current) {
+      onFinishRef.current();
+    }
+  }, []);
+
   useEffect(() => {
-    let t1 = setTimeout(() => {
-      setProgress(42);
+    // If already marked as shown, finish promptly
+    try {
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('omran_splash_shown') === 'true') {
+        handleFinish();
+        return;
+      }
+    } catch {}
+
+    const t1 = setTimeout(() => {
+      setProgress(60);
       setStageText('مُزَامَنَةُ بَيَانَاتِ المَجْمَعِ وَالحَلَقَاتِ...');
-    }, minDurationMs * 0.25);
+    }, 150);
 
-    let t2 = setTimeout(() => {
-      setProgress(78);
+    const t2 = setTimeout(() => {
+      setProgress(90);
       setStageText('تَهْيِئَةُ البَوَّابَةِ وَالفَحْصِ الذَّكِيِّ...');
-    }, minDurationMs * 0.6);
+    }, 320);
 
-    let t3 = setTimeout(() => {
+    const t3 = setTimeout(() => {
       setProgress(100);
       setStageText('اكْتَمَلَ التَّحْضِيرُ بِنَجَاحٍ ✓');
-    }, minDurationMs * 0.88);
+    }, 450);
 
-    let t4 = setTimeout(() => {
-      setIsDone(true);
-      if (onFinish) onFinish();
-    }, minDurationMs);
+    const t4 = setTimeout(() => {
+      handleFinish();
+    }, Math.min(minDurationMs, 600));
+
+    // Absolute fallback watchdog: guarantees splash will dismiss no matter what
+    const watchdog = setTimeout(() => {
+      handleFinish();
+    }, 800);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(t4);
+      clearTimeout(watchdog);
     };
-  }, [minDurationMs, onFinish]);
+  }, [handleFinish, minDurationMs]);
 
   if (isDone) return null;
 
@@ -1489,6 +1516,15 @@ export const ModernOpeningSplash: React.FC<ModernOpeningSplashProps> = ({
             >
               <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
             </div>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleFinish}
+              className="text-xs font-bold text-slate-300 hover:text-white underline underline-offset-4 cursor-pointer transition-colors"
+            >
+              تخطي والدخول للمنظومة الآن &larr;
+            </button>
           </div>
         </div>
       </div>
