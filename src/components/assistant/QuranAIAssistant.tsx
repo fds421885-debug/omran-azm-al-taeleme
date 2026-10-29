@@ -1386,8 +1386,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       const finalMessages = [...updatedWithUser, assistantMsg];
       setMessages(finalMessages);
       saveSessionMessages(finalMessages, activeSessionId);
-    } catch (err: any) {
-      console.error('AI assistant error:', err);
+    } catch {
       const normText = (textToSend || '').trim();
       const currentStudentCohort = (students && students.length > 0 ? students : scopedStudents);
       let fallbackText = messages.length > 1
@@ -2199,8 +2198,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       }, 50000);
 
       showToast('جارٍ استخراج ملف PDF الجميل والطباعة 🖨️✓');
-    } catch (err) {
-      console.error('PDF export error:', err);
+    } catch {
       showToast('تعذر استخراج ملف PDF');
     }
   };
@@ -2367,8 +2365,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       showToast('تم استخراج كشف البيانات بنجاح 📊✓');
-    } catch (e) {
-      console.error('Export error:', e);
+    } catch {
       showToast('تعذر تصدير الملف');
     }
   };
@@ -2497,8 +2494,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
 
       setSavedLibraryReports(prev => new Set([...prev, `lib_${msgId}`]));
       showToast('تم حفظ التقرير بنجاح في مكتبة المنصة 📚✓');
-    } catch (e: any) {
-      console.error('Save to library error:', e);
+    } catch {
       showToast('تعذر حفظ التقرير في المكتبة');
     }
   };
@@ -2777,7 +2773,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       confetti({ particleCount: 70, spread: 60 });
       showToast(`تم بنجاح تحميل ${studentsToPrint.length} شهادة منفصلة وحفظها بالأرشيف! 🎉`);
     } catch (err: any) {
-      console.error('Error exporting separate certificates:', err);
       showToast('تعذر تصدير الشهادات: ' + (err?.message || ''));
     } finally {
       setIsExportingCertificates(false);
@@ -2862,7 +2857,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       confetti({ particleCount: 70, spread: 60 });
       showToast(`تم بنجاح تصدير الملف المجمع (${studentsToPrint.length} شهادة) وحفظها بالأرشيف! 🎉`);
     } catch (err: any) {
-      console.error('Error exporting merged certificates:', err);
       showToast('تعذر دمج وتصدير الشهادات: ' + (err?.message || ''));
     } finally {
       setIsExportingCertificates(false);
@@ -2961,7 +2955,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         return next;
       });
     } catch (err: any) {
-      console.error('Failed to save AI certificate template:', err);
       showToast('تعذر حفظ القالب: ' + (err?.message || ''));
     }
   };
@@ -3032,7 +3025,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         return next;
       });
     } catch (err: any) {
-      console.error('Error saving evaluation edit:', err);
       showToast('تعذر حفظ التقييم: ' + (err?.message || ''));
     }
   };

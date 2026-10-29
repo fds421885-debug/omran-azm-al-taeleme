@@ -258,8 +258,8 @@ export const MosqueLocationMapModal: React.FC<MosqueLocationMapModalProps> = ({
     try {
       await onSaveLocation(mosque.id, selectedCoord.lat, selectedCoord.lng, radiusMeters);
       onClose();
-    } catch (err) {
-      console.error('Error saving mosque location:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsSaving(false);
     }

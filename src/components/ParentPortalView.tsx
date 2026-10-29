@@ -169,7 +169,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         }
       }
     } catch (err: any) {
-      console.warn('Student Google link notice:', err);
       const errMsg = err?.message || String(err);
       if (errMsg === 'هذا الحساب مربوط بالفعل' || errMsg.includes('مربوط بالفعل')) {
         setGoogleLinkError('هذا الحساب مربوط بالفعل');
@@ -195,7 +194,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       }
       setGoogleLinkError('');
     } catch (e: any) {
-      console.error('Unlink student Google account error:', e);
       setGoogleLinkError(e?.message || 'تعذر فصل حساب Google');
     } finally {
       setIsLinkingGoogle(false);

@@ -166,8 +166,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       }
       setSelectedStudentIds([]);
       setIsBulkDeleteModalOpen(false);
-    } catch (err) {
-      console.error('Bulk delete error:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsBulkDeleting(false);
     }
@@ -435,8 +435,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       }
       setQuickAssignStudent(null);
       setQuickSelectedHalaqahId('');
-    } catch (e: any) {
-      console.error('Quick assign error:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsQuickAssigning(false);
     }
@@ -1604,8 +1604,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                       const id = studentToDelete.id;
                       await onDeleteStudent(id);
                       setStudentToDelete(null);
-                    } catch (e) {
-                      console.error('Delete student failed:', e);
+                    } catch {
+                      // Gracefully silent
                     } finally {
                       setIsDeletingStudent(false);
                     }

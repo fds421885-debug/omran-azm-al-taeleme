@@ -134,8 +134,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         setBonusSuccessMsg(null);
         setIsSubmittingBonus(false);
       }, 1600);
-    } catch (e: any) {
-      console.error(e);
+    } catch {
       setIsSubmittingBonus(false);
     }
   };

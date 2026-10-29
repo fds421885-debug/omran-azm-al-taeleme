@@ -850,8 +850,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
         setAutoFilledNotice(`✨ تم إعداد واعتماد خطة الطالب القرآنية بنجاح: ${aiPortion.description}`);
       }
-    } catch (e) {
-      console.error('Error generating plan manually:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsManualGeneratingPlan(false);
     }
@@ -1686,8 +1686,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         spread: 65,
         origin: { y: 0.6 }
       });
-    } catch (err: any) {
-      console.error('Error generating tomorrow plan:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsGeneratingTomPlan(false);
     }
@@ -2066,7 +2066,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         origin: { y: 0.7 }
       });
     } catch (e: any) {
-      console.error('Save evaluation error:', e);
       const detail = e?.message || e?.code || '';
       setSaveSuccessMsg(`حدث خطأ أثناء حفظ التقييم ${detail ? `(${detail})` : ''}`);
     } finally {

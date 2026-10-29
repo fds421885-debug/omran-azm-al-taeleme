@@ -390,7 +390,6 @@ service cloud.firestore {
       // Refresh parent app data
       await onSuccessRefresh();
     } catch (err: any) {
-      console.error('Migration error:', err);
       setErrorMessage(err?.message || 'حدث خطأ أثناء نقل بيانات المجمع إلى فايربيس.');
       setMigrationState('error');
     }

@@ -371,7 +371,6 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     };
 
     audio.onerror = () => {
-      console.warn(`[QuranAudioPlayer] Audio playback notice for ${item.surah}:${item.ayah}`);
       if (!isPlayingRef.current) return;
       if (boundedIdx + 1 < ayahSequence.length) {
         playSequenceAtRef.current(boundedIdx + 1);
@@ -380,9 +379,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
       }
     };
 
-    audio.play().catch(err => {
-      console.warn('[QuranAudioPlayer] play notice:', err);
-    });
+    audio.play().catch(() => {});
   }, [ayahSequence, reciterConfig.folder, isMuted, handlePassageCompleted]);
 
   useEffect(() => {

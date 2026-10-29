@@ -126,7 +126,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         });
       }
     } catch (err: any) {
-      console.warn('Google Unified Sign-In notice:', err);
       const errMsg = err?.message || String(err);
       if (err instanceof UnregisteredGoogleAccountError || err?.isUnregistered || errMsg.includes('غير مسجل')) {
         setUnregisteredEmail(err?.email || '');
@@ -304,8 +303,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     // 5. Default clear error message when user doesn't have an account
     setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-  } catch (err: any) {
-    console.error('Login error:', err);
+  } catch {
     setLoginError('حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
   } finally {
     setIsSubmitting(false);

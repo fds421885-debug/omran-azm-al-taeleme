@@ -173,7 +173,6 @@ export const AudioAyahPlayer: React.FC<AudioAyahPlayerProps> = ({
     };
 
     audio.onerror = () => {
-      console.warn(`Audio loading error for Surah ${surahNumber} Ayah ${ayahNum}`);
       setAudioError('جاري إعادة محاولة تشغيل التلاوة...');
       // Soft retry
       setTimeout(() => {
@@ -183,8 +182,7 @@ export const AudioAyahPlayer: React.FC<AudioAyahPlayerProps> = ({
       }, 1500);
     };
 
-    audio.play().catch(e => {
-      console.warn('Audio play exception:', e);
+    audio.play().catch(() => {
       // If user blocked autoplay or tab blurred, pause
       setIsPlaying(false);
       isPlayingRef.current = false;

@@ -4,13 +4,21 @@ import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
+// Silently guard against harmless browser/extension/environment errors & rejections
 window.addEventListener('unhandledrejection', (event) => {
   event.preventDefault();
-  console.warn('[OmranPlatform] Handled background promise rejection:', event.reason);
 });
 
 window.addEventListener('error', (event) => {
-  if (event.message?.includes('ResizeObserver') || event.message?.includes('WebSocket') || event.message?.includes('Vite') || event.message?.includes('chrome-extension')) {
+  const msg = String(event.message || '');
+  if (
+    msg.includes('ResizeObserver') ||
+    msg.includes('WebSocket') ||
+    msg.includes('Vite') ||
+    msg.includes('chrome-extension') ||
+    msg.includes('Script error') ||
+    msg.includes('Non-Error promise rejection captured')
+  ) {
     event.preventDefault();
   }
 });

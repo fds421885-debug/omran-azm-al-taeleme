@@ -100,8 +100,7 @@ export function exportToExcel(
     const cleanFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
     XLSX.writeFile(workbook, cleanFilename);
     return true;
-  } catch (error) {
-    console.error('Failed to export to Excel:', error);
+  } catch {
     return false;
   }
 }

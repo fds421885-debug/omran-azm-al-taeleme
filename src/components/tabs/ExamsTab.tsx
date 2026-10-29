@@ -562,7 +562,6 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       });
       setTimeout(() => setStatusMessage(null), 6000);
     } catch (err: any) {
-      console.error('Error saving exam:', err);
       setStatusMessage({ type: 'error', text: `حدث خطأ أثناء حفظ الاختبار: ${err.message || err}` });
     } finally {
       setIsSaving(false);
@@ -825,7 +824,6 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setExamToDelete(null);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch (err: any) {
-      console.error('Error deleting exam:', err);
       setStatusMessage({
         type: 'error',
         text: `حدث خطأ أثناء حذف الاختبار: ${err.message || err}`
@@ -852,7 +850,6 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setSubmissionToDelete(null);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch (err: any) {
-      console.error('Error deleting submission:', err);
       setStatusMessage({
         type: 'error',
         text: `حدث خطأ أثناء حذف التسليم: ${err.message || err}`
@@ -882,7 +879,6 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setIsConfirmingBulkDelete(false);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch (err: any) {
-      console.error('Error bulk deleting submissions:', err);
       setStatusMessage({
         type: 'error',
         text: `حدث خطأ أثناء حذف الردود: ${err.message || err}`
@@ -1157,9 +1153,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       setSelectedSubmissionForGrading(null);
       setStatusMessage({ type: 'success', text: 'تم اعتماد وتصحيح تسليم الطالب وحفظ الدرجات سحابياً بنجاح.' });
       setTimeout(() => setStatusMessage(null), 4000);
-    } catch (err: any) {
-      console.error('Error saving submission grading:', err);
-      alert('حدث خطأ أثناء حفظ التصحيح.');
+    } catch {
+      setStatusMessage({ type: 'error', text: 'حدث خطأ أثناء حفظ التصحيح.' });
     } finally {
       setIsSaving(false);
     }
@@ -3577,8 +3572,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
 
                         pdf.save(fileName);
                       }
-                    } catch (e) {
-                      console.error('Error generating PDF for WhatsApp:', e);
+                    } catch {
+                      // Handled silently
                     }
 
                     if (cleanPhone) {

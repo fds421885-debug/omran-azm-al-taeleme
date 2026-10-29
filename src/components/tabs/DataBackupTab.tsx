@@ -917,7 +917,6 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       });
       setShowDbConfigForm(false);
     } catch (err: any) {
-      console.error('Automated database linking error:', err);
       setAutoLinkStep('error');
       setAutoLinkError(err?.message || 'حدث خطأ أثناء محاولة ربط قاعدة البيانات تلقائياً.');
     }

@@ -528,7 +528,6 @@ export const PrintableQuranicReport: React.FC<PrintableQuranicReportProps> = ({
         url: driveLink || undefined
       });
     } catch (err: any) {
-      console.error('Error saving report to library:', err);
       setLibrarySaveNotice({
         type: 'error',
         text: `حدث خطأ أثناء حفظ التقرير: ${err?.message || err}`

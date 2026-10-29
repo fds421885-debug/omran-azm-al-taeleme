@@ -159,8 +159,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (data.fromName) setMailFromName(data.fromName);
         if (data.fromEmail) setMailFromEmail(data.fromEmail);
       }
-    } catch (e) {
-      console.warn('Could not load mail config status:', e);
+    } catch {
+      // Gracefully silent
     }
   };
 
@@ -261,8 +261,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       try {
         const cloudTeachers = await OmranDataService.loadTeachers();
         matched = findTeacher(cloudTeachers);
-      } catch (e) {
-        console.warn('Live teacher search cloud error:', e);
+      } catch {
+        // Fallback
       }
     }
 
@@ -271,8 +271,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       try {
         const found = await OmranDataService.findTeacherByCode(cleanDigits || cleanInput);
         if (found) matched = found;
-      } catch (e) {
-        console.warn('findTeacherByCode error:', e);
+      } catch {
+        // Fallback
       }
     }
 
@@ -688,8 +688,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           type: 'success',
           text: `تم استخراج الألوان من الصورة بنجاح! تم استخراج (${result.palette.length}) درجات لونية متناسقة.`
         });
-      } catch (err: any) {
-        console.error('Color extraction failed:', err);
+      } catch {
         setStatusMsg({ type: 'error', text: 'تعذر استخراج الألوان من الصورة. يرجى تجربة صورة أخرى أو استخدام الباقات الجاهزة.' });
       } finally {
         setIsExtractingColors(false);

@@ -243,7 +243,6 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       setSaveMessage('تم حفظ سجل الحضور والغياب بنجاح!');
       setTimeout(() => setSaveMessage(''), 3500);
     } catch (e: any) {
-      console.error('Save attendance error:', e);
       const detail = e?.message || e?.code || '';
       setSaveMessage(`حدث خطأ أثناء الحفظ ${detail ? `(${detail})` : ''}`);
     } finally {
@@ -492,8 +491,8 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       setTemplateFormText('');
       setTemplateSaveSuccess('تم حفظ قالب الرسالة بنجاح وإدراجه ضمن قوالب النظام!');
       setTimeout(() => setTemplateSaveSuccess(null), 4000);
-    } catch (err: any) {
-      console.error('Error saving template:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsSavingTemplate(false);
     }
@@ -1572,8 +1571,8 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                         setPointsSaveSuccess(null);
                         setShowPointsSettingsModal(false);
                       }, 1500);
-                    } catch (err: any) {
-                      console.error('Save points error:', err);
+                    } catch {
+                      // Gracefully silent
                     } finally {
                       setIsSavingPoints(false);
                     }

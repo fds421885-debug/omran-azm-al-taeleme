@@ -101,8 +101,8 @@ export const TeacherManagementModal: React.FC<TeacherManagementModalProps> = ({
       try {
         const found = await OmranDataService.findTeacherByCode(cleanDigits);
         if (found) matched = found;
-      } catch (err) {
-        console.warn('TeacherManagementModal findTeacherByCode error:', err);
+      } catch {
+        // Fallback
       }
     }
 

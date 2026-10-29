@@ -94,8 +94,8 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
     setIsRefreshing(true);
     try {
       await onRefreshViolations();
-    } catch (e) {
-      console.error('Failed to refresh violations:', e);
+    } catch {
+      // Gracefully handled
     } finally {
       setIsRefreshing(false);
     }

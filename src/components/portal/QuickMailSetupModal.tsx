@@ -80,8 +80,8 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
         if (saved.updatedAt) setLastSavedAt(saved.updatedAt);
         if (saved.user && saved.pass) setIsSavedInCloud(true);
       }
-    } catch (e) {
-      console.warn('Mail config load notice:', e);
+    } catch {
+      // Gracefully silent
     }
   };
 

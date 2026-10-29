@@ -95,8 +95,8 @@ export const YouTubeAyahPlayer: React.FC<YouTubeAyahPlayerProps> = ({
         }),
         '*'
       );
-    } catch (e) {
-      console.warn('Error sending postMessage to YouTube player:', e);
+    } catch {
+      // Gracefully silent
     }
   }, []);
 

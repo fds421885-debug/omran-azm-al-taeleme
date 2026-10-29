@@ -693,7 +693,6 @@ export function App() {
         (matchedTeacher.complexId && currentUser.complexId !== matchedTeacher.complexId);
 
       if (needsUpdate) {
-        console.warn('Preserving exact teacher account session integrity for:', matchedTeacher.name);
         const safeUser = {
           username: matchedTeacher.name || matchedTeacher.username,
           role: 'admin' as const,
@@ -1713,22 +1712,6 @@ export function App() {
     }
   }, [currentUser, isSupervisor, assignedHalaqahs, activeHalaqahId, scopedHalaqahIds, scopedHalaqahs.length]);
 
-  // Real-time tab-to-tab BroadcastChannel listener for active halaqah synchronization across all tabs and devices
-  useEffect(() => {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel('omran_active_halaqah_sync');
-      bc.onmessage = (event) => {
-        if (event.data?.activeHalaqahId) {
-          targetHalaqahIdRef.current = event.data.activeHalaqahId;
-          setActiveHalaqahId(event.data.activeHalaqahId);
-        }
-      };
-      return () => {
-        try { bc.close(); } catch {}
-      };
-    }
-  }, []);
-
   // Guard programmer-only tabs: accounts/ranks and database backup are strictly for Programmer (Mohamed Montaser)
   useEffect(() => {
     if (!isDeveloper && (activeTab === 'accounts' || activeTab === 'backup')) {
@@ -2301,8 +2284,8 @@ export function App() {
           setStudents(list);
         }
       }
-    } catch (e) {
-      console.error('Trigger AI plan error:', e);
+    } catch {
+      // Gracefully silent
     }
   };
 
@@ -2777,8 +2760,7 @@ export function App() {
     try {
       setStudents(prev => [...studentsToAdd, ...prev]);
       return await OmranDataService.batchCreateStudents(studentsToAdd);
-    } catch (e) {
-      console.error('Batch add students error:', e);
+    } catch {
       return false;
     }
   };
@@ -2869,9 +2851,11 @@ export function App() {
   const handleRefreshViolations = async () => {
     try {
       const v = await OmranDataService.loadViolations();
-      setViolations(v);
-    } catch (e) {
-      console.error('Failed to load violations', e);
+      if (Array.isArray(v)) {
+        setViolations(v);
+      }
+    } catch {
+      // Gracefully silent fallback
     }
   };
 

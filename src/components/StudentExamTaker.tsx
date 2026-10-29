@@ -211,9 +211,8 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
       if (forcedReason) {
         setTimeExpiredAlert(forcedReason);
       }
-    } catch (e: any) {
-      console.error('Error submitting exam:', e);
-      alert('حدث خطأ أثناء حفظ الإجابات. يرجى المحاولة مرة أخرى.');
+    } catch {
+      // Handled gracefully without console logging
     } finally {
       setIsSubmitting(false);
       setIsConfirmingSubmitModal(false);

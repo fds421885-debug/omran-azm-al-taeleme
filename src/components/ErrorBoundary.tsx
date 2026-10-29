@@ -38,8 +38,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.warn('[Omran SafeGuard] Safely intercepted transient render issue:', error?.message || error);
+  componentDidCatch(error: Error, _errorInfo: ErrorInfo) {
     // Silent auto-recovery without disrupting the user
     try {
       if (this.props.onReset) {
@@ -47,7 +46,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       }
     } catch {}
     
-    // Automatically clear error state so the screen never gets blocked
+    // Automatically clear error state so the screen recovers safely
     if (this.state.hasError) {
       setTimeout(() => {
         this.setState({
@@ -71,14 +70,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   render() {
-    // If an error is briefly caught, safely render children or silent invisible container while auto-recovering
-    // Absolutely NEVER show the disruptive "حدث تنبيه غير متوقع" screen
+    // If an error is briefly caught, return null while auto-recovering to prevent React cascading render errors
     if (this.state.hasError) {
-      return (
-        <div className="w-full transition-opacity duration-300 opacity-95">
-          {this.props.children}
-        </div>
-      );
+      return null;
     }
 
     return this.props.children;

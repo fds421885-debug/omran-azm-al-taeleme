@@ -201,8 +201,7 @@ export const AIStudentPlacementInterview: React.FC<AIStudentPlacementInterviewPr
 
       // Start 8-second timer for question 1
       startTimerForQuestion();
-    } catch (err) {
-      console.error('Error generating diagnostic test:', err);
+    } catch {
       setIsLoadingQuestions(false);
     }
   };

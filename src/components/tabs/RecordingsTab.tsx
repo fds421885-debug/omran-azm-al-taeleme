@@ -226,8 +226,7 @@ export const RecordingsTab: React.FC<RecordingsTabProps> = ({
 
       setPointsConfigSuccess(`تم حفظ إعدادات الاستماع بنجاح! سيحصل الطالب على (${pointsVal}) نقاط عند إتمام الاستماع (${repVal}) مرات.`);
       setTimeout(() => setPointsConfigSuccess(null), 4500);
-    } catch (err: any) {
-      console.error('Error saving listening points config:', err);
+    } catch {
       setStatusMsg({ type: 'error', text: 'حدث خطأ أثناء حفظ إعدادات نقاط الاستماع.' });
     } finally {
       setIsSavingPointsConfig(false);

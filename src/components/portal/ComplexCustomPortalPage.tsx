@@ -769,8 +769,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       if (updated) {
         setTrackedApplication(updated);
       }
-    } catch (err) {
-      console.error('Error confirming student entry:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsConfirmingEntry(false);
     }

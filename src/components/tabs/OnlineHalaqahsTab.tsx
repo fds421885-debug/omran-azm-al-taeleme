@@ -173,7 +173,6 @@ export const OnlineHalaqahsTab: React.FC<OnlineHalaqahsTabProps> = ({
       setSuccessMessage(`✓ تم بنجاح التقاط رابط Google Meet الأصلي والحقيقي وحفظه سحابياً: ${extracted.url}`);
       setTimeout(() => setSuccessMessage(null), 6000);
     } catch (err: any) {
-      console.error('Error applying real meet url:', err);
       setErrorMessage(err?.message || 'تعذر حفظ الرابط سحابياً.');
     }
   };

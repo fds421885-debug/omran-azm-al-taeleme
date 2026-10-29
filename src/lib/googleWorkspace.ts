@@ -523,8 +523,8 @@ export class GoogleWorkspaceService {
         ...configToSave,
         updatedAt: new Date().toISOString()
       }, { merge: true });
-    } catch (e) {
-      console.error('Error saving google auth config to Firestore:', e);
+    } catch {
+      // Gracefully silent
     }
   }
 
@@ -1669,7 +1669,6 @@ export class GoogleWorkspaceService {
         message: `تم العثور على إجاباتك بحسابك Google بنجاح! درجتك المحصلة: ${totalScore} من ${maxPossibleScore} (${percentage}%) وتم قيدها في سجلك ولوحة الشرف فوراً!`
       };
     } catch (err: any) {
-      console.error('Error fetching Google Form score for student:', err);
       return {
         found: false,
         message: `حدث خطأ أثناء فحص النتيجة من Google Forms: ${err?.message || 'يرجى المحاولة مجدداً.'}`
@@ -2224,7 +2223,6 @@ export class GoogleWorkspaceService {
 
       return { success: true, message: 'تم تحديث نموذج Google Forms سحابياً بنجاح.' };
     } catch (e: any) {
-      console.error('Error updating Google Form:', e);
       return { success: false, message: e?.message || 'فشل الاتصال بـ Google Forms لتحديث الاختبار.' };
     }
   }
@@ -2269,8 +2267,7 @@ export class GoogleWorkspaceService {
       );
 
       return appendRes.ok;
-    } catch (e) {
-      console.error('Error syncing to Google Sheet:', e);
+    } catch {
       return false;
     }
   }

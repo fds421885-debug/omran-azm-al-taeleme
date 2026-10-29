@@ -738,7 +738,6 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         templateName: newTemplate.name
       });
     } catch (err: any) {
-      console.error('Failed to save custom template:', err);
       setBuilderError(err?.message || 'حدث خطأ أثناء حفظ النموذج.');
     } finally {
       setIsSavingTemplate(false);
@@ -815,8 +814,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         }, 4000);
       }
       setDeleteConfirmModal(null);
-    } catch (err) {
-      console.error('Delete error:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsDeletingItem(false);
     }
@@ -986,8 +985,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
       } as any);
       const { pdf, file } = await generateSinglePdfDoc(student, 0);
       pdf.save(file.name);
-    } catch (err) {
-      console.error('Failed to generate PDF:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsExporting(false);
       setExportStatusText(null);
@@ -1311,8 +1310,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }, 'image/png');
-    } catch (err) {
-      console.error('Error generating image:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsExporting(false);
       setExportStatusText(null);
@@ -1326,8 +1325,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
     try {
       const { pdf, file } = await generateSinglePdfDoc(student, index);
       pdf.save(file.name);
-    } catch (err) {
-      console.error('Failed to generate PDF:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsExporting(false);
       setExportStatusText(null);
@@ -1354,8 +1353,8 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         pdf.addImage(imgData, 'PNG', 0, 0, 297, 210, undefined, 'SLOW');
       }
       pdf.save(`شهادات_الطلاب_المجمعة_${targetStudents.length}.pdf`);
-    } catch (err) {
-      console.error('Failed to export merged PDF:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsExporting(false);
       setExportStatusText(null);
@@ -1419,8 +1418,8 @@ ${occasionText}
         `تم تنزيل ملف الشهادة (PDF: ${file.name}) إلى جهازك وفتح محادثة الواتساب؛ يمكنك الآن إرفاق ملف الـ PDF فوراً في المحادثة لولي الأمر!`
       );
       setTimeout(() => setCopiedNotification(null), 7000);
-    } catch (err) {
-      console.error('Error sharing PDF via WhatsApp:', err);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsExporting(false);
       setExportStatusText(null);

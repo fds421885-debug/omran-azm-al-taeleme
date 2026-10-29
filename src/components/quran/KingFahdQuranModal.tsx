@@ -782,7 +782,6 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
       audio.onerror = () => {
         if (activeAyahPlayTokenRef.current !== currentToken || !isPlayingAudioRef.current) return;
-        console.warn(`[QuranAudio] Error loading audio for ${surah}:${ayah}, advancing to next verse`);
         const next = getNextSequentialVerse(surah, ayah);
         if (next && isPlayingAudioRef.current) {
           setTimeout(() => {
@@ -797,14 +796,12 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
       try {
         audio.src = url;
-        audio.play().catch(err => {
+        audio.play().catch(() => {
           if (activeAyahPlayTokenRef.current !== currentToken || !isPlayingAudioRef.current) return;
-          console.warn('[QuranAudio] Playback interrupted or prevented:', err);
           stopAudioPlayback();
         });
-      } catch (err) {
+      } catch {
         if (activeAyahPlayTokenRef.current === currentToken) {
-          console.warn('[QuranAudio] Failed to set audio source:', err);
           stopAudioPlayback();
         }
       }

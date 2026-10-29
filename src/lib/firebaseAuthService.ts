@@ -158,8 +158,8 @@ export class FirebaseAuthService {
       if (auth) {
         await fbSignOut(auth);
       }
-    } catch (e) {
-      console.error('Error signing out of Firebase Auth:', e);
+    } catch {
+      // Gracefully silent
     }
   }
 }

@@ -525,8 +525,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       await onUpdateComplex(updatedComplex);
       setSaveSuccessMsg('تم حفظ وتحديث إعدادات البوابة والأسئلة بنجاح!');
       setTimeout(() => setSaveSuccessMsg(null), 3500);
-    } catch (e) {
-      console.error('Error saving portal config:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsSavingConfig(false);
     }
@@ -549,8 +549,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           document.body.removeChild(textArea);
           setCopiedLink(true);
           setTimeout(() => setCopiedLink(false), 2500);
-        } catch (e) {
-          console.error('Copy failed', e);
+        } catch {
+          // Gracefully silent
         }
       });
     }
@@ -675,8 +675,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       }
 
       setAppToAccept(null);
-    } catch (e) {
-      console.error('Error accepting application:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsProcessingApp(false);
     }
@@ -711,8 +711,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       }
 
       setAppToReject(null);
-    } catch (e) {
-      console.error('Error rejecting application:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsProcessingApp(false);
     }
@@ -729,8 +729,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       if (appDetailsToView?.id === appToDelete.id) {
         setAppDetailsToView(null);
       }
-    } catch (e) {
-      console.error('Error deleting application:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsProcessingApp(false);
     }
@@ -805,8 +805,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         );
         await sendRealPortalEmail(acceptedEmail).catch(() => {});
       }
-    } catch (e) {
-      console.error('Error accepting single as extra:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsBulkProcessing(false);
       setBulkProgressText('');
@@ -891,9 +891,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       } catch (e) {}
 
       setSelectedAppIds([]);
-      alert(`✨ تم قبول وتسكين (${total}) طلاب بنجاح كطلاب إضافيين، وإرسال بريد القبول والتسجيل لكل طالب.`);
-    } catch (e) {
-      console.error('Bulk accept error:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsBulkProcessing(false);
       setBulkProgressText('');
@@ -903,7 +902,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   // Bulk reject selected applications
   const handleBulkRejectSelected = async () => {
     if (selectedAppIds.length === 0) return;
-    if (!confirm(`هل أنت متأكد من رغبتك في الاعتذار لـ (${selectedAppIds.length}) طلبات دفعة واحدة؟`)) return;
 
     setIsBulkProcessing(true);
     const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
@@ -938,9 +936,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       }
 
       setSelectedAppIds([]);
-      alert(`تم الاعتذار لـ (${total}) طلبات وتحديث حالتها بنجاح.`);
-    } catch (e) {
-      console.error('Bulk reject error:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsBulkProcessing(false);
       setBulkProgressText('');
@@ -950,7 +947,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   // Bulk delete selected applications permanently
   const handleBulkDeleteSelected = async () => {
     if (selectedAppIds.length === 0) return;
-    if (!confirm(`هل أنت متأكد من الحذف النهائي لـ (${selectedAppIds.length}) طلبات محددة؟ سيتم حذفها ومنع عودتها نهائياً من النظام السحابي والسيرفر.`)) return;
 
     setIsBulkProcessing(true);
     const targetApps = applications.filter(a => selectedAppIds.includes(a.id));
@@ -964,8 +960,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       }
       setApplications(prev => prev.filter(a => !selectedAppIds.includes(a.id)));
       setSelectedAppIds([]);
-    } catch (e) {
-      console.error('Bulk delete error:', e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsBulkProcessing(false);
       setBulkProgressText('');

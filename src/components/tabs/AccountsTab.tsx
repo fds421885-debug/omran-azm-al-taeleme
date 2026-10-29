@@ -690,7 +690,6 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
         text: `تم فصل حساب Google (${student.googleEmail || ''}) عن الطالب (${student.name}) بنجاح!`
       });
     } catch (e: any) {
-      console.error('Unlink student Google error:', e);
       setStatusMsg({ type: 'error', text: 'فشل فصل حساب Google: ' + (e?.message || String(e)) });
     } finally {
       setUnlinkingStudentId(null);

@@ -38,8 +38,8 @@ export const UnassignedStudentView: React.FC<UnassignedStudentViewProps> = ({
       await onRefresh();
       setRefreshedOnce(true);
       setTimeout(() => setRefreshedOnce(false), 3000);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // Gracefully silent
     } finally {
       setIsRefreshing(false);
     }

@@ -382,7 +382,6 @@ export const ComplexMigrationModal: React.FC<ComplexMigrationModalProps> = ({
       } catch (e) {}
 
     } catch (err: any) {
-      console.error('Migration error:', err);
       setMigrationPhase('error');
       setErrorMessage(err?.message || 'حدث خطأ أثناء نقل البيانات وترحيلها إلى قاعدة البيانات المستهدفة.');
     }

@@ -1,5 +1,4 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAnalytics, isSupported } from 'firebase/analytics';
 import { getAuth } from 'firebase/auth';
 import {
   Firestore,
@@ -77,22 +76,6 @@ export const db = (() => {
 })();
 export const auth = getAuth(app);
 
-// Safe Analytics Initialization
-export let analytics: ReturnType<typeof getAnalytics> | null = null;
-if (typeof window !== 'undefined') {
-  isSupported()
-    .then((supported) => {
-      if (supported) {
-        try {
-          analytics = getAnalytics(app);
-        } catch {
-          // Handled gracefully in iframe or restricted environment
-        }
-      }
-    })
-    .catch(() => {});
-}
-
 export const DEFAULT_RECORDINGS_CONFIG: RecordingsConfig = {
   isPublishedToStudents: true,
   dailyRepetitionTarget: 3,
@@ -151,10 +134,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  // Avoid flooding console with offline notices
-  if (!errMsg.includes('client is offline') && !errMsg.includes('unavailable')) {
-    console.warn(`[Firestore ${operationType} at ${path || 'unknown'}]:`, errMsg);
-  }
+  // Avoid flooding console with offline notices or normal fallback messages
   return errInfo;
 }
 
@@ -162,15 +142,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function safeGetDocs(colRef: any, timeoutMs = 20000): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
   try {
     const fetchPromise = getDocs(colRef);
+    // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
+    fetchPromise.catch(() => {});
     const timeoutPromise = new Promise<{ docs: any[]; empty: boolean; forEach: (fn: any) => void }>((resolve) =>
       setTimeout(() => resolve({ docs: [], empty: true, forEach: () => {} }), timeoutMs)
     );
     return await Promise.race([fetchPromise, timeoutPromise]);
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    if (!errMsg.includes('client is offline') && !errMsg.includes('unavailable')) {
-      console.warn('[OmranDataService] safeGetDocs notice:', errMsg);
-    }
+  } catch {
     return { docs: [], empty: true, forEach: () => {} };
   }
 }
@@ -178,11 +156,13 @@ export async function safeGetDocs(colRef: any, timeoutMs = 20000): Promise<{ doc
 export async function safeGetDoc(docRef: any, timeoutMs = 20000): Promise<{ exists: () => boolean; data: () => any }> {
   try {
     const fetchPromise = getDoc(docRef);
+    // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
+    fetchPromise.catch(() => {});
     const timeoutPromise = new Promise<{ exists: () => boolean; data: () => any }>((resolve) =>
       setTimeout(() => resolve({ exists: () => false, data: () => null }), timeoutMs)
     );
     return await Promise.race([fetchPromise, timeoutPromise]);
-  } catch (err) {
+  } catch {
     return { exists: () => false, data: () => null };
   }
 }
