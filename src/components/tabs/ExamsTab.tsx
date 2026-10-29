@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText,
   Plus,
@@ -151,7 +151,31 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [selectedExamForSubmissions, setSelectedExamForSubmissions] = useState<string>('all');
   const [filterHalaqah, setFilterHalaqah] = useState<string>('all');
+  const [isHalaqahDropdownOpen, setIsHalaqahDropdownOpen] = useState(false);
+  const halaqahDropdownRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!isHalaqahDropdownOpen) return;
+    const handlePointerDownOutside = (event: MouseEvent | TouchEvent) => {
+      if (halaqahDropdownRef.current && !halaqahDropdownRef.current.contains(event.target as Node)) {
+        setIsHalaqahDropdownOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsHalaqahDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDownOutside);
+    document.addEventListener('touchstart', handlePointerDownOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDownOutside);
+      document.removeEventListener('touchstart', handlePointerDownOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isHalaqahDropdownOpen]);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingSheets, setIsExportingSheets] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string; linkUrl?: string } | null>(null);
@@ -936,16 +960,11 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div
-              className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border-2 border-b-2 text-xs font-black mb-2"
-              style={{
-                backgroundColor: `${themeAccent}20`,
-                color: themeAccent,
-                borderColor: `${themeAccent}50`
-              }}
-            >
-              <Sparkles className="w-3.5 h-3.5" style={{ color: themeAccent }} />
-              <span>نظام الاختبارات والتقييمات المتكامل • {activeComplex?.name || 'المنظومة القرآنية'}</span>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-t-[var(--complex-accent,#ffc800)] border-x-[var(--complex-accent,#ffc800)] border-b-[var(--complex-accent-shadow,#e5a500)] text-xs font-black mb-2.5 shadow-md select-none transition-all">
+              <Sparkles className="w-3.5 h-3.5 shrink-0 text-[var(--complex-accent,#ffc800)]" />
+              <span className="text-[var(--complex-accent,#ffc800)] font-black tracking-tight">
+                نظام الاختبارات والتقييمات المتكامل • {activeComplex?.name || 'المنظومة القرآنية'}
+              </span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black font-heading text-white flex items-center gap-2">
               منظومة الاختبارات والتقييمات القرآنية السحابية
@@ -1103,48 +1122,107 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
       {activeSubTab === 'exams' && (
         <div className="space-y-4">
           {/* Filter & Search Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#022c22]/80 border border-[#065f46] p-4 rounded-2xl">
+          <div className="relative z-20 flex flex-col sm:flex-row items-center justify-between gap-3.5 bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-secondary-shadow,#122026)] p-4 rounded-[24px] shadow-lg transition-all">
             <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3.5" />
+              <Search className="w-4 h-4 text-[var(--complex-accent,#ffc800)] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
               <input
                 type="text"
                 placeholder="بحث باسم الاختبار أو الوصف..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-4 pr-10 py-2 rounded-xl bg-[#064e3b]/60 border border-[#065f46] text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none"
+                className="duo-complex-input w-full pl-4 pr-10 py-2.5 rounded-2xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-card-shadow,#16262e)] text-[var(--complex-text,#ffffff)] text-xs sm:text-sm font-extrabold focus:outline-none transition-all shadow-sm"
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <span className="text-xs text-emerald-200 font-bold shrink-0">تصفية الحلقة:</span>
-              <select
-                value={filterHalaqah}
-                onChange={e => setFilterHalaqah(e.target.value)}
-                className="text-xs text-emerald-100 bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3 py-2 focus:border-[#fbbf24] focus:outline-none cursor-pointer"
-              >
-                <option value="all">جميع الحلقات</option>
-                {halaqahs.map(h => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <span className="text-xs font-black text-[var(--complex-accent,#ffc800)] bg-[var(--complex-card,#203843)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-card-shadow,#16262e)] px-3 py-2 rounded-xl inline-flex items-center gap-1.5 shrink-0 shadow-sm select-none">
+                <Filter className="w-3.5 h-3.5 text-[var(--complex-accent,#ffc800)]" />
+                تصفية الحلقة:
+              </span>
+              <div ref={halaqahDropdownRef} className="relative flex-1 sm:flex-initial min-w-[165px]">
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={isHalaqahDropdownOpen}
+                  onClick={() => setIsHalaqahDropdownOpen(prev => !prev)}
+                  className={`w-full inline-flex items-center justify-between gap-2.5 text-xs sm:text-sm font-black rounded-2xl border-2 border-b-4 px-3.5 py-2 focus:outline-none transition-all cursor-pointer shadow-sm active:translate-y-0.5 hover:brightness-105 ${
+                    filterHalaqah !== 'all'
+                      ? 'bg-[var(--complex-accent,#ffc800)] text-[var(--complex-accent-text,#131f24)] border-t-[var(--complex-accent,#ffc800)] border-x-[var(--complex-accent,#ffc800)] border-b-[var(--complex-accent-shadow,#e5a500)]'
+                      : isHalaqahDropdownOpen
+                        ? 'bg-[var(--complex-card,#203843)] text-[var(--complex-text,#ffffff)] border-t-[var(--complex-accent,#ffc800)] border-x-[var(--complex-accent,#ffc800)] border-b-[var(--complex-accent-shadow,#e5a500)]'
+                        : 'bg-[var(--complex-card,#203843)] text-[var(--complex-text,#ffffff)] border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-card-shadow,#16262e)] hover:border-t-[var(--complex-accent,#ffc800)] hover:border-x-[var(--complex-accent,#ffc800)] hover:border-b-[var(--complex-accent-shadow,#e5a500)]'
+                  }`}
+                >
+                  <span className="truncate">
+                    {filterHalaqah === 'all'
+                      ? 'جميع الحلقات'
+                      : halaqahs.find(h => h.id === filterHalaqah)?.name || 'جميع الحلقات'}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                      isHalaqahDropdownOpen ? 'rotate-180' : ''
+                    } ${
+                      filterHalaqah !== 'all'
+                        ? 'text-[var(--complex-accent-text,#131f24)]'
+                        : 'text-[var(--complex-accent,#ffc800)]'
+                    }`}
+                  />
+                </button>
+
+                {isHalaqahDropdownOpen && (
+                  <div
+                    role="listbox"
+                    className="absolute left-0 right-0 sm:right-auto sm:min-w-[220px] top-[calc(100%+8px)] z-50 rounded-[22px] bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-secondary-shadow,#122026)] p-2 shadow-2xl space-y-1.5 max-h-72 overflow-y-auto custom-scrollbar"
+                  >
+                    {[
+                      { id: 'all', name: 'جميع الحلقات' },
+                      ...halaqahs.map(h => ({ id: h.id, name: h.name }))
+                    ].map(option => {
+                      const isSelected = filterHalaqah === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            setFilterHalaqah(option.id);
+                            setIsHalaqahDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-black border-2 border-b-4 transition-all cursor-pointer text-right active:translate-y-0.5 ${
+                            isSelected
+                              ? 'bg-[var(--complex-accent,#ffc800)] text-[var(--complex-accent-text,#131f24)] border-t-[var(--complex-accent,#ffc800)] border-x-[var(--complex-accent,#ffc800)] border-b-[var(--complex-accent-shadow,#e5a500)] shadow-md'
+                              : 'bg-[var(--complex-card,#203843)] text-[var(--complex-text,#ffffff)] border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-card-shadow,#16262e)] hover:border-t-[var(--complex-accent,#ffc800)] hover:border-x-[var(--complex-accent,#ffc800)] hover:border-b-[var(--complex-accent-shadow,#e5a500)] hover:brightness-110'
+                          }`}
+                        >
+                          <span className="truncate">{option.name}</span>
+                          {isSelected && (
+                            <Check className="w-4 h-4 shrink-0 stroke-[3] text-[var(--complex-accent-text,#131f24)]" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Exams Grid */}
           {filteredExams.length === 0 ? (
-            <div className="text-center py-16 px-4 rounded-3xl bg-[#022c22]/50 border border-[#065f46] space-y-3">
-              <FileText className="w-14 h-14 text-emerald-500/40 mx-auto" />
-              <h3 className="text-base font-bold text-white">لا توجد اختبارات مسجلة حالياً</h3>
-              <p className="text-xs text-emerald-200/70 max-w-sm mx-auto">
+            <div className="text-center py-14 px-6 rounded-[28px] bg-[var(--complex-secondary,#1b2e35)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-secondary-shadow,#122026)] shadow-xl space-y-4 transition-all select-none">
+              <FileText className="w-16 h-16 p-3.5 rounded-2xl bg-[var(--complex-card,#203843)] border-2 border-b-4 border-t-[var(--complex-border,#2b4550)] border-x-[var(--complex-border,#2b4550)] border-b-[var(--complex-card-shadow,#16262e)] text-[var(--complex-accent,#ffc800)] mx-auto shadow-md" />
+              <h3 className="text-lg sm:text-xl font-black font-heading text-[var(--complex-text,#ffffff)]">
+                لا توجد اختبارات مسجلة حالياً
+              </h3>
+              <p className="text-xs sm:text-sm font-bold text-slate-200 max-w-md mx-auto leading-relaxed">
                 قم بالضغط على زر "إنشاء اختبار جديد" لإعداد اختبار إلكتروني تفاعلي للطلاب في المنصة.
               </p>
               <button
                 onClick={() => handleOpenCreateModal()}
-                className="px-5 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-lg"
+                className="px-6 py-3 rounded-2xl bg-[var(--complex-accent,#ffc800)] text-[var(--complex-accent-text,#131f24)] border-2 border-b-4 border-t-[var(--complex-accent,#ffc800)] border-x-[var(--complex-accent,#ffc800)] border-b-[var(--complex-accent-shadow,#e5a500)] font-black text-xs sm:text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-all active:translate-y-0.5 hover:brightness-110"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 stroke-[2.6]" />
                 <span>إنشاء اختبار الآن</span>
               </button>
             </div>

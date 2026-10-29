@@ -2026,19 +2026,19 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-right text-xs">
+                      <div className="duo-complex-att-table-wrap overflow-x-auto">
+                        <table className="duo-complex-att-table w-full text-right text-xs">
                           <thead>
-                            <tr className="border-b border-[#065f46] text-[#86efac]">
-                              <th className="p-2.5 font-bold">المعلم</th>
-                              <th className="p-2.5 font-bold text-center">الحالة</th>
-                              <th className="p-2.5 font-bold text-center">ساعة الحضور</th>
-                              <th className="p-2.5 font-bold text-center">ساعة الانصراف</th>
-                              <th className="p-2.5 font-bold">ملاحظات</th>
-                              <th className="p-2.5 font-bold text-left">إجراءات المشرف</th>
+                            <tr>
+                              <th className="px-3.5 py-3.5 font-black text-right">المعلم</th>
+                              <th className="px-3.5 py-3.5 font-black text-center">الحالة</th>
+                              <th className="px-3.5 py-3.5 font-black text-center">ساعة الحضور</th>
+                              <th className="px-3.5 py-3.5 font-black text-center">ساعة الانصراف</th>
+                              <th className="px-3.5 py-3.5 font-black text-right">ملاحظات</th>
+                              <th className="px-3.5 py-3.5 font-black text-left">إجراءات المشرف</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-[#065f46]/40">
+                          <tbody>
                             {assignedTeachersList.map(teacher => {
                               const recId = `tatt_${selectedDate}_${shift.id}_${teacher.id}`;
                               const record = attendanceRecords.find(r => r.id === recId);
@@ -2051,49 +2051,69 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                   key={teacher.id}
                                   id={`teacher-att-item-${teacher.id}`}
                                   data-item-id={teacher.id}
-                                  className="hover:bg-[#064e3b]/30 transition-colors"
+                                  className="transition-colors"
                                 >
-                                  <td className="p-2.5 font-bold text-white">
+                                  <td className="px-3.5 py-3 font-black text-white whitespace-nowrap">
                                     {teacher.name}
                                   </td>
-                                  <td className="p-2.5 text-center">
+                                  <td className="px-3.5 py-3 text-center whitespace-nowrap">
                                     <span
-                                      className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                                      className={`duo-att-chip text-[11px] ${
                                         status === 'حاضر'
                                           ? dynamicInfo.didNotCheckOut
-                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                            ? 'duo-att-chip-accent'
+                                            : 'bg-[#58cc02]/15 text-[#89e219] border-[#58cc02] border-b-[#46a302]'
                                           : status === 'متأخر'
-                                          ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+                                          ? 'bg-[#ff9600]/15 text-[#ffb84d] border-[#ff9600] border-b-[#e68300]'
                                           : status === 'معتذر'
-                                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                                          ? 'duo-att-chip-accent'
                                           : status === 'غائب'
-                                          ? 'bg-red-500/20 text-red-300 border border-red-500/40'
-                                          : 'bg-gray-800 text-gray-300'
+                                          ? 'bg-[#ff4b4b]/15 text-[#ff8787] border-[#ff4b4b] border-b-[#ea2b2b]'
+                                          : 'duo-att-chip-empty'
                                       }`}
                                     >
                                       {displayStatus}
                                     </span>
                                   </td>
-                                  <td className="p-2.5 text-center font-mono font-bold text-amber-300">
-                                    {record?.checkInTime || '-'}
+                                  <td className="px-3.5 py-3 text-center font-mono font-black whitespace-nowrap">
+                                    {record?.checkInTime ? (
+                                      <span className="duo-att-chip duo-att-chip-accent text-xs">
+                                        {record.checkInTime}
+                                      </span>
+                                    ) : (
+                                      <span className="duo-att-chip duo-att-chip-empty min-w-[2.75rem] text-xs">
+                                        —
+                                      </span>
+                                    )}
                                   </td>
-                                  <td className="p-2.5 text-center font-mono font-bold">
+                                  <td className="px-3.5 py-3 text-center font-mono font-black whitespace-nowrap">
                                     {record?.checkOutTime ? (
-                                      <span className="text-blue-300">{record.checkOutTime}</span>
+                                      <span className="duo-att-chip duo-att-chip-checkout text-xs">
+                                        {record.checkOutTime}
+                                      </span>
                                     ) : dynamicInfo.didNotCheckOut ? (
-                                      <span className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/30">
+                                      <span className="duo-att-chip duo-att-chip-accent text-[11px] font-sans">
                                         لم ينصرف
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400">-</span>
+                                      <span className="duo-att-chip duo-att-chip-empty min-w-[2.75rem] text-xs">
+                                        —
+                                      </span>
                                     )}
                                   </td>
-                                  <td className="p-2.5 text-emerald-200/80 text-[11px]">
-                                    {record?.note || '-'}
+                                  <td className="px-3.5 py-3 text-right">
+                                    {record?.note ? (
+                                      <span className="duo-att-chip duo-att-chip-note text-[11px] justify-start text-right">
+                                        {record.note}
+                                      </span>
+                                    ) : (
+                                      <span className="duo-att-chip duo-att-chip-empty min-w-[2.75rem] text-xs">
+                                        —
+                                      </span>
+                                    )}
                                   </td>
-                                  <td className="p-2.5 text-left">
-                                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                  <td className="px-3.5 py-3 text-left">
+                                    <div className="duo-att-actions-dock inline-flex items-center justify-end gap-1.5 flex-wrap">
                                       {/* Quick Check-in */}
                                       <button
                                         type="button"
@@ -2107,7 +2127,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           setCustomTime(formatCurrentArabicTime());
                                           setActionNote('');
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-emerald-700/60 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer"
+                                        className={`duo-att-action-btn duo-att-action-btn--checkin cursor-pointer ${
+                                          status === 'حاضر' ? 'is-selected' : ''
+                                        }`}
                                       >
                                         تحضير
                                       </button>
@@ -2125,7 +2147,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           setCustomTime(formatCurrentArabicTime());
                                           setActionNote('حضور متأخر');
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-orange-700/60 hover:bg-orange-700 text-white text-[10px] font-bold cursor-pointer"
+                                        className={`duo-att-action-btn duo-att-action-btn--late cursor-pointer ${
+                                          status === 'متأخر' ? 'is-selected' : ''
+                                        }`}
                                       >
                                         متأخر
                                       </button>
@@ -2143,7 +2167,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           setCustomTime(formatCurrentArabicTime());
                                           setActionNote('');
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-blue-700/60 hover:bg-blue-700 text-white text-[10px] font-bold cursor-pointer"
+                                        className={`duo-att-action-btn duo-att-action-btn--checkout cursor-pointer ${
+                                          record?.checkOutTime ? 'is-selected' : ''
+                                        }`}
                                       >
                                         انصراف
                                       </button>
@@ -2161,7 +2187,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           setCustomTime('');
                                           setActionNote('عذر مسبق معتمد من الإدارة');
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-amber-600/50 hover:bg-amber-600 text-amber-200 text-[10px] font-bold cursor-pointer"
+                                        className={`duo-att-action-btn duo-att-action-btn--excuse cursor-pointer ${
+                                          status === 'معتذر' ? 'is-selected' : ''
+                                        }`}
                                       >
                                         عذر
                                       </button>
@@ -2179,7 +2207,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           setCustomTime('');
                                           setActionNote('غياب دون إشعار');
                                         }}
-                                        className="px-2 py-1 rounded-lg bg-red-800/50 hover:bg-red-800 text-red-200 text-[10px] font-bold cursor-pointer"
+                                        className={`duo-att-action-btn duo-att-action-btn--absent cursor-pointer ${
+                                          status === 'غائب' ? 'is-selected' : ''
+                                        }`}
                                       >
                                         غياب
                                       </button>
@@ -2190,7 +2220,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                           type="button"
                                           title="إلغاء التحضير / إعادة تعيين"
                                           onClick={() => handleResetRecord(shift, teacher.id)}
-                                          className="p-1 rounded-lg text-gray-400 hover:text-red-400 cursor-pointer"
+                                          className="duo-att-action-btn duo-att-action-btn--reset cursor-pointer"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
