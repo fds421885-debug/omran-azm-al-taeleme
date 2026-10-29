@@ -69,14 +69,30 @@ export interface IslamicThemePreset {
   colors: ComplexThemeConfig;
 }
 
+export const GOOGLE_THEME_CONFIG: ComplexThemeConfig = {
+  primaryColor: '#101a24',
+  secondaryColor: '#1a2936',
+  accentColor: '#4285F4',
+  backgroundColor: '#0c141c',
+  surfaceColor: 'rgba(26, 41, 54, 0.85)',
+  cardColor: '#1f3342',
+  textColor: '#ffffff'
+};
+
 /**
- * 10 Master Islamic Palettes with mathematically verified contrast separation:
+ * 11 Master Islamic & Duolingo Palettes with mathematically verified contrast separation:
  * - Canvas Background is dark & immersive
  * - Card/Secondary has visible elevation (+18% to +25%) so cards & headers NEVER blend into the background
  * - Accent is vibrant jewel/gold with glowing contrast
  * - Buttons are guaranteed high-contrast (never match background)
  */
 export const ISLAMIC_THEME_PRESETS: IslamicThemePreset[] = [
+  {
+    id: 'google_colors',
+    name: 'ثيم وألوان جوجل (Google Colors)',
+    subtitle: 'ألوان جوجل الرسمية الأربعة (الأزرق #4285F4، الأخضر #34A853، الأصفر #FBBC05، والأحمر #EA4335) وثيم دولينجو',
+    colors: GOOGLE_THEME_CONFIG
+  },
   {
     id: 'duo_green',
     name: 'ثيم دولينجو الأخضر القياسي',

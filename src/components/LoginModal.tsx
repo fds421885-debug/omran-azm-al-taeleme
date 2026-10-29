@@ -543,7 +543,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 type="button"
                 onClick={handleGoogleUnifiedLogin}
                 disabled={isGoogleSigningIn}
-                className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-800 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 border-b-4 border-slate-300 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer disabled:opacity-60"
+                className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-900 font-black text-xs sm:text-sm flex items-center justify-center gap-2.5 border-2 border-slate-200 border-b-4 border-b-[#4285F4] active:translate-y-[2px] active:border-b-2 shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-60 font-heading"
               >
                 {isGoogleSigningIn ? (
                   <div className="flex items-center gap-2 text-slate-600">
