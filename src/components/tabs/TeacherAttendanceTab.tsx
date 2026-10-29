@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
@@ -26,7 +27,10 @@ import {
   Eye,
   Globe,
   Laptop,
-  FolderArchive
+  FolderArchive,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { MosqueLocationMapModal } from '../MosqueLocationMapModal';
 import {
@@ -121,6 +125,174 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 
   // Selected date for supervisor attendance records (default: today)
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
+  const datePickerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const parseIsoDateLocal = (isoStr: string): Date => {
+    const parts = (isoStr || '').split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  };
+
+  const formatLocalIsoDate = (dateObj: Date): string => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const [pickerMonthDate, setPickerMonthDate] = useState<Date>(() => {
+    const initial = parseIsoDateLocal(todayStr);
+    return new Date(initial.getFullYear(), initial.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    const parsed = parseIsoDateLocal(selectedDate);
+    setPickerMonthDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (
+        datePickerContainerRef.current &&
+        !datePickerContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsDatePickerOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDatePickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDatePickerOpen]);
+
+  const ARABIC_WEEKDAYS_FULL = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const ARABIC_WEEKDAYS_SHORT = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+  const ARABIC_GREGORIAN_MONTHS = [
+    'يناير',
+    'فبراير',
+    'مارس',
+    'أبريل',
+    'مايو',
+    'يونيو',
+    'يوليو',
+    'أغسطس',
+    'سبتمبر',
+    'أكتوبر',
+    'نوفمبر',
+    'ديسمبر'
+  ];
+
+  const selectedDateDisplay = useMemo(() => {
+    const d = parseIsoDateLocal(selectedDate);
+    const weekday = ARABIC_WEEKDAYS_FULL[d.getDay()] || '';
+    const monthName = ARABIC_GREGORIAN_MONTHS[d.getMonth()] || '';
+    let hijriStr = '';
+    try {
+      hijriStr = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(d);
+    } catch {
+      hijriStr = '';
+    }
+    return {
+      weekday,
+      dayNum: d.getDate(),
+      monthName,
+      yearNum: d.getFullYear(),
+      shortLabel: `${weekday} • ${d.getDate()} ${monthName} ${d.getFullYear()}`,
+      hijriStr
+    };
+  }, [selectedDate]);
+
+  const pickerMonthHeader = useMemo(() => {
+    const monthName = ARABIC_GREGORIAN_MONTHS[pickerMonthDate.getMonth()] || '';
+    const yearNum = pickerMonthDate.getFullYear();
+    let hijriMonthYear = '';
+    try {
+      hijriMonthYear = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        month: 'long',
+        year: 'numeric'
+      }).format(new Date(yearNum, pickerMonthDate.getMonth(), 15));
+    } catch {
+      hijriMonthYear = '';
+    }
+    return { monthName, yearNum, hijriMonthYear };
+  }, [pickerMonthDate]);
+
+  const pickerCalendarCells = useMemo(() => {
+    const year = pickerMonthDate.getFullYear();
+    const month = pickerMonthDate.getMonth();
+    const firstDayWeekday = new Date(year, month, 1).getDay(); // 0 = Sunday
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const cells: Array<{
+      iso: string;
+      day: number;
+      inCurrentMonth: boolean;
+    }> = [];
+
+    // Leading days from previous month
+    for (let i = firstDayWeekday - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      const dObj = new Date(year, month - 1, dayNum);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: dayNum,
+        inCurrentMonth: false
+      });
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dObj = new Date(year, month, d);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: d,
+        inCurrentMonth: true
+      });
+    }
+
+    // Trailing days from next month to complete full rows of 7
+    const totalTarget = cells.length <= 35 ? 35 : 42;
+    let nextDay = 1;
+    while (cells.length < totalTarget) {
+      const dObj = new Date(year, month + 1, nextDay++);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: dObj.getDate(),
+        inCurrentMonth: false
+      });
+    }
+
+    return cells;
+  }, [pickerMonthDate]);
+
+  const handleStepSelectedDate = (deltaDays: number) => {
+    const current = parseIsoDateLocal(selectedDate);
+    current.setDate(current.getDate() + deltaDays);
+    setSelectedDate(formatLocalIsoDate(current));
+  };
+
+  const yesterdayStr = useMemo(() => {
+    const d = parseIsoDateLocal(todayStr);
+    d.setDate(d.getDate() - 1);
+    return formatLocalIsoDate(d);
+  }, [todayStr]);
 
   // Active view mode: 'records' | 'shifts' | 'mosques' | 'self'
   const [activeSubTab, setActiveSubTab] = useState<'records' | 'shifts' | 'mosques' | 'self'>(
@@ -189,6 +361,11 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
   const [isAddingNewMosqueInShift, setIsAddingNewMosqueInShift] = useState(false);
   const [newMosqueNameInShift, setNewMosqueNameInShift] = useState('');
+  const [isMosqueSelectOpen, setIsMosqueSelectOpen] = useState(false);
+  const [activeShiftTimeField, setActiveShiftTimeField] = useState<
+    'checkInStart' | 'checkInEnd' | 'checkOutStart' | 'checkOutEnd' | null
+  >(null);
+  const [shiftModalTeacherSearch, setShiftModalTeacherSearch] = useState('');
   const [shiftForm, setShiftForm] = useState<{
     name: string;
     mosqueId: string;
@@ -252,6 +429,33 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
     const h = parseInt(parts[0], 10) || 0;
     const m = parseInt(parts[1], 10) || 0;
     return h * 60 + m;
+  };
+
+  // Helpers for Custom Duolingo 3D Time Picker ("HH:mm" <-> 12-hour Arabic parts)
+  const parse24hTimeParts = (hhmm?: string) => {
+    const fallback = (hhmm || '15:30').trim();
+    const parts = fallback.split(':');
+    const rawH = Math.min(23, Math.max(0, parseInt(parts[0], 10) || 0));
+    const rawM = Math.min(59, Math.max(0, parseInt(parts[1], 10) || 0));
+    const isPM = rawH >= 12;
+    const hour12 = rawH % 12 || 12;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return {
+      hour24: rawH,
+      hour12,
+      minute: rawM,
+      isPM,
+      formatted: `${pad(hour12)}:${pad(rawM)} ${isPM ? 'م' : 'ص'}`
+    };
+  };
+
+  const build24hTimeFromParts = (hour12: number, minute: number, isPM: boolean): string => {
+    const cleanH12 = ((hour12 - 1) % 12) + 1;
+    const cleanM = Math.min(59, Math.max(0, minute));
+    let h24 = cleanH12 % 12;
+    if (isPM) h24 += 12;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(h24)}:${pad(cleanM)}`;
   };
 
   // Initial Data Load
@@ -491,8 +695,11 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
     setEditingShiftId(null);
     setIsAddingNewMosqueInShift(mosques.length === 0);
     setNewMosqueNameInShift('');
+    setIsMosqueSelectOpen(false);
+    setActiveShiftTimeField(null);
+    setShiftModalTeacherSearch('');
     setShiftForm({
-      name: 'الفترة العصرية',
+      name: 'الفترة العصرية الرسمية',
       mosqueId: mosques[0]?.id || '',
       checkInStart: '15:30',
       checkInEnd: '16:00',
@@ -508,6 +715,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
     setEditingShiftId(shift.id);
     setIsAddingNewMosqueInShift(false);
     setNewMosqueNameInShift('');
+    setIsMosqueSelectOpen(false);
+    setActiveShiftTimeField(null);
+    setShiftModalTeacherSearch('');
     setShiftForm({
       name: shift.name,
       mosqueId: shift.mosqueId || mosques[0]?.id || '',
@@ -1492,7 +1702,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                   setIsSavingToLibrary(false);
                 }
               }}
-              className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 bg-[#58cc02] hover:bg-[#61e002] text-white border-2 border-b-4 border-[#46a302] active:translate-y-0.5 disabled:opacity-60"
+              className="duo-complex-secondary-btn text-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
             >
               {isSavingToLibrary ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1509,74 +1719,92 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 1: TEACHER SELF ATTENDANCE (واجهة المعلم للتحضير الذاتي)        */}
       {/* ===================================================================== */}
       {(activeSubTab === 'self' || !isSupervisorOrDev) && (
-        <div
-          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
-          style={{
-            backgroundColor: themeCard,
-            borderColor: themeBorder,
-            borderBottomColor: themeBorderBottom
-          }}
-        >
+        <div className="duo-complex-records-shell p-6 sm:p-8 space-y-6 transition-all">
+          {/* Header Row */}
           <div
-            className="pb-4 flex items-center justify-between gap-3 flex-wrap border-b"
+            className="pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2"
             style={{ borderColor: themeBorder }}
           >
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Navigation className="w-5 h-5" style={{ color: themeAccent }} />
-                <span>تحضير الحضور والانصراف اليومي</span>
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5 font-bold">
-                تاريخ اليوم: {todayStr} • المعلم: <strong style={{ color: themeAccent }}>{currentTeacher?.name || currentUserName || 'المعلم'}</strong>
-              </p>
+            <div className="flex items-center gap-3.5">
+              <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center shrink-0">
+                <Navigation className="w-6 h-6" />
+              </div>
+              <div>
+                <h3
+                  className="text-base sm:text-lg font-black font-heading flex items-center gap-2"
+                  style={{ color: themeText }}
+                >
+                  <span>تحضير الحضور والانصراف اليومي</span>
+                </h3>
+                <p className="duo-complex-subtext text-xs mt-0.5 font-bold">
+                  تاريخ اليوم: <span className="font-mono">{todayStr}</span> • المعلم:{' '}
+                  <strong style={{ color: themeAccent }}>
+                    {currentTeacher?.name || currentUserName || 'المعلم'}
+                  </strong>
+                </p>
+              </div>
             </div>
-            <span
-              className="text-xs px-3 py-1 rounded-full font-bold border"
-              style={{
-                backgroundColor: themeSecondary,
-                color: themeSubtext,
-                borderColor: themeBorder
-              }}
-            >
-              النطاق المسموح: 1 كم من الجامع
-            </span>
+
+            {(() => {
+              const firstInPersonShift = myAssignedShifts.find(s => !isShiftRemote(s));
+              const activeMosqueForBadge = firstInPersonShift
+                ? mosques.find(m => m.id === firstInPersonShift.mosqueId) || mosques[0]
+                : mosques[0];
+              const radiusM = activeMosqueForBadge?.allowedRadiusMeters || 100;
+              const radiusFormatted =
+                radiusM >= 1000 && radiusM % 1000 === 0
+                  ? `${radiusM / 1000} كم`
+                  : radiusM >= 1000
+                  ? `${(radiusM / 1000).toFixed(1)} كم`
+                  : `${radiusM} متر`;
+
+              return (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {myAssignedShifts.length > 0 && myAssignedShifts.every(s => isShiftRemote(s)) ? (
+                    <span className="duo-complex-shift-count-badge text-xs inline-flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>دوام عن بعد (أونلاين)</span>
+                    </span>
+                  ) : (
+                    <span className="duo-complex-shift-count-badge text-xs inline-flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>النطاق المسموح: {radiusFormatted} من الجامع</span>
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Feedback Banner */}
           {checkInFeedback && (
             <div
-              className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 animate-fadeIn border-2 border-b-4 ${
-                checkInFeedback.type === 'success'
-                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
-                  : 'bg-red-500/20 border-red-500/50 text-red-200'
-              }`}
+              className={`duo-complex-self-notice ${
+                checkInFeedback.type === 'error' ? 'duo-complex-self-notice--ended' : ''
+              } text-xs sm:text-sm flex items-center gap-2.5 animate-fadeIn`}
             >
               {checkInFeedback.type === 'success' ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
               ) : (
-                <AlertCircle className="w-5 h-5 text-red-300 shrink-0" />
+                <AlertCircle className="w-5 h-5 shrink-0" />
               )}
               <span>{checkInFeedback.text}</span>
             </div>
           )}
 
           {myAssignedShifts.length === 0 ? (
-            <div
-              className="p-8 text-center text-xs border-2 border-dashed rounded-3xl space-y-4"
-              style={{
-                backgroundColor: themeSecondary,
-                borderColor: themeBorder,
-                color: themeSubtext
-              }}
-            >
-              <p className="text-sm font-bold text-white">لا توجد فترات دوام مسندة إليك حالياً في هذا المجمع ({activeComplex?.name || 'المجمع'}).</p>
+            <div className="duo-complex-empty-box p-8 text-center text-xs space-y-4">
+              <p className="text-sm font-black" style={{ color: themeText }}>
+                لا توجد فترات دوام مسندة إليك حالياً في هذا المجمع (
+                {activeComplex?.name || 'المجمع'}).
+              </p>
               {isSupervisorOrDev ? (
                 <div className="flex items-center justify-center gap-3 flex-wrap">
                   {shifts.length > 0 && (
                     <button
                       type="button"
                       onClick={() => handleOpenAssignTeachersModal(shifts[0])}
-                      className="px-5 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs inline-flex items-center gap-2 shadow-lg cursor-pointer transition-all"
+                      className="duo-complex-assign-btn text-xs inline-flex items-center gap-2 cursor-pointer"
                     >
                       <UserCheck className="w-4 h-4" />
                       <span>تعيين فترتي وإدراج اسمي الآن</span>
@@ -1585,22 +1813,30 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenAddShiftModal}
-                    className="px-5 py-2.5 rounded-2xl bg-[#064e3b] hover:bg-[#064e3b]/80 border border-amber-400/50 text-amber-300 font-black text-xs inline-flex items-center gap-2 shadow-lg cursor-pointer transition-all"
+                    className="duo-complex-secondary-btn text-xs inline-flex items-center gap-2 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>إنشاء فترة دوام جديدة</span>
                   </button>
                 </div>
               ) : (
-                <p className="text-emerald-400">يرجى التواصل مع المشرف لتعيين فترتك وجامعك في هذا المجمع.</p>
+                <p className="duo-complex-subtext font-bold">
+                  يرجى التواصل مع المشرف لتعيين فترتك وجامعك في هذا المجمع.
+                </p>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              className={`grid grid-cols-1 ${
+                myAssignedShifts.length > 1 ? 'lg:grid-cols-2' : ''
+              } gap-5`}
+            >
               {myAssignedShifts.map(shift => {
                 const isRemote = isShiftRemote(shift);
                 const shiftMosque = mosques.find(m => m.id === shift.mosqueId) || mosques[0];
-                const myRecordId = `tatt_${todayStr}_${shift.id}_${currentTeacher?.id || (isSupervisorOrDev ? 'supervisor-self' : '')}`;
+                const myRecordId = `tatt_${todayStr}_${shift.id}_${
+                  currentTeacher?.id || (isSupervisorOrDev ? 'supervisor-self' : '')
+                }`;
                 const record = attendanceRecords.find(r => r.id === myRecordId);
 
                 const hasCheckedIn = Boolean(record?.checkInTime);
@@ -1612,185 +1848,277 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                 const checkInEndMin = parseTimeToMinutes(shift.checkInEnd || shift.checkInStart);
                 const checkOutStartMin = parseTimeToMinutes(shift.checkOutStart);
                 const checkOutEndMin = parseTimeToMinutes(shift.checkOutEnd || shift.checkOutStart);
-                const shiftEndMin = checkOutEndMin > 0 ? checkOutEndMin : (checkOutStartMin > 0 ? checkOutStartMin : checkInEndMin);
+                const shiftEndMin =
+                  checkOutEndMin > 0
+                    ? checkOutEndMin
+                    : checkOutStartMin > 0
+                    ? checkOutStartMin
+                    : checkInEndMin;
 
                 const isBeforeCheckIn = checkInStartMin > 0 && currentMinutes < checkInStartMin;
                 const isHalaqahEnded = shiftEndMin > 0 && currentMinutes > shiftEndMin;
-                const isLateCheckIn = !isHalaqahEnded && checkInEndMin > 0 && currentMinutes > checkInEndMin;
-                const delayMinutes = isLateCheckIn ? (currentMinutes - checkInEndMin) : 0;
+                const isLateCheckIn =
+                  !isHalaqahEnded && checkInEndMin > 0 && currentMinutes > checkInEndMin;
+                const delayMinutes = isLateCheckIn ? currentMinutes - checkInEndMin : 0;
+
+                const checkInStartFmt = parse24hTimeParts(shift.checkInStart).formatted;
+                const checkInEndFmt = parse24hTimeParts(shift.checkInEnd).formatted;
+                const checkOutStartFmt = parse24hTimeParts(shift.checkOutStart).formatted;
+                const checkOutEndFmt = parse24hTimeParts(shift.checkOutEnd).formatted;
+                const shiftEndFmt = parse24hTimeParts(
+                  shift.checkOutEnd || shift.checkOutStart
+                ).formatted;
+
+                const statusVariantClass = hasCheckedOut
+                  ? 'duo-complex-self-status-chip--done'
+                  : hasCheckedIn
+                  ? record?.status === 'متأخر'
+                    ? 'duo-complex-self-status-chip--late'
+                    : 'duo-complex-self-status-chip--done'
+                  : isHalaqahEnded
+                  ? 'duo-complex-self-status-chip--ended'
+                  : isLateCheckIn
+                  ? 'duo-complex-self-status-chip--late'
+                  : '';
 
                 return (
                   <div
                     key={shift.id}
-                    className="bg-[#022c22] border-2 border-[#065f46] hover:border-amber-400/50 transition-all rounded-3xl p-5 sm:p-6 space-y-4 shadow-lg flex flex-col justify-between"
+                    className="duo-complex-mgmt-shift-card p-5 sm:p-6 space-y-4 flex flex-col justify-between"
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-sm font-black text-white font-heading flex items-center gap-1.5">
-                          {isRemote && <Globe className="w-4 h-4 text-cyan-400" />}
-                          <span>{shift.name}</span>
-                        </span>
-                        <span
-                          className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
-                            hasCheckedOut
-                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                              : hasCheckedIn
-                              ? record?.status === 'متأخر'
-                                ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : isHalaqahEnded
-                              ? 'bg-red-500/20 text-red-300 border border-red-500/40'
-                              : isBeforeCheckIn
-                              ? 'bg-amber-400/10 text-amber-300 border border-amber-400/30'
-                              : isLateCheckIn
-                              ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
-                              : 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
-                          }`}
-                        >
+                    <div className="space-y-4">
+                      {/* Shift 3D Header Bar */}
+                      <div className="duo-complex-shift-header flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <div className="duo-complex-header-icon w-11 h-11 flex items-center justify-center shrink-0">
+                            {isRemote ? (
+                              <Globe className="w-5 h-5" />
+                            ) : (
+                              <Clock className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div>
+                            <span
+                              className="text-sm sm:text-base font-black font-heading block"
+                              style={{ color: themeText }}
+                            >
+                              {shift.name}
+                            </span>
+                            <span className="duo-complex-subtext text-[11px] font-bold block mt-0.5">
+                              {isRemote
+                                ? 'دوام حلقة عن بعد (أونلاين)'
+                                : `مقر الدوام: ${
+                                    shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'
+                                  }`}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className={`duo-complex-self-status-chip text-xs ${statusVariantClass}`}>
                           {hasCheckedOut
-                            ? 'تم الانصراف'
+                            ? 'تم الانصراف ✓'
                             : hasCheckedIn
                             ? record?.status === 'متأخر'
                               ? `حاضر (متأخر ${record.delayMinutes ? `${record.delayMinutes} د` : ''})`
-                              : 'تم الحضور'
+                              : 'تم الحضور ✓'
                             : isHalaqahEnded
                             ? 'غائب (انتهى وقت الحلقة)'
                             : isBeforeCheckIn
-                            ? `التحضير يبدأ (${shift.checkInStart})`
+                            ? `يبدأ التحضير (${checkInStartFmt})`
                             : isLateCheckIn
                             ? `التحضير متأخر (${delayMinutes} د)`
-                            : 'في انتظار التحضير'}
+                            : 'متاح للتحضير الآن'}
                         </span>
                       </div>
 
-                      {/* Shift Type & Location Badge */}
+                      {/* Shift Type & Mosque 3D Location Box */}
                       {isRemote ? (
-                        <div className="p-3 rounded-2xl bg-[#0369a1]/20 border border-cyan-500/40 space-y-1">
-                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                            <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-bold">
-                              <Globe className="w-4 h-4 text-cyan-400" />
+                        <div className="duo-complex-shift-location-box duo-complex-shift-location-box--remote space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div
+                              className="flex items-center gap-2 text-xs sm:text-sm font-black"
+                              style={{ color: themeText }}
+                            >
+                              <Globe className="w-4 h-4 shrink-0" />
                               <span>حلقة عن بعد (أونلاين)</span>
                             </div>
-                            <span className="text-[10px] text-cyan-200 bg-sky-950/80 px-2 py-0.5 rounded-md border border-cyan-500/40 font-bold">
+                            <span className="duo-complex-shift-schedule-chip text-[11px]">
                               بدون شرط الموقع الجغرافي
                             </span>
                           </div>
-                          <p className="text-[11px] text-cyan-200/80">
+                          <p className="duo-complex-subtext text-[11px] font-bold leading-relaxed">
                             التحضير والانصراف مباشر بنقرة واحدة وفق مواعيد الحلقة دون الحاجة للـ GPS أو الوجود بالمسجد.
                           </p>
                         </div>
                       ) : (
-                        <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] space-y-1.5">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold flex-wrap">
-                              <Building2 className="w-4 h-4 text-amber-400" />
-                              <span>الجامع: {shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'}</span>
-                              <span className="text-[10px] text-emerald-200 bg-[#022c22] px-1.5 py-0.5 rounded-md border border-[#065f46]">
+                        <div className="duo-complex-shift-location-box space-y-2">
+                          <div className="flex items-center justify-between gap-2.5 flex-wrap">
+                            <div className="flex items-center gap-2 text-xs sm:text-sm font-black flex-wrap">
+                              <Building2 className="w-4 h-4 shrink-0" />
+                              <span style={{ color: themeText }}>
+                                الجامع: {shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'}
+                              </span>
+                              <span className="duo-complex-shift-schedule-chip text-[11px]">
                                 النطاق: {shiftMosque?.allowedRadiusMeters || 100} متر
                               </span>
                             </div>
+
                             {shiftMosque && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenMosqueMap(shiftMosque, 'view')}
-                                className="px-2 py-1 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-emerald-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors border border-emerald-600/40"
-                                title={`اطلاع على موقع الجامع وحدود الـ ${shiftMosque.allowedRadiusMeters || 100} متر على الخريطة`}
+                                className="duo-complex-mini-edit-btn text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                                title={`اطلاع على موقع الجامع وحدود الـ ${
+                                  shiftMosque.allowedRadiusMeters || 100
+                                } متر على الخريطة`}
                               >
-                                <Eye className="w-3.5 h-3.5 text-amber-300" />
+                                <Eye className="w-3.5 h-3.5" />
                                 <span>خريطة الجامع</span>
                               </button>
                             )}
                           </div>
+
                           {shiftMosque?.neighborhood && (
-                            <span className="text-[11px] text-emerald-300/80 block pr-5">
+                            <span className="duo-complex-subtext text-xs font-bold block pr-6">
                               الموقع: {shiftMosque.neighborhood}
                             </span>
                           )}
+
                           {!shiftMosque?.isLocationSet && (
-                            <div className="p-2 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
-                              <AlertCircle className="w-4 h-4 shrink-0" />
-                              <span>تنبيه: لم يحدد المشرف موقع هذا الجامع على الخريطة بعد.</span>
+                            <div className="duo-complex-datepicker-selected-banner text-[11px] font-black flex items-center gap-2">
+                              <AlertCircle
+                                className="w-4 h-4 shrink-0"
+                                style={{ color: themeAccent }}
+                              />
+                              <span style={{ color: themeText }}>
+                                تنبيه: لم يحدد المشرف إحداثيات هذا الجامع على الخريطة بعد.
+                              </span>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* Timetable Times */}
-                      <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                        <div className="p-2 rounded-xl bg-[#064e3b]/30 border border-[#065f46]">
-                          <span className="text-[10px] text-emerald-300 block">نافذة الحضور:</span>
-                          <strong className="text-white font-mono">{shift.checkInStart} - {shift.checkInEnd}</strong>
+                      {/* 3D Check-in & Check-out Window Boxes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-center">
+                        <div className="duo-complex-shift-time-box space-y-1">
+                          <span className="duo-complex-shift-time-label text-[11px] block">
+                            نافذة الحضور:
+                          </span>
+                          <div className="duo-complex-shift-time-value text-xs sm:text-sm font-mono flex items-center justify-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
+                            <span dir="ltr">
+                              {checkInStartFmt} - {checkInEndFmt}
+                            </span>
+                          </div>
                         </div>
-                        <div className="p-2 rounded-xl bg-[#064e3b]/30 border border-[#065f46]">
-                          <span className="text-[10px] text-emerald-300 block">نافذة الانصراف:</span>
-                          <strong className="text-white font-mono">{shift.checkOutStart} - {shift.checkOutEnd}</strong>
+
+                        <div className="duo-complex-shift-time-box space-y-1">
+                          <span className="duo-complex-shift-time-label text-[11px] block">
+                            نافذة الانصراف:
+                          </span>
+                          <div className="duo-complex-shift-time-value text-xs sm:text-sm font-mono flex items-center justify-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
+                            <span dir="ltr">
+                              {checkOutStartFmt} - {checkOutEndFmt}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Real-time Attendance Timing Notice */}
+                      {/* Real-time 3D Attendance Timing Notice */}
                       {!hasCheckedIn && (
-                        <div className="pt-1">
+                        <div>
                           {isHalaqahEnded ? (
-                            <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                              <XCircle className="w-4 h-4 shrink-0 text-red-400" />
-                              <span>انتهى وقت الحلقة الرسمي بالكامل ({shift.checkOutEnd || shift.checkOutStart}) • تم إغلاق التحضير واحتسابك غائباً لهذا اليوم</span>
+                            <div className="duo-complex-self-notice duo-complex-self-notice--ended text-center text-xs flex items-center justify-center gap-2">
+                              <XCircle className="w-4 h-4 shrink-0" />
+                              <span>
+                                انتهى وقت الحلقة الرسمي بالكامل ({shiftEndFmt}) • تم إغلاق التحضير واحتسابك غائباً لهذا اليوم
+                              </span>
                             </div>
                           ) : isBeforeCheckIn ? (
-                            <div className="p-2 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-300 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 shrink-0" />
-                              <span>لا يمكن التحضير قبل الموعد • يبدأ التحضير في تمام الساعة {shift.checkInStart}</span>
+                            <div className="duo-complex-self-notice text-center text-xs flex items-center justify-center gap-2">
+                              <Clock className="w-4 h-4 shrink-0" />
+                              <span>
+                                لا يمكن التحضير قبل الموعد • يبدأ التحضير في تمام الساعة {checkInStartFmt}
+                              </span>
                             </div>
                           ) : isLateCheckIn ? (
-                            <div className="p-2.5 rounded-xl bg-orange-500/15 border border-orange-500/40 text-orange-200 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                              <AlertCircle className="w-4 h-4 shrink-0 text-orange-400" />
-                              <span>أنت متأخر الآن ({delayMinutes} دقيقة) • التحضير متاح حتى نهاية وقت الحلقة ({shift.checkOutEnd || shift.checkOutStart}) وسيُسجَّل متأخر</span>
+                            <div className="duo-complex-self-notice duo-complex-self-notice--late text-center text-xs flex items-center justify-center gap-2">
+                              <AlertCircle className="w-4 h-4 shrink-0" />
+                              <span>
+                                أنت متأخر الآن ({delayMinutes} دقيقة) • التحضير متاح حتى نهاية وقت الحلقة ({shiftEndFmt}) وسيُسجَّل متأخر
+                              </span>
                             </div>
                           ) : (
-                            <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                              <span>وقت التحضير في الموعد متاح الآن حتى الساعة {shift.checkInEnd}</span>
+                            <div className="duo-complex-self-notice text-center text-xs flex items-center justify-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span>
+                                وقت التحضير في الموعد متاح الآن حتى الساعة {checkInEndFmt}
+                              </span>
                             </div>
                           )}
                         </div>
                       )}
 
                       {hasCheckedIn && !hasCheckedOut && (
-                        <div className="pt-1">
-                          <div className="p-2.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-200 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-blue-400" />
-                            <span>
-                              {isRemote
-                                ? 'الانصراف مفتوح ومتاح بنقرة واحدة (حلقة عن بعد بدون اشتراط الموقع)'
-                                : `الانصراف مفتوح الآن • يلزم تسجيله وأنت متواجد في موقع (${shiftMosque?.name || shift.mosqueName || 'الجامع'})`}
-                            </span>
-                          </div>
+                        <div className="duo-complex-self-notice text-center text-xs flex items-center justify-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>
+                            {isRemote
+                              ? 'الانصراف مفتوح ومتاح بنقرة واحدة (حلقة عن بعد بدون اشتراط الموقع)'
+                              : `الانصراف مفتوح الآن • يلزم تسجيله وأنت متواجد في موقع (${
+                                  shiftMosque?.name || shift.mosqueName || 'الجامع'
+                                })`}
+                          </span>
                         </div>
                       )}
 
-                      {/* Recorded Times */}
+                      {/* Recorded Times 3D Summary */}
                       {record && (
-                        <div className="p-3 rounded-2xl bg-[#011a14] border border-[#065f46] space-y-1 text-xs">
+                        <div className="duo-complex-teachers-list-box space-y-2 text-xs">
                           {record.checkInTime && (
-                            <div className="flex items-center justify-between text-emerald-300">
-                              <span>ساعة الحضور المسجلة:</span>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="duo-complex-subtext font-black">
+                                ساعة الحضور المسجلة:
+                              </span>
                               <div className="flex items-center gap-2">
-                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                  record.status === 'متأخر' ? 'bg-orange-500/20 text-orange-300' : 'bg-emerald-500/20 text-emerald-300'
-                                }`}>
-                                  {record.status} {record.delayMinutes ? `(${record.delayMinutes} د)` : ''}
+                                <span
+                                  className={`duo-complex-duty-status text-[10px] ${
+                                    record.status !== 'غائب' ? 'is-assigned' : ''
+                                  }`}
+                                >
+                                  {record.status}{' '}
+                                  {record.delayMinutes ? `(${record.delayMinutes} د)` : ''}
                                 </span>
-                                <strong className="font-mono text-white font-bold">{record.checkInTime}</strong>
+                                <strong
+                                  className="font-mono font-black"
+                                  style={{ color: themeText }}
+                                >
+                                  {record.checkInTime}
+                                </strong>
                               </div>
                             </div>
                           )}
+
                           {record.checkOutTime && (
-                            <div className="flex items-center justify-between text-blue-300">
-                              <span>ساعة الانصراف المسجلة:</span>
-                              <strong className="font-mono text-white font-bold">{record.checkOutTime}</strong>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="duo-complex-subtext font-black">
+                                ساعة الانصراف المسجلة:
+                              </span>
+                              <strong
+                                className="font-mono font-black"
+                                style={{ color: themeText }}
+                              >
+                                {record.checkOutTime}
+                              </strong>
                             </div>
                           )}
+
                           {record.note && (
-                            <div className="text-amber-200/90 text-[11px] pt-1 border-t border-[#065f46]">
+                            <div
+                              className="duo-complex-subtext text-[11px] font-bold pt-1.5 border-t-2"
+                              style={{ borderColor: themeBorder }}
+                            >
                               ملاحظة: {record.note}
                             </div>
                           )}
@@ -1798,56 +2126,58 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                       )}
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#065f46]">
+                    {/* Solid Duolingo 3D Action Buttons (Zero Broken Gradients!) */}
+                    <div
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t-2"
+                      style={{ borderColor: themeBorder }}
+                    >
                       <button
                         type="button"
-                        disabled={hasCheckedIn || isPerformingCheckIn || isBeforeCheckIn || isHalaqahEnded}
+                        disabled={
+                          hasCheckedIn || isPerformingCheckIn || isBeforeCheckIn || isHalaqahEnded
+                        }
                         onClick={() => handleTeacherCheckIn(shift)}
-                        className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        className={`duo-complex-self-action-btn text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
                           hasCheckedIn
-                            ? 'bg-emerald-900/60 text-emerald-200'
-                            : isHalaqahEnded
-                            ? 'bg-red-900/50 text-red-200 border border-red-500/30'
-                            : isBeforeCheckIn
-                            ? 'bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40'
-                            : isLateCheckIn
-                            ? 'bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white'
-                            : isRemote
-                            ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:brightness-110 text-white'
-                            : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 text-white'
+                            ? 'is-completed'
+                            : isBeforeCheckIn || isHalaqahEnded
+                            ? 'is-locked'
+                            : ''
                         }`}
                       >
                         {isPerformingCheckIn ? (
-                          <span>جارٍ التحقق...</span>
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                            <span>جارٍ التحقق...</span>
+                          </>
                         ) : hasCheckedIn ? (
                           <>
-                            <Check className="w-4 h-4 text-emerald-200" />
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
                             <span>{record?.status === 'متأخر' ? 'حاضر (متأخر)' : 'تم الحضور'}</span>
                           </>
                         ) : isHalaqahEnded ? (
                           <>
-                            <XCircle className="w-4 h-4 text-red-300" />
+                            <XCircle className="w-4 h-4 shrink-0" />
                             <span>انتهى وقت الحلقة (غائب)</span>
                           </>
                         ) : isBeforeCheckIn ? (
                           <>
-                            <Clock className="w-4 h-4" />
-                            <span>التحضير يبدأ ({shift.checkInStart})</span>
+                            <Clock className="w-4 h-4 shrink-0" />
+                            <span>التحضير يبدأ ({checkInStartFmt})</span>
                           </>
                         ) : isLateCheckIn ? (
                           <>
-                            <AlertCircle className="w-4 h-4" />
+                            <AlertCircle className="w-4 h-4 shrink-0" />
                             <span>تسجيل الحضور (متأخر {delayMinutes} د)</span>
                           </>
                         ) : isRemote ? (
                           <>
-                            <Globe className="w-4 h-4" />
+                            <Globe className="w-4 h-4 shrink-0" />
                             <span>تسجيل الحضور (عن بعد)</span>
                           </>
                         ) : (
                           <>
-                            <Navigation className="w-4 h-4" />
+                            <Navigation className="w-4 h-4 shrink-0" />
                             <span>تسجيل الحضور (بالمسجد)</span>
                           </>
                         )}
@@ -1857,34 +2187,33 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         type="button"
                         disabled={!hasCheckedIn || hasCheckedOut || isPerformingCheckOut}
                         onClick={() => handleTeacherCheckOut(shift)}
-                        className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                          hasCheckedOut
-                            ? 'bg-blue-900/60 text-blue-200'
-                            : !hasCheckedIn
-                            ? 'bg-gray-800 text-gray-400'
-                            : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:brightness-110 text-white'
+                        className={`duo-complex-self-action-btn text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
+                          hasCheckedOut ? 'is-completed' : !hasCheckedIn ? 'is-locked' : ''
                         }`}
                       >
                         {isPerformingCheckOut ? (
-                          <span>جارٍ الانصراف...</span>
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                            <span>جارٍ الانصراف...</span>
+                          </>
                         ) : hasCheckedOut ? (
                           <>
-                            <Check className="w-4 h-4 text-blue-200" />
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
                             <span>تم الانصراف</span>
                           </>
                         ) : !hasCheckedIn ? (
                           <>
-                            <Clock className="w-4 h-4" />
+                            <Clock className="w-4 h-4 shrink-0" />
                             <span>الانصراف (بعد التحضير)</span>
                           </>
                         ) : isRemote ? (
                           <>
-                            <Globe className="w-4 h-4" />
+                            <Globe className="w-4 h-4 shrink-0" />
                             <span>تسجيل الانصراف (عن بعد)</span>
                           </>
                         ) : (
                           <>
-                            <Building2 className="w-4 h-4" />
+                            <Building2 className="w-4 h-4 shrink-0" />
                             <span>تسجيل الانصراف (في الجامع)</span>
                           </>
                         )}
@@ -1902,60 +2231,277 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 2: SUPERVISOR ATTENDANCE RECORDS (سجل الحضور اليومي للمشرف)      */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'records' && (
-        <div
-          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
-          style={{
-            backgroundColor: themeCard,
-            borderColor: themeBorder,
-            borderBottomColor: themeBorderBottom
-          }}
-        >
-          {/* Header & Date Navigation */}
+        <div className="duo-complex-records-shell p-6 sm:p-8 space-y-6 transition-all">
+          {/* Header & Custom Duolingo 3D Date Picker Navigation */}
           <div
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b"
+            className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b-2"
             style={{ borderColor: themeBorder }}
           >
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Calendar className="w-5 h-5" style={{ color: themeAccent }} />
-                <span>سجل تحضير وانصراف المعلمين</span>
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5 font-bold">
-                يمكنك الرجوع لأي تاريخ سابق للاطلاع على سجلات التحضير أو التعديل عليها
-              </p>
+            <div className="flex items-center gap-3.5">
+              <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center shrink-0">
+                <Calendar className="w-6 h-6" />
+              </div>
+              <div>
+                <h3
+                  className="text-base sm:text-lg font-black font-heading flex items-center gap-2"
+                  style={{ color: themeText }}
+                >
+                  <span>سجل تحضير وانصراف المعلمين</span>
+                </h3>
+                <p className="duo-complex-subtext text-xs mt-0.5 font-bold">
+                  يمكنك الرجوع لأي تاريخ سابق للاطلاع على سجلات التحضير أو التعديل عليها
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-300 font-bold">التاريخ المحدد:</span>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-                className="border-2 rounded-xl px-3 py-1.5 text-xs outline-none cursor-pointer font-bold"
-                style={{
-                  backgroundColor: themeSecondary,
-                  borderColor: themeBorder,
-                  color: themeAccent
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setSelectedDate(todayStr)}
-                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-bold transition-all cursor-pointer"
-                style={{
-                  backgroundColor: themeSecondary,
-                  borderColor: themeBorder,
-                  color: themeText
-                }}
-              >
-                اليوم
-              </button>
+            {/* Custom Duolingo 3D Complex Date Picker ("من الداخل وتحديد التاريخ كذلك") */}
+            <div ref={datePickerContainerRef} className="relative flex items-center gap-2 flex-wrap">
+              <span className="duo-complex-subtext text-xs font-black px-1">التاريخ المحدد:</span>
+
+              <div className="duo-complex-date-dock inline-flex items-center gap-1.5 flex-wrap">
+                {/* Step Previous Day */}
+                <button
+                  type="button"
+                  title="اليوم السابق"
+                  onClick={() => handleStepSelectedDate(-1)}
+                  className="duo-complex-date-step-btn cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                {/* Date Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDatePickerOpen(prev => !prev)}
+                  className={`duo-complex-date-trigger inline-flex items-center gap-2 text-xs cursor-pointer ${
+                    isDatePickerOpen ? 'is-open' : ''
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+                  <span className="whitespace-nowrap">{selectedDateDisplay.shortLabel}</span>
+                  <span
+                    className="font-mono text-[11px] px-1.5 py-0.5 rounded-md opacity-90"
+                    style={{
+                      backgroundColor: themePrimary,
+                      color: themeAccent
+                    }}
+                  >
+                    {selectedDate}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                      isDatePickerOpen ? 'rotate-180' : ''
+                    }`}
+                    style={{ color: themeAccent }}
+                  />
+                </button>
+
+                {/* Step Next Day */}
+                <button
+                  type="button"
+                  title="اليوم التالي"
+                  onClick={() => handleStepSelectedDate(1)}
+                  className="duo-complex-date-step-btn cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Today Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(todayStr);
+                    setIsDatePickerOpen(false);
+                  }}
+                  className={`duo-complex-today-btn inline-flex items-center gap-1.5 text-xs cursor-pointer ${
+                    selectedDate === todayStr ? 'is-active' : ''
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>اليوم</span>
+                </button>
+              </div>
+
+              {/* Inside Custom Calendar Popover */}
+              <AnimatePresence>
+                {isDatePickerOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    className="duo-complex-datepicker-popover absolute top-full left-0 mt-2.5 w-[312px] sm:w-[342px] z-50 space-y-3"
+                  >
+                    {/* Selected Date Active Banner */}
+                    <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2">
+                      <div className="text-right">
+                        <div
+                          className="text-[11px] font-black"
+                          style={{ color: themeAccent }}
+                        >
+                          التاريخ المحدد حالياً
+                        </div>
+                        <div
+                          className="text-xs font-black mt-0.5"
+                          style={{ color: themeText }}
+                        >
+                          {selectedDateDisplay.shortLabel}
+                        </div>
+                        {selectedDateDisplay.hijriStr && (
+                          <div className="duo-complex-subtext text-[10px] font-bold mt-0.5">
+                            {selectedDateDisplay.hijriStr}
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className="font-mono text-xs font-black px-2.5 py-1 rounded-xl border-2"
+                        style={{
+                          backgroundColor: themeCard,
+                          borderColor: themeBorder,
+                          color: themeAccent
+                        }}
+                      >
+                        {selectedDate}
+                      </span>
+                    </div>
+
+                    {/* Month & Year Switcher Bar */}
+                    <div className="duo-complex-datepicker-monthbar flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        title="الشهر السابق"
+                        onClick={() =>
+                          setPickerMonthDate(
+                            prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                          )
+                        }
+                        className="duo-complex-date-step-btn cursor-pointer"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+
+                      <div className="text-center">
+                        <div
+                          className="text-sm font-black font-heading"
+                          style={{ color: themeAccent }}
+                        >
+                          {pickerMonthHeader.monthName} {pickerMonthHeader.yearNum}
+                        </div>
+                        {pickerMonthHeader.hijriMonthYear && (
+                          <div className="duo-complex-subtext text-[10px] font-bold">
+                            {pickerMonthHeader.hijriMonthYear}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        title="الشهر التالي"
+                        onClick={() =>
+                          setPickerMonthDate(
+                            prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                          )
+                        }
+                        className="duo-complex-date-step-btn cursor-pointer"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Weekday Headers */}
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {ARABIC_WEEKDAYS_SHORT.map(dayLabel => (
+                        <div key={dayLabel} className="duo-complex-weekday-cell">
+                          {dayLabel}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tactile 3D Day Selection Grid */}
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {pickerCalendarCells.map(cell => {
+                        const isSelected = cell.iso === selectedDate;
+                        const isTodayCell = cell.iso === todayStr;
+
+                        return (
+                          <button
+                            key={cell.iso}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDate(cell.iso);
+                              setIsDatePickerOpen(false);
+                            }}
+                            className={`duo-complex-day-btn cursor-pointer font-mono ${
+                              !cell.inCurrentMonth ? 'is-outside' : ''
+                            } ${isTodayCell ? 'is-today' : ''} ${
+                              isSelected ? 'is-selected' : ''
+                            }`}
+                          >
+                            <span>{cell.day}</span>
+                            {isTodayCell && (
+                              <span
+                                className="w-1.5 h-1.5 rounded-full mt-0.5"
+                                style={{
+                                  backgroundColor: isSelected
+                                    ? themeContrastText
+                                    : themeAccent
+                                }}
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Popover Quick Footer Actions */}
+                    <div
+                      className="flex items-center justify-between gap-2 pt-2.5 border-t-2"
+                      style={{ borderColor: themeBorder }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(todayStr);
+                            setIsDatePickerOpen(false);
+                          }}
+                          className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                            selectedDate === todayStr ? 'is-active' : ''
+                          }`}
+                        >
+                          اليوم
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(yesterdayStr);
+                            setIsDatePickerOpen(false);
+                          }}
+                          className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                            selectedDate === yesterdayStr ? 'is-active' : ''
+                          }`}
+                        >
+                          أمس
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsDatePickerOpen(false)}
+                        className="duo-btn-dark px-3.5 py-1.5 text-[11px] cursor-pointer"
+                      >
+                        إغلاق
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
           {/* Shifts Accordion / List */}
           {shifts.length === 0 ? (
-            <div className="p-8 text-center text-xs text-emerald-300/70 border border-dashed border-[#065f46] rounded-3xl">
+            <div className="duo-complex-empty-box p-8 text-center text-xs font-extrabold">
               لا توجد فترات دوام منشأة بعد. اضغط على تبويب "فترات الدوام" لإضافة فترة جديدة.
             </div>
           ) : (
@@ -1967,34 +2513,49 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                 return (
                   <div
                     key={shift.id}
-                    className="bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-4 shadow-lg"
+                    className="duo-complex-shift-card p-5 sm:p-6 space-y-4"
                   >
                     {/* Shift Header Bar */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#065f46]">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-[#fbbf24] border border-amber-400/30 flex items-center justify-center font-bold">
+                    <div className="duo-complex-shift-header flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+                      <div className="flex items-center gap-3.5">
+                        <div className="duo-complex-header-icon w-11 h-11 flex items-center justify-center font-bold shrink-0">
                           <Clock className="w-5 h-5" />
                         </div>
-                        <div>
+                        <div className="space-y-1.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-base font-black text-white font-heading">
+                            <span
+                              className="text-base font-black font-heading"
+                              style={{ color: themeText }}
+                            >
                               {shift.name}
                             </span>
                             {isShiftRemote(shift) ? (
-                              <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 font-bold border border-cyan-500/40 flex items-center gap-1">
-                                <Globe className="w-3 h-3 text-cyan-400" />
+                              <span className="duo-complex-shift-badge duo-complex-shift-badge--remote text-xs inline-flex items-center gap-1.5">
+                                <Globe className="w-3.5 h-3.5" />
                                 <span>حلقة عن بعد (أونلاين)</span>
                               </span>
                             ) : (
-                              <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#064e3b] text-amber-300 font-bold border border-[#065f46] flex items-center gap-1">
-                                <Building2 className="w-3 h-3 text-amber-400" />
+                              <span className="duo-complex-shift-badge text-xs inline-flex items-center gap-1.5">
+                                <Building2 className="w-3.5 h-3.5" />
                                 <span>{shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'}</span>
                               </span>
                             )}
                           </div>
-                          <span className="text-xs text-emerald-300/80">
-                            الحضور: ({shift.checkInStart} - {shift.checkInEnd}) • الانصراف: ({shift.checkOutStart} - {shift.checkOutEnd})
-                          </span>
+
+                          <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                            <span className="duo-complex-shift-schedule-chip inline-flex items-center gap-1">
+                              <span>الحضور:</span>
+                              <span className="font-mono" style={{ color: themeAccent }}>
+                                ({shift.checkInStart} - {shift.checkInEnd})
+                              </span>
+                            </span>
+                            <span className="duo-complex-shift-schedule-chip inline-flex items-center gap-1">
+                              <span>الانصراف:</span>
+                              <span className="font-mono" style={{ color: themeAccent }}>
+                                ({shift.checkOutStart} - {shift.checkOutEnd})
+                              </span>
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -2002,9 +2563,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenAssignTeachersModal(shift)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-[#064e3b] border border-amber-400/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                          className="duo-complex-assign-btn text-xs flex items-center gap-1.5 cursor-pointer"
                         >
-                          <UserCheck className="w-3.5 h-3.5" />
+                          <UserCheck className="w-4 h-4" />
                           <span>تعيين وتكليف المعلمين ({assignedTeachersList.length})</span>
                         </button>
                       </div>
@@ -2012,14 +2573,14 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 
                     {/* Teachers Table for this shift */}
                     {assignedTeachersList.length === 0 ? (
-                      <div className="text-center py-5 space-y-2 bg-[#064e3b]/20 rounded-2xl border border-dashed border-amber-400/30 p-4">
-                        <p className="text-xs text-amber-300/90 font-bold">
+                      <div className="duo-complex-empty-box text-center py-6 px-4 space-y-3">
+                        <p className="text-xs font-extrabold">
                           لم يتم تعيين أي معلمين في هذه الفترة بعد.
                         </p>
                         <button
                           type="button"
                           onClick={() => handleOpenAssignTeachersModal(shift)}
-                          className="px-4 py-2 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs inline-flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                          className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer"
                         >
                           <UserPlus className="w-4 h-4" />
                           <span>تعيين وتكليف المعلمين لهذه الفترة الآن</span>
@@ -2053,7 +2614,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                   data-item-id={teacher.id}
                                   className="transition-colors"
                                 >
-                                  <td className="px-3.5 py-3 font-black text-white whitespace-nowrap">
+                                  <td
+                                    className="px-3.5 py-3 font-black whitespace-nowrap"
+                                    style={{ color: themeText }}
+                                  >
                                     {teacher.name}
                                   </td>
                                   <td className="px-3.5 py-3 text-center whitespace-nowrap">
@@ -2246,38 +2810,32 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 3: MOSQUES MANAGEMENT (إدارة الجوامع والمساجد المضافة)            */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'mosques' && (
-        <div
-          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
-          style={{
-            backgroundColor: themeCard,
-            borderColor: themeBorder,
-            borderBottomColor: themeBorderBottom
-          }}
-        >
+        <div className="duo-complex-records-shell p-6 sm:p-8 space-y-6 transition-all">
           <div
-            className="flex items-center justify-between gap-3 pb-4 border-b flex-wrap"
+            className="flex items-center justify-between gap-4 pb-5 border-b-2 flex-wrap"
             style={{ borderColor: themeBorder }}
           >
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Building2 className="w-5 h-5" style={{ color: themeAccent }} />
-                <span>إدارة الجوامع والمساجد</span>
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5 font-bold">
-                يمكنك كتابة اسم الجامع وحفظه، وإضافة أكثر من جامع للمجمع بسهولة تامة
-              </p>
+            <div className="flex items-center gap-3.5">
+              <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center shrink-0">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3
+                  className="text-base sm:text-lg font-black font-heading flex items-center gap-2"
+                  style={{ color: themeText }}
+                >
+                  <span>إدارة الجوامع والمساجد</span>
+                </h3>
+                <p className="duo-complex-subtext text-xs mt-0.5 font-bold">
+                  يمكنك كتابة اسم الجامع وحفظه، وإضافة أكثر من جامع للمجمع بسهولة تامة
+                </p>
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleOpenAddMosqueModal}
-              className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-0.5"
-              style={{
-                backgroundColor: themeAccent,
-                color: themeContrastText,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow
-              }}
+              className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>إضافة جامع جديد</span>
@@ -2291,70 +2849,87 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               return (
                 <div
                   key={mosque.id}
-                  className="bg-[#022c22] border-2 border-[#065f46] hover:border-amber-400/40 rounded-3xl p-5 space-y-3 shadow-lg flex flex-col justify-between transition-all"
+                  className="duo-complex-mgmt-shift-card p-5 space-y-4 flex flex-col justify-between"
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-[#fbbf24] flex items-center justify-center font-bold">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="duo-complex-header-icon w-10 h-10 flex items-center justify-center shrink-0">
                           <Building2 className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-black text-white font-heading">{mosque.name}</h4>
-                          <span className="text-[11px] text-emerald-300/80 block">
+                          <h4
+                            className="text-sm font-black font-heading"
+                            style={{ color: themeText }}
+                          >
+                            {mosque.name}
+                          </h4>
+                          <span className="duo-complex-subtext text-[11px] font-bold block">
                             {mosque.neighborhood || 'جامع تابع للمجمع'}
                           </span>
                         </div>
                       </div>
 
                       <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          mosque.isLocationSet
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                        className={`duo-complex-duty-status text-[10px] ${
+                          mosque.isLocationSet ? 'is-assigned' : ''
                         }`}
                       >
-                        {mosque.isLocationSet ? 'الموقع ملتقط' : 'لم يحدد الموقع'}
+                        {mosque.isLocationSet ? 'الموقع ملتقط ✓' : 'لم يحدد الموقع'}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-[#065f46] text-xs text-emerald-200/90 flex items-center justify-between">
-                      <span>الفترات المربوطة بهذا الجامع:</span>
-                      <strong className="text-amber-300 font-bold">{linkedShiftsCount} فترات</strong>
+                    <div className="duo-complex-shift-time-box flex items-center justify-between text-xs">
+                      <span className="duo-complex-shift-time-label">
+                        الفترات المربوطة بهذا الجامع:
+                      </span>
+                      <strong className="font-black" style={{ color: themeAccent }}>
+                        {linkedShiftsCount} فترات
+                      </strong>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-[#011a14] border border-[#065f46] text-xs text-emerald-200/90 flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-amber-300 font-bold">
-                        <MapPin className="w-3.5 h-3.5" />
+                    <div className="duo-complex-shift-time-box flex items-center justify-between text-xs">
+                      <span className="duo-complex-shift-time-label flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                         <span>مدى التحضير المسموح:</span>
                       </span>
-                      <strong className="text-white font-mono font-bold">
-                        {mosque.allowedRadiusMeters || 100} متر {((mosque.allowedRadiusMeters || 100) >= 1000) ? `(${((mosque.allowedRadiusMeters || 100) / 1000).toFixed(1)} كم)` : ''}
+                      <strong className="duo-complex-shift-time-value font-mono">
+                        {mosque.allowedRadiusMeters || 100} متر{' '}
+                        {(mosque.allowedRadiusMeters || 100) >= 1000
+                          ? `(${((mosque.allowedRadiusMeters || 100) / 1000).toFixed(1)} كم)`
+                          : ''}
                       </strong>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#065f46] flex-wrap">
-                    <div className="flex items-center gap-1.5">
+                  <div
+                    className="flex items-center justify-between gap-2 pt-3 border-t-2 flex-wrap"
+                    style={{ borderColor: themeBorder }}
+                  >
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {mosque.isLocationSet && (
                         <button
                           type="button"
                           onClick={() => handleOpenMosqueMap(mosque, 'view')}
-                          className="px-2.5 py-1.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border border-emerald-700/60 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                          title={`اطلاع على موقع الجامع وحدود الـ ${mosque.allowedRadiusMeters || 100} متر على الخريطة`}
+                          className="duo-complex-mini-edit-btn text-xs inline-flex items-center gap-1 cursor-pointer"
+                          title={`اطلاع على موقع الجامع وحدود الـ ${
+                            mosque.allowedRadiusMeters || 100
+                          } متر على الخريطة`}
                         >
-                          <Eye className="w-3.5 h-3.5 text-amber-300" />
+                          <Eye className="w-3.5 h-3.5" />
                           <span>اطلاع</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => handleOpenMosqueMap(mosque, 'picker')}
-                        className="px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        className="duo-complex-assign-btn text-xs inline-flex items-center gap-1 cursor-pointer"
                         title="تحديد أو تعديل الموقع على خريطة Google التفاعلية"
                       >
                         <MapPin className="w-3.5 h-3.5" />
-                        <span>{mosque.isLocationSet ? 'تعديل على الخريطة' : 'تحديد على الخريطة'}</span>
+                        <span>
+                          {mosque.isLocationSet ? 'تعديل على الخريطة' : 'تحديد على الخريطة'}
+                        </span>
                       </button>
                     </div>
 
@@ -2362,7 +2937,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenEditMosqueModal(mosque)}
-                        className="px-3 py-1.5 rounded-xl bg-[#064e3b] hover:bg-[#064e3b]/80 text-emerald-200 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        className="duo-complex-secondary-btn text-xs inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                         <span>تعديل</span>
@@ -2371,7 +2946,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteMosque(mosque.id)}
-                          className="p-1.5 rounded-xl bg-red-900/30 hover:bg-red-900/60 text-red-300 cursor-pointer transition-colors"
+                          className="duo-complex-danger-icon-btn cursor-pointer"
                           title="حذف الجامع"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -2390,45 +2965,39 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* VIEW 4: SHIFTS MANAGEMENT (إدارة فترات ومناوبات الدوام)                 */}
       {/* ===================================================================== */}
       {isSupervisorOrDev && activeSubTab === 'shifts' && (
-        <div
-          className="rounded-[32px] border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md transition-all"
-          style={{
-            backgroundColor: themeCard,
-            borderColor: themeBorder,
-            borderBottomColor: themeBorderBottom
-          }}
-        >
+        <div className="duo-complex-records-shell p-6 sm:p-8 space-y-6 transition-all">
           <div
-            className="flex items-center justify-between gap-3 pb-4 border-b flex-wrap"
+            className="flex items-center justify-between gap-4 pb-5 border-b-2 flex-wrap"
             style={{ borderColor: themeBorder }}
           >
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-white font-heading flex items-center gap-2">
-                <Clock className="w-5 h-5" style={{ color: themeAccent }} />
-                <span>فترات ومناوبات دوام المعلمين</span>
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5 font-bold">
-                تحديد مواعيد الحضور والانصراف، وربط كل فترة بجامع مخصص وقائمة المعلمين المناوبين
-              </p>
+            <div className="flex items-center gap-3.5">
+              <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center shrink-0">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3
+                  className="text-base sm:text-lg font-black font-heading flex items-center gap-2"
+                  style={{ color: themeText }}
+                >
+                  <span>فترات ومناوبات دوام المعلمين</span>
+                </h3>
+                <p className="duo-complex-subtext text-xs mt-0.5 font-bold">
+                  تحديد مواعيد الحضور والانصراف، وربط كل فترة بجامع مخصص وقائمة المعلمين المناوبين
+                </p>
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleOpenAddShiftModal}
-              className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-0.5"
-              style={{
-                backgroundColor: themeAccent,
-                color: themeContrastText,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow
-              }}
+              className="duo-complex-assign-btn text-xs flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>إضافة فترة دوام</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {shifts.map(shift => {
               const shiftMosque = mosques.find(m => m.id === shift.mosqueId) || mosques[0];
               const assignedTeachers = teachers.filter(t => (shift.assignedTeacherIds || []).includes(t.id));
@@ -2436,50 +3005,65 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               return (
                 <div
                   key={shift.id}
-                  className="bg-[#022c22] border-2 border-[#065f46] rounded-3xl p-5 space-y-4 shadow-lg flex flex-col justify-between"
+                  className="duo-complex-mgmt-shift-card p-5 sm:p-6 space-y-4 flex flex-col justify-between"
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-base font-black text-white font-heading">{shift.name}</h4>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold border border-amber-400/40">
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4
+                        className="text-base sm:text-lg font-black font-heading"
+                        style={{ color: themeText }}
+                      >
+                        {shift.name}
+                      </h4>
+                      <span className="duo-complex-shift-count-badge text-xs">
                         {assignedTeachers.length} معلمين مناوبين
                       </span>
                     </div>
 
                     {isShiftRemote(shift) ? (
-                      <div className="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-bold">
-                          <Globe className="w-4 h-4 text-cyan-400" />
+                      <div className="duo-complex-shift-location-box duo-complex-shift-location-box--remote space-y-1">
+                        <div className="flex items-center gap-2 text-xs font-black">
+                          <Globe className="w-4 h-4 shrink-0" />
                           <span>حلقة عن بعد (أونلاين) • بدون شرط الموقع الجغرافي</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="p-3 rounded-2xl bg-[#064e3b]/40 border border-[#065f46] space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold">
-                          <Building2 className="w-4 h-4 text-amber-400" />
+                      <div className="duo-complex-shift-location-box space-y-1">
+                        <div className="flex items-center gap-2 text-xs font-black">
+                          <Building2 className="w-4 h-4 shrink-0" />
                           <span>الجامع المخصص: {shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'}</span>
                         </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                      <div className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-[#065f46]">
-                        <span className="text-[10px] text-emerald-300 block">موعد الحضور:</span>
-                        <strong className="text-white font-mono">{shift.checkInStart} - {shift.checkInEnd}</strong>
+                    <div className="grid grid-cols-2 gap-2.5 text-center text-xs">
+                      <div className="duo-complex-shift-time-box">
+                        <span className="duo-complex-shift-time-label text-[11px] block mb-0.5">
+                          موعد الحضور:
+                        </span>
+                        <strong className="duo-complex-shift-time-value font-mono text-sm tracking-wide">
+                          {shift.checkInStart} - {shift.checkInEnd}
+                        </strong>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-[#065f46]">
-                        <span className="text-[10px] text-emerald-300 block">موعد الانصراف:</span>
-                        <strong className="text-white font-mono">{shift.checkOutStart} - {shift.checkOutEnd}</strong>
+                      <div className="duo-complex-shift-time-box">
+                        <span className="duo-complex-shift-time-label text-[11px] block mb-0.5">
+                          موعد الانصراف:
+                        </span>
+                        <strong className="duo-complex-shift-time-value font-mono text-sm tracking-wide">
+                          {shift.checkOutStart} - {shift.checkOutEnd}
+                        </strong>
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-emerald-300 font-bold block">المعلمون المكلفون ({assignedTeachers.length}):</span>
+                    <div className="duo-complex-shift-teachers-panel space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="duo-complex-subtext text-xs font-black block">
+                          المعلمون المكلفون ({assignedTeachers.length}):
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleOpenAssignTeachersModal(shift)}
-                          className="text-[11px] text-amber-300 hover:text-white font-bold flex items-center gap-1 cursor-pointer"
+                          className="duo-complex-mini-edit-btn text-[11px] flex items-center gap-1 cursor-pointer"
                         >
                           <UserPlus className="w-3.5 h-3.5" />
                           <span>تعديل المكلفين</span>
@@ -2488,18 +3072,24 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                       {assignedTeachers.length === 0 ? (
                         <div
                           onClick={() => handleOpenAssignTeachersModal(shift)}
-                          className="p-2.5 rounded-xl bg-amber-400/10 border border-dashed border-amber-400/30 text-center cursor-pointer hover:bg-amber-400/20 transition-colors"
+                          className="duo-complex-empty-assign-trigger text-center cursor-pointer"
                         >
-                          <span className="text-xs text-amber-300 font-bold">لم يُعيّن معلمين بعد — اضغط هنا لتعيين المعلمين</span>
+                          <span className="text-xs font-black">
+                            لم يُعيّن معلمين بعد — اضغط هنا لتعيين المعلمين
+                          </span>
                         </div>
                       ) : (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
                           {assignedTeachers.map(t => (
                             <span
                               key={t.id}
-                              className="text-[11px] px-2 py-0.5 rounded-lg bg-[#064e3b] text-emerald-100 border border-[#065f46]"
+                              className="duo-complex-teacher-chip text-[11px]"
                             >
-                              {t.name}
+                              <span
+                                className="w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: themeAccent }}
+                              />
+                              <span>{t.name}</span>
                             </span>
                           ))}
                         </div>
@@ -2507,11 +3097,14 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#065f46] flex-wrap">
+                  <div
+                    className="flex items-center justify-between gap-2 pt-3.5 border-t-2 flex-wrap"
+                    style={{ borderColor: themeBorder }}
+                  >
                     <button
                       type="button"
                       onClick={() => handleOpenAssignTeachersModal(shift)}
-                      className="px-3.5 py-2 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                      className="duo-complex-assign-btn text-xs flex items-center gap-1.5 cursor-pointer"
                     >
                       <UserCheck className="w-4 h-4" />
                       <span>تعيين المعلمين ({assignedTeachers.length})</span>
@@ -2521,7 +3114,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleOpenEditShiftModal(shift)}
-                        className="px-3 py-1.5 rounded-xl bg-[#064e3b] hover:bg-[#064e3b]/80 text-emerald-200 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        className="duo-complex-secondary-btn text-xs flex items-center gap-1.5 cursor-pointer"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                         <span>تعديل المواعيد</span>
@@ -2530,10 +3123,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteShift(shift.id)}
-                          className="p-1.5 rounded-xl bg-red-900/30 hover:bg-red-900/60 text-red-300 cursor-pointer transition-colors"
+                          className="duo-complex-danger-icon-btn cursor-pointer"
                           title="حذف الفترة"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -2548,640 +3141,1366 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
       {/* ===================================================================== */}
       {/* MODAL 1: ADD / EDIT MOSQUE (إضافة / تعديل جامع بدون تعقيدات)          */}
       {/* ===================================================================== */}
-      {isMosqueModalOpen && (
-        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border-2 border-amber-400 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 text-right relative">
-            <button
-              onClick={() => setIsMosqueModalOpen(false)}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+      {typeof document !== 'undefined' &&
+        isMosqueModalOpen &&
+        createPortal(
+          <div
+            dir="rtl"
+            onClick={() => setIsMosqueModalOpen(false)}
+            style={{ zIndex: 2147483000 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className="duo-complex-modal-shell w-full max-w-lg max-h-[92vh] flex flex-col p-5 sm:p-6 space-y-4 text-right"
             >
-              <X className="w-5 h-5" />
-            </button>
+              <div className="duo-complex-modal-header flex items-start justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center font-black text-xl shrink-0">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3
+                      className="text-base sm:text-lg font-black font-heading"
+                      style={{ color: themeText }}
+                    >
+                      {editingMosqueId ? 'تعديل بيانات الجامع' : 'إضافة جامع جديد'}
+                    </h3>
+                    <p className="duo-complex-subtext text-xs font-bold mt-0.5">
+                      اكتب اسم الجامع بكل سهولة واحفظه لربط فترات الدوام به
+                    </p>
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-3 border-b border-emerald-800 pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-[#fbbf24] flex items-center justify-center font-black text-xl shadow-lg shrink-0">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-white font-heading">
-                  {editingMosqueId ? 'تعديل بيانات الجامع' : 'إضافة جامع جديد'}
-                </h3>
-                <p className="text-xs text-emerald-300/80">
-                  اكتب اسم الجامع بكل سهولة واحفظه لربط فترات الدوام به
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Mosque Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  اسم الجامع أو المسجد: <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={mosqueNameInput}
-                  onChange={e => setMosqueNameInput(e.target.value)}
-                  placeholder="مثال: جامع الراجحي، جامع الفرقان، مسجد بلال بن رباح..."
-                  className="w-full py-2.5 px-3.5 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl text-xs sm:text-sm text-white font-bold outline-none"
-                  autoFocus
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsMosqueModalOpen(false)}
+                  className="duo-complex-modal-close-btn cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* Neighborhood / Location label */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  الحي أو المنطقة (اختياري):
-                </label>
-                <input
-                  type="text"
-                  value={mosqueNeighborhoodInput}
-                  onChange={e => setMosqueNeighborhoodInput(e.target.value)}
-                  placeholder="مثال: حي الروضة، الشارع العام..."
-                  className="w-full py-2 px-3.5 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl text-xs text-white outline-none"
-                />
-              </div>
-
-              {/* Mosque Range Setting (مدى المسجد للتحضير بالأمتار) */}
-              <div className="space-y-2 p-3.5 rounded-2xl bg-[#011a14] border border-[#065f46]">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-emerald-200">
-                    مدى المسجد المسموح للتحضير (بالمتر):
+              <div className="space-y-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 pr-0.5 py-0.5">
+                {/* Mosque Name */}
+                <div className="space-y-1.5">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    اسم الجامع أو المسجد: <span className="text-red-400">*</span>
                   </label>
-                  <span className="text-[11px] font-mono font-bold text-amber-300 bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/20">
-                    {mosqueRadiusInput || 100} متر {Number(mosqueRadiusInput) >= 1000 ? `(${(Number(mosqueRadiusInput) / 1000).toFixed(1)} كم)` : ''}
+                  <div className="duo-complex-search-dock">
+                    <span className="duo-complex-search-icon-badge">
+                      <Building2 className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={mosqueNameInput}
+                      onChange={e => setMosqueNameInput(e.target.value)}
+                      placeholder="مثال: جامع الراجحي، جامع الفرقان، مسجد بلال بن رباح..."
+                      className="duo-complex-search-field text-xs sm:text-sm"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Neighborhood / Location label */}
+                <div className="space-y-1.5">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    الحي أو المنطقة (اختياري):
+                  </label>
+                  <div className="duo-complex-search-dock">
+                    <span className="duo-complex-search-icon-badge">
+                      <MapPin className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={mosqueNeighborhoodInput}
+                      onChange={e => setMosqueNeighborhoodInput(e.target.value)}
+                      placeholder="مثال: حي الروضة، الشارع العام..."
+                      className="duo-complex-search-field text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Mosque Range Setting (مدى المسجد للتحضير بالأمتار) */}
+                <div className="duo-complex-teachers-list-box space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <label className="duo-complex-subtext text-xs font-black">
+                      مدى المسجد المسموح للتحضير (بالمتر):
+                    </label>
+                    <span className="duo-complex-shift-count-badge text-[11px] font-mono">
+                      {mosqueRadiusInput || 100} متر{' '}
+                      {Number(mosqueRadiusInput) >= 1000
+                        ? `(${(Number(mosqueRadiusInput) / 1000).toFixed(1)} كم)`
+                        : ''}
+                    </span>
+                  </div>
+                  <p className="duo-complex-subtext text-[11px] leading-relaxed font-bold opacity-90">
+                    المسافة المحيطة بالمسجد التي يُسمح للمعلم بالتحضير والانصراف داخلها (الافتراضي 100 متر، ويمكنك كتابة أي رقم تريده كـ 100 أو 500 أو 1000 متر أو غيرها).
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="10"
+                      max="50000"
+                      step="10"
+                      value={mosqueRadiusInput}
+                      onChange={e => setMosqueRadiusInput(e.target.value)}
+                      placeholder="100"
+                      className="duo-complex-input w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-mono font-black outline-none"
+                    />
+                    <span className="duo-complex-subtext text-xs font-black shrink-0">متر</span>
+                  </div>
+                  {/* Quick preset chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    {[
+                      { label: '100 م (الافتراضي)', val: 100 },
+                      { label: '200 م', val: 200 },
+                      { label: '500 م', val: 500 },
+                      { label: '1000 م (1 كم)', val: 1000 },
+                      { label: '2000 م (2 كم)', val: 2000 }
+                    ].map(preset => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => setMosqueRadiusInput(String(preset.val))}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          Number(mosqueRadiusInput) === preset.val ? 'is-active' : ''
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Simple One-Click GPS Capture */}
+                <div className="duo-complex-teachers-list-box space-y-2.5">
+                  <span className="text-xs font-black block" style={{ color: themeAccent }}>
+                    تحديد الموقع للتحضير الذكي (Google Maps أو بنقرة واحدة):
                   </span>
-                </div>
-                <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                  المسافة المحيطة بالمسجد التي يُسمح للمعلم بالتحضير والانصراف داخلها (الافتراضي 100 متر، ويمكنك كتابة أي رقم تريده كـ 100 أو 500 أو 1000 متر أو غيرها).
-                </p>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="10"
-                    max="50000"
-                    step="10"
-                    value={mosqueRadiusInput}
-                    onChange={e => setMosqueRadiusInput(e.target.value)}
-                    placeholder="100"
-                    className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl text-xs sm:text-sm text-white font-mono font-bold outline-none"
-                  />
-                  <span className="text-xs text-emerald-300 font-bold shrink-0">متر</span>
-                </div>
-                {/* Quick preset chips */}
-                <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  {[
-                    { label: '100 م (الافتراضي)', val: 100 },
-                    { label: '200 م', val: 200 },
-                    { label: '500 م', val: 500 },
-                    { label: '1000 م (1 كم)', val: 1000 },
-                    { label: '2000 م (2 كم)', val: 2000 }
-                  ].map(preset => (
+                  <p className="duo-complex-subtext text-[11px] leading-relaxed font-bold opacity-90">
+                    يمكنك فتح الخريطة التفاعلية والتحريك وسحب الدبوس حتى تصل للجامع، أو الضغط على التقاط موقعك الحالي مباشرة.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
-                      key={preset.val}
                       type="button"
-                      onClick={() => setMosqueRadiusInput(String(preset.val))}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                        Number(mosqueRadiusInput) === preset.val
-                          ? 'bg-amber-400 text-[#064e3b]'
-                          : 'bg-[#064e3b] text-emerald-200 hover:text-white border border-[#065f46]'
+                      onClick={() => {
+                        const tempMosque: MosqueItem = {
+                          id: editingMosqueId || `mosque_${Date.now()}`,
+                          name: mosqueNameInput.trim() || 'الجامع',
+                          neighborhood: mosqueNeighborhoodInput.trim(),
+                          latitude: capturedMosqueLocation?.lat,
+                          longitude: capturedMosqueLocation?.lng,
+                          isLocationSet: Boolean(capturedMosqueLocation?.lat),
+                          allowedRadiusMeters: parseInt(mosqueRadiusInput, 10) || 100,
+                          createdAt: new Date().toISOString()
+                        };
+                        handleOpenMosqueMap(tempMosque, 'picker');
+                      }}
+                      className="duo-complex-assign-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      <span>تحديد بالخريطة التفاعلية</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isCapturingGPS}
+                      onClick={handleCaptureCurrentLocationForMosque}
+                      className="duo-complex-secondary-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>{isCapturingGPS ? 'جارٍ الالتقاط...' : 'التقاط موقعي الحالي (GPS)'}</span>
+                    </button>
+                  </div>
+
+                  {gpsCaptureMsg && (
+                    <div
+                      className={`p-2.5 rounded-xl text-xs font-black flex items-center gap-2 border-2 border-b-4 ${
+                        gpsCaptureMsg.type === 'success'
+                          ? 'duo-att-chip-accent'
+                          : 'bg-red-500/20 text-red-200 border-red-500/50'
                       }`}
                     >
-                      {preset.label}
-                    </button>
-                  ))}
+                      {gpsCaptureMsg.type === 'success' ? (
+                        <Check className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <X className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>{gpsCaptureMsg.text}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Simple One-Click GPS Capture (بدون خطوط طول وعرض) */}
-              <div className="p-4 rounded-2xl bg-[#011a14] border border-[#065f46] space-y-2.5">
-                <span className="text-xs font-bold text-amber-300 block">
-                  📍 تحديد الموقع للتحضير الذكي (Google Maps أو بنقرة واحدة):
-                </span>
-                <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                  يمكنك فتح الخريطة التفاعلية والتحريك وسحب الدبوس حتى تصل للجامع، أو الضغط على التقاط موقعك الحالي مباشرة.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const tempMosque: MosqueItem = {
-                        id: editingMosqueId || `mosque_${Date.now()}`,
-                        name: mosqueNameInput.trim() || 'الجامع',
-                        neighborhood: mosqueNeighborhoodInput.trim(),
-                        latitude: capturedMosqueLocation?.lat,
-                        longitude: capturedMosqueLocation?.lng,
-                        isLocationSet: Boolean(capturedMosqueLocation?.lat),
-                        allowedRadiusMeters: parseInt(mosqueRadiusInput, 10) || 100,
-                        createdAt: new Date().toISOString()
-                      };
-                      handleOpenMosqueMap(tempMosque, 'picker');
-                    }}
-                    className="py-2.5 px-3 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-md"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    <span>تحديد بالخريطة التفاعلية</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isCapturingGPS}
-                    onClick={handleCaptureCurrentLocationForMosque}
-                    className="py-2.5 px-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm disabled:opacity-50"
-                  >
-                    <Navigation className="w-4 h-4" />
-                    <span>{isCapturingGPS ? 'جارٍ الالتقاط...' : 'التقاط موقعي الحالي (GPS)'}</span>
-                  </button>
-                </div>
-
-                {gpsCaptureMsg && (
-                  <div
-                    className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
-                      gpsCaptureMsg.type === 'success'
-                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
-                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                    }`}
-                  >
-                    {gpsCaptureMsg.type === 'success' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                    <span>{gpsCaptureMsg.text}</span>
-                  </div>
-                )}
+              <div className="duo-complex-modal-footer flex items-center justify-end gap-2.5 flex-wrap shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsMosqueModalOpen(false)}
+                  className="duo-complex-secondary-btn text-xs cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={!mosqueNameInput.trim()}
+                  onClick={handleSaveMosque}
+                  className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>حفظ الجامع</span>
+                </button>
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-emerald-800">
-              <button
-                type="button"
-                onClick={() => setIsMosqueModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-emerald-950 text-emerald-300 text-xs font-bold cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                disabled={!mosqueNameInput.trim()}
-                onClick={handleSaveMosque}
-                className="px-6 py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs shadow-md cursor-pointer transition-all disabled:opacity-50"
-              >
-                حفظ الجامع
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ===================================================================== */}
-      {/* MODAL 2: ADD / EDIT SHIFT (ربط الفترة بالجامع والمعلمين)                */}
+      {/* MODAL 2: ADD / EDIT SHIFT (ربط الفترة بالجامع والمعلمين والخيارات)      */}
       {/* ===================================================================== */}
-      {isShiftModalOpen && (
-        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border-2 border-amber-400 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative">
-            <button
-              onClick={() => setIsShiftModalOpen(false)}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+      {typeof document !== 'undefined' &&
+        isShiftModalOpen &&
+        createPortal(
+          <div
+            dir="rtl"
+            onClick={() => setIsShiftModalOpen(false)}
+            style={{ zIndex: 2147483000 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className="duo-complex-modal-shell w-full max-w-lg max-h-[92vh] flex flex-col p-5 sm:p-6 space-y-4 text-right"
             >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 border-b border-emerald-800 pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-[#fbbf24] flex items-center justify-center font-black text-xl shadow-lg shrink-0">
-                <Clock className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-white font-heading">
-                  {editingShiftId ? 'تعديل فترة الدوام' : 'إنشاء فترة دوام جديدة'}
-                </h3>
-                <p className="text-xs text-emerald-300/80">
-                  حدد الجامع ومواعيد الحضور والانصراف والمعلمين المناوبين
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Shift Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  اسم الفترة:
-                </label>
-                <input
-                  type="text"
-                  value={shiftForm.name}
-                  onChange={e => setShiftForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="مثال: الفترة العصرية، الفترة المسائية، حلقة الفجر..."
-                  className="w-full py-2.5 px-3.5 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl text-xs sm:text-sm text-white font-bold outline-none"
-                />
-              </div>
-
-              {/* Shift Type Toggle (حضورية أو عن بعد) */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-amber-300 block">
-                  نوع الحلقة / الدوام: <span className="text-red-400">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShiftForm(prev => ({ ...prev, isOnline: false }))}
-                    className={`py-2.5 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${
-                      !shiftForm.isOnline
-                        ? 'bg-[#fbbf24] border-[#f59e0b] text-[#064e3b] shadow-md'
-                        : 'bg-[#064e3b] border-[#065f46] text-emerald-200/70 hover:text-white'
-                    }`}
-                  >
-                    <Building2 className="w-4 h-4" />
-                    <span>حلقة حضورية (بالمسجد)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShiftForm(prev => ({ ...prev, isOnline: true }))}
-                    className={`py-2.5 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${
-                      shiftForm.isOnline
-                        ? 'bg-cyan-500 border-cyan-400 text-slate-950 shadow-md'
-                        : 'bg-[#064e3b] border-[#065f46] text-emerald-200/70 hover:text-white'
-                    }`}
-                  >
-                    <Globe className="w-4 h-4" />
-                    <span>حلقة عن بعد (أونلاين)</span>
-                  </button>
+              {/* Pinned 3D Header */}
+              <div className="duo-complex-modal-header flex items-start justify-between gap-3 shrink-0">
+                <div className="flex items-start gap-3">
+                  <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center font-black text-xl shrink-0">
+                    <Clock className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3
+                      className="text-base sm:text-lg font-black font-heading leading-snug"
+                      style={{ color: themeText }}
+                    >
+                      {editingShiftId ? 'تعديل فترة الدوام' : 'إنشاء فترة دوام جديدة'}
+                    </h3>
+                    <p className="duo-complex-subtext text-xs font-bold leading-relaxed">
+                      المجمع: {activeComplex?.name || 'المجمع الحالي'} • حدد الجامع ومواعيد الدوام والمعلمين المناوبين
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsShiftModalOpen(false)}
+                  className="duo-complex-modal-close-btn cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* MOSQUE SELECTOR (يحدد الجامع وقت عمل الفترة) - للحلقات الحضورية فقط */}
-              {!shiftForm.isOnline ? (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-amber-300 block flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4 text-amber-400" />
-                    <span>الجامع المخصص لهذه الفترة: <span className="text-red-400">*</span></span>
+              {/* Scrollable Middle Body */}
+              <div className="space-y-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 pr-0.5 py-0.5">
+                {/* 1. Shift Name (3D Dock + Quick Preset Options) */}
+                <div className="space-y-2">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    اسم الفترة: <span className="text-red-400">*</span>
                   </label>
-                  <select
-                    value={shiftForm.mosqueId}
-                    onChange={e => setShiftForm(prev => ({ ...prev, mosqueId: e.target.value }))}
-                    className="w-full py-2.5 px-3.5 bg-[#064e3b] border-2 border-amber-400/40 focus:border-[#fbbf24] rounded-2xl text-xs sm:text-sm text-amber-300 font-bold outline-none cursor-pointer"
-                  >
-                    {mosques.map(m => (
-                      <option key={m.id} value={m.id} className="bg-[#022c22] text-white">
-                        {m.name} {m.neighborhood ? `(${m.neighborhood})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-emerald-300/80">
-                    عند تحضير المعلم أو انصرافه، سيتحقق النظام من تواجده في هذا الجامع المحدد.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 space-y-1 text-xs">
-                  <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                    <Globe className="w-4 h-4 text-cyan-400" />
-                    <span>حلقة عن بعد (أونلاين) معتمدة</span>
-                  </div>
-                  <p className="text-cyan-200/80 text-[11px] leading-relaxed">
-                    يتم التحضير والانصراف مباشرة وفق التوقيت المحدد دون اشتراط موقع المسجد أو GPS.
-                  </p>
-                </div>
-              )}
-
-              {/* Check-in Times */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  موعد الحضور (من - إلى):
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[10px] text-emerald-300 block mb-0.5">يبدأ الحضور من:</span>
+                  <div className="duo-complex-search-dock">
+                    <span className="duo-complex-search-icon-badge">
+                      <Clock className="w-4 h-4" />
+                    </span>
                     <input
-                      type="time"
-                      value={shiftForm.checkInStart}
-                      onChange={e => setShiftForm(prev => ({ ...prev, checkInStart: e.target.value }))}
-                      className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs text-white font-mono text-center outline-none"
+                      type="text"
+                      value={shiftForm.name}
+                      onChange={e => setShiftForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="مثال: الفترة العصرية الرسمية، الفترة المسائية، حلقة الفجر..."
+                      className="duo-complex-search-field text-xs sm:text-sm"
                     />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-emerald-300 block mb-0.5">ينتهي الحضور في:</span>
-                    <input
-                      type="time"
-                      value={shiftForm.checkInEnd}
-                      onChange={e => setShiftForm(prev => ({ ...prev, checkInEnd: e.target.value }))}
-                      className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs text-white font-mono text-center outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Check-out Times */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  موعد الانصراف (من - إلى):
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[10px] text-emerald-300 block mb-0.5">يبدأ الانصراف من:</span>
-                    <input
-                      type="time"
-                      value={shiftForm.checkOutStart}
-                      onChange={e => setShiftForm(prev => ({ ...prev, checkOutStart: e.target.value }))}
-                      className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs text-white font-mono text-center outline-none"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-emerald-300 block mb-0.5">ينتهي الانصراف في:</span>
-                    <input
-                      type="time"
-                      value={shiftForm.checkOutEnd}
-                      onChange={e => setShiftForm(prev => ({ ...prev, checkOutEnd: e.target.value }))}
-                      className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs text-white font-mono text-center outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Assign Teachers Checkboxes */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-emerald-200">
-                    المعلمون المناوبون في هذه الفترة ({shiftForm.assignedTeacherIds.length}):
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (shiftForm.assignedTeacherIds.length === teachers.length) {
-                        setShiftForm(prev => ({ ...prev, assignedTeacherIds: [] }));
-                      } else {
-                        setShiftForm(prev => ({ ...prev, assignedTeacherIds: teachers.map(t => t.id) }));
-                      }
-                    }}
-                    className="text-[11px] text-amber-300 hover:underline cursor-pointer"
-                  >
-                    {shiftForm.assignedTeacherIds.length === teachers.length ? 'إلغاء تحديد الكل' : 'تحديد جميع المعلمين'}
-                  </button>
-                </div>
-
-                <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 rounded-2xl bg-[#011a14] border border-[#065f46]">
-                  {teachers.map(t => {
-                    const isChecked = shiftForm.assignedTeacherIds.includes(t.id);
-                    return (
-                      <label
-                        key={t.id}
-                        className="flex items-center gap-2 p-2 rounded-xl hover:bg-[#064e3b]/50 cursor-pointer text-xs"
+                    {shiftForm.name.trim() !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setShiftForm(prev => ({ ...prev, name: '' }))}
+                        className="duo-complex-mini-edit-btn text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                        title="مسح الاسم"
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setShiftForm(prev => ({
-                                ...prev,
-                                assignedTeacherIds: [...prev.assignedTeacherIds, t.id]
-                              }));
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Shift Name Options */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      'الفترة العصرية الرسمية',
+                      'الفترة المسائية',
+                      'فترة الفجر',
+                      'الفترة الصباحية'
+                    ].map(presetName => (
+                      <button
+                        key={presetName}
+                        type="button"
+                        onClick={() => setShiftForm(prev => ({ ...prev, name: presetName }))}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          shiftForm.name.trim() === presetName ? 'is-active' : ''
+                        }`}
+                      >
+                        {presetName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Shift Type Toggle (حضورية أو عن بعد) — 100% Active Complex Theme */}
+                <div className="space-y-2">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    نوع الحلقة / الدوام: <span className="text-red-400">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShiftForm(prev => ({ ...prev, isOnline: false }))}
+                      className={
+                        !shiftForm.isOnline
+                          ? 'duo-complex-assign-btn text-xs flex items-center justify-center gap-2 cursor-pointer py-2.5'
+                          : 'duo-complex-secondary-btn text-xs flex items-center justify-center gap-2 cursor-pointer py-2.5'
+                      }
+                    >
+                      <Building2 className="w-4 h-4 shrink-0" />
+                      <span>حلقة حضورية (بالمسجد)</span>
+                      {!shiftForm.isOnline && <Check className="w-4 h-4 stroke-[3] shrink-0" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMosqueSelectOpen(false);
+                        setShiftForm(prev => ({ ...prev, isOnline: true }));
+                      }}
+                      className={
+                        shiftForm.isOnline
+                          ? 'duo-complex-assign-btn text-xs flex items-center justify-center gap-2 cursor-pointer py-2.5'
+                          : 'duo-complex-secondary-btn text-xs flex items-center justify-center gap-2 cursor-pointer py-2.5'
+                      }
+                    >
+                      <Globe className="w-4 h-4 shrink-0" />
+                      <span>حلقة عن بعد (أونلاين)</span>
+                      {shiftForm.isOnline && <Check className="w-4 h-4 stroke-[3] shrink-0" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Custom Duolingo 3D Mosque Selector & Options Menu ("والخيارات") */}
+                {!shiftForm.isOnline ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <label className="duo-complex-subtext text-xs font-black flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4" style={{ color: themeAccent }} />
+                        <span>
+                          الجامع المخصص لهذه الفترة: <span className="text-red-400">*</span>
+                        </span>
+                      </label>
+
+                      {mosques.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isAddingNewMosqueInShift) {
+                              setIsAddingNewMosqueInShift(false);
+                              setNewMosqueNameInShift('');
                             } else {
-                              setShiftForm(prev => ({
-                                ...prev,
-                                assignedTeacherIds: prev.assignedTeacherIds.filter(id => id !== t.id)
-                              }));
+                              setIsMosqueSelectOpen(false);
+                              setIsAddingNewMosqueInShift(true);
                             }
                           }}
-                          className="rounded border-[#065f46] text-[#fbbf24] focus:ring-0 cursor-pointer"
-                        />
-                        <span className="text-white font-bold">{t.name}</span>
+                          className="duo-complex-mini-edit-btn text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          {isAddingNewMosqueInShift ? (
+                            <>
+                              <Building2 className="w-3.5 h-3.5" />
+                              <span>اختيار من الجوامع المسجلة ({mosques.length})</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>جامع جديد</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {isAddingNewMosqueInShift || mosques.length === 0 ? (
+                      <div className="duo-complex-teachers-list-box space-y-2">
+                        <span className="duo-complex-subtext text-[11px] font-black block">
+                          إضافة جامع جديد وربطه مباشرة بهذه الفترة:
+                        </span>
+                        <div className="duo-complex-search-dock">
+                          <span className="duo-complex-search-icon-badge">
+                            <Building2 className="w-4 h-4" />
+                          </span>
+                          <input
+                            type="text"
+                            value={newMosqueNameInShift}
+                            onChange={e => setNewMosqueNameInShift(e.target.value)}
+                            placeholder="اكتب اسم الجامع الجديد هنا..."
+                            className="duo-complex-search-field text-xs sm:text-sm"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      (() => {
+                        const selectedMosqueObj =
+                          mosques.find(m => m.id === shiftForm.mosqueId) || mosques[0];
+                        return (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveShiftTimeField(null);
+                                setIsMosqueSelectOpen(prev => !prev);
+                              }}
+                              className={`duo-complex-select-trigger flex items-center justify-between gap-3 cursor-pointer ${
+                                isMosqueSelectOpen ? 'is-open' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="duo-complex-search-icon-badge">
+                                  <Building2 className="w-4 h-4" />
+                                </span>
+                                <div className="min-w-0 text-right">
+                                  <span
+                                    className="text-xs sm:text-sm font-black block truncate"
+                                    style={{ color: themeText }}
+                                  >
+                                    {selectedMosqueObj?.name || 'اختر الجامع'}
+                                  </span>
+                                  <span className="duo-complex-subtext text-[11px] font-bold block truncate">
+                                    {selectedMosqueObj?.neighborhood
+                                      ? `${selectedMosqueObj.neighborhood} • نطاق التحضير ${
+                                          selectedMosqueObj.allowedRadiusMeters || 100
+                                        } متر`
+                                      : `نطاق التحضير المعتمد: ${
+                                          selectedMosqueObj?.allowedRadiusMeters || 100
+                                        } متر`}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="duo-complex-shift-schedule-chip text-[11px]">
+                                  {isMosqueSelectOpen ? 'إغلاق الخيارات' : 'تغيير الجامع'}
+                                </span>
+                                <ChevronDown
+                                  className={`w-4 h-4 transition-transform duration-200 ${
+                                    isMosqueSelectOpen ? 'rotate-180' : ''
+                                  }`}
+                                  style={{ color: themeAccent }}
+                                />
+                              </div>
+                            </button>
+
+                            {isMosqueSelectOpen && (
+                              <div className="duo-complex-select-menu space-y-2">
+                                <div className="flex items-center justify-between gap-2 px-1">
+                                  <span className="duo-complex-subtext text-[11px] font-black">
+                                    خيارات الجوامع المسجلة في المجمع:
+                                  </span>
+                                  <span className="duo-complex-shift-count-badge text-[10px]">
+                                    {mosques.length} جامع
+                                  </span>
+                                </div>
+
+                                <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2 pr-0.5">
+                                  {mosques.map(m => {
+                                    const isCurrentMosque =
+                                      (shiftForm.mosqueId || mosques[0]?.id) === m.id;
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setShiftForm(prev => ({ ...prev, mosqueId: m.id }));
+                                          setIsAddingNewMosqueInShift(false);
+                                          setNewMosqueNameInShift('');
+                                          setIsMosqueSelectOpen(false);
+                                        }}
+                                        className={`duo-complex-teacher-select-card flex items-center justify-between gap-2.5 cursor-pointer ${
+                                          isCurrentMosque ? 'is-selected' : ''
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <span
+                                            className={`duo-complex-checkbox ${
+                                              isCurrentMosque ? 'is-checked' : ''
+                                            }`}
+                                          >
+                                            {isCurrentMosque && (
+                                              <Check className="w-4 h-4 stroke-[3]" />
+                                            )}
+                                          </span>
+                                          <div className="min-w-0 text-right">
+                                            <span
+                                              className="text-xs sm:text-sm font-black block truncate"
+                                              style={{ color: themeText }}
+                                            >
+                                              {m.name}
+                                            </span>
+                                            <span className="duo-complex-subtext text-[11px] font-bold block truncate">
+                                              {m.neighborhood ? `${m.neighborhood} • ` : ''}
+                                              نطاق {m.allowedRadiusMeters || 100} م{' '}
+                                              {m.isLocationSet ? '• (موقع GPS مفعل)' : ''}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <span
+                                          className={`duo-complex-duty-status text-[10px] shrink-0 ${
+                                            isCurrentMosque ? 'is-assigned' : ''
+                                          }`}
+                                        >
+                                          {isCurrentMosque ? 'الجامع المحدد' : 'اختيار'}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsMosqueSelectOpen(false);
+                                    setIsAddingNewMosqueInShift(true);
+                                  }}
+                                  className="duo-complex-secondary-btn w-full text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  <span>إضافة جامع جديد غير موجود في القائمة</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    <p className="duo-complex-subtext text-[11px] font-bold">
+                      عند تحضير المعلم أو انصرافه، سيتحقق النظام من تواجده في هذا الجامع المحدد.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="duo-complex-shift-location-box duo-complex-shift-location-box--remote space-y-1 text-xs">
+                    <div className="flex items-center gap-1.5 font-black">
+                      <Globe className="w-4 h-4" />
+                      <span>حلقة عن بعد (أونلاين) معتمدة</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed font-bold opacity-95">
+                      يتم التحضير والانصراف مباشرة وفق التوقيت المحدد دون اشتراط موقع المسجد أو GPS.
+                    </p>
+                  </div>
+                )}
+
+                {/* 4. Check-in & Check-out Custom Duolingo 3D Time Triggers & Options */}
+                {(
+                  [
+                    {
+                      groupTitle: 'موعد الحضور (من - إلى):',
+                      startField: 'checkInStart' as const,
+                      endField: 'checkInEnd' as const,
+                      startLabel: 'يبدأ الحضور من:',
+                      endLabel: 'ينتهي الحضور في:',
+                      presets: [
+                        { label: '05:00 ص', val: '05:00' },
+                        { label: '08:00 ص', val: '08:00' },
+                        { label: '03:30 م', val: '15:30' },
+                        { label: '04:00 م', val: '16:00' },
+                        { label: '04:30 م', val: '16:30' },
+                        { label: '07:00 م', val: '19:00' }
+                      ]
+                    },
+                    {
+                      groupTitle: 'موعد الانصراف (من - إلى):',
+                      startField: 'checkOutStart' as const,
+                      endField: 'checkOutEnd' as const,
+                      startLabel: 'يبدأ الانصراف من:',
+                      endLabel: 'ينتهي الانصراف في:',
+                      presets: [
+                        { label: '06:30 ص', val: '06:30' },
+                        { label: '11:00 ص', val: '11:00' },
+                        { label: '05:30 م', val: '17:30' },
+                        { label: '06:00 م', val: '18:00' },
+                        { label: '08:00 م', val: '20:00' },
+                        { label: '09:00 م', val: '21:00' }
+                      ]
+                    }
+                  ] as const
+                ).map(timeGroup => {
+                  const startParts = parse24hTimeParts(shiftForm[timeGroup.startField]);
+                  const endParts = parse24hTimeParts(shiftForm[timeGroup.endField]);
+                  const isGroupPickerOpen =
+                    activeShiftTimeField === timeGroup.startField ||
+                    activeShiftTimeField === timeGroup.endField;
+                  const activeFieldKey = isGroupPickerOpen ? activeShiftTimeField : null;
+                  const activeParts = activeFieldKey
+                    ? parse24hTimeParts(shiftForm[activeFieldKey])
+                    : null;
+                  const activeFieldArabicTitle =
+                    activeFieldKey === 'checkInStart'
+                      ? 'بداية وقت الحضور'
+                      : activeFieldKey === 'checkInEnd'
+                      ? 'نهاية وقت الحضور'
+                      : activeFieldKey === 'checkOutStart'
+                      ? 'بداية وقت الانصراف'
+                      : 'نهاية وقت الانصراف';
+
+                  return (
+                    <div key={timeGroup.groupTitle} className="space-y-2">
+                      <label className="duo-complex-subtext text-xs font-black block">
+                        {timeGroup.groupTitle}
                       </label>
-                    );
-                  })}
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {/* Start Time Trigger */}
+                        <div className="duo-complex-shift-time-box space-y-1.5">
+                          <span className="duo-complex-shift-time-label text-[11px] block">
+                            {timeGroup.startLabel}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsMosqueSelectOpen(false);
+                              setActiveShiftTimeField(prev =>
+                                prev === timeGroup.startField ? null : timeGroup.startField
+                              );
+                            }}
+                            className={`duo-complex-time-trigger flex items-center justify-between gap-2 cursor-pointer ${
+                              activeShiftTimeField === timeGroup.startField ? 'is-open' : ''
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock
+                                className="w-4 h-4 shrink-0"
+                                style={{ color: themeAccent }}
+                              />
+                              <span className="text-xs sm:text-sm font-mono font-black">
+                                {startParts.formatted}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                                activeShiftTimeField === timeGroup.startField ? 'rotate-180' : ''
+                              }`}
+                              style={{ color: themeAccent }}
+                            />
+                          </button>
+                        </div>
+
+                        {/* End Time Trigger */}
+                        <div className="duo-complex-shift-time-box space-y-1.5">
+                          <span className="duo-complex-shift-time-label text-[11px] block">
+                            {timeGroup.endLabel}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsMosqueSelectOpen(false);
+                              setActiveShiftTimeField(prev =>
+                                prev === timeGroup.endField ? null : timeGroup.endField
+                              );
+                            }}
+                            className={`duo-complex-time-trigger flex items-center justify-between gap-2 cursor-pointer ${
+                              activeShiftTimeField === timeGroup.endField ? 'is-open' : ''
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock
+                                className="w-4 h-4 shrink-0"
+                                style={{ color: themeAccent }}
+                              />
+                              <span className="text-xs sm:text-sm font-mono font-black">
+                                {endParts.formatted}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                                activeShiftTimeField === timeGroup.endField ? 'rotate-180' : ''
+                              }`}
+                              style={{ color: themeAccent }}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Duolingo 3D Time Options Panel ("والخيارات") */}
+                      {isGroupPickerOpen && activeFieldKey && activeParts && (
+                        <div className="duo-complex-time-popover space-y-3">
+                          {/* Banner with active field & Done button */}
+                          <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+                              <span
+                                className="text-xs font-black"
+                                style={{ color: themeText }}
+                              >
+                                {activeFieldArabicTitle}:{' '}
+                                <span style={{ color: themeAccent }} className="font-mono">
+                                  {activeParts.formatted}
+                                </span>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActiveShiftTimeField(null)}
+                              className="duo-complex-assign-btn text-[11px] py-1 px-3 inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>تم</span>
+                            </button>
+                          </div>
+
+                          {/* Quick Time Presets */}
+                          <div className="space-y-1.5">
+                            <span className="duo-complex-subtext text-[11px] font-black block">
+                              أوقات جاهزة سريعة:
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {timeGroup.presets.map(preset => (
+                                <button
+                                  key={preset.val}
+                                  type="button"
+                                  onClick={() =>
+                                    setShiftForm(prev => ({
+                                      ...prev,
+                                      [activeFieldKey]: preset.val
+                                    }))
+                                  }
+                                  className={`duo-complex-today-btn text-[11px] font-mono cursor-pointer ${
+                                    shiftForm[activeFieldKey] === preset.val ? 'is-active' : ''
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* AM / PM 3D Toggle */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = build24hTimeFromParts(
+                                  activeParts.hour12,
+                                  activeParts.minute,
+                                  false
+                                );
+                                setShiftForm(prev => ({ ...prev, [activeFieldKey]: updated }));
+                              }}
+                              className={
+                                !activeParts.isPM
+                                  ? 'duo-complex-assign-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer py-2'
+                                  : 'duo-complex-secondary-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer py-2'
+                              }
+                            >
+                              <span>صباحاً (ص)</span>
+                              {!activeParts.isPM && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = build24hTimeFromParts(
+                                  activeParts.hour12,
+                                  activeParts.minute,
+                                  true
+                                );
+                                setShiftForm(prev => ({ ...prev, [activeFieldKey]: updated }));
+                              }}
+                              className={
+                                activeParts.isPM
+                                  ? 'duo-complex-assign-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer py-2'
+                                  : 'duo-complex-secondary-btn text-xs flex items-center justify-center gap-1.5 cursor-pointer py-2'
+                              }
+                            >
+                              <span>مساءً (م)</span>
+                              {activeParts.isPM && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </button>
+                          </div>
+
+                          {/* Hours 1..12 3D Grid */}
+                          <div className="space-y-1.5">
+                            <span className="duo-complex-subtext text-[11px] font-black block">
+                              اختر الساعة:
+                            </span>
+                            <div className="grid grid-cols-6 gap-1.5">
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(hr => {
+                                const isSelectedHr = activeParts.hour12 === hr;
+                                return (
+                                  <button
+                                    key={hr}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = build24hTimeFromParts(
+                                        hr,
+                                        activeParts.minute,
+                                        activeParts.isPM
+                                      );
+                                      setShiftForm(prev => ({
+                                        ...prev,
+                                        [activeFieldKey]: updated
+                                      }));
+                                    }}
+                                    className={`duo-complex-day-btn font-mono cursor-pointer ${
+                                      isSelectedHr ? 'is-selected' : ''
+                                    }`}
+                                  >
+                                    {hr.toString().padStart(2, '0')}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Minutes 00..55 3D Grid */}
+                          <div className="space-y-1.5">
+                            <span className="duo-complex-subtext text-[11px] font-black block">
+                              اختر الدقائق:
+                            </span>
+                            <div className="grid grid-cols-6 gap-1.5">
+                              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(minVal => {
+                                const isSelectedMin = activeParts.minute === minVal;
+                                return (
+                                  <button
+                                    key={minVal}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = build24hTimeFromParts(
+                                        activeParts.hour12,
+                                        minVal,
+                                        activeParts.isPM
+                                      );
+                                      setShiftForm(prev => ({
+                                        ...prev,
+                                        [activeFieldKey]: updated
+                                      }));
+                                    }}
+                                    className={`duo-complex-day-btn font-mono cursor-pointer ${
+                                      isSelectedMin ? 'is-selected' : ''
+                                    }`}
+                                  >
+                                    :{minVal.toString().padStart(2, '0')}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* 5. Assign Teachers 3D Search Dock + Bulk Toolbar + 3D Cards */}
+                <div className="space-y-2.5 pt-1">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    المعلمون المناوبون في هذه الفترة:
+                  </label>
+
+                  {/* 3D Search Dock */}
+                  <div className="duo-complex-search-dock">
+                    <span className="duo-complex-search-icon-badge">
+                      <Search className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={shiftModalTeacherSearch}
+                      onChange={e => setShiftModalTeacherSearch(e.target.value)}
+                      placeholder="بحث عن اسم المعلم..."
+                      className="duo-complex-search-field text-xs sm:text-sm"
+                    />
+                    {shiftModalTeacherSearch.trim() !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setShiftModalTeacherSearch('')}
+                        className="duo-complex-mini-edit-btn text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                        title="مسح البحث"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>مسح</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 3D Selection Counter & Bulk Buttons */}
+                  <div className="duo-complex-selection-toolbar flex items-center justify-between gap-2 flex-wrap text-xs">
+                    <span className="duo-complex-shift-count-badge text-xs">
+                      المحدد: {shiftForm.assignedTeacherIds.length} من أصل {teachers.length} معلم
+                    </span>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShiftForm(prev => ({
+                            ...prev,
+                            assignedTeacherIds: teachers.map(t => t.id)
+                          }))
+                        }
+                        className="duo-complex-bulk-select-btn text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>تحديد جميع المعلمين</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShiftForm(prev => ({ ...prev, assignedTeacherIds: [] }))
+                        }
+                        className="duo-complex-bulk-clear-btn text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>إلغاء التحديد</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="duo-complex-teachers-list-box max-h-56 overflow-y-auto custom-scrollbar space-y-2.5">
+                    {teachers.length === 0 ? (
+                      <div className="duo-complex-empty-box p-5 text-center text-xs font-extrabold">
+                        لا يوجد معلمون مسجلون في هذا المجمع بعد.
+                      </div>
+                    ) : (
+                      (() => {
+                        const filteredModalTeachers = teachers.filter(
+                          t =>
+                            !shiftModalTeacherSearch.trim() ||
+                            t.name
+                              .toLowerCase()
+                              .includes(shiftModalTeacherSearch.toLowerCase()) ||
+                            t.username
+                              .toLowerCase()
+                              .includes(shiftModalTeacherSearch.toLowerCase())
+                        );
+
+                        if (filteredModalTeachers.length === 0) {
+                          return (
+                            <div className="duo-complex-empty-box p-5 text-center text-xs font-extrabold">
+                              لا يوجد معلم مطابق لعبارة البحث «{shiftModalTeacherSearch}».
+                            </div>
+                          );
+                        }
+
+                        return filteredModalTeachers.map(t => {
+                          const isChecked = shiftForm.assignedTeacherIds.includes(t.id);
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                if (isChecked) {
+                                  setShiftForm(prev => ({
+                                    ...prev,
+                                    assignedTeacherIds: prev.assignedTeacherIds.filter(
+                                      id => id !== t.id
+                                    )
+                                  }));
+                                } else {
+                                  setShiftForm(prev => ({
+                                    ...prev,
+                                    assignedTeacherIds: [...prev.assignedTeacherIds, t.id]
+                                  }));
+                                }
+                              }}
+                              className={`duo-complex-teacher-select-card flex items-center justify-between gap-3 cursor-pointer ${
+                                isChecked ? 'is-selected' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span
+                                  className={`duo-complex-checkbox ${
+                                    isChecked ? 'is-checked' : ''
+                                  }`}
+                                >
+                                  {isChecked && <Check className="w-4 h-4 stroke-[3]" />}
+                                </span>
+                                <div className="min-w-0 text-right">
+                                  <span
+                                    className="text-xs sm:text-sm font-black block truncate"
+                                    style={{ color: themeText }}
+                                  >
+                                    {t.name}
+                                  </span>
+                                  <span className="duo-complex-subtext text-[11px] font-bold block truncate mt-0.5">
+                                    اسم المستخدم: {t.username}{' '}
+                                    {t.role === 'supervisor' ? '• (معلم مشرف)' : ''}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <span
+                                className={`duo-complex-duty-status text-[10px] shrink-0 ${
+                                  isChecked ? 'is-assigned' : ''
+                                }`}
+                              >
+                                {isChecked ? 'مكلف بالمناوبة' : 'غير مكلف'}
+                              </span>
+                            </button>
+                          );
+                        });
+                      })()
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-emerald-800">
-              <button
-                type="button"
-                onClick={() => setIsShiftModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-emerald-950 text-emerald-300 text-xs font-bold cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                disabled={!shiftForm.name.trim()}
-                onClick={handleSaveShift}
-                className="px-6 py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs shadow-md cursor-pointer transition-all disabled:opacity-50"
-              >
-                حفظ الفترة
-              </button>
+              {/* Pinned 3D Footer */}
+              <div className="duo-complex-modal-footer flex items-center justify-end gap-2.5 flex-wrap shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsShiftModalOpen(false)}
+                  className="duo-complex-secondary-btn text-xs cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={!shiftForm.name.trim()}
+                  onClick={handleSaveShift}
+                  className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>حفظ الفترة وتأكيد الإعدادات</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ===================================================================== */}
       {/* MODAL 3: SUPERVISOR MANUAL RECORD ACTION (تحضير / انصراف / عذر / غياب) */}
       {/* ===================================================================== */}
-      {actionTeacherModal && (
-        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border-2 border-amber-400 rounded-3xl w-full max-w-md p-6 space-y-4 text-right relative">
-            <button
-              onClick={() => setActionTeacherModal(null)}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+      {typeof document !== 'undefined' &&
+        actionTeacherModal &&
+        createPortal(
+          <div
+            dir="rtl"
+            onClick={() => setActionTeacherModal(null)}
+            style={{ zIndex: 2147483000 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className="duo-complex-modal-shell w-full max-w-md max-h-[92vh] flex flex-col p-5 sm:p-6 space-y-4 text-right"
             >
-              <X className="w-5 h-5" />
-            </button>
+              <div className="duo-complex-modal-header flex items-start justify-between gap-3 shrink-0">
+                <div>
+                  <h3
+                    className="text-base font-black font-heading"
+                    style={{ color: themeText }}
+                  >
+                    {actionTeacherModal.actionType === 'check_in' && 'تسجيل حضور يدوي (في الوقت)'}
+                    {actionTeacherModal.actionType === 'late' && 'تسجيل حضور متأخر'}
+                    {actionTeacherModal.actionType === 'check_out' && 'تسجيل انصراف يدوي'}
+                    {actionTeacherModal.actionType === 'excuse' && 'تسجيل عذر للمعلم'}
+                    {actionTeacherModal.actionType === 'absent' && 'تسجيل غياب للمعلم'}
+                  </h3>
+                  <p className="duo-complex-subtext text-xs font-black mt-1">
+                    المعلم: {actionTeacherModal.teacher.name} • {actionTeacherModal.shift.name}
+                  </p>
+                </div>
 
-            <div className="border-b border-emerald-800 pb-3">
-              <h3 className="text-base font-black text-white font-heading">
-                {actionTeacherModal.actionType === 'check_in' && 'تسجيل حضور يدوي (في الوقت)'}
-                {actionTeacherModal.actionType === 'late' && 'تسجيل حضور متأخر'}
-                {actionTeacherModal.actionType === 'check_out' && 'تسجيل انصراف يدوي'}
-                {actionTeacherModal.actionType === 'excuse' && 'تسجيل عذر للمعلم'}
-                {actionTeacherModal.actionType === 'absent' && 'تسجيل غياب للمعلم'}
-              </h3>
-              <p className="text-xs text-amber-300 font-bold mt-0.5">
-                المعلم: {actionTeacherModal.teacher.name} • {actionTeacherModal.shift.name}
-              </p>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setActionTeacherModal(null)}
+                  className="duo-complex-modal-close-btn cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            <div className="space-y-3">
-              {(actionTeacherModal.actionType === 'check_in' || actionTeacherModal.actionType === 'late' || actionTeacherModal.actionType === 'check_out') && (
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-emerald-200 block">
-                    الوقت المسجل:
+              <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 min-h-0 pr-0.5 py-0.5">
+                {(actionTeacherModal.actionType === 'check_in' ||
+                  actionTeacherModal.actionType === 'late' ||
+                  actionTeacherModal.actionType === 'check_out') && (
+                  <div className="space-y-2">
+                    <label className="duo-complex-subtext text-xs font-black block">
+                      الوقت المسجل:
+                    </label>
+                    <div className="duo-complex-search-dock">
+                      <span className="duo-complex-search-icon-badge">
+                        <Clock className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={customTime}
+                        onChange={e => setCustomTime(e.target.value)}
+                        placeholder="مثال: 03:45 م"
+                        className="duo-complex-search-field text-xs font-mono"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[
+                        { label: 'الآن', val: formatCurrentArabicTime() },
+                        { label: '03:30 م', val: '03:30 م' },
+                        { label: '04:00 م', val: '04:00 م' },
+                        { label: '05:30 م', val: '05:30 م' },
+                        { label: '06:00 م', val: '06:00 م' }
+                      ].map(opt => (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          onClick={() => setCustomTime(opt.val)}
+                          className={`duo-complex-today-btn text-[11px] font-mono cursor-pointer ${
+                            customTime.trim() === opt.val ? 'is-active' : ''
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="duo-complex-subtext text-xs font-black block">
+                    ملاحظة المشرف / سبب العذر:
                   </label>
-                  <input
-                    type="text"
-                    value={customTime}
-                    onChange={e => setCustomTime(e.target.value)}
-                    placeholder="مثال: 03:45 م"
-                    className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs font-mono font-bold text-white outline-none"
+                  <textarea
+                    rows={2}
+                    value={actionNote}
+                    onChange={e => setActionNote(e.target.value)}
+                    placeholder="اكتب ملاحظة أو سبب العذر إن وجد..."
+                    className="duo-complex-input w-full py-2.5 px-3.5 rounded-xl text-xs font-bold outline-none resize-none"
                   />
                 </div>
-              )}
+              </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-emerald-200 block">
-                  ملاحظة المشرف / سبب العذر:
-                </label>
-                <textarea
-                  rows={2}
-                  value={actionNote}
-                  onChange={e => setActionNote(e.target.value)}
-                  placeholder="اكتب ملاحظة أو سبب العذر إن وجد..."
-                  className="w-full py-2 px-3 bg-[#064e3b] border border-[#065f46] rounded-xl text-xs text-white outline-none resize-none"
-                />
+              <div className="duo-complex-modal-footer flex items-center justify-end gap-2.5 flex-wrap shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActionTeacherModal(null)}
+                  className="duo-complex-secondary-btn text-xs cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplySupervisorAction}
+                  className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>تأكيد وحفظ</span>
+                </button>
               </div>
             </div>
+          </div>,
+          document.body
+        )}
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-800">
-              <button
-                type="button"
-                onClick={() => setActionTeacherModal(null)}
-                className="px-4 py-2 rounded-xl bg-emerald-950 text-emerald-300 text-xs font-bold cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleApplySupervisorAction}
-                className="px-6 py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs shadow-md cursor-pointer transition-all"
-              >
-                تأكيد وحفظ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* ===================================================================== */}
       {/* MODAL 4: QUICK ASSIGN TEACHERS TO SHIFT (تعيين المعلمين في الفترة)     */}
       {/* ===================================================================== */}
-      {assignTeachersModalShift && (
-        <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#022c22] border-2 border-amber-400 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative">
-            <button
-              onClick={() => setAssignTeachersModalShift(null)}
-              className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+      {typeof document !== 'undefined' &&
+        assignTeachersModalShift &&
+        createPortal(
+          <div
+            dir="rtl"
+            onClick={() => setAssignTeachersModalShift(null)}
+            style={{ zIndex: 2147483000 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className="duo-complex-modal-shell w-full max-w-lg max-h-[92vh] flex flex-col p-5 sm:p-6 space-y-4 text-right"
             >
-              <X className="w-5 h-5" />
-            </button>
+              {/* Modal 3D Header & Close Button */}
+              <div className="duo-complex-modal-header flex items-start justify-between gap-3 shrink-0">
+                <div className="flex items-start gap-3">
+                  <div className="duo-complex-header-icon w-12 h-12 flex items-center justify-center font-black text-xl shrink-0">
+                    <UserCheck className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3
+                      className="text-base sm:text-lg font-black font-heading leading-snug"
+                      style={{ color: themeText }}
+                    >
+                      تعيين وتكليف المعلمين في فترة ({assignTeachersModalShift.name})
+                    </h3>
+                    <p className="duo-complex-subtext text-xs font-bold leading-relaxed">
+                      المجمع: {activeComplex?.name || 'المجمع الحالي'} • اختر المعلمين المناوبين المكلفين بالحضور
+                    </p>
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-3 border-b border-emerald-800 pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-[#fbbf24] flex items-center justify-center font-black text-xl shadow-lg shrink-0">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-white font-heading">
-                  تعيين وتكليف المعلمين في فترة ({assignTeachersModalShift.name})
-                </h3>
-                <p className="text-xs text-emerald-300/80">
-                  المجمع: {activeComplex?.name || 'المجمع الحالي'} • اختر المعلمين المناوبين المكلفين بالحضور
-                </p>
-              </div>
-            </div>
-
-            {/* Search Box & Quick Select Buttons */}
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={assignTeachersSearch}
-                  onChange={e => setAssignTeachersSearch(e.target.value)}
-                  placeholder="بحث عن اسم المعلم..."
-                  className="w-full py-2.5 pr-10 pl-3.5 bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl text-xs sm:text-sm text-white font-bold outline-none"
-                />
+                <button
+                  type="button"
+                  onClick={() => setAssignTeachersModalShift(null)}
+                  className="duo-complex-modal-close-btn cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-amber-300 font-bold">
-                  المحدد: {selectedAssignedTeacherIds.length} من أصل {teachers.length} معلم
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAssignedTeacherIds(teachers.map(t => t.id))}
-                    className="text-[11px] text-emerald-300 hover:text-white font-bold hover:underline cursor-pointer"
-                  >
-                    تحديد جميع المعلمين
-                  </button>
-                  <span className="text-emerald-600">•</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAssignedTeacherIds([])}
-                    className="text-[11px] text-red-300 hover:text-white font-bold hover:underline cursor-pointer"
-                  >
-                    إلغاء التحديد
-                  </button>
+              {/* Search Box (3D All Around) & Bulk Selection Toolbar */}
+              <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 min-h-0 pr-0.5">
+                {/* 3D Tactile Search Dock ("والبحث كذلك كلها دار ما دار") */}
+                <div className="duo-complex-search-dock">
+                  <span className="duo-complex-search-icon-badge">
+                    <Search className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    value={assignTeachersSearch}
+                    onChange={e => setAssignTeachersSearch(e.target.value)}
+                    placeholder="بحث عن اسم المعلم..."
+                    className="duo-complex-search-field text-xs sm:text-sm"
+                  />
+                  {assignTeachersSearch.trim() !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => setAssignTeachersSearch('')}
+                      className="duo-complex-mini-edit-btn text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                      title="مسح البحث"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>مسح</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 3D Selection Counter & Bulk Action Buttons */}
+                <div className="duo-complex-selection-toolbar flex items-center justify-between gap-2 flex-wrap text-xs">
+                  <span className="duo-complex-shift-count-badge text-xs">
+                    المحدد: {selectedAssignedTeacherIds.length} من أصل {teachers.length} معلم
+                  </span>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAssignedTeacherIds(teachers.map(t => t.id))}
+                      className="duo-complex-bulk-select-btn text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>تحديد جميع المعلمين</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAssignedTeacherIds([])}
+                      className="duo-complex-bulk-clear-btn text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>إلغاء التحديد</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Teachers 3D Selection Cards List */}
+                <div className="duo-complex-teachers-list-box max-h-64 overflow-y-auto custom-scrollbar space-y-2.5">
+                  {teachers.length === 0 ? (
+                    <div className="duo-complex-empty-box p-6 text-center text-xs font-extrabold">
+                      لا يوجد معلمون مسجلون في هذا المجمع بعد.
+                    </div>
+                  ) : (
+                    (() => {
+                      const filteredTeachers = teachers.filter(
+                        t =>
+                          !assignTeachersSearch.trim() ||
+                          t.name.toLowerCase().includes(assignTeachersSearch.toLowerCase()) ||
+                          t.username.toLowerCase().includes(assignTeachersSearch.toLowerCase())
+                      );
+
+                      if (filteredTeachers.length === 0) {
+                        return (
+                          <div className="duo-complex-empty-box p-6 text-center text-xs font-extrabold">
+                            لا يوجد معلم مطابق لعبارة البحث «{assignTeachersSearch}».
+                          </div>
+                        );
+                      }
+
+                      return filteredTeachers.map(t => {
+                        const isSelected = selectedAssignedTeacherIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedAssignedTeacherIds(prev =>
+                                  prev.filter(id => id !== t.id)
+                                );
+                              } else {
+                                setSelectedAssignedTeacherIds(prev => [...prev, t.id]);
+                              }
+                            }}
+                            className={`duo-complex-teacher-select-card flex items-center justify-between gap-3 cursor-pointer ${
+                              isSelected ? 'is-selected' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span
+                                className={`duo-complex-checkbox ${
+                                  isSelected ? 'is-checked' : ''
+                                }`}
+                              >
+                                {isSelected && <Check className="w-4 h-4 stroke-[3]" />}
+                              </span>
+                              <div className="min-w-0 text-right">
+                                <span
+                                  className="text-sm font-black block truncate"
+                                  style={{ color: themeText }}
+                                >
+                                  {t.name}
+                                </span>
+                                <span className="duo-complex-subtext text-[11px] font-bold block truncate mt-0.5">
+                                  اسم المستخدم: {t.username}{' '}
+                                  {t.role === 'supervisor' ? '• (معلم مشرف)' : ''}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`duo-complex-duty-status text-[11px] shrink-0 ${
+                                isSelected ? 'is-assigned' : ''
+                              }`}
+                            >
+                              {isSelected ? 'مكلف بالمناوبة' : 'غير مكلف'}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()
+                  )}
                 </div>
               </div>
 
-              {/* Teachers Checkbox List */}
-              <div className="max-h-60 overflow-y-auto space-y-2 p-2 rounded-2xl bg-[#011a14] border border-[#065f46]">
-                {teachers.length === 0 ? (
-                  <p className="text-xs text-emerald-300/60 text-center py-4">
-                    لا يوجد معلمين مسجلين في هذا المجمع بعد.
-                  </p>
-                ) : (
-                  teachers
-                    .filter(t => !assignTeachersSearch.trim() || t.name.toLowerCase().includes(assignTeachersSearch.toLowerCase()) || t.username.toLowerCase().includes(assignTeachersSearch.toLowerCase()))
-                    .map(t => {
-                      const isSelected = selectedAssignedTeacherIds.includes(t.id);
-                      return (
-                        <label
-                          key={t.id}
-                          className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-amber-400/10 border-amber-400/50 text-white'
-                              : 'bg-[#064e3b]/30 border-[#065f46] hover:bg-[#064e3b]/60 text-emerald-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setSelectedAssignedTeacherIds(prev => [...prev, t.id]);
-                                } else {
-                                  setSelectedAssignedTeacherIds(prev => prev.filter(id => id !== t.id));
-                                }
-                              }}
-                              className="rounded border-[#065f46] text-[#fbbf24] focus:ring-0 cursor-pointer w-4 h-4"
-                            />
-                            <div>
-                              <span className="text-sm font-bold text-white block">{t.name}</span>
-                              <span className="text-[11px] text-emerald-300/70 block">
-                                اسم المستخدم: {t.username} {t.role === 'supervisor' ? '• (معلم مشرف)' : ''}
-                              </span>
-                            </div>
-                          </div>
-
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                            isSelected
-                              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
-                              : 'bg-emerald-950 text-emerald-400'
-                          }`}>
-                            {isSelected ? 'مكلف بالمناوبة' : 'غير مكلف'}
-                          </span>
-                        </label>
-                      );
-                    })
-                )}
+              {/* Modal 3D Footer */}
+              <div className="duo-complex-modal-footer flex items-center justify-end gap-2.5 flex-wrap shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setAssignTeachersModalShift(null)}
+                  className="duo-complex-secondary-btn text-xs cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAssignedTeachers}
+                  className="duo-complex-assign-btn text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>حفظ التعيين وتأكيد المناوبة</span>
+                </button>
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-emerald-800">
-              <button
-                type="button"
-                onClick={() => setAssignTeachersModalShift(null)}
-                className="px-4 py-2 rounded-xl bg-emerald-950 text-emerald-300 text-xs font-bold cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAssignedTeachers}
-                className="px-6 py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs shadow-md cursor-pointer transition-all"
-              >
-                حفظ التعيين وتأكيد المناوبة
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ===================================================================== */}
       {/* MODAL 5: GOOGLE MAPS MOSQUE LOCATION (اطلاع / تحديد وتعديل بالخريطة)  */}

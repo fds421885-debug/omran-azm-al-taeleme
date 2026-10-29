@@ -702,14 +702,506 @@ table tr:hover {
   background-color: rgba(var(--complex-border-rgb, 43, 69, 80), 0.3) !important;
 }
 
+/* Duolingo 3D Complex-Themed Supervisor Attendance Records & Custom Date Picker */
+.duo-complex-records-shell {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #16262e) var(--complex-border, #2b4550) !important;
+  border-radius: 2rem !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28) !important;
+}
+
+.duo-complex-header-icon {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 1rem !important;
+}
+
+.duo-complex-subtext {
+  color: rgba(var(--complex-subtext-rgb, 255, 210, 51), 0.92) !important;
+}
+
+/* Custom Duolingo 3D Date Picker Controls & Popover */
+.duo-complex-date-dock {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.25rem !important;
+  padding: 0.375rem !important;
+}
+
+button.duo-complex-date-step-btn {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-secondary-shadow, var(--complex-card-shadow, #122026)) var(--complex-border, #2b4550) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.875rem !important;
+  width: 2.25rem !important;
+  height: 2.25rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-date-step-btn:hover:not(:disabled) {
+  background-color: var(--complex-card, #203843) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-date-step-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+button.duo-complex-date-trigger {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-accent, #ffc800) var(--complex-border, #2b4550) !important;
+  color: var(--complex-text, #ffffff) !important;
+  border-radius: 0.95rem !important;
+  padding: 0.42rem 0.85rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-date-trigger:hover:not(:disabled),
+button.duo-complex-date-trigger.is-open {
+  background-color: var(--complex-card, #203843) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow: 0 4px 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.22) !important;
+}
+
+button.duo-complex-date-trigger:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+button.duo-complex-today-btn {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-secondary-shadow, var(--complex-card-shadow, #122026)) var(--complex-border, #2b4550) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+  border-radius: 0.95rem !important;
+  padding: 0.42rem 0.95rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-today-btn:hover:not(:disabled) {
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-today-btn.is-active {
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  box-shadow: 0 4px 12px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.3) !important;
+}
+
+button.duo-complex-today-btn.is-active svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-today-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+/* Custom Calendar Popover ("بتاعة التاريخ من الداخل وتحديد التاريخ") */
+.duo-complex-datepicker-popover {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  border-radius: 1.5rem !important;
+  padding: 1rem !important;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.58), 0 0 0 3px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14) !important;
+}
+
+.duo-complex-datepicker-selected-banner {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  border-radius: 1rem !important;
+  padding: 0.55rem 0.75rem !important;
+}
+
+.duo-complex-datepicker-monthbar {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #16262e) var(--complex-border, #2b4550) !important;
+  border-radius: 1rem !important;
+  padding: 0.4rem 0.5rem !important;
+}
+
+.duo-complex-weekday-cell {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border: 1.5px solid var(--complex-border, #2b4550) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.65rem !important;
+  padding: 0.25rem 0 !important;
+  font-size: 0.68rem !important;
+  font-weight: 900 !important;
+  text-align: center !important;
+}
+
+button.duo-complex-day-btn {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #16262e) var(--complex-border, #2b4550) !important;
+  color: var(--complex-text, #ffffff) !important;
+  border-radius: 0.75rem !important;
+  height: 2.3rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 900 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-day-btn.is-outside {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  opacity: 0.42 !important;
+}
+
+button.duo-complex-day-btn:hover:not(:disabled) {
+  opacity: 1 !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-day-btn.is-today:not(.is-selected) {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-day-btn.is-selected {
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  opacity: 1 !important;
+  box-shadow: 0 4px 12px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.38) !important;
+}
+
+button.duo-complex-day-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+/* Shift Cards & Shift Header Bars inside VIEW 2 */
+.duo-complex-shift-card {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.75rem !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25) !important;
+}
+
+.duo-complex-shift-header {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-secondary-shadow, var(--complex-card-shadow, #122026)) var(--complex-border, #2b4550) !important;
+  border-radius: 1.35rem !important;
+  padding: 0.9rem 1.1rem !important;
+}
+
+.duo-complex-shift-badge {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.8rem !important;
+  padding: 0.2rem 0.65rem !important;
+  font-weight: 900 !important;
+}
+
+.duo-complex-shift-badge svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-shift-badge--remote {
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-accent, #ffc800) var(--complex-border, #2b4550) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+}
+
+.duo-complex-shift-schedule-chip {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 1.5px 1.5px 3px 1.5px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+  border-radius: 0.7rem !important;
+  padding: 0.18rem 0.55rem !important;
+  font-weight: 800 !important;
+}
+
+button.duo-complex-assign-btn {
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  border-radius: 1rem !important;
+  padding: 0.5rem 0.95rem !important;
+  font-weight: 900 !important;
+  box-shadow: 0 4px 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.26) !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-assign-btn svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-assign-btn:hover:not(:disabled) {
+  filter: brightness(1.07) !important;
+  box-shadow: 0 6px 18px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.36) !important;
+}
+
+button.duo-complex-assign-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-empty-box {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: dashed !important;
+  border-width: 2px !important;
+  border-color: var(--complex-accent, #ffc800) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+  border-radius: 1.35rem !important;
+}
+
+/* VIEW 4: Shifts Management Duolingo 3D Complex Theme Cards & Controls */
+.duo-complex-mgmt-shift-card {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 6px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.75rem !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28) !important;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease !important;
+}
+
+.duo-complex-mgmt-shift-card:hover {
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34), 0 0 0 2px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.12) !important;
+}
+
+.duo-complex-shift-count-badge {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.85rem !important;
+  padding: 0.25rem 0.7rem !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.duo-complex-shift-location-box {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-accent-shadow, var(--complex-card-shadow, #122026)) var(--complex-border, #2b4550) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.75rem 0.9rem !important;
+}
+
+.duo-complex-shift-location-box svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-shift-location-box--remote {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  background-image: linear-gradient(
+    135deg,
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14),
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.04)
+  ) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+}
+
+.duo-complex-shift-location-box--remote svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-shift-time-box {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.1rem !important;
+  padding: 0.65rem 0.75rem !important;
+}
+
+.duo-complex-shift-time-label {
+  color: var(--complex-subtext, #ffd233) !important;
+  font-weight: 800 !important;
+}
+
+.duo-complex-shift-time-value {
+  color: var(--complex-text, #ffffff) !important;
+  font-weight: 900 !important;
+}
+
+.duo-complex-shift-teachers-panel {
+  background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.55) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.75rem 0.85rem !important;
+}
+
+button.duo-complex-mini-edit-btn {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-accent-shadow, #e5a500) var(--complex-border, #2b4550) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.75rem !important;
+  padding: 0.25rem 0.65rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-mini-edit-btn svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-mini-edit-btn:hover:not(:disabled) {
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-mini-edit-btn:hover:not(:disabled) svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-mini-edit-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-teacher-chip {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: var(--complex-text, #ffffff) !important;
+  border-radius: 0.75rem !important;
+  padding: 0.22rem 0.65rem !important;
+  font-weight: 800 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+}
+
+.duo-complex-empty-assign-trigger {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.1) !important;
+  border-style: dashed !important;
+  border-width: 2px !important;
+  border-color: var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.95rem !important;
+  padding: 0.65rem 0.85rem !important;
+  transition: all 0.14s ease !important;
+}
+
+.duo-complex-empty-assign-trigger:hover {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.2) !important;
+}
+
+button.duo-complex-secondary-btn {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: var(--complex-text, #ffffff) !important;
+  border-radius: 1rem !important;
+  padding: 0.5rem 0.9rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-secondary-btn svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-secondary-btn:hover:not(:disabled) {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-secondary-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+button.duo-complex-danger-icon-btn {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) #ea2b2b var(--complex-border, #2b4550) !important;
+  color: #fca5a5 !important;
+  border-radius: 0.95rem !important;
+  padding: 0.5rem 0.65rem !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-danger-icon-btn:hover:not(:disabled) {
+  background-color: #ff4b4b !important;
+  border-color: #ff4b4b #ff4b4b #ea2b2b #ff4b4b !important;
+  color: #ffffff !important;
+}
+
+button.duo-complex-danger-icon-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
 /* Duolingo 3D Complex-Themed Teacher Attendance Table */
 .duo-complex-att-table-wrap {
   background-color: var(--complex-secondary, #1b2e35) !important;
   border-style: solid !important;
   border-width: 2px 2px 4px 2px !important;
-  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, var(--complex-primary, #122026)) var(--complex-border, #2b4550) !important;
-  border-radius: 1.25rem !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2) !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-secondary-shadow, var(--complex-card-shadow, #122026)) var(--complex-border, #2b4550) !important;
+  border-radius: 1.35rem !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22) !important;
 }
 
 table.duo-complex-att-table {
@@ -724,9 +1216,19 @@ table.duo-complex-att-table thead tr {
 table.duo-complex-att-table thead th {
   background-color: var(--complex-card, #203843) !important;
   color: var(--complex-accent, #ffc800) !important;
-  border-bottom: 3px solid var(--complex-border, #2b4550) !important;
+  border-bottom: 3px solid var(--complex-accent-shadow, var(--complex-border, #2b4550)) !important;
+  border-left: 1px solid rgba(var(--complex-border-rgb, 43, 69, 80), 0.55) !important;
   font-weight: 900 !important;
   white-space: nowrap !important;
+}
+
+table.duo-complex-att-table thead th:first-child {
+  border-top-right-radius: 1.2rem !important;
+}
+
+table.duo-complex-att-table thead th:last-child {
+  border-top-left-radius: 1.2rem !important;
+  border-left: none !important;
 }
 
 table.duo-complex-att-table tbody tr {
@@ -735,7 +1237,7 @@ table.duo-complex-att-table tbody tr {
 }
 
 table.duo-complex-att-table tbody tr:nth-child(even) {
-  background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.55) !important;
+  background-color: rgba(var(--complex-card-rgb, 32, 56, 67), 0.6) !important;
 }
 
 table.duo-complex-att-table tbody tr:hover {
@@ -743,12 +1245,26 @@ table.duo-complex-att-table tbody tr:hover {
 }
 
 table.duo-complex-att-table tbody td {
+  color: var(--complex-text, #ffffff) !important;
   border-bottom: 2px solid rgba(var(--complex-border-rgb, 43, 69, 80), 0.75) !important;
+  border-left: 1px solid rgba(var(--complex-border-rgb, 43, 69, 80), 0.35) !important;
   vertical-align: middle !important;
+}
+
+table.duo-complex-att-table tbody td:last-child {
+  border-left: none !important;
 }
 
 table.duo-complex-att-table tbody tr:last-child td {
   border-bottom: none !important;
+}
+
+table.duo-complex-att-table tbody tr:last-child td:first-child {
+  border-bottom-right-radius: 1.2rem !important;
+}
+
+table.duo-complex-att-table tbody tr:last-child td:last-child {
+  border-bottom-left-radius: 1.2rem !important;
 }
 
 .duo-att-chip {
@@ -1092,6 +1608,508 @@ button.duo-att-action-btn--reset:hover:not(:disabled) {
   border-radius: 0.45rem;
   z-index: 15;
   position: relative;
+}
+
+/* ========================================================================= */
+/* Duolingo 3D Complex-Themed Modals, 3D Search Dock & Teacher Assign Cards  */
+/* ========================================================================= */
+.duo-complex-modal-shell {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 3px 3px 8px 3px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  border-radius: 2rem !important;
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.62),
+    0 0 0 4px rgba(var(--complex-primary-rgb, 19, 31, 36), 0.92),
+    inset 0 2px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.duo-complex-modal-header {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.35rem !important;
+  padding: 0.95rem 1.05rem !important;
+}
+
+button.duo-complex-modal-close-btn {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: var(--complex-subtext, #ffd233) !important;
+  border-radius: 0.95rem !important;
+  width: 2.5rem !important;
+  height: 2.5rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-modal-close-btn:hover:not(:disabled) {
+  background-color: #ff4b4b !important;
+  border-color: #ff4b4b #ff4b4b #ea2b2b #ff4b4b !important;
+  color: #ffffff !important;
+}
+
+button.duo-complex-modal-close-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-search-dock {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.25rem !important;
+  padding: 0.42rem 0.55rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.28) !important;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.duo-complex-search-dock:hover {
+  border-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.72) rgba(var(--complex-accent-rgb, 255, 200, 0), 0.72) var(--complex-accent-shadow, #e5a500) rgba(var(--complex-accent-rgb, 255, 200, 0), 0.72) !important;
+}
+
+.duo-complex-search-dock:focus-within {
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow:
+    0 6px 18px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.24),
+    0 0 0 3px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14) !important;
+}
+
+.duo-complex-search-icon-badge {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.85rem !important;
+  width: 2.3rem !important;
+  height: 2.3rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+
+.duo-complex-search-icon-badge svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+input[type="text"].duo-complex-search-field,
+input[type="search"].duo-complex-search-field {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0.5rem !important;
+  color: var(--complex-text, #ffffff) !important;
+  font-weight: 800 !important;
+  padding: 0.35rem 0.25rem !important;
+  width: 100% !important;
+  outline: none !important;
+}
+
+input[type="text"].duo-complex-search-field:focus,
+input[type="search"].duo-complex-search-field:focus {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+input[type="text"].duo-complex-search-field::placeholder,
+input[type="search"].duo-complex-search-field::placeholder {
+  color: rgba(var(--complex-subtext-rgb, 255, 210, 51), 0.72) !important;
+  font-weight: 700 !important;
+}
+
+.duo-complex-selection-toolbar {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.55rem 0.75rem !important;
+}
+
+button.duo-complex-bulk-select-btn {
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.8rem !important;
+  padding: 0.3rem 0.7rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-bulk-select-btn svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+button.duo-complex-bulk-select-btn:hover:not(:disabled) {
+  background-color: var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-bulk-select-btn:hover:not(:disabled) svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-bulk-select-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 1.5px !important;
+}
+
+button.duo-complex-bulk-clear-btn {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) #ea2b2b var(--complex-border, #2b4550) !important;
+  color: #fca5a5 !important;
+  border-radius: 0.8rem !important;
+  padding: 0.3rem 0.7rem !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-bulk-clear-btn:hover:not(:disabled) {
+  background-color: #ff4b4b !important;
+  border-color: #ff4b4b #ff4b4b #ea2b2b #ff4b4b !important;
+  color: #ffffff !important;
+}
+
+button.duo-complex-bulk-clear-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 1.5px !important;
+}
+
+.duo-complex-teachers-list-box {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.45rem !important;
+  padding: 0.75rem !important;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.26) !important;
+}
+
+button.duo-complex-teacher-select-card {
+  width: 100% !important;
+  text-align: right !important;
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.8rem 0.95rem !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-teacher-select-card:hover:not(:disabled) {
+  background-color: var(--complex-card, #203843) !important;
+  border-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.75) rgba(var(--complex-accent-rgb, 255, 200, 0), 0.75) var(--complex-accent-shadow, #e5a500) rgba(var(--complex-accent-rgb, 255, 200, 0), 0.75) !important;
+}
+
+button.duo-complex-teacher-select-card.is-selected {
+  background-color: var(--complex-card, #203843) !important;
+  background-image: linear-gradient(
+    135deg,
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.16),
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.04)
+  ) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22) !important;
+}
+
+button.duo-complex-teacher-select-card:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-checkbox {
+  width: 1.8rem !important;
+  height: 1.8rem !important;
+  border-radius: 0.65rem !important;
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.duo-complex-checkbox.is-checked {
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  box-shadow: 0 3px 10px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.34) !important;
+}
+
+.duo-complex-checkbox.is-checked svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+.duo-complex-duty-status {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 3px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  border-radius: 0.75rem !important;
+  padding: 0.22rem 0.65rem !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.duo-complex-duty-status.is-assigned {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.18) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-modal-footer {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.25rem !important;
+  padding: 0.75rem 0.9rem !important;
+}
+
+/* Custom 3D Mosque / Option Select Trigger & Menu ("والخيارات") */
+button.duo-complex-select-trigger {
+  width: 100% !important;
+  text-align: right !important;
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1.25rem !important;
+  padding: 0.65rem 0.85rem !important;
+  color: var(--complex-text, #ffffff) !important;
+  font-weight: 900 !important;
+  transition: all 0.14s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-select-trigger:hover:not(:disabled),
+button.duo-complex-select-trigger.is-open {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow: 0 6px 18px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.22) !important;
+}
+
+button.duo-complex-select-trigger:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-select-menu {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 6px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  border-radius: 1.45rem !important;
+  padding: 0.7rem !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.12) !important;
+}
+
+/* Custom 3D Interactive Time Trigger & Options Panel */
+button.duo-complex-time-trigger {
+  width: 100% !important;
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  border-radius: 1rem !important;
+  padding: 0.5rem 0.65rem !important;
+  color: var(--complex-text, #ffffff) !important;
+  font-weight: 900 !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-time-trigger:hover:not(:disabled),
+button.duo-complex-time-trigger.is-open {
+  background-color: var(--complex-card, #203843) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  box-shadow: 0 4px 14px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.24) !important;
+}
+
+button.duo-complex-time-trigger:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+.duo-complex-time-popover {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 6px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  border-radius: 1.45rem !important;
+  padding: 0.9rem !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14) !important;
+}
+
+/* ========================================================================= */
+/* VIEW 1: Teacher Daily Self Check-In & Check-Out (Duolingo 3D Complex)     */
+/* ========================================================================= */
+.duo-complex-self-status-chip {
+  background-color: var(--complex-primary, #131f24) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  border-radius: 0.9rem !important;
+  padding: 0.28rem 0.75rem !important;
+  font-weight: 900 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  white-space: nowrap !important;
+}
+
+.duo-complex-self-status-chip--done {
+  background-color: rgba(var(--complex-accent-rgb, 255, 200, 0), 0.18) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-self-status-chip--late {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  border-color: #fbbf24 #fbbf24 #b45309 #fbbf24 !important;
+  color: #fde68a !important;
+}
+
+.duo-complex-self-status-chip--ended {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+  border-color: #f87171 #f87171 #b91c1c #f87171 !important;
+  color: #fecaca !important;
+}
+
+.duo-complex-self-notice {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  background-image: linear-gradient(
+    135deg,
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.14),
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.03)
+  ) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-text, #ffffff) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.7rem 0.9rem !important;
+  font-weight: 800 !important;
+}
+
+.duo-complex-self-notice svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+}
+
+.duo-complex-self-notice--late {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  background-image: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.16),
+    rgba(var(--complex-accent-rgb, 255, 200, 0), 0.05)
+  ) !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) #b45309 var(--complex-accent, #ffc800) !important;
+  color: var(--complex-text, #ffffff) !important;
+}
+
+.duo-complex-self-notice--ended {
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  background-image: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(239, 68, 68, 0.04)) !important;
+  border-color: #f87171 #f87171 #b91c1c #f87171 !important;
+  color: #fecaca !important;
+}
+
+.duo-complex-self-notice--ended svg {
+  color: #fca5a5 !important;
+  stroke: #fca5a5 !important;
+}
+
+button.duo-complex-self-action-btn {
+  background-image: none !important;
+  background-color: var(--complex-accent, #ffc800) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 5px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  border-radius: 1.15rem !important;
+  padding: 0.78rem 0.9rem !important;
+  font-weight: 900 !important;
+  box-shadow: 0 6px 16px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.26) !important;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+button.duo-complex-self-action-btn svg {
+  color: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+  stroke: var(--complex-accent-text, var(--complex-primary, #131f24)) !important;
+}
+
+button.duo-complex-self-action-btn:hover:not(:disabled) {
+  filter: brightness(1.06) !important;
+  box-shadow: 0 8px 20px rgba(var(--complex-accent-rgb, 255, 200, 0), 0.36) !important;
+}
+
+button.duo-complex-self-action-btn:active:not(:disabled) {
+  transform: translateY(2px) !important;
+  border-bottom-width: 2px !important;
+}
+
+button.duo-complex-self-action-btn.is-locked,
+button.duo-complex-self-action-btn:disabled {
+  background-image: none !important;
+  background-color: var(--complex-secondary, #1b2e35) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-border, #2b4550) var(--complex-border, #2b4550) var(--complex-card-shadow, #0d161a) var(--complex-border, #2b4550) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  box-shadow: none !important;
+  opacity: 0.88 !important;
+}
+
+button.duo-complex-self-action-btn.is-locked svg,
+button.duo-complex-self-action-btn:disabled svg {
+  color: var(--complex-subtext, #ffd233) !important;
+  stroke: var(--complex-subtext, #ffd233) !important;
+  opacity: 0.8 !important;
+}
+
+button.duo-complex-self-action-btn.is-completed {
+  background-image: none !important;
+  background-color: var(--complex-card, #203843) !important;
+  border-style: solid !important;
+  border-width: 2px 2px 4px 2px !important;
+  border-color: var(--complex-accent, #ffc800) var(--complex-accent, #ffc800) var(--complex-accent-shadow, #e5a500) var(--complex-accent, #ffc800) !important;
+  color: var(--complex-accent, #ffc800) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+button.duo-complex-self-action-btn.is-completed svg {
+  color: var(--complex-accent, #ffc800) !important;
+  stroke: var(--complex-accent, #ffc800) !important;
+  opacity: 1 !important;
 }
 
 
