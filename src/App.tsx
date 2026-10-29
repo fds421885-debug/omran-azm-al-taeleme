@@ -742,19 +742,16 @@ export function App() {
   // 1. Resolve active student for parent/student portal if active
   const activePortalStudent = useMemo<Student | null>(() => {
     if (portalStudentId) {
-      return (
-        directPortalStudent ||
-        students.find(
-          s =>
-            s.id === portalStudentId ||
-            s.id.toLowerCase() === portalStudentId.toLowerCase() ||
-            s.name.trim() === portalStudentId.trim() ||
-            s.name.replace(/\s+/g, '') === portalStudentId.replace(/\s+/g, '') ||
-            s.phone.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '') ||
-            (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '')))
-        ) ||
-        null
+      const matchInStudents = students.find(
+        s =>
+          s.id === portalStudentId ||
+          s.id.toLowerCase() === portalStudentId.toLowerCase() ||
+          s.name.trim() === portalStudentId.trim() ||
+          s.name.replace(/\s+/g, '') === portalStudentId.replace(/\s+/g, '') ||
+          s.phone.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '') ||
+          (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '')))
       );
+      return matchInStudents || directPortalStudent || null;
     }
     if (currentUser?.role === 'student') {
       return (
@@ -3159,6 +3156,9 @@ export function App() {
               onLogout={handleLogout}
               onSaveSubmission={handleSaveSubmission}
               onUpdateStudent={handleUpdateStudent}
+              onRefresh={loadAllData}
+              isCloudSyncing={isCloudSyncing}
+              cloudSyncText={cloudSyncText}
             />
           </motion.div>
         </div>
@@ -3258,6 +3258,9 @@ export function App() {
             onLogout={handleLogout}
             onSaveSubmission={handleSaveSubmission}
             onUpdateStudent={handleUpdateStudent}
+            onRefresh={loadAllData}
+            isCloudSyncing={isCloudSyncing}
+            cloudSyncText={cloudSyncText}
           />
         </motion.div>
       </div>
@@ -4485,16 +4488,24 @@ export function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 25, scale: 0.9 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#022c22]/95 border-2 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
+            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
             style={{
-              borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}70`,
+              backgroundColor: `${activeComplex?.theme?.cardColor || '#1b2e35'}fa`,
+              borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}80`,
+              borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#fbbf24', 0.3),
               color: activeComplex?.theme?.accentColor || '#fbbf24'
             }}
             dir="rtl"
           >
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style={{ backgroundColor: activeComplex?.theme?.accentColor || '#fbbf24' }}
+              />
+              <span
+                className="relative inline-flex rounded-full h-2.5 w-2.5"
+                style={{ backgroundColor: activeComplex?.theme?.accentColor || '#fbbf24' }}
+              />
             </span>
             <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ color: activeComplex?.theme?.accentColor || '#fbbf24' }} />
             <span className="text-white font-medium">{cloudSyncText}</span>

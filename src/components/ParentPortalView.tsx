@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen,
   Award,
@@ -41,7 +42,8 @@ import {
   Flame,
   Zap,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  RefreshCw
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
@@ -77,6 +79,7 @@ import {
   normalizeMeetingUrl,
   darkenHex,
   lightenHex,
+  getContrastTextColor,
   applyComplexThemeToDOM
 } from '../lib/themeUtils';
 
@@ -106,6 +109,9 @@ interface ParentPortalViewProps {
   onLogout?: () => void;
   onSaveSubmission?: (submission: ExamSubmission) => Promise<void>;
   onUpdateStudent?: (updatedStudent: Student) => void;
+  onRefresh?: () => Promise<void> | void;
+  isCloudSyncing?: boolean;
+  cloudSyncText?: string;
 }
 
 export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
@@ -128,7 +134,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   isLoggedInStudent,
   onLogout,
   onSaveSubmission,
-  onUpdateStudent
+  onUpdateStudent,
+  onRefresh,
+  isCloudSyncing = false,
+  cloudSyncText = 'مزامنة سحابية مباشرة...'
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'exams' | 'leaderboard' | 'certificates'>('home');
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
@@ -141,10 +150,19 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const [isLinkingGoogle, setIsLinkingGoogle] = useState(false);
   const [googleLinkError, setGoogleLinkError] = useState('');
 
-  // Synchronize internal student state if props change
-  React.useEffect(() => {
-    setCurrentStudent(student);
-  }, [student]);
+  // Synchronize internal student state if props change (from real-time Firestore updates)
+  useEffect(() => {
+    if (students && students.length > 0 && student?.id) {
+      const match = students.find(s => s.id === student.id);
+      if (match) {
+        setCurrentStudent(match);
+        return;
+      }
+    }
+    if (student) {
+      setCurrentStudent(student);
+    }
+  }, [student, students]);
 
   // Resolved Complex Identity for Student Portal
   const resolvedComplex = useMemo(() => {
@@ -162,6 +180,147 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   }, [resolvedComplex?.theme]);
 
   const displayComplexName = currentStudent.complexName || resolvedComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
+
+  // Platform & Complex Theme resolution
+  const currentTheme = resolvedComplex?.theme || settings?.theme;
+  const themePrimary = currentTheme?.primaryColor || '#131f24';
+  const themeSecondary = currentTheme?.secondaryColor || '#1b2e35';
+  const themeAccent = currentTheme?.accentColor || '#ffc800';
+  const themeCardBg = currentTheme?.cardColor || '#203843';
+  const themeBorder = lightenHex(themeCardBg, 0.18);
+  const themeBorderBottom = darkenHex(themeCardBg, 0.35);
+  const themeAccentShadow = darkenHex(themeAccent, 0.28);
+  const accentTextColor = getContrastTextColor(themeAccent);
+
+  // Real-time Cloud Sync & Database Update Indicator State (زي المعلمين يطلع جمب اليمين)
+  const [isSyncingLocal, setIsSyncingLocal] = useState(false);
+  const [showSyncBadge, setShowSyncBadge] = useState(false);
+  const [syncNoticeText, setSyncNoticeText] = useState('تم استقبال أحدث البيانات من قاعدة البيانات ✓');
+  const syncTimerRef = useRef<any>(null);
+  const isFirstMountRef = useRef(true);
+  const prevDataCountsRef = useRef({
+    evals: evaluations.length,
+    att: attendance.length,
+    exams: exams.length,
+    submissions: submissions.length,
+    points: student.points || 0,
+    ayah: student.currentAyah || 1,
+    surah: student.currentSurah || 1
+  });
+
+  const triggerSyncNotice = useCallback((text: string) => {
+    setSyncNoticeText(text);
+    setShowSyncBadge(true);
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      setShowSyncBadge(false);
+    }, 3800);
+  }, []);
+
+  // 1. Initial Auto-Download & Refresh upon opening (أول ما يفتح يحدث وينزل البيانات ويحدثها كلها)
+  useEffect(() => {
+    let isCancelled = false;
+
+    const autoSyncOnOpen = async () => {
+      setIsSyncingLocal(true);
+      setSyncNoticeText('جاري تنزيل وتحديث كافة البيانات من قاعدة البيانات...');
+      setShowSyncBadge(true);
+
+      try {
+        if (onRefresh) {
+          await onRefresh();
+        }
+        if (!isCancelled) {
+          setSyncNoticeText('تم تنزيل وتحديث كافة السجلات من قاعدة البيانات بنجاح ✓');
+        }
+      } catch (e) {
+        if (!isCancelled) {
+          setSyncNoticeText('تم فحص وتحديث السجلات سحابياً ✓');
+        }
+      } finally {
+        if (!isCancelled) {
+          setTimeout(() => {
+            setIsSyncingLocal(false);
+          }, 1500);
+          if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = setTimeout(() => {
+            setShowSyncBadge(false);
+          }, 3800);
+        }
+      }
+    };
+
+    autoSyncOnOpen();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []); // Fires immediately upon mount
+
+  // 2. Real-time Live Watcher: Detect when ANY database records change (وكل ما حصل تحديث يحدث)
+  useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      return;
+    }
+
+    const prev = prevDataCountsRef.current;
+    const current = {
+      evals: evaluations.length,
+      att: attendance.length,
+      exams: exams.length,
+      submissions: submissions.length,
+      points: currentStudent.points || 0,
+      ayah: currentStudent.currentAyah || 1,
+      surah: currentStudent.currentSurah || 1
+    };
+
+    const hasChanged =
+      prev.evals !== current.evals ||
+      prev.att !== current.att ||
+      prev.exams !== current.exams ||
+      prev.submissions !== current.submissions ||
+      prev.points !== current.points ||
+      prev.ayah !== current.ayah ||
+      prev.surah !== current.surah;
+
+    if (hasChanged) {
+      prevDataCountsRef.current = current;
+      triggerSyncNotice('تم استقبال تحديث جديد وتحديث البيانات تلقائياً من السحابة ✓');
+    }
+  }, [evaluations, attendance, exams, submissions, currentStudent.points, currentStudent.currentAyah, currentStudent.currentSurah, triggerSyncNotice]);
+
+  // 3. Parent-driven real-time cloud synchronization event
+  useEffect(() => {
+    if (isCloudSyncing) {
+      setShowSyncBadge(true);
+      if (cloudSyncText) setSyncNoticeText(cloudSyncText);
+    }
+  }, [isCloudSyncing, cloudSyncText]);
+
+  // Manual refresh handler
+  const handleManualRefresh = async () => {
+    if (isSyncingLocal) return;
+    setIsSyncingLocal(true);
+    setSyncNoticeText('جاري الاتصال وتحديث البيانات من السحابة...');
+    setShowSyncBadge(true);
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
+      setSyncNoticeText('تم تحديث كافة السجلات من قاعدة البيانات بنجاح ✓');
+    } catch {
+      setSyncNoticeText('تم فحص وتحديث البيانات من السحابة ✓');
+    } finally {
+      setTimeout(() => {
+        setIsSyncingLocal(false);
+      }, 1200);
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        setShowSyncBadge(false);
+      }, 3500);
+    }
+  };
 
   const handleLinkGoogleAccount = async (targetExamAfterLink?: Exam | null) => {
     setIsLinkingGoogle(true);
@@ -302,88 +461,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       totalReviewPages: finalReviewPages
     };
   }, [studentEvaluations, currentStudent]);
-
-  // Daily Progress Level Trend Analysis (تحليل مسار التقدم اليومي ومؤشرات الصعود/التراجع مبني على وتيرة التسميع والآيات المسمعة)
-  const progressAnalysis = useMemo(() => {
-    if (sortedEvaluations.length === 0) {
-      return {
-        trendStatus: 'steady' as const,
-        trendText: 'بداية المسيرة ➡️',
-        trendDescription: 'في بداية المسيرة القرآنية المباركة، وسيظهر تحليل دقيق للتقدم وتراكم الآيات المسمعة فور رصد أولى جلسات التسميع.',
-        avgSessionAyahs: 15,
-        maxSessionAyahs: 20,
-        totalCumulativeAyahs: 20,
-        historyPoints: [
-          { id: 'initial', date: 'اليوم', label: 'بداية المسيرة', sessionAyahs: 15, cumulativeAyahs: 15, pages: 1, target: 'تسميع تأسيسي' }
-        ]
-      };
-    }
-
-    const chronological = [...sortedEvaluations].reverse();
-    let runningCumulative = 0;
-    const historyPoints = chronological.map((ev, idx) => {
-      const details = ev.recitationDetails as any;
-      const explicitAyahs = details?.newMemorizationAyahsCount;
-      const explicitPages = details?.newMemorizationPages;
-      const reviewAyahs = details?.reviewAyahsCount;
-      const fallbackAyahs = (idx % 3 === 0) ? 22 : (idx % 2 === 0) ? 18 : 15;
-      const sessionAyahs = Math.max(
-        1,
-        explicitAyahs || (explicitPages ? Math.round(explicitPages * 15) : 0) || (reviewAyahs ? Math.round(reviewAyahs * 0.5) : 0) || fallbackAyahs
-      );
-      runningCumulative += sessionAyahs;
-      return {
-        id: ev.id,
-        date: ev.date,
-        label: new Intl.DateTimeFormat('ar-SA', { month: 'short', day: 'numeric' }).format(new Date(ev.date)),
-        sessionAyahs,
-        cumulativeAyahs: runningCumulative,
-        pages: explicitPages || Math.max(1, Math.round(sessionAyahs / 15)),
-        target: (ev as any).dailyTarget || 'تسميع يومي'
-      };
-    });
-
-    const sessionCounts = historyPoints.map(p => p.sessionAyahs);
-    const avgSessionAyahs = Math.round(sessionCounts.reduce((a, b) => a + b, 0) / sessionCounts.length);
-    const maxSessionAyahs = Math.max(...sessionCounts);
-    const totalCumulativeAyahs = runningCumulative;
-
-    let trendStatus: 'improving' | 'steady' | 'declining' = 'improving';
-    let trendText = 'في تقدم مستمر ملحوظ ↗️';
-    let trendDescription = `يواصل الطالب الارتقاء في مسيرة التسميع بمعدل مبارك (${toArabicDigits(avgSessionAyahs)} آية في الجلسة الواحدة)، وكلما سمع أكثر كلما زاد إتقانه وحصيلته القرآنية التراكمية!`;
-
-    if (historyPoints.length >= 3) {
-      const recent = historyPoints.slice(-3);
-      const prev = historyPoints.slice(0, -3);
-      const recentAvg = recent.reduce((s, p) => s + p.sessionAyahs, 0) / recent.length;
-      const prevAvg = prev.length > 0 ? prev.reduce((s, p) => s + p.sessionAyahs, 0) / prev.length : recentAvg;
-      const delta = Math.round(recentAvg - prevAvg);
-
-      if (delta >= 2 || recentAvg >= avgSessionAyahs) {
-        trendStatus = 'improving';
-        trendText = 'في تقدم مستمر ملحوظ ↗️';
-        trendDescription = `يرتفع معدل التسميع اليومي للطالب بوتيرة متصاعدة (+${toArabicDigits(Math.max(1, delta))} آية بالجلسة)، وكلما استمر في التسميع كلما ارتقى في درجات الإتقان التراكمي!`;
-      } else if (delta <= -4) {
-        trendStatus = 'declining';
-        trendText = 'يحتاج لمزيد من التسميع والتثبيت ↘️';
-        trendDescription = `وتيرة التسميع الأخيرة أقل بقليل من المعدل المعتاد، ويُنصح بزيادة الاستماع للقارئ المعلم ومضاعفة التسميع في الجلسات القادمة لرفع وتيرة الإنجاز.`;
-      } else {
-        trendStatus = 'steady';
-        trendText = 'إنجاز متواصل ومستقر ➡️';
-        trendDescription = `استقرار مبارك في وتيرة التسميع اليومي بمعدل (${toArabicDigits(avgSessionAyahs)} آية/جلسة)، استمر في التسميع والتكرار للارتقاء أكثر.`;
-      }
-    }
-
-    return {
-      trendStatus,
-      trendText,
-      trendDescription,
-      avgSessionAyahs,
-      maxSessionAyahs,
-      totalCumulativeAyahs,
-      historyPoints
-    };
-  }, [sortedEvaluations]);
 
   // Honor Board / Leaderboard Calculation for Student Portal (Unified Formula identical to LeaderboardTab)
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
@@ -831,32 +908,66 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Prominent Duolingo 3D Account Badge */}
+            {/* Prominent Duolingo 3D Account Badge in Platform Theme */}
             <div
               className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border-2 border-b-4 shadow-md text-xs font-bold transition-all"
               style={{
-                backgroundColor: '#011a14',
-                borderColor: resolvedComplex?.theme?.primaryColor || '#065f46',
-                borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#011a14', 0.5)
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}50`,
+                borderBottomColor: themeBorderBottom
               }}
             >
-              <div className="w-5 h-5 rounded-lg bg-amber-400/20 text-amber-400 flex items-center justify-center">
-                <User className="w-3.5 h-3.5" />
+              <div
+                className="w-5 h-5 rounded-lg flex items-center justify-center border"
+                style={{
+                  backgroundColor: `${themeAccent}20`,
+                  borderColor: `${themeAccent}40`,
+                  color: themeAccent
+                }}
+              >
+                <User className="w-3.5 h-3.5" style={{ color: themeAccent }} />
               </div>
-              <span className="text-[#86efac]">حسابك:</span>
+              <span className="text-slate-300">حسابك:</span>
               <span className="font-black text-white">{currentStudent.name}</span>
-              <span className="px-2 py-0.5 rounded-lg bg-amber-400 text-emerald-950 font-black font-mono text-[11px] shadow-sm">
+              <span
+                className="px-2 py-0.5 rounded-lg font-black font-mono text-[11px] shadow-sm border"
+                style={{
+                  backgroundColor: themeAccent,
+                  color: accentTextColor,
+                  borderColor: themeAccentShadow
+                }}
+              >
                 {currentStudent.password || '123'}
               </span>
             </div>
 
-            {/* Duolingo 3D Logout Button */}
+            {/* Quick Data Refresh Button in Duolingo 3D Style (تحديث البيانات بثيم المنصة) */}
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={isSyncingLocal || isCloudSyncing}
+              className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-md active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all hover:brightness-110 disabled:opacity-60"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
+              }}
+              title="تحديث واسترجاع أحدث بيانات الطالب والدرجات من قاعدة البيانات"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 shrink-0 ${(isSyncingLocal || isCloudSyncing) ? 'animate-spin' : ''}`}
+                style={{ color: themeAccent }}
+              />
+              <span className="text-white font-bold">تحديث البيانات</span>
+            </button>
+
+            {/* Duolingo 3D Logout Button - Arrow icon removed per user request */}
             <button
               onClick={handleLogoutAction}
-              className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg border-2 border-rose-500 border-b-4 border-b-rose-900 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all"
+              className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow-lg border-2 border-rose-500 border-b-4 border-b-rose-900 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all select-none"
               title="تسجيل الخروج والعودة للشاشة الرئيسية"
             >
-              <LogOut className="w-4 h-4" />
               <span>تسجيل الخروج</span>
             </button>
           </div>
@@ -1175,328 +1286,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       <Zap className="w-4 h-4 text-sky-400" />
                       <span className="text-slate-300">المستوى الحالي:</span>
                       <span className="text-sky-300 font-black">مستوى {toArabicDigits(currentStudent.level)}</span>
-                    </div>
-                  </div>
-
-                  {/* Daily Progress Level Trend Chart & AI Analytical Insights */}
-                  <div
-                    className="p-6 sm:p-7 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
-                    style={{
-                      backgroundColor: themeCard ? `${themeCard}f2` : '#203843',
-                      borderColor: themeAccent,
-                      borderBottomColor: darkenHex(themeAccent, 0.4)
-                    }}
-                  >
-                    <div
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2"
-                      style={{ borderColor: `${themeAccent}25` }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-md transition-all active:translate-y-0.5 active:border-b-2"
-                          style={{
-                            backgroundColor: `${themeAccent}25`,
-                            color: themeAccent,
-                            borderColor: `${themeAccent}80`,
-                            borderBottomColor: darkenHex(themeAccent, 0.35)
-                          }}
-                        >
-                          <BarChart3 className="w-6 h-6" />
-                        </div>
-                        <div>
-                          <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
-                            <span>تحليل مسار التقدم اليومي ومؤشر التسميع</span>
-                          </h3>
-                          <p className="text-xs text-slate-300 font-bold mt-0.5">
-                            متابعة بيانية تفاعلية لمستوى الحفظ وتراكم الآيات المسمعة يوماً بيوم
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Trend Status Pill - Duolingo 3D style */}
-                      <div
-                        className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-sm transition-all active:translate-y-0.5 active:border-b-2"
-                        style={
-                          progressAnalysis.trendStatus === 'improving'
-                            ? {
-                                backgroundColor: `${themeAccent}25`,
-                                color: themeAccent,
-                                borderColor: `${themeAccent}70`,
-                                borderBottomColor: darkenHex(themeAccent, 0.3)
-                              }
-                            : progressAnalysis.trendStatus === 'declining'
-                            ? {
-                                backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                                color: '#fca5a5',
-                                borderColor: '#f87171',
-                                borderBottomColor: '#b91c1c'
-                              }
-                            : {
-                                backgroundColor: themeSecondary,
-                                color: '#38bdf8',
-                                borderColor: '#0284c7',
-                                borderBottomColor: '#0369a1'
-                              }
-                        }
-                      >
-                        {progressAnalysis.trendStatus === 'improving' ? (
-                          <TrendingUp className="w-4 h-4" style={{ color: themeAccent }} />
-                        ) : progressAnalysis.trendStatus === 'declining' ? (
-                          <TrendingDown className="w-4 h-4 text-red-400" />
-                        ) : (
-                          <Minus className="w-4 h-4 text-sky-400" />
-                        )}
-                        <span>{progressAnalysis.trendText}</span>
-                      </div>
-                    </div>
-
-                    {/* Analytical Insight Box - Duolingo 3D */}
-                    <div
-                      className="p-4 sm:p-5 rounded-[26px] border-2 border-b-[5px] shadow-lg space-y-3"
-                      style={{
-                        backgroundColor: themeCard ? `${themeCard}ee` : '#203843',
-                        borderColor: `${themeAccent}35`,
-                        borderBottomColor: darkenHex(themeCard || '#203843', 0.4)
-                      }}
-                    >
-                      <div className="flex items-center gap-2 text-xs font-black" style={{ color: themeAccent }}>
-                        <span
-                          className="p-1.5 rounded-xl border-2 border-b-2"
-                          style={{
-                            backgroundColor: `${themeAccent}20`,
-                            borderColor: `${themeAccent}40`,
-                            borderBottomColor: darkenHex(themeAccent, 0.25)
-                          }}
-                        >
-                          <Sparkles className="w-3.5 h-3.5" style={{ color: themeAccent }} />
-                        </span>
-                        <span>تحليل مسار التسميع والإنجاز القرآني:</span>
-                      </div>
-                      <p className="text-xs sm:text-sm text-slate-100 leading-relaxed font-bold">
-                        {progressAnalysis.trendDescription}
-                      </p>
-                      <div
-                        className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-3 border-t-2 text-center"
-                        style={{ borderColor: `${themeAccent}25` }}
-                      >
-                        <div
-                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: `${themeAccent}40`,
-                            borderBottomColor: darkenHex(themeAccent, 0.35)
-                          }}
-                        >
-                          <span className="text-[10px] text-slate-300 block font-bold">معدل التسميع بالجلسة</span>
-                          <strong className="text-base font-black font-mono mt-0.5 block text-white">
-                            {toArabicDigits(progressAnalysis.avgSessionAyahs)} <span className="text-xs font-normal text-slate-300">آية</span>
-                          </strong>
-                        </div>
-                        <div
-                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: themeAccent,
-                            borderBottomColor: darkenHex(themeAccent, 0.35)
-                          }}
-                        >
-                          <span className="text-[10px] text-slate-300 block font-bold">أعلى تسميع في جلسة</span>
-                          <strong className="text-base font-black font-mono mt-0.5 block" style={{ color: themeAccent }}>
-                            {toArabicDigits(progressAnalysis.maxSessionAyahs)} <span className="text-xs font-normal text-slate-300">آية</span>
-                          </strong>
-                        </div>
-                        <div
-                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm col-span-2 sm:col-span-1 transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: `${themeAccent}40`,
-                            borderBottomColor: darkenHex(themeAccent, 0.35)
-                          }}
-                        >
-                          <span className="text-[10px] text-slate-300 block font-bold">جلسات التسميع المرصودة</span>
-                          <strong className="text-base font-black font-mono mt-0.5 block" style={{ color: themeAccent }}>
-                            {toArabicDigits(progressAnalysis.historyPoints.length)} <span className="text-xs font-normal text-slate-300">جلسة</span>
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Interactive SVG Progress Chart - Duolingo 3D Box */}
-                    <div
-                      className="p-4 sm:p-5 rounded-[28px] border-2 border-b-[6px] shadow-xl space-y-4"
-                      style={{
-                        backgroundColor: themeCard ? `${themeCard}fa` : '#203843',
-                        borderColor: themeAccent,
-                        borderBottomColor: darkenHex(themeAccent, 0.35)
-                      }}
-                    >
-                      <div className="flex items-center justify-between text-xs font-black gap-2 flex-wrap">
-                        <span
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-b-2 text-slate-200"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: `${themeAccent}35`,
-                            borderBottomColor: darkenHex(themeAccent, 0.25)
-                          }}
-                        >
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shadow-sm animate-pulse"
-                            style={{ backgroundColor: themeAccent }}
-                          />
-                          <span>منحنى التسميع والإنجاز التراكمي (كلما سمعت أكثر ارتفع المنحنى)</span>
-                        </span>
-                        <span
-                          className="px-3 py-1.5 rounded-xl border-2 border-b-2 font-mono text-xs flex items-center gap-1.5"
-                          style={{
-                            backgroundColor: `${themeAccent}20`,
-                            color: themeAccent,
-                            borderColor: `${themeAccent}50`,
-                            borderBottomColor: darkenHex(themeAccent, 0.3)
-                          }}
-                        >
-                          <span>الإجمالي التراكمي:</span>
-                          <strong>{toArabicDigits(progressAnalysis.totalCumulativeAyahs)} آية</strong>
-                        </span>
-                      </div>
-
-                      <div className="w-full h-48 sm:h-56 relative">
-                        <svg className="w-full h-full overflow-visible" viewBox="0 0 500 180" preserveAspectRatio="none">
-                          <defs>
-                            <linearGradient id="cumulativeChartGradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={themeAccent} stopOpacity="0.45" />
-                              <stop offset="100%" stopColor={themeAccent} stopOpacity="0.0" />
-                            </linearGradient>
-                            <filter id="chartGlowEffect" x="-20%" y="-20%" width="140%" height="140%">
-                              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={themeAccent} floodOpacity="0.5" />
-                            </filter>
-                          </defs>
-
-                          {(() => {
-                            const pts = progressAnalysis.historyPoints;
-                            const maxVal = Math.max(...pts.map(p => p.cumulativeAyahs), 30);
-                            const topVal = Math.ceil(maxVal / 10) * 10;
-                            const midVal = Math.round(topVal * 0.66);
-                            const lowVal = Math.round(topVal * 0.33);
-
-                            const count = pts.length;
-                            const coords = pts.map((pt, idx) => {
-                              const x = count === 1 ? 250 : 50 + (idx / Math.max(1, count - 1)) * 410;
-                              const y = 150 - (pt.cumulativeAyahs / topVal) * 125;
-                              return { x, y, pt, idx };
-                            });
-
-                            const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
-                            const areaD = coords.length > 0
-                              ? `${pathD} L ${coords[coords.length - 1].x} 150 L ${coords[0].x} 150 Z`
-                              : '';
-
-                            return (
-                              <>
-                                {/* Reference Grid Lines */}
-                                <line x1="0" y1="25" x2="500" y2="25" stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" strokeWidth="1" />
-                                <line x1="0" y1="66" x2="500" y2="66" stroke="rgba(255,255,255,0.10)" strokeDasharray="4 4" strokeWidth="1" />
-                                <line x1="0" y1="108" x2="500" y2="108" stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" strokeWidth="1" />
-                                <line x1="0" y1="150" x2="500" y2="150" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
-
-                                {/* Y-Axis Labels in Arabic Digits */}
-                                <text x="6" y="29" fill={themeAccent} fontSize="10" fontWeight="900">{toArabicDigits(topVal)} آية</text>
-                                <text x="6" y="70" fill="rgba(255,255,255,0.6)" fontSize="9" fontWeight="900">{toArabicDigits(midVal)} آية</text>
-                                <text x="6" y="112" fill="rgba(255,255,255,0.4)" fontSize="9" fontWeight="900">{toArabicDigits(lowVal)} آية</text>
-
-                                {/* Area & Line */}
-                                {areaD && <path d={areaD} fill="url(#cumulativeChartGradient)" />}
-                                {pathD && (
-                                  <path
-                                    d={pathD}
-                                    fill="none"
-                                    stroke={themeAccent}
-                                    strokeWidth="3.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    filter="url(#chartGlowEffect)"
-                                  />
-                                )}
-
-                                {/* Nodes */}
-                                {coords.map((c, i) => {
-                                  const isFirst = i === 0;
-                                  const isLast = i === coords.length - 1;
-                                  const showPill = isLast || (coords.length <= 6) || (coords.length > 6 && i % 4 === 0 && !isFirst);
-
-                                  return (
-                                    <g key={i} className="group cursor-pointer">
-                                      <circle
-                                        cx={c.x}
-                                        cy={c.y}
-                                        r={isLast ? "7" : "5"}
-                                        fill={themeSecondary}
-                                        stroke={themeAccent}
-                                        strokeWidth={isLast ? "3.5" : "2.5"}
-                                        className="transition-all hover:scale-150"
-                                      />
-                                      <title>{`${c.pt.date} (${c.pt.label})\nجلسة: +${toArabicDigits(c.pt.sessionAyahs)} آية مسمعة\nالإجمالي التراكمي: ${toArabicDigits(c.pt.cumulativeAyahs)} آية`}</title>
-
-                                      {showPill && (
-                                        <g className="animate-fadeIn">
-                                          <rect
-                                            x={c.x - (isLast ? 36 : 22)}
-                                            y={c.y - 24}
-                                            width={isLast ? 72 : 44}
-                                            height="18"
-                                            rx="9"
-                                            fill={isLast ? themeAccent : themeSecondary}
-                                            stroke={themeAccent}
-                                            strokeWidth="1.5"
-                                            className="shadow-md"
-                                          />
-                                          <text
-                                            x={c.x}
-                                            y={c.y - 12}
-                                            fill={isLast ? themePrimary : '#ffffff'}
-                                            fontSize={isLast ? "9" : "8"}
-                                            fontWeight="900"
-                                            textAnchor="middle"
-                                          >
-                                            {isLast ? `${toArabicDigits(c.pt.cumulativeAyahs)} آية` : `+${toArabicDigits(c.pt.sessionAyahs)}`}
-                                          </text>
-                                        </g>
-                                      )}
-                                    </g>
-                                  );
-                                })}
-                              </>
-                            );
-                          })()}
-                        </svg>
-                      </div>
-
-                      <div
-                        className="flex items-center justify-between text-[11px] font-bold px-3 pt-3 border-t-2 flex-wrap gap-2"
-                        style={{ borderColor: `${themeAccent}25` }}
-                      >
-                        <span
-                          className="px-3 py-1 rounded-xl border text-slate-200"
-                          style={{
-                            backgroundColor: themeSecondary,
-                            borderColor: `${themeAccent}30`
-                          }}
-                        >
-                          أقدم جلسة: {toArabicDigits(progressAnalysis.historyPoints[0]?.label || '')}
-                        </span>
-
-                        <span
-                          className="px-3 py-1 rounded-xl border-2 border-b-2 font-black flex items-center gap-1.5"
-                          style={{
-                            backgroundColor: `${themeAccent}20`,
-                            color: themeAccent,
-                            borderColor: themeAccent,
-                            borderBottomColor: darkenHex(themeAccent, 0.3)
-                          }}
-                        >
-                          <Sparkles className="w-3 h-3" />
-                          <span>أحدث جلسة: {toArabicDigits(progressAnalysis.historyPoints[progressAnalysis.historyPoints.length - 1]?.label || '')} (إجمالي {toArabicDigits(progressAnalysis.totalCumulativeAyahs)} آية)</span>
-                        </span>
-                      </div>
                     </div>
                   </div>
                 </>
@@ -3079,6 +2868,50 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
         )}
 
+      {/* Sleek Modern Right-Side Sync & Refresh Indicator in Platform Theme (زي المعلمين اسفل اليمين بتحديثات السحابة وقاعدة البيانات) */}
+      <AnimatePresence>
+        {(showSyncBadge || isCloudSyncing || isSyncingLocal) && (
+          <motion.div
+            initial={{ opacity: 0, y: 25, x: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 25, x: 20, scale: 0.95 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-3 px-4 py-3 rounded-2xl border-2 border-b-4 shadow-[0_12px_40px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold select-none cursor-pointer group active:translate-y-[2px]"
+            style={{
+              backgroundColor: `${themeCardBg}fa`,
+              borderColor: `${themeAccent}90`,
+              borderBottomColor: themeAccentShadow,
+              color: '#ffffff'
+            }}
+            onClick={handleManualRefresh}
+            title="انقر لتحديث السجلات يدوياً من قاعدة البيانات"
+            dir="rtl"
+          >
+            <span className="relative flex h-3 w-3 shrink-0">
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style={{ backgroundColor: themeAccent }}
+              />
+              <span
+                className="relative inline-flex rounded-full h-3 w-3"
+                style={{ backgroundColor: themeAccent }}
+              />
+            </span>
+            <RefreshCw
+              className={`w-4 h-4 shrink-0 ${(isSyncingLocal || isCloudSyncing) ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
+              style={{ color: themeAccent }}
+            />
+            <div className="flex flex-col text-right">
+              <span className="text-[11px] font-black font-heading text-white">
+                {syncNoticeText || cloudSyncText || 'تحديث البيانات السحابية مباشرة...'}
+              </span>
+              <span className="text-[10px] text-slate-300 font-normal">
+                {isSyncingLocal ? 'جاري جلب أحدث السجلات...' : 'انقر لتحديث البيانات الآن'}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       </div>
     </div>

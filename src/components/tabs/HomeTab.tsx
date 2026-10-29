@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Student, AttendanceRecord, StudentEvaluation, AppSettings, TeacherAccount, QuranComplex } from '../../types';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import { StudentProgressAnalyticsSection } from './StudentProgressAnalyticsSection';
 
 interface HomeTabProps {
   students: Student[];
@@ -177,8 +178,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   <span className="text-2xl select-none inline-block hover:scale-125 transition-transform">👋</span>
                 </h2>
               </div>
-              <p className="text-emerald-100/90 text-xs sm:text-sm font-bold flex items-center gap-2 leading-relaxed">
-                <span>حفظك الله ورعاك وسدد خطاك في خدمة كتاب الله الكريم 🌿</span>
+              <p className="text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 leading-relaxed">
+                <span>حفظك الله ورعاك وسدد خطاك في خدمة كتاب الله الكريم ✨</span>
               </p>
             </div>
 
@@ -187,7 +188,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </p>
           </div>
 
-          {/* Duolingo 3D Action Buttons (Prominent Attendance & Evaluation) */}
+          {/* Duolingo 3D Action Buttons (Prominent Attendance & Evaluation in Complex Theme) */}
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             {/* Attendance Button (تسجيل حضور اليوم) */}
             <button
@@ -195,24 +196,25 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               onClick={() => onNavigateTab('attendance')}
               className="px-5 py-3.5 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2.5 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-xl cursor-pointer transition-all hover:brightness-110 select-none"
               style={unrecordedCount === 0 && students.length > 0 ? {
-                backgroundColor: '#10b981',
-                color: '#ffffff',
-                borderColor: '#34d399',
-                borderBottomColor: '#059669',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                backgroundColor: themeAccent,
+                color: accentTextColor,
+                borderColor: themeAccent,
+                borderBottomColor: themeAccentShadow,
+                boxShadow: `0 4px 14px ${themeAccent}40`
               } : {
-                backgroundColor: '#58cc02',
+                backgroundColor: themeCardBg,
                 color: '#ffffff',
-                borderColor: '#7ee82a',
-                borderBottomColor: '#46a302',
-                boxShadow: '0 4px 14px rgba(88, 204, 2, 0.4)'
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeBorderBottom,
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)'
               }}
               title={unrecordedCount === 0 && students.length > 0 ? 'تم تحضير جميع الطلاب لليوم بنجاح' : `تسجيل ومتابعة حضور اليوم`}
             >
               <CheckCircle
-                className="w-5 h-5 shrink-0 stroke-[2.5] text-white"
+                className="w-5 h-5 shrink-0 stroke-[2.5]"
+                style={{ color: unrecordedCount === 0 && students.length > 0 ? accentTextColor : themeAccent }}
               />
-              <span className="text-sm font-black text-white">
+              <span className="text-sm font-black" style={{ color: unrecordedCount === 0 && students.length > 0 ? accentTextColor : '#ffffff' }}>
                 {unrecordedCount === 0 && students.length > 0 ? 'تم تسجيل حضور اليوم' : 'تسجيل حضور اليوم'}
               </span>
               {students.length > 0 && (
@@ -376,10 +378,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             <span
               className="px-2 py-0.5 rounded-xl border-2 border-b-2 font-black"
               style={{
-                backgroundColor: '#58cc0220',
-                borderColor: '#58cc0260',
-                borderBottomColor: '#46a302',
-                color: '#58cc02'
+                backgroundColor: `${themeAccent}25`,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow,
+                color: themeAccent
               }}
             >
               {strongCount} متقدم
@@ -536,6 +538,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
+      {/* 2.5 Student Progress Analytics & Daily Trend Charts Section in Complex Theme */}
+      <StudentProgressAnalyticsSection
+        students={students}
+        evaluations={evaluations}
+        activeComplex={activeComplex}
+        settings={settings}
+        onNavigateTab={onNavigateTab}
+      />
+
       {/* 3. Main Content Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Today's Student Recitation Roster with Duolingo 3D Polish */}
@@ -579,22 +590,22 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 return (
                   <div
                     key={student.id}
-                    className={`m-1.5 p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all shadow-sm ${
-                      isAbsent ? 'opacity-65' : isExcused ? 'opacity-75' : 'hover:translate-y-[-1px]'
+                    className={`m-1.5 p-4 rounded-[22px] border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all shadow-md group ${
+                      isAbsent ? 'opacity-65' : isExcused ? 'opacity-75' : 'hover:-translate-y-0.5'
                     }`}
                     style={{
-                      backgroundColor: isAbsent ? themePrimary : isExcused ? themePrimary : themeCardBg,
-                      borderColor: isAbsent ? 'rgba(255, 75, 75, 0.45)' : isExcused ? 'rgba(206, 130, 255, 0.45)' : themeBorder,
+                      backgroundColor: isAbsent ? themePrimary : isExcused ? themePrimary : themeSecondary,
+                      borderColor: isAbsent ? 'rgba(255, 75, 75, 0.5)' : isExcused ? 'rgba(206, 130, 255, 0.5)' : themeBorder,
                       borderBottomColor: isAbsent ? '#ea2b2b' : isExcused ? '#a558dc' : themeBorderBottom
                     }}
                   >
                     {/* Student Identity and Quran Location */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3.5">
                       <div
-                        className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-sm shadow-sm shrink-0"
+                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-base shadow-md shrink-0 group-hover:scale-105 transition-transform"
                         style={{
                           backgroundColor: `${themeAccent}25`,
-                          borderColor: `${themeAccent}60`,
+                          borderColor: `${themeAccent}70`,
                           borderBottomColor: themeAccentShadow,
                           color: themeAccent
                         }}
@@ -604,11 +615,11 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
                       <div className="space-y-1.5 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-black text-white truncate">{student.name}</h4>
+                          <h4 className="text-sm sm:text-base font-black text-white truncate font-heading">{student.name}</h4>
                           <span
                             className={`text-[10px] px-2.5 py-0.5 rounded-xl font-black border-2 border-b-2 shadow-xs ${
                               student.level === 'قوي'
-                                ? 'bg-[#58cc02]/20 text-[#58cc02] border-[#58cc02]/50 border-b-[#46a302]'
+                                ? 'bg-amber-400/20 text-amber-300 border-amber-400/50 border-b-amber-600'
                                 : student.level === 'متوسط'
                                 ? 'bg-[#1cb0f6]/20 text-[#1cb0f6] border-[#1cb0f6]/50 border-b-[#1899d6]'
                                 : 'bg-[#ff9600]/20 text-[#ff9600] border-[#ff9600]/50 border-b-[#e68300]'
@@ -621,7 +632,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                         {/* Recitation Location & Target In Duolingo 3D Mini-Pills */}
                         <div className="flex items-center gap-1.5 flex-wrap text-xs">
                           <span
-                            className="px-2.5 py-1 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1 shadow-xs"
+                            className="px-3 py-1 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1.5 shadow-xs"
                             style={{
                               backgroundColor: themePrimary,
                               borderColor: `${themeAccent}40`,
@@ -633,33 +644,47 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                             <span>سورة {student.currentSurahName} (الآية {student.currentAyah})</span>
                           </span>
                           <span
-                            className="px-2.5 py-1 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1 shadow-xs"
+                            className="px-3 py-1 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1.5 shadow-xs"
                             style={{
                               backgroundColor: `${themeAccent}25`,
-                              borderColor: `${themeAccent}60`,
+                              borderColor: `${themeAccent}70`,
                               borderBottomColor: themeAccentShadow,
                               color: themeAccent
                             }}
                           >
-                            <span>ورد الحفظ:</span>
-                            <strong className="font-black">{student.dailyNewTarget}</strong>
+                            <span className="text-slate-300 font-bold">ورد الحفظ:</span>
+                            <strong className="font-black text-white">{student.dailyNewTarget}</strong>
                           </span>
+                          {student.dailyReviewTarget && (
+                            <span
+                              className="px-3 py-1 rounded-xl font-bold border-2 border-b-2 flex items-center gap-1.5 shadow-xs"
+                              style={{
+                                backgroundColor: 'rgba(28, 176, 246, 0.2)',
+                                borderColor: 'rgba(28, 176, 246, 0.6)',
+                                borderBottomColor: '#1899d6',
+                                color: '#38bdf8'
+                              }}
+                            >
+                              <span className="text-slate-300 font-bold">ورد المراجعة:</span>
+                              <strong className="font-black text-white">{student.dailyReviewTarget}</strong>
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     {/* Status Badges & Recitation Button in Duolingo 3D */}
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
                       {/* Attendance Badge in Duolingo 3D style */}
                       <span
-                        className="text-xs px-3 py-1.5 rounded-xl font-black border-2 border-b-4 shadow-sm"
+                        className="text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-4 shadow-sm select-none"
                         style={
                           isPresent
                             ? {
-                                backgroundColor: 'rgba(88, 204, 2, 0.2)',
-                                borderColor: 'rgba(88, 204, 2, 0.6)',
-                                borderBottomColor: '#46a302',
-                                color: '#58cc02'
+                                backgroundColor: `${themeAccent}25`,
+                                borderColor: `${themeAccent}70`,
+                                borderBottomColor: themeAccentShadow,
+                                color: themeAccent
                               }
                             : isAbsent
                             ? {
@@ -693,37 +718,38 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                         {att?.status ? `سجل: ${att.status}` : 'لم يسجل بعد'}
                       </span>
 
-                      {/* Recitation Evaluation Status in Duolingo 3D style */}
+                      {/* Recitation Evaluation Status in Complex Theme */}
                       {hasEvaluation ? (
                         <span
-                          className="text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-4 flex items-center gap-1.5 shadow-sm"
+                          className="text-xs px-4 py-2 rounded-xl font-black border-2 border-b-4 flex items-center gap-1.5 shadow-sm"
                           style={{
-                            backgroundColor: '#58cc0225',
-                            borderColor: '#58cc0280',
-                            borderBottomColor: '#46a302',
-                            color: '#58cc02'
+                            backgroundColor: `${themeAccent}25`,
+                            borderColor: `${themeAccent}80`,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
                           }}
                         >
-                          <CheckCircle2 className="w-4 h-4 text-[#58cc02]" />
-                          <span>تم التسميع</span>
+                          <CheckCircle2 className="w-4 h-4" style={{ color: themeAccent }} />
+                          <span>تم التسميع اليوم ✓</span>
                         </span>
                       ) : isPresent ? (
                         <button
+                          type="button"
                           onClick={() => {
                             if (onSelectStudentForEval) {
                               onSelectStudentForEval(student.id);
                             }
                             onNavigateTab('evaluation');
                           }}
-                          className="text-xs px-4 py-1.5 rounded-xl font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer flex items-center gap-1.5 hover:brightness-110"
+                          className="text-xs px-4 py-2 rounded-xl font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md transition-all cursor-pointer flex items-center gap-2 hover:brightness-110"
                           style={{
                             backgroundColor: themeAccent,
                             borderColor: themeAccent,
                             borderBottomColor: themeAccentShadow,
-                            color: themePrimary
+                            color: accentTextColor
                           }}
                         >
-                          <BookOpen className="w-3.5 h-3.5" style={{ color: themePrimary }} />
+                          <BookOpen className="w-4 h-4" style={{ color: accentTextColor }} />
                           <span>تسميع الآن</span>
                         </button>
                       ) : null}
@@ -795,13 +821,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   <div
                     className="w-9 h-9 rounded-xl border-2 border-b-4 flex items-center justify-center shrink-0"
                     style={{
-                      backgroundColor: '#58cc0225',
-                      borderColor: '#58cc0260',
-                      borderBottomColor: '#46a302',
-                      color: '#58cc02'
+                      backgroundColor: `${themeAccent}25`,
+                      borderColor: `${themeAccent}60`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
                     }}
                   >
-                    <Users className="w-4 h-4 text-[#58cc02]" />
+                    <Users className="w-4 h-4" style={{ color: themeAccent }} />
                   </div>
                   <span className="text-xs font-black text-white">إدارة الطلاب والتسجيل</span>
                 </div>
@@ -933,13 +959,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 <div
                   className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-lg shrink-0 group-hover:scale-105 transition-transform"
                   style={{
-                    backgroundColor: '#25D366',
-                    borderColor: '#25D366',
-                    borderBottomColor: '#1b9e4b',
-                    color: '#ffffff'
+                    backgroundColor: `${themeAccent}25`,
+                    borderColor: `${themeAccent}80`,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
                   }}
                 >
-                  <MessageCircle className="w-6 h-6 text-white" />
+                  <MessageCircle className="w-6 h-6" style={{ color: themeAccent }} />
                 </div>
                 <div>
                   <h4 className="text-sm font-black text-white flex items-center gap-1.5 font-heading">
