@@ -848,10 +848,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     <div
       className="min-h-screen p-4 sm:p-6 lg:p-8 relative z-10 transition-colors duration-300"
       style={resolvedComplex?.theme ? {
-        backgroundColor: resolvedComplex.theme.backgroundColor || '#022c22',
+        backgroundColor: resolvedComplex.theme.backgroundColor || themePrimary,
         color: resolvedComplex.theme.textColor || '#f0f9f6'
       } : {
-        backgroundColor: '#022c22',
+        backgroundColor: themePrimary,
         color: '#f0f9f6'
       }}
     >
@@ -860,11 +860,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         <div
           className="border-2 border-b-6 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl backdrop-blur-md transition-all relative overflow-hidden"
           style={{
-            backgroundColor: resolvedComplex?.theme?.secondaryColor
-              ? `${resolvedComplex.theme.secondaryColor}f2`
-              : 'rgba(2, 44, 34, 0.95)',
-            borderColor: resolvedComplex?.theme?.cardColor || '#065f46',
-            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#011a14', 0.55)
+            backgroundColor: `${themeSecondary}f2`,
+            borderColor: `${themeAccent}50`,
+            borderBottomColor: themeAccentShadow
           }}
         >
           {/* Subtle 3D Top Sheen */}
@@ -874,10 +872,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             <div
               className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black shrink-0 overflow-hidden shadow-xl border-2 border-b-4 active:translate-y-[2px] transition-all select-none"
               style={{
-                backgroundColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-                borderColor: lightenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.2),
-                borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#d97706', 0.35),
-                color: '#064e3b'
+                backgroundColor: themeAccent,
+                borderColor: lightenHex(themeAccent, 0.2),
+                borderBottomColor: themeAccentShadow,
+                color: accentTextColor
               }}
             >
               {resolvedComplex?.logoUrl ? (
@@ -889,20 +887,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             <div>
               <h1
                 className="text-lg sm:text-xl font-black font-heading text-white flex items-center gap-2 drop-shadow-sm"
-                style={resolvedComplex?.theme?.accentColor ? { color: resolvedComplex.theme.accentColor } : undefined}
+                style={{ color: themeAccent }}
               >
                 <span>{displayComplexName}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-lg font-bold border"
+                  style={{
+                    backgroundColor: `${themeAccent}20`,
+                    borderColor: `${themeAccent}40`,
+                    color: themeAccent
+                  }}
+                >
                   بوابة الطالب
                 </span>
               </h1>
               <p
                 className="text-xs font-bold mt-0.5 flex flex-wrap items-center gap-1.5"
-                style={resolvedComplex?.theme?.accentColor ? { color: resolvedComplex.theme.accentColor } : { color: '#fbbf24' }}
+                style={{ color: themeAccent }}
               >
                 <span>{currentStudent.halaqahName || settings.halaqahName || 'الحلقة القرآنية'}</span>
                 <span className="text-white/40">•</span>
-                <span className="text-emerald-200/90 font-medium">بإشراف: {settings.teacherName || 'معلم ومحفظ الحلقة'}</span>
+                <span className="text-slate-300 font-medium">بإشراف: {settings.teacherName || 'معلم ومحفظ الحلقة'}</span>
               </p>
             </div>
           </div>
@@ -973,80 +978,155 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Student Profile Card Hero - Duolingo 3D Themed */}
+        {/* Student Profile Card Hero - Duolingo 3D Themed in Quranic Complex Colors */}
         <div
           className="relative overflow-hidden rounded-3xl border-2 border-b-6 p-6 sm:p-7 shadow-2xl backdrop-blur-md transition-all"
           style={{
-            background: `linear-gradient(135deg, ${resolvedComplex?.theme?.primaryColor || '#064e3b'} 0%, #022c22 60%, ${resolvedComplex?.theme?.primaryColor || '#064e3b'} 100%)`,
-            borderColor: resolvedComplex?.theme?.accentColor ? `${resolvedComplex.theme.accentColor}90` : '#fbbf24',
-            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#022c22', 0.55)
+            background: `linear-gradient(135deg, ${themeSecondary} 0%, ${themeCardBg} 50%, ${themeSecondary} 100%)`,
+            borderColor: `${themeAccent}70`,
+            borderBottomColor: themeAccentShadow
           }}
         >
           {/* Subtle Top Gloss / Duolingo Bevel Effect */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            {/* Duolingo 3D Attendance Metric Box (Placed on the Right with Arabic Digits) */}
+            {/* Duolingo 3D Attendance Metric Box in Quranic Complex Theme */}
             <div
-              className="flex sm:flex-col items-start justify-center gap-1.5 bg-[#011a14] p-4 sm:px-6 sm:py-4 rounded-3xl border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 shadow-xl min-w-[155px] text-right shrink-0"
+              className="flex sm:flex-col items-start justify-center gap-1.5 p-4 sm:px-6 sm:py-4 rounded-3xl border-2 border-b-4 shadow-xl min-w-[155px] text-right shrink-0 transition-transform hover:scale-[1.02]"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
             >
-              <span className="text-[11px] font-black text-[#86efac] flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[11px] font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                <Calendar className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                 <span>نسبة التزام الحضور</span>
               </span>
-              <span className="text-3xl sm:text-4xl font-black text-amber-400 font-heading leading-none tracking-tight">
+              <span className="text-3xl sm:text-4xl font-black font-heading leading-none tracking-tight" style={{ color: themeAccent }}>
                 {toArabicDigits(attendanceRate)}٪
               </span>
-              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black border border-emerald-500/30 mt-1">
+              <span
+                className="text-[10px] px-2.5 py-1 rounded-xl font-black border-2 border-b-2 shadow-xs mt-1"
+                style={{
+                  backgroundColor: `${themeAccent}25`,
+                  borderColor: `${themeAccent}50`,
+                  borderBottomColor: themeAccentShadow,
+                  color: themeAccent
+                }}
+              >
                 {attendanceRate >= 90 ? 'مواظبة ممتازة' : attendanceRate >= 75 ? 'مواظبة جيدة' : 'بحاجة لانتظام'}
               </span>
             </div>
 
             {/* Student Avatar & Identity */}
             <div className="flex items-center gap-4 sm:gap-5 flex-1">
-              {/* Duolingo 3D Chunky Student Avatar */}
+              {/* Duolingo 3D Chunky Student Avatar in Quranic Complex Colors */}
               <div
-                className="w-18 h-18 sm:w-20 sm:h-20 rounded-3xl text-emerald-950 text-3xl sm:text-4xl font-black font-heading flex items-center justify-center shadow-2xl border-3 border-white/60 border-b-6 active:translate-y-[2px] transition-all shrink-0 select-none relative group"
+                className="w-18 h-18 sm:w-20 sm:h-20 rounded-3xl text-3xl sm:text-4xl font-black font-heading flex items-center justify-center shadow-2xl border-3 border-white/60 border-b-6 active:translate-y-[2px] transition-all shrink-0 select-none relative group"
                 style={{
-                  backgroundColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-                  borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#d97706', 0.35)
+                  backgroundColor: themeAccent,
+                  color: themePrimary,
+                  borderBottomColor: themeAccentShadow
                 }}
               >
                 <span>{currentStudent.name.charAt(0)}</span>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-xl sm:text-2xl font-black text-white font-heading tracking-tight drop-shadow-sm">
                     {currentStudent.name}
                   </h2>
-                  <span className="px-3 py-1 rounded-2xl bg-amber-400 text-emerald-950 text-xs font-black border-2 border-amber-300 border-b-3 border-b-amber-600 shadow-sm flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-emerald-950" />
+                  <span
+                    className="px-3 py-1 rounded-2xl text-xs font-black border-2 border-b-3 shadow-sm flex items-center gap-1 select-none"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: lightenHex(themeAccent, 0.15),
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <Sparkles className="w-3 h-3" style={{ color: themePrimary }} />
                     <span>مستوى {toArabicDigits(currentStudent.level)}</span>
                   </span>
                   {currentStudent.isGoogleLinked && currentStudent.googleEmail && (
-                    <span className="px-3 py-1 rounded-2xl bg-emerald-500 text-emerald-950 text-xs font-black border-2 border-emerald-400 border-b-3 border-b-emerald-700 shadow-sm flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" />
+                    <span
+                      className="px-3 py-1 rounded-2xl text-xs font-black border-2 border-b-3 shadow-sm flex items-center gap-1"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        color: themeAccent,
+                        borderColor: `${themeAccent}60`,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                       <span>حساب Google موثق</span>
                     </span>
                   )}
-                  <span className="px-2.5 py-1 rounded-2xl bg-[#011a14]/80 text-[#86efac] text-xs font-bold border border-emerald-600/50 font-mono">
-                    {currentStudent.name} - {toArabicDigits(currentStudent.password || '123')}
+                  {/* Student account credentials pill in Duolingo 3D style & Complex Theme */}
+                  <span
+                    className="px-3 py-1 rounded-2xl text-xs font-black border-2 border-b-3 shadow-sm font-mono flex items-center gap-1.5"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}50`,
+                      borderBottomColor: themeBorderBottom,
+                      color: themeAccent
+                    }}
+                  >
+                    <span>{currentStudent.name}</span>
+                    <span className="opacity-50">•</span>
+                    <span
+                      className="px-1.5 py-0.5 rounded-lg border text-[11px] font-black"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}50`,
+                        color: '#ffffff'
+                      }}
+                    >
+                      {toArabicDigits(currentStudent.password || '123')}
+                    </span>
                   </span>
                 </div>
 
-                {/* Duolingo Highlight Bar for Current Memorization */}
-                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-emerald-100 bg-[#011a14]/60 p-2.5 px-3.5 rounded-2xl border border-emerald-700/50 mt-1">
-                  <span className="text-[#86efac] font-bold flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-amber-400" />
+                {/* Duolingo 3D Highlight Bar for Current Memorization in Quranic Complex Theme */}
+                <div
+                  className="flex flex-wrap items-center gap-2.5 text-xs sm:text-sm p-2.5 px-3.5 rounded-2xl border-2 border-b-4 shadow-md mt-2 transition-all"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}70`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <span className="font-black flex items-center gap-2" style={{ color: themeAccent }}>
+                    <div
+                      className="w-7 h-7 rounded-xl flex items-center justify-center border-2 border-b-2 shadow-xs shrink-0"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}70`,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
+                      <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
+                    </div>
                     <span>موضع الحفظ الحالي:</span>
                   </span>
-                  <span className="font-black text-amber-300">
+                  <span
+                    className="font-black px-3 py-1 rounded-xl border-2 border-b-2 shadow-xs text-xs sm:text-sm"
+                    style={{
+                      backgroundColor: themeCardBg,
+                      borderColor: `${themeAccent}50`,
+                      borderBottomColor: themeAccentShadow,
+                      color: '#ffffff'
+                    }}
+                  >
                     سورة {currentStudent.currentSurahName} (الآية {toArabicDigits(currentStudent.currentAyah)})
                   </span>
                 </div>
 
-                <p className="text-xs text-[#86efac]/80 font-medium pt-0.5">
+                <p className="text-xs text-slate-300 font-bold pt-0.5">
                   ولي الأمر: <strong className="text-white">{currentStudent.parentName}</strong>
                 </p>
               </div>
@@ -1058,9 +1138,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         <div
           className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none slider-horizontal p-2 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
           style={{
-            backgroundColor: `${resolvedComplex?.theme?.secondaryColor || '#022c22'}f0`,
-            borderColor: resolvedComplex?.theme?.cardColor || '#065f46',
-            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#022c22', 0.4)
+            backgroundColor: `${resolvedComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
+            borderColor: resolvedComplex?.theme?.cardColor || '#203843',
+            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#131f24', 0.4)
           }}
         >
           {[
@@ -1073,7 +1153,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             const themeAccent = resolvedComplex?.theme?.accentColor || '#fbbf24';
-            const themePrimary = resolvedComplex?.theme?.primaryColor || '#064e3b';
+            const themePrimary = resolvedComplex?.theme?.primaryColor || '#131f24';
 
             return (
               <button
@@ -1115,116 +1195,180 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* ========================================================= */}
         {activeTab === 'home' && (
           <div className="space-y-6">
-            {/* Career Totals Duolingo 3D Grid (إحصائيات مسيرة الطالب طوال دراسته) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            {/* Career Totals Duolingo 3D Grid (إحصائيات مسيرة الطالب طوال دراسته بثيم دولنجو وألوان المجمع) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4">
               {/* Card 1: الآيات المسمعة طول المسيرة */}
               <div
-                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-lg flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
                 style={{
-                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
-                  borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-                  borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.3)
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
                 }}
               >
-                <div className="flex items-center justify-between gap-1.5 mb-2">
+                <div className="flex items-center justify-between gap-1.5 mb-2.5">
                   <span
-                    className="p-2 rounded-xl border-2 border-b-2"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 border-b-3 sm:border-b-4 shadow-sm shrink-0 transition-transform group-hover:scale-105"
                     style={{
-                      backgroundColor: `${resolvedComplex?.theme?.accentColor || '#fbbf24'}20`,
-                      color: resolvedComplex?.theme?.accentColor || '#fbbf24',
-                      borderColor: `${resolvedComplex?.theme?.accentColor || '#fbbf24'}50`,
-                      borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.25)
+                      backgroundColor: `${themeAccent}25`,
+                      color: themeAccent,
+                      borderColor: `${themeAccent}70`,
+                      borderBottomColor: themeAccentShadow
                     }}
                   >
-                    <BookOpen className="w-4 h-4" />
+                    <BookOpen className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                  <span
+                    className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-xl font-black border-2 border-b-2 shadow-xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     طول المسيرة
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-300 font-bold block">الآيات المسمعة</span>
-                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
-                    {toArabicDigits(careerStats.totalAyahs)}
-                    <span className="text-xs font-normal text-slate-300 mr-1">آية</span>
+                  <span className="text-[11px] sm:text-xs font-bold block mb-0.5" style={{ color: themeAccent }}>
+                    الآيات المسمعة
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-black font-heading text-white mt-0.5 flex items-baseline gap-1">
+                    <span>{toArabicDigits(careerStats.totalAyahs)}</span>
+                    <span className="text-xs font-bold text-slate-300 font-sans">آية</span>
                   </div>
                 </div>
               </div>
 
               {/* Card 2: الأوجه المحفوظة */}
               <div
-                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-lg flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
                 style={{
-                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
-                  borderColor: '#10b981',
-                  borderBottomColor: darkenHex('#10b981', 0.3)
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
                 }}
               >
-                <div className="flex items-center justify-between gap-1.5 mb-2">
-                  <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/40">
-                    <Layers className="w-4 h-4" />
+                <div className="flex items-center justify-between gap-1.5 mb-2.5">
+                  <span
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 border-b-3 sm:border-b-4 shadow-sm shrink-0 transition-transform group-hover:scale-105"
+                    style={{
+                      backgroundColor: `${themeAccent}25`,
+                      color: themeAccent,
+                      borderColor: `${themeAccent}70`,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <Layers className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                  <span
+                    className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-xl font-black border-2 border-b-2 shadow-xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     الحفظ المتقن
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-300 font-bold block">الأوجه المحفوظة</span>
-                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
-                    {toArabicDigits(careerStats.totalPages)}
-                    <span className="text-xs font-normal text-slate-300 mr-1">وجهاً</span>
+                  <span className="text-[11px] sm:text-xs font-bold block mb-0.5" style={{ color: themeAccent }}>
+                    الأوجه المحفوظة
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-black font-heading text-white mt-0.5 flex items-baseline gap-1">
+                    <span>{toArabicDigits(careerStats.totalPages)}</span>
+                    <span className="text-xs font-bold text-slate-300 font-sans">وجهاً</span>
                   </div>
                 </div>
               </div>
 
               {/* Card 3: السور المنجزة */}
               <div
-                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-lg flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
                 style={{
-                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
-                  borderColor: '#38bdf8',
-                  borderBottomColor: darkenHex('#38bdf8', 0.3)
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
                 }}
               >
-                <div className="flex items-center justify-between gap-1.5 mb-2">
-                  <span className="p-2 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-2 border-sky-500/40">
-                    <Award className="w-4 h-4" />
+                <div className="flex items-center justify-between gap-1.5 mb-2.5">
+                  <span
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 border-b-3 sm:border-b-4 shadow-sm shrink-0 transition-transform group-hover:scale-105"
+                    style={{
+                      backgroundColor: `${themeAccent}25`,
+                      color: themeAccent,
+                      borderColor: `${themeAccent}70`,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <Award className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                  <span
+                    className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-xl font-black border-2 border-b-2 shadow-xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     السور المكتملة
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-300 font-bold block">السور المنجزة</span>
-                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
-                    {toArabicDigits(careerStats.totalSurahs)}
-                    <span className="text-xs font-normal text-slate-300 mr-1">سورة</span>
+                  <span className="text-[11px] sm:text-xs font-bold block mb-0.5" style={{ color: themeAccent }}>
+                    السور المنجزة
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-black font-heading text-white mt-0.5 flex items-baseline gap-1">
+                    <span>{toArabicDigits(careerStats.totalSurahs)}</span>
+                    <span className="text-xs font-bold text-slate-300 font-sans">سورة</span>
                   </div>
                 </div>
               </div>
 
               {/* Card 4: الأوجه المراجعة */}
               <div
-                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-lg flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
                 style={{
-                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
-                  borderColor: '#f59e0b',
-                  borderBottomColor: darkenHex('#f59e0b', 0.3)
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
                 }}
               >
-                <div className="flex items-center justify-between gap-1.5 mb-2">
-                  <span className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/40">
-                    <RotateCcw className="w-4 h-4" />
+                <div className="flex items-center justify-between gap-1.5 mb-2.5">
+                  <span
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 border-b-3 sm:border-b-4 shadow-sm shrink-0 transition-transform group-hover:scale-105"
+                    style={{
+                      backgroundColor: `${themeAccent}25`,
+                      color: themeAccent,
+                      borderColor: `${themeAccent}70`,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <RotateCcw className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                  <span
+                    className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-xl font-black border-2 border-b-2 shadow-xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     التثبيت والتراكمي
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-300 font-bold block">الأوجه المراجعة</span>
-                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
-                    {toArabicDigits(careerStats.totalReviewPages)}
-                    <span className="text-xs font-normal text-slate-300 mr-1">وجهاً مراجعاً</span>
+                  <span className="text-[11px] sm:text-xs font-bold block mb-0.5" style={{ color: themeAccent }}>
+                    الأوجه المراجعة
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-black font-heading text-white mt-0.5 flex items-baseline gap-1">
+                    <span>{toArabicDigits(careerStats.totalReviewPages)}</span>
+                    <span className="text-xs font-bold text-slate-300 font-sans">وجهاً مراجعاً</span>
                   </div>
                 </div>
               </div>
@@ -1358,7 +1502,15 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
                 <div className="shrink-0">
                   {isActive ? (
-                    <span className="text-xs font-black text-emerald-300">
+                    <span
+                      className="text-xs font-black px-3 py-1 rounded-xl border-2 border-b-2 shadow-xs"
+                      style={{
+                        backgroundColor: `${palette.mainBtnBg}25`,
+                        color: palette.mainBtnBg,
+                        borderColor: `${palette.mainBtnBg}60`,
+                        borderBottomColor: palette.mainBtnShadow
+                      }}
+                    >
                       الحلقة نشطة الآن (في موعدها)
                     </span>
                   ) : (
@@ -1716,13 +1868,28 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
             {/* Behavioral Guidance inside Tab 1 (Home) */}
             {studentViolations.length > 0 && (
-              <div className="bg-[#064e3b]/80 border-2 border-amber-500/40 border-b-4 border-b-amber-950 rounded-3xl p-6 sm:p-7 space-y-4 shadow-xl backdrop-blur-md">
-                <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
+              <div
+                className="border-2 border-b-[6px] rounded-3xl p-6 sm:p-7 space-y-4 shadow-xl backdrop-blur-md"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}70`,
+                  borderBottomColor: themeAccentShadow
+                }}
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <h3 className="text-base sm:text-lg font-bold font-heading text-white flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-[#fbbf24]" />
-                    <span>ملاحظات السلوك والتوجيه التربوي للحلقة ({studentViolations.length})</span>
+                    <ShieldAlert className="w-5 h-5" style={{ color: themeAccent }} />
+                    <span>ملاحظات السلوك والتوجيه التربوي للحلقة ({toArabicDigits(studentViolations.length)})</span>
                   </h3>
-                  <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-500/30 font-bold">
+                  <span
+                    className="text-xs px-2.5 py-1 rounded-xl font-bold border-2 border-b-2 shadow-xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}50`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     متابعة سلوكية وتربوية
                   </span>
                 </div>
@@ -1734,7 +1901,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     return (
                       <div
                         key={viol.id}
-                        className="p-4 rounded-2xl bg-[#022c22] border-2 border-[#065f46] border-b-4 border-b-[#011a14] space-y-2.5 text-xs"
+                        className="p-4 rounded-2xl border-2 border-b-4 space-y-2.5 text-xs shadow-md"
+                        style={{
+                          backgroundColor: themeSecondary,
+                          borderColor: `${themeAccent}40`,
+                          borderBottomColor: darkenHex(themeSecondary, 0.35)
+                        }}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -1742,25 +1914,33 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               {viol.violationType}
                             </span>
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                                viol.severity === 'تنبيه'
-                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                              }`}
+                              className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border"
+                              style={{
+                                backgroundColor: `${themeAccent}25`,
+                                borderColor: `${themeAccent}50`,
+                                color: themeAccent
+                              }}
                             >
                               {viol.severity}
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[11px] text-[#86efac]/80">
-                            <span>تاريخ: {viol.date}</span>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                            <span>تاريخ: {toArabicDigits(viol.date)}</span>
                             {isResolved ? (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center gap-1">
+                              <span
+                                className="px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 border"
+                                style={{
+                                  backgroundColor: `${themeAccent}20`,
+                                  borderColor: `${themeAccent}50`,
+                                  color: themeAccent
+                                }}
+                              >
                                 <ShieldCheck className="w-3 h-3" />
                                 <span>تم التوجيه والمعالجة</span>
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
                                 قيد المتابعة
                               </span>
                             )}
@@ -1768,21 +1948,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                         </div>
 
                         {viol.description && (
-                          <div className="text-slate-200 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
-                            <strong className="text-[#86efac]">توجيه الشيخ وتفاصيل الملاحظة: </strong>
+                          <div
+                            className="text-slate-200 leading-relaxed p-2.5 rounded-xl border text-xs"
+                            style={{
+                              backgroundColor: `${themeCardBg}80`,
+                              borderColor: `${themeAccent}25`
+                            }}
+                          >
+                            <strong style={{ color: themeAccent }}>توجيه الشيخ وتفاصيل الملاحظة: </strong>
                             {viol.description}
                           </div>
                         )}
 
                         {viol.actionTaken && (
-                          <div className="text-[#86efac]">
-                            <strong className="text-emerald-300">الإجراء المتخذ: </strong>
+                          <div className="text-slate-200">
+                            <strong style={{ color: themeAccent }}>الإجراء المتخذ: </strong>
                             {viol.actionTaken}
                           </div>
                         )}
 
                         {viol.messageText && (
-                          <div className="text-slate-300 italic pt-1 border-t border-[#065f46]/60">
+                          <div className="text-slate-300 italic pt-1 border-t border-white/10">
                             "{viol.messageText}"
                           </div>
                         )}
@@ -1800,69 +1986,123 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* ============================================================== */}
         {activeTab === 'recitation' && (
           <div className="space-y-6">
-            {/* Tomorrow's Plan / Current Assignment Box */}
+            {/* Tomorrow's Plan / Current Assignment Box in Duolingo 3D & Platform Theme */}
             <div
               className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
               style={{
-                backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
-                borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-                borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+                backgroundColor: themeCardBg,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
               }}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/10">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
-                    <BookOpen className="w-6 h-6" />
+                  <div
+                    className="w-12 h-12 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: lightenHex(themeAccent, 0.15),
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <BookOpen className="w-6 h-6" style={{ color: themePrimary }} />
                   </div>
                   <div>
                     <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
                       <span>مقرر التسميع وخطة الغد المعتمدة من المعلم</span>
                     </h3>
-                    <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                    <p className="text-xs text-slate-300 font-bold mt-0.5">
                       ما أعدّه الشيخ لك للغد من حفظ جديد ومراجعة وتثبيت وتراكمي
                     </p>
                   </div>
                 </div>
-                <span className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl bg-amber-400/20 text-amber-300 font-black border-2 border-b-3 border-amber-500/40 shadow-sm">
+                <span
+                  className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-3 shadow-sm"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    color: themeAccent,
+                    borderColor: `${themeAccent}50`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
                   متابعة وتسميع الغد
                 </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* New Target Card */}
-                <div className="bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all">
+                {/* New Target Card in Duolingo 3D Style */}
+                <div
+                  className="border-2 border-b-4 rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg transition-all"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}60`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-xs font-black text-amber-300">
-                        <BookOpen className="w-4 h-4 text-amber-400" />
+                      <div className="flex items-center gap-2 text-xs font-black" style={{ color: themeAccent }}>
+                        <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
                         <span>ورد الحفظ الجديد المطلوب غداً</span>
                       </div>
-                      <span className="text-xs px-3 py-1 rounded-xl bg-amber-400 text-emerald-950 font-black border-2 border-amber-300 border-b-3 border-b-amber-600 shadow-sm">
+                      <span
+                        className="text-xs px-3 py-1 rounded-xl font-black border-2 border-b-3 shadow-sm"
+                        style={{
+                          backgroundColor: themeAccent,
+                          color: themePrimary,
+                          borderColor: lightenHex(themeAccent, 0.15),
+                          borderBottomColor: themeAccentShadow
+                        }}
+                      >
                         حفظ جديد
                       </span>
                     </div>
-                    <p className="text-lg sm:text-xl font-black text-amber-300 leading-relaxed font-heading bg-[#011a14] p-4 rounded-xl border-2 border-emerald-800/80 border-b-3 border-b-emerald-950 shadow-inner">
+                    <p
+                      className="text-lg sm:text-xl font-black leading-relaxed font-heading p-4 rounded-xl border-2 border-b-3 shadow-inner"
+                      style={{
+                        backgroundColor: themeCardBg,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: themeAccentShadow,
+                        color: '#ffffff'
+                      }}
+                    >
                       {tomorrowPlanInfo.newMemorizationText}
                     </p>
                   </div>
 
                   {tomorrowPlanInfo.sheikh && (
-                    <div className="pt-2.5 border-t border-emerald-800/60 flex items-center gap-2 text-xs text-emerald-200">
-                      <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>القارئ المعلم المقترح من الشيخ: <strong className="text-white font-black">{tomorrowPlanInfo.sheikh}</strong></span>
+                    <div className="pt-2.5 border-t border-white/10 flex items-center gap-2 text-xs text-slate-300">
+                      <Volume2 className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+                      <span>القارئ المعلم المقترح من الشيخ: <strong className="font-black" style={{ color: themeAccent }}>{tomorrowPlanInfo.sheikh}</strong></span>
                     </div>
                   )}
                 </div>
 
-                {/* Review Target Card */}
-                <div className="bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all">
+                {/* Review Target Card in Duolingo 3D Style */}
+                <div
+                  className="border-2 border-b-4 rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg transition-all"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}60`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-xs font-black text-emerald-300">
-                        <RotateCcw className="w-4 h-4 text-amber-400" />
+                      <div className="flex items-center gap-2 text-xs font-black" style={{ color: themeAccent }}>
+                        <RotateCcw className="w-4 h-4" style={{ color: themeAccent }} />
                         <span>مقرر المراجعة والتثبيت والتراكمي</span>
                       </div>
-                      <span className="text-xs px-3 py-1 rounded-xl bg-emerald-900/90 text-[#86efac] font-black border-2 border-b-3 border-emerald-600/60 border-b-emerald-950 shadow-sm">
+                      <span
+                        className="text-xs px-3 py-1 rounded-xl font-black border-2 border-b-3 shadow-sm"
+                        style={{
+                          backgroundColor: themeCardBg,
+                          color: themeAccent,
+                          borderColor: `${themeAccent}50`,
+                          borderBottomColor: themeAccentShadow
+                        }}
+                      >
                         {tomorrowPlanInfo.reviewItemsList.length > 1 ? `${toArabicDigits(tomorrowPlanInfo.reviewItemsList.length)} مقررات مراجعة` : 'مراجعة وتثبيت'}
                       </span>
                     </div>
@@ -1873,19 +2113,28 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           const sInfo = getSurahInfo(rev.surahNumber);
                           const toInfo = rev.toSurahNumber ? getSurahInfo(rev.toSurahNumber) : sInfo;
                           return (
-                            <div key={rev.id || rIdx} className="bg-[#011a14] p-3 rounded-xl border-2 border-emerald-700/60 border-b-3 border-b-emerald-950 space-y-1 shadow-sm">
+                            <div
+                              key={rev.id || rIdx}
+                              className="p-3 rounded-xl border-2 border-b-3 space-y-1 shadow-sm"
+                              style={{
+                                backgroundColor: themeCardBg,
+                                borderColor: `${themeAccent}35`,
+                                borderBottomColor: themeAccentShadow
+                              }}
+                            >
                               <div className="flex items-center justify-between gap-1 text-[11px]">
-                                <span className={`px-2.5 py-0.5 rounded-full font-black flex items-center gap-1 ${
-                                  rev.type?.includes('تراكمي') || rev.type?.includes('تراكمية')
-                                    ? 'bg-amber-400 text-emerald-950 border border-amber-500'
-                                    : rev.type?.includes('كبرى') || rev.type?.includes('اختبار')
-                                    ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50'
-                                    : 'bg-[#064e3b] text-[#fbbf24] border border-[#065f46]'
-                                }`}>
+                                <span
+                                  className="px-2.5 py-0.5 rounded-full font-black flex items-center gap-1 border"
+                                  style={{
+                                    backgroundColor: themeSecondary,
+                                    borderColor: `${themeAccent}50`,
+                                    color: themeAccent
+                                  }}
+                                >
                                   <Layers className="w-3 h-3" />
                                   <span>{rev.type || 'مراجعة وتثبيت'}</span>
                                 </span>
-                                <span className="text-emerald-300 font-mono text-[11px]">
+                                <span className="font-mono text-[11px] font-bold" style={{ color: themeAccent }}>
                                   {sInfo.name === toInfo.name ? `سورة ${sInfo.name}` : `من ${sInfo.name} إلى ${toInfo.name}`}
                                 </span>
                               </div>
@@ -1901,16 +2150,31 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                         })}
                       </div>
                     ) : (
-                      <p className="text-base sm:text-lg font-black text-white leading-relaxed font-heading bg-[#011a14] p-4 rounded-xl border-2 border-emerald-800/80 border-b-3 border-b-emerald-950 shadow-inner">
+                      <p
+                        className="text-base sm:text-lg font-black text-white leading-relaxed font-heading p-4 rounded-xl border-2 border-b-3 shadow-inner"
+                        style={{
+                          backgroundColor: themeCardBg,
+                          borderColor: `${themeAccent}40`,
+                          borderBottomColor: themeAccentShadow
+                        }}
+                      >
                         {tomorrowPlanInfo.reviewSummaryText}
                       </p>
                     )}
                   </div>
 
                   {tomorrowPlanInfo.teacherNote && (
-                    <div className="pt-2.5 border-t border-emerald-800/60 text-xs text-amber-100 font-bold bg-amber-400/10 p-3 rounded-xl border-2 border-b-3 border-amber-400/30 border-b-amber-500/40 shadow-sm">
-                      <span className="text-[#fbbf24] font-black flex items-center gap-1 mb-1">
-                        <Sparkles className="w-3.5 h-3.5 text-[#fbbf24]" />
+                    <div
+                      className="pt-2.5 border-t border-white/10 text-xs font-bold p-3 rounded-xl border-2 border-b-3 shadow-sm"
+                      style={{
+                        backgroundColor: `${themeAccent}15`,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: themeAccentShadow,
+                        color: '#ffffff'
+                      }}
+                    >
+                      <span className="font-black flex items-center gap-1 mb-1" style={{ color: themeAccent }}>
+                        <Sparkles className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                         <span>توجيه وملاحظة الشيخ:</span>
                       </span>
                       <p className="leading-relaxed font-medium">{tomorrowPlanInfo.teacherNote}</p>
@@ -1924,6 +2188,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             <div className="space-y-4">
               <QuranAyahAudioPlayer
                 student={currentStudent}
+                theme={currentTheme}
                 surahNumber={currentAssignedPassage.surahNumber}
                 surahName={currentAssignedPassage.surahName}
                 fromAyah={currentAssignedPassage.fromAyah}
@@ -1961,37 +2226,68 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           <div
             className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
             style={{
-              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
-              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+              backgroundColor: themeCardBg,
+              borderColor: `${themeAccent}70`,
+              borderBottomColor: themeAccentShadow
             }}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                <div
+                  className="w-12 h-12 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
+                >
                   <FileText className="w-6 h-6" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black font-heading text-white">
                     الاختبارات والتقييمات القرآنية ({toArabicDigits(studentExams.length)})
                   </h3>
-                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
                     الاختبارات الإلكترونية المعتمدة لحلقتك مع رصد الدرجات ومراجعة الإجابات
                   </p>
                 </div>
               </div>
-              <span className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl bg-amber-400/20 text-amber-300 font-black border-2 border-b-3 border-amber-500/40 shadow-sm">
+              <span
+                className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-3 shadow-sm"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: `${themeAccent}50`,
+                  borderBottomColor: themeAccentShadow,
+                  color: themeAccent
+                }}
+              >
                 منظومة الاختبارات
               </span>
             </div>
 
             {studentExams.length === 0 ? (
-              <div className="text-center py-12 px-6 bg-[#011a14]/90 rounded-3xl border-2 border-dashed border-emerald-600/60 border-b-4 border-b-[#011a14] space-y-3.5 shadow-inner">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#064e3b] border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 flex items-center justify-center text-amber-400 shadow-md">
+              <div
+                className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-b-4 space-y-3.5 shadow-inner"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: `${themeAccent}40`,
+                  borderBottomColor: darkenHex(themeSecondary, 0.35)
+                }}
+              >
+                <div
+                  className="w-14 h-14 mx-auto rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    borderColor: `${themeAccent}60`,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
                   <FileText className="w-7 h-7" />
                 </div>
                 <h4 className="text-base font-black text-white font-heading">لا توجد اختبارات متاحة لحلقتك حالياً</h4>
-                <p className="text-xs text-emerald-200/80 max-w-md mx-auto leading-relaxed font-bold">
+                <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed font-bold">
                   تابع مع المعلم عند إعلان اختبار جديد، وستظهر هنا الاختبارات المعتمدة ودرجاتها فور تفعيلها.
                 </p>
               </div>
@@ -2014,15 +2310,33 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   return (
                     <div
                       key={exam.id}
-                      className="p-5 rounded-2xl bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all"
+                      className="p-5 rounded-2xl border-2 border-b-4 space-y-4 flex flex-col justify-between shadow-lg transition-all"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: darkenHex(themeSecondary, 0.35)
+                      }}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs px-2.5 py-1 rounded-xl bg-emerald-900 text-emerald-200 font-black border border-emerald-700">
+                            <span
+                              className="text-xs px-2.5 py-1 rounded-xl font-black border"
+                              style={{
+                                backgroundColor: `${themeAccent}20`,
+                                borderColor: `${themeAccent}50`,
+                                color: themeAccent
+                              }}
+                            >
                               {toArabicDigits(exam.questions.length)} أسئلة • {toArabicDigits(exam.totalPoints)} درجات
                             </span>
-                            <span className="text-[11px] px-2.5 py-1 rounded-xl bg-emerald-950 text-emerald-300 font-bold border border-emerald-600/40">
+                            <span
+                              className="text-[11px] px-2.5 py-1 rounded-xl font-bold border text-slate-300"
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.06)',
+                                borderColor: 'rgba(255,255,255,0.12)'
+                              }}
+                            >
                               نظام المنصة
                             </span>
                           </div>
@@ -2036,7 +2350,14 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               استنفدت المحاولات ({toArabicDigits(attemptsUsed)}/{toArabicDigits(maxAttempts)})
                             </span>
                           ) : (
-                            <span className="text-[10px] px-2.5 py-1 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
+                            <span
+                              className="text-[10px] px-2.5 py-1 rounded-xl font-bold border"
+                              style={{
+                                backgroundColor: `${themeAccent}25`,
+                                borderColor: `${themeAccent}60`,
+                                color: themeAccent
+                              }}
+                            >
                               متاح للبدء
                             </span>
                           )}
@@ -2044,21 +2365,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
                         <h4 className="text-base font-black text-white font-heading mt-1">{exam.title}</h4>
                         {exam.description && (
-                          <p className="text-xs text-emerald-200/80 mt-1.5 leading-relaxed line-clamp-2">{exam.description}</p>
+                          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed line-clamp-2">{exam.description}</p>
                         )}
 
                         {bestSubmission && (
-                          <div className="mt-3.5 p-3 rounded-xl bg-[#064e3b]/60 border-2 border-emerald-700/60 text-xs flex items-center justify-between">
-                            <span className="text-emerald-200 font-semibold">أفضل نتيجة محققة:</span>
-                            <span className="font-black text-[#fbbf24] text-sm">
+                          <div
+                            className="mt-3.5 p-3 rounded-xl border-2 text-xs flex items-center justify-between"
+                            style={{
+                              backgroundColor: themeCardBg,
+                              borderColor: `${themeAccent}30`
+                            }}
+                          >
+                            <span className="text-slate-300 font-semibold">أفضل نتيجة محققة:</span>
+                            <span className="font-black text-sm" style={{ color: themeAccent }}>
                               {toArabicDigits(bestSubmission.totalScoreEarned)} / {toArabicDigits(bestSubmission.maxPossibleScore)} ({toArabicDigits(bestSubmission.percentage)}٪)
                             </span>
                           </div>
                         )}
                       </div>
 
-                      <div className="pt-3 border-t border-emerald-900/60 flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs text-emerald-300/80 font-medium">
+                      <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs text-slate-300 font-medium">
                           {isLimited ? `المحاولات المتبقية: ${toArabicDigits(Math.max(0, maxAttempts - attemptsUsed))}` : 'محاولات غير محدودة'}
                         </div>
 
@@ -2066,7 +2393,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           {mySubmissions.length > 0 && (
                             <button
                               onClick={() => setViewingReviewSubmission(bestSubmission)}
-                              className="px-3.5 py-2 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 text-xs font-bold flex items-center gap-1 border-2 border-b-4 border-emerald-950 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all"
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all text-white"
+                              style={{
+                                backgroundColor: themeCardBg,
+                                borderColor: `${themeAccent}35`,
+                                borderBottomColor: darkenHex(themeCardBg, 0.4)
+                              }}
                             >
                               <span>مراجعة النتيجة</span>
                             </button>
@@ -2082,7 +2414,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 setActiveTakingAttemptNum(attemptsUsed + 1);
                                 setActiveTakingExam(exam);
                               }}
-                              className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-amber-400 hover:bg-amber-300 text-emerald-950 border-2 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 transition-all"
+                              className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all"
+                              style={{
+                                backgroundColor: themeAccent,
+                                borderColor: lightenHex(themeAccent, 0.2),
+                                borderBottomColor: themeAccentShadow,
+                                color: accentTextColor
+                              }}
                             >
                               <Play className="w-3.5 h-3.5 fill-current" />
                               <span>ابدأ الاختبار الآن</span>
@@ -2105,24 +2443,40 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           <div
             className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
             style={{
-              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
-              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+              backgroundColor: themeCardBg,
+              borderColor: `${themeAccent}70`,
+              borderBottomColor: themeAccentShadow
             }}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                <div
+                  className="w-12 h-12 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
+                >
                   <Trophy className="w-6 h-6" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
                     <span>لوحة الشرف والتفوق القرآني</span>
-                    <span className="text-[10px] px-3 py-1 rounded-full bg-amber-400 text-emerald-950 font-black">
+                    <span
+                      className="text-[10px] px-3 py-1 rounded-xl font-black border-2 border-b-3 shadow-xs"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}50`,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
                       {isPerHalaqahScope ? 'ترتيب الحلقة محلياً' : 'الترتيب العام لجميع الحلقات'}
                     </span>
                   </h3>
-                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
                     {isPerHalaqahScope
                       ? `إعداد المشرف: يظهر هنا ترتيب وتنافس طلاب حلقة (${currentHalaqahTitle}) فقط.`
                       : 'إعداد المشرف: يظهر هنا الترتيب العام الموحد لجميع طلاب الحلقات بالمركز.'}
@@ -2132,33 +2486,63 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
               {/* Current Student Standing Pill */}
               {myRank && (
-                <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-[#011a14] border-2 border-amber-400/50 border-b-4 border-b-amber-600/70 text-xs shadow-md">
-                  <Medal className="w-4 h-4 text-amber-400" />
-                  <span className="text-emerald-300 font-bold">ترتيبك:</span>
-                  <span className="font-black text-amber-300 text-sm font-heading">
+                <div
+                  className="flex items-center gap-2.5 px-4 py-2 rounded-2xl border-2 border-b-4 text-xs shadow-md"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}50`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <Medal className="w-4 h-4" style={{ color: themeAccent }} />
+                  <span className="text-slate-300 font-bold">ترتيبك:</span>
+                  <span className="font-black text-sm font-heading" style={{ color: themeAccent }}>
                     المركز #{toArabicDigits(myRank)}
                   </span>
-                  <span className="text-emerald-300 font-mono font-black">
+                  <span className="font-mono font-black" style={{ color: themeAccent }}>
                     ({toArabicDigits(myRankingData?.totalPoints || 0)} نقطة)
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Search Input */}
+            {/* Search Input & Student Count Badge */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
               <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3.5" />
+                <Search
+                  className="w-4.5 h-4.5 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: themeAccent }}
+                />
                 <input
                   type="text"
                   placeholder="ابحث باسم الطالب لرؤية ترتيبه وتفاصيل نقاطه..."
                   value={leaderboardSearch}
                   onChange={e => setLeaderboardSearch(e.target.value)}
-                  className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-[#011a14] border-2 border-emerald-700/60 border-b-3 border-b-emerald-950 text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none font-bold"
+                  className="w-full pl-4 pr-11 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs placeholder:text-slate-400 focus:outline-none font-bold transition-all shadow-sm"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}40`,
+                    borderBottomColor: darkenHex(themeSecondary, 0.35)
+                  }}
                 />
               </div>
-              <div className="text-xs text-emerald-200 font-bold self-start sm:self-center">
-                إجمالي الطلاب المصنفين: <span className="text-amber-300 font-mono font-black">{toArabicDigits(displayedRankList.length)}</span> طالب
+              <div
+                className="text-xs font-bold self-start sm:self-center px-3.5 py-1.5 rounded-xl border-2 border-b-3 shadow-xs flex items-center gap-1.5"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: `${themeAccent}40`,
+                  borderBottomColor: darkenHex(themeSecondary, 0.35),
+                  color: '#f8fafc'
+                }}
+              >
+                <span>إجمالي الطلاب المصنفين:</span>
+                <span
+                  className="font-mono font-black px-2 py-0.5 rounded-lg text-xs"
+                  style={{ backgroundColor: `${themeAccent}20`, color: themeAccent }}
+                >
+                  {toArabicDigits(displayedRankList.length)}
+                </span>
+                <span>طالب</span>
               </div>
             </div>
 
@@ -2168,7 +2552,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 {studentRankList.slice(0, 3).map((item, idx) => {
                   const isMe = item.student.id === student.id;
                   const badges = [
-                    { label: 'المركز الأول', icon: Trophy, border: 'border-[#fbbf24] border-b-6 border-b-amber-600', bg: 'bg-[#fbbf24] text-[#064e3b]', text: 'text-[#fbbf24]' },
+                    { label: 'المركز الأول', icon: Trophy, border: 'border-[#fbbf24] border-b-6 border-b-amber-600', bg: 'bg-[#fbbf24] text-slate-950', text: 'text-[#fbbf24]' },
                     { label: 'المركز الثاني', icon: Medal, border: 'border-slate-300 border-b-6 border-b-slate-500', bg: 'bg-slate-300 text-slate-950', text: 'text-slate-200' },
                     { label: 'المركز الثالث', icon: Award, border: 'border-amber-600 border-b-6 border-b-amber-800', bg: 'bg-amber-600 text-white', text: 'text-amber-300' }
                   ];
@@ -2179,14 +2563,31 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     <div
                       key={item.student.id}
                       onClick={() => setSelectedStudentForBreakdown(item)}
-                      className={`p-5 rounded-3xl border-2 transition-all text-center relative overflow-hidden flex flex-col justify-between cursor-pointer group active:translate-y-[2px] shadow-xl ${
-                        isMe
-                          ? 'bg-[#064e3b] border-[#fbbf24] border-b-6 border-b-amber-600 ring-2 ring-[#fbbf24]/40'
-                          : `bg-[#022c22]/95 border-emerald-700/70 border-b-6 border-b-[#011a14] hover:border-[#fbbf24]/60`
+                      className={`p-5 rounded-3xl border-2 border-b-6 transition-all text-center relative overflow-hidden flex flex-col justify-between cursor-pointer group active:translate-y-[2px] shadow-xl ${
+                        isMe ? 'ring-2 ring-white/40' : ''
                       }`}
+                      style={
+                        isMe
+                          ? {
+                              backgroundColor: themeCardBg,
+                              borderColor: themeAccent,
+                              borderBottomColor: themeAccentShadow
+                            }
+                          : {
+                              backgroundColor: themeSecondary,
+                              borderColor: `${themeAccent}35`,
+                              borderBottomColor: darkenHex(themeSecondary, 0.35)
+                            }
+                      }
                     >
                       {isMe && (
-                        <span className="absolute top-2.5 left-2.5 text-[9px] px-2.5 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black shadow-sm">
+                        <span
+                          className="absolute top-2.5 left-2.5 text-[9px] px-2.5 py-0.5 rounded-full font-black shadow-sm"
+                          style={{
+                            backgroundColor: themeAccent,
+                            color: accentTextColor
+                          }}
+                        >
                           أنت
                         </span>
                       )}
@@ -2197,17 +2598,23 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           <span>{badge.label}</span>
                         </span>
                         <h4 className="text-base font-black text-white truncate mt-1">{item.student.name}</h4>
-                        <p className="text-xs text-emerald-300/80 mt-0.5 font-bold">{item.halaqahName}</p>
+                        <p className="text-xs text-slate-300 mt-0.5 font-bold">{item.halaqahName}</p>
                       </div>
 
-                      <div className="mt-3.5 pt-2.5 border-t border-emerald-800/60 grid grid-cols-3 gap-1 text-center bg-[#011a14]/60 p-2.5 rounded-2xl border border-emerald-800/60">
+                      <div
+                        className="mt-3.5 pt-2.5 border-t grid grid-cols-3 gap-1 text-center p-2.5 rounded-2xl border"
+                        style={{
+                          backgroundColor: `${themeCardBg}90`,
+                          borderColor: `${themeAccent}25`
+                        }}
+                      >
                         <div>
                           <span className="text-[10px] text-slate-300 block font-bold">النقاط</span>
-                          <strong className="text-amber-300 font-mono text-sm font-black">{toArabicDigits(item.totalPoints)}</strong>
+                          <strong className="font-mono text-sm font-black" style={{ color: themeAccent }}>{toArabicDigits(item.totalPoints)}</strong>
                         </div>
-                        <div className="border-r border-l border-emerald-800/60 px-1">
+                        <div className="border-r border-l px-1" style={{ borderColor: `${themeAccent}25` }}>
                           <span className="text-[10px] text-slate-300 block font-bold">التسميع</span>
-                          <strong className="text-emerald-300 font-mono text-xs font-black">{toArabicDigits(item.evalPoints)}</strong>
+                          <strong className="font-mono text-xs font-black text-white">{toArabicDigits(item.evalPoints)}</strong>
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-300 block font-bold">الاختبارات</span>
@@ -2221,7 +2628,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           e.stopPropagation();
                           setSelectedStudentForBreakdown(item);
                         }}
-                        className="mt-3 py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-black border-2 border-amber-300 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                        className="mt-3 py-2 px-3 rounded-xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                        style={{
+                          backgroundColor: themeAccent,
+                          borderColor: lightenHex(themeAccent, 0.2),
+                          borderBottomColor: themeAccentShadow,
+                          color: accentTextColor
+                        }}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>عرض تفاصيل ومصادر النقاط</span>
@@ -2232,26 +2645,73 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               </div>
             )}
 
-            {/* Full Rank Table */}
-            <div className="rounded-3xl border-2 border-emerald-700/70 border-b-6 border-b-[#011a14] overflow-hidden bg-[#022c22]/90 shadow-2xl">
+            {/* Full Rank Table with Duolingo 3D styling */}
+            <div
+              className="rounded-3xl border-2 border-b-6 overflow-hidden shadow-2xl"
+              style={{
+                backgroundColor: themeCardBg,
+                borderColor: `${themeAccent}50`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
               <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-[#064e3b] text-emerald-200 border-b-2 border-emerald-700 text-xs">
-                    <tr>
-                      <th className="p-3.5">الترتيب</th>
-                      <th className="p-3.5">اسم الطالب</th>
-                      {!isPerHalaqahScope && <th className="p-3.5">الحلقة</th>}
-                      <th className="p-3.5 text-center">نقاط التسميع</th>
-                      <th className="p-3.5 text-center">نقاط الاختبارات</th>
-                      <th className="p-3.5 text-center">نقاط الاستماع</th>
-                      <th className="p-3.5 text-left">إجمالي النقاط</th>
-                      <th className="p-3.5 text-center">التفاصيل</th>
+                <table className="w-full text-right text-xs border-collapse">
+                  <thead>
+                    <tr
+                      className="border-b-4 text-xs select-none"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderBottomColor: darkenHex(themeSecondary, 0.35)
+                      }}
+                    >
+                      <th className="p-3.5 font-black text-white text-right">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80`, color: themeAccent }}>
+                          # الترتيب
+                        </span>
+                      </th>
+                      <th className="p-3.5 font-black text-white text-right">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80` }}>
+                          اسم الطالب
+                        </span>
+                      </th>
+                      {!isPerHalaqahScope && (
+                        <th className="p-3.5 font-black text-white text-right">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80` }}>
+                            الحلقة
+                          </span>
+                        </th>
+                      )}
+                      <th className="p-3.5 font-black text-white text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80` }}>
+                          نقاط التسميع
+                        </span>
+                      </th>
+                      <th className="p-3.5 font-black text-white text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80`, color: '#38bdf8' }}>
+                          نقاط الاختبارات
+                        </span>
+                      </th>
+                      <th className="p-3.5 font-black text-white text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80`, color: themeAccent }}>
+                          نقاط الاستماع
+                        </span>
+                      </th>
+                      <th className="p-3.5 font-black text-white text-left">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80`, color: themeAccent }}>
+                          إجمالي النقاط
+                        </span>
+                      </th>
+                      <th className="p-3.5 font-black text-white text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/10" style={{ backgroundColor: `${themeCardBg}80` }}>
+                          التفاصيل
+                        </span>
+                      </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-800/40 text-white font-bold">
+                  <tbody className="divide-y divide-white/10 text-white font-bold">
                     {displayedRankList.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-emerald-300/70">
+                        <td colSpan={8} className="p-8 text-center text-slate-300">
                           لا توجد نتائج مطابقة لبحثك في لوحة الشرف.
                         </td>
                       </tr>
@@ -2263,42 +2723,59 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           <tr
                             key={item.student.id}
                             onClick={() => setSelectedStudentForBreakdown(item)}
-                            className={`transition-colors cursor-pointer ${
-                              isMe
-                                ? 'bg-[#064e3b] text-amber-300 border-l-4 border-l-amber-400'
-                                : 'hover:bg-[#064e3b]/50'
-                            }`}
+                            className="transition-colors cursor-pointer hover:bg-white/5 border-b border-white/5"
+                            style={isMe ? { backgroundColor: `${themeAccent}20`, borderRight: `4px solid ${themeAccent}` } : undefined}
                           >
                             <td className="p-3.5 font-mono">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-xs font-black shadow-sm ${
-                                originalIdx === 0
-                                  ? 'bg-[#fbbf24] text-[#064e3b] border-2 border-b-4 border-amber-600'
-                                  : originalIdx === 1
-                                  ? 'bg-slate-300 text-slate-900 border-2 border-b-4 border-slate-500'
-                                  : originalIdx === 2
-                                  ? 'bg-amber-600 text-white border-2 border-b-4 border-amber-800'
-                                  : 'bg-[#011a14] text-emerald-300 border border-emerald-800'
-                              }`}>
+                              <span
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-xs font-black shadow-sm ${
+                                  originalIdx === 0
+                                    ? 'bg-[#fbbf24] text-slate-950 border-2 border-b-4 border-amber-600'
+                                    : originalIdx === 1
+                                    ? 'bg-slate-300 text-slate-900 border-2 border-b-4 border-slate-500'
+                                    : originalIdx === 2
+                                    ? 'bg-amber-600 text-white border-2 border-b-4 border-amber-800'
+                                    : 'border-2 border-b-3'
+                                }`}
+                                style={
+                                  originalIdx > 2
+                                    ? {
+                                        backgroundColor: themeSecondary,
+                                        borderColor: `${themeAccent}35`,
+                                        borderBottomColor: darkenHex(themeSecondary, 0.35),
+                                        color: themeAccent
+                                      }
+                                    : undefined
+                                }
+                              >
                                 {toArabicDigits(originalIdx + 1)}
                               </span>
                             </td>
                             <td className="p-3.5">
                               <div className="flex items-center gap-2">
-                                <span className={isMe ? 'text-amber-300 font-black' : 'font-bold'}>{item.student.name}</span>
+                                <span className={isMe ? 'font-black' : 'font-bold'} style={isMe ? { color: themeAccent } : undefined}>
+                                  {item.student.name}
+                                </span>
                                 {isMe && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400 text-emerald-950 font-black shadow-sm">
+                                  <span
+                                    className="text-[10px] px-2 py-0.5 rounded-full font-black shadow-sm"
+                                    style={{
+                                      backgroundColor: themeAccent,
+                                      color: accentTextColor
+                                    }}
+                                  >
                                     أنت
                                   </span>
                                 )}
                               </div>
                             </td>
                             {!isPerHalaqahScope && (
-                              <td className="p-3.5 text-emerald-300/80 text-xs font-medium">{item.halaqahName}</td>
+                              <td className="p-3.5 text-slate-300 text-xs font-medium">{item.halaqahName}</td>
                             )}
-                            <td className="p-3.5 text-center font-mono text-emerald-300 font-black">{toArabicDigits(item.evalPoints)}</td>
+                            <td className="p-3.5 text-center font-mono text-white font-black">{toArabicDigits(item.evalPoints)}</td>
                             <td className="p-3.5 text-center font-mono text-sky-300 font-black">{toArabicDigits(item.examPoints)}</td>
-                            <td className="p-3.5 text-center font-mono text-amber-300 font-black">{toArabicDigits(item.listeningPoints)}</td>
-                            <td className="p-3.5 text-left font-mono font-black text-amber-300 text-sm">
+                            <td className="p-3.5 text-center font-mono font-black" style={{ color: themeAccent }}>{toArabicDigits(item.listeningPoints)}</td>
+                            <td className="p-3.5 text-left font-mono font-black text-sm" style={{ color: themeAccent }}>
                               {toArabicDigits(item.totalPoints)}
                             </td>
                             <td className="p-3.5 text-center">
@@ -2308,9 +2785,16 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   e.stopPropagation();
                                   setSelectedStudentForBreakdown(item);
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-[11px] font-black border-2 border-amber-300 border-b-3 border-b-amber-600 active:translate-y-[2px] active:border-b-2 transition-all cursor-pointer shadow-sm"
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all cursor-pointer shadow-md inline-flex items-center justify-center gap-1.5 select-none hover:brightness-105"
+                                style={{
+                                  backgroundColor: themeAccent,
+                                  borderColor: lightenHex(themeAccent, 0.25),
+                                  borderBottomColor: themeAccentShadow,
+                                  color: accentTextColor
+                                }}
                               >
-                                عرض النقاط
+                                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                                <span>عرض النقاط</span>
                               </button>
                             </td>
                           </tr>
@@ -2331,24 +2815,38 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           <div
             className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
             style={{
-              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
-              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
-              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+              backgroundColor: themeCardBg,
+              borderColor: `${themeAccent}70`,
+              borderBottomColor: themeAccentShadow
             }}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                <div
+                  className="w-12 h-12 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
+                >
                   <Award className="w-6 h-6" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
                     <span>أرشيف شهاداتي والجوائز التقديرية</span>
-                    <span className="text-xs px-3 py-1 rounded-full bg-amber-400 text-emerald-950 font-black shadow-sm">
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-black shadow-sm"
+                      style={{
+                        backgroundColor: themeAccent,
+                        color: accentTextColor
+                      }}
+                    >
                       {toArabicDigits(studentCertificates.length)} شهادات معتمدة
                     </span>
                   </h3>
-                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
                     جميع الشهادات الصادرة والمحفوظة في أرشيفك الرسمي مع إمكانية عرضها وطباعتها
                   </p>
                 </div>
@@ -2356,12 +2854,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             </div>
 
             {studentCertificates.length === 0 ? (
-              <div className="text-center py-12 px-6 bg-[#011a14]/90 rounded-3xl border-2 border-dashed border-emerald-600/60 border-b-4 border-b-[#011a14] space-y-3.5 shadow-inner">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#064e3b] border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 flex items-center justify-center text-amber-400 shadow-md">
+              <div
+                className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-b-4 space-y-3.5 shadow-inner"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: `${themeAccent}40`,
+                  borderBottomColor: darkenHex(themeSecondary, 0.35)
+                }}
+              >
+                <div
+                  className="w-14 h-14 mx-auto rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    borderColor: `${themeAccent}60`,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
                   <Award className="w-7 h-7" />
                 </div>
                 <h4 className="text-base font-black text-white font-heading">لا توجد شهادات صادرة لهذا الطالب بعد</h4>
-                <p className="text-xs text-emerald-200/80 max-w-md mx-auto leading-relaxed font-bold">
+                <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed font-bold">
                   ستظهر هنا فور إصدارها واعتمادها من قبل المعلم أو إدارة المجمع القرآني مع إمكانية عرضها وطباعتها مباشرة.
                 </p>
               </div>
@@ -2370,15 +2883,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 {studentCertificates.map(cert => (
                   <div
                     key={cert.id}
-                    className="p-5 rounded-2xl bg-[#022c22] border-2 border-[#fbbf24]/30 border-b-4 border-b-[#011a14] space-y-3 flex flex-col justify-between shadow-lg hover:border-[#fbbf24]/70 transition-all"
+                    className="p-5 rounded-2xl border-2 border-b-4 space-y-3 flex flex-col justify-between shadow-lg transition-all"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: darkenHex(themeSecondary, 0.35)
+                    }}
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                        <span
+                          className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            borderColor: `${themeAccent}50`,
+                            color: themeAccent
+                          }}
+                        >
                           {cert.type || 'شهادة تميز قرآنية'}
                         </span>
-                        <span className="text-[11px] text-[#86efac]/80 font-mono">
-                          {cert.issueDate || cert.createdAt?.split('T')[0]}
+                        <span className="text-[11px] text-slate-300 font-mono">
+                          {toArabicDigits(cert.issueDate || cert.createdAt?.split('T')[0] || '')}
                         </span>
                       </div>
 
@@ -2387,22 +2912,34 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       </h4>
 
                       {cert.appreciationText && (
-                        <p className="text-xs text-emerald-100/90 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
+                        <p
+                          className="text-xs text-slate-200 leading-relaxed p-2.5 rounded-xl border"
+                          style={{
+                            backgroundColor: `${themeCardBg}80`,
+                            borderColor: `${themeAccent}25`
+                          }}
+                        >
                           {cert.appreciationText}
                         </p>
                       )}
 
-                      <div className="text-[11px] text-[#86efac] flex items-center justify-between pt-1">
+                      <div className="text-[11px] text-slate-300 flex items-center justify-between pt-1">
                         <span>إشراف المعلم: {cert.teacherName || 'معلم الحلقة'}</span>
                         {cert.complexName && <span>مجمع: {cert.complexName}</span>}
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-[#065f46]/60 flex items-center justify-end">
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-end">
                       <button
                         type="button"
                         onClick={() => setSelectedCertificateForView(cert)}
-                        className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg border-2 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 transition-all"
+                        className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all"
+                        style={{
+                          backgroundColor: themeAccent,
+                          borderColor: lightenHex(themeAccent, 0.2),
+                          borderBottomColor: themeAccentShadow,
+                          color: accentTextColor
+                        }}
                       >
                         <Award className="w-3.5 h-3.5 fill-current" />
                         <span>عرض الشهادة وطباعتها</span>
@@ -2418,90 +2955,271 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* STUDENT POINTS BREAKDOWN MODAL */}
         {selectedStudentForBreakdown && (
           <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-[#022c22] border border-[#fbbf24]/50 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-5 text-right relative">
+            <div
+              className="border-2 border-b-6 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
+              {/* Subtle 3D Top Bevel Gloss */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-3xl" />
+
+              {/* Duolingo 3D Close Button */}
               <button
                 onClick={() => setSelectedStudentForBreakdown(null)}
-                className="absolute top-4 left-4 p-2 text-emerald-300 hover:text-white rounded-xl bg-emerald-950/40 cursor-pointer"
+                className="absolute top-4 left-4 p-2 text-white/80 hover:text-white rounded-xl border-2 border-b-3 active:translate-y-[1px] active:border-b cursor-pointer transition-all shadow-sm select-none"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}40`,
+                  borderBottomColor: themeAccentShadow
+                }}
+                title="إغلاق النافذة"
               >
                 <XCircle className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center gap-3 border-b border-emerald-800 pb-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 flex items-center justify-center shrink-0">
-                  <Trophy className="w-6 h-6" />
+              {/* Modal Header */}
+              <div className="flex items-center gap-3 border-b-2 border-white/10 pb-4">
+                <div
+                  className="w-13 h-13 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-md"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
+                >
+                  <Trophy className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-bold font-heading text-white">
-                    تفاصيل ومصادر نقاط: {selectedStudentForBreakdown.student.name}
+                  <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                    <span>تفاصيل ومصادر نقاط:</span>
+                    <span style={{ color: themeAccent }}>{selectedStudentForBreakdown.student.name}</span>
                   </h3>
-                  <p className="text-xs text-[#86efac]/80 mt-0.5">
-                    {selectedStudentForBreakdown.halaqahName} • إجمالي النقاط:{' '}
-                    <strong className="text-[#fbbf24] font-mono text-sm">{selectedStudentForBreakdown.totalPoints}</strong> نقطة
-                  </p>
+                  <div className="text-xs text-slate-300 font-bold mt-1.5 flex items-center gap-2 flex-wrap">
+                    <span
+                      className="px-2.5 py-0.5 rounded-xl border-2 border-b-2 text-[11px] font-black shadow-2xs"
+                      style={{
+                        backgroundColor: themeCardBg,
+                        color: themeAccent,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      {selectedStudentForBreakdown.halaqahName}
+                    </span>
+                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-300">إجمالي النقاط:</span>
+                    <strong
+                      className="font-mono text-xs sm:text-sm font-black px-2.5 py-0.5 rounded-xl border-2 border-b-2 shadow-2xs"
+                      style={{
+                        backgroundColor: themeAccent,
+                        color: accentTextColor,
+                        borderColor: lightenHex(themeAccent, 0.2),
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      {toArabicDigits(selectedStudentForBreakdown.totalPoints)} نقطة
+                    </strong>
+                  </div>
                 </div>
               </div>
 
-              {/* 4 Pillars Summary */}
+              {/* 4 Pillars Summary in Duolingo 3D Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
-                <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-emerald-700/50 space-y-1">
-                  <span className="text-[10px] text-emerald-300 block font-bold">نقاط التسميع</span>
-                  <span className="text-lg font-black text-emerald-200 font-mono">
-                    +{selectedStudentForBreakdown.evalPoints}
+                {/* 1. Recitation Points */}
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1.5 shadow-md text-center transition-all duration-150 hover:-translate-y-0.5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}50`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-lg font-black block border-2 border-b-2 shadow-2xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
+                    نقاط التسميع
                   </span>
-                  <span className="text-[9px] text-emerald-400/70 block">
-                    {selectedStudentForBreakdown.completedEvaluations} تقييم تسميع
+                  <span className="text-xl font-black font-mono block text-white drop-shadow-xs">
+                    +{toArabicDigits(selectedStudentForBreakdown.evalPoints)}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold block text-slate-300 px-1 py-0.5 rounded-md"
+                    style={{ backgroundColor: `${themeSecondary}80` }}
+                  >
+                    {toArabicDigits(selectedStudentForBreakdown.completedEvaluations)} تقييم تسميع
                   </span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-blue-700/50 space-y-1">
-                  <span className="text-[10px] text-blue-300 block font-bold">نقاط الاختبارات</span>
-                  <span className="text-lg font-black text-blue-200 font-mono">
-                    +{selectedStudentForBreakdown.examPoints}
+                {/* 2. Exams Points */}
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1.5 shadow-md text-center transition-all duration-150 hover:-translate-y-0.5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: 'rgba(56, 189, 248, 0.6)',
+                    borderBottomColor: '#0284c7'
+                  }}
+                >
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-lg font-black block border-2 border-b-2 shadow-2xs text-sky-300"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: 'rgba(56, 189, 248, 0.4)',
+                      borderBottomColor: '#0284c7'
+                    }}
+                  >
+                    نقاط الاختبارات
                   </span>
-                  <span className="text-[9px] text-blue-400/70 block">
-                    {selectedStudentForBreakdown.completedExams} اختبار منجز
+                  <span className="text-xl font-black font-mono block text-sky-200 drop-shadow-xs">
+                    +{toArabicDigits(selectedStudentForBreakdown.examPoints)}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold block text-sky-300/90 px-1 py-0.5 rounded-md"
+                    style={{ backgroundColor: `${themeSecondary}80` }}
+                  >
+                    {toArabicDigits(selectedStudentForBreakdown.completedExams)} اختبار منجز
                   </span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-amber-700/50 space-y-1">
-                  <span className="text-[10px] text-amber-300 block font-bold">نقاط الاستماع</span>
-                  <span className="text-lg font-black text-amber-200 font-mono">
-                    +{selectedStudentForBreakdown.listeningPoints}
+                {/* 3. Listening Points */}
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1.5 shadow-md text-center transition-all duration-150 hover:-translate-y-0.5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}70`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-lg font-black block border-2 border-b-2 shadow-2xs"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: `${themeAccent}50`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
+                    نقاط الاستماع
                   </span>
-                  <span className="text-[9px] text-amber-400/70 block">
-                    {selectedStudentForBreakdown.completedListenings} جلسة تكرار
+                  <span
+                    className="text-xl font-black font-mono block drop-shadow-xs"
+                    style={{ color: themeAccent }}
+                  >
+                    +{toArabicDigits(selectedStudentForBreakdown.listeningPoints)}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold block text-slate-300 px-1 py-0.5 rounded-md"
+                    style={{ backgroundColor: `${themeSecondary}80` }}
+                  >
+                    {toArabicDigits(selectedStudentForBreakdown.completedListenings)} جلسة تكرار
                   </span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-teal-700/50 space-y-1">
-                  <span className="text-[10px] text-teal-300 block font-bold">نقاط الصفحات</span>
-                  <span className="text-lg font-black text-teal-200 font-mono">
-                    +{selectedStudentForBreakdown.pagePoints || 0}
+                {/* 4. Pages Points */}
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1.5 shadow-md text-center transition-all duration-150 hover:-translate-y-0.5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}45`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-lg font-black block border-2 border-b-2 shadow-2xs text-white"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: 'rgba(255, 255, 255, 0.2)',
+                      borderBottomColor: darkenHex(themeSecondary, 0.35)
+                    }}
+                  >
+                    نقاط الصفحات
                   </span>
-                  <span className="text-[9px] text-teal-400/70 block">أوجه مكتملة</span>
+                  <span className="text-xl font-black font-mono block text-white drop-shadow-xs">
+                    +{toArabicDigits(selectedStudentForBreakdown.pagePoints || 0)}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold block text-slate-300 px-1 py-0.5 rounded-md"
+                    style={{ backgroundColor: `${themeSecondary}80` }}
+                  >
+                    أوجه مكتملة
+                  </span>
                 </div>
               </div>
 
-              {/* Exam Submissions Details */}
+              {/* Exam Submissions Details in Duolingo 3D */}
               {selectedStudentForBreakdown.stSubmissions?.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-blue-400" />
-                    <span>سجل الاختبارات المنجزة ({selectedStudentForBreakdown.stSubmissions.length})</span>
+                <div className="space-y-2.5">
+                  <h4 className="text-xs font-black text-white flex items-center justify-between font-heading">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="w-6 h-6 rounded-lg border-2 border-b-2 flex items-center justify-center shadow-2xs"
+                        style={{
+                          backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                          borderColor: 'rgba(56, 189, 248, 0.5)',
+                          borderBottomColor: '#0284c7'
+                        }}
+                      >
+                        <FileText className="w-3.5 h-3.5 text-sky-400" />
+                      </span>
+                      <span>سجل الاختبارات المنجزة</span>
+                    </span>
+                    <span
+                      className="px-2.5 py-0.5 rounded-xl text-[10px] font-black border-2 border-b-2 text-sky-300 shadow-2xs"
+                      style={{
+                        backgroundColor: themeCardBg,
+                        borderColor: 'rgba(56, 189, 248, 0.4)',
+                        borderBottomColor: '#0284c7'
+                      }}
+                    >
+                      {toArabicDigits(selectedStudentForBreakdown.stSubmissions.length)} اختبارات
+                    </span>
                   </h4>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {selectedStudentForBreakdown.stSubmissions.map((sub: any) => (
                       <div
                         key={sub.id}
-                        className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-emerald-800/60 flex items-center justify-between text-xs"
+                        className="p-3 rounded-2xl border-2 border-b-3 flex items-center justify-between text-xs shadow-xs transition-all hover:brightness-105"
+                        style={{
+                          backgroundColor: themeCardBg,
+                          borderColor: `${themeAccent}35`,
+                          borderBottomColor: themeAccentShadow
+                        }}
                       >
                         <div>
-                          <span className="font-bold text-white">{sub.examTitle}</span>
-                          <span className="text-[10px] text-emerald-300/70 block">{sub.submittedAt ? sub.submittedAt.split('T')[0] : ''}</span>
+                          <span className="font-black text-white">{sub.examTitle}</span>
+                          <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                            {sub.submittedAt ? toArabicDigits(sub.submittedAt.split('T')[0]) : ''}
+                          </span>
                         </div>
-                        <div className="text-left font-mono">
-                          <span className="text-blue-300 font-bold">+{sub.pointsGrantedForLeaderboard || 0} نقطة</span>
-                          <span className="text-[10px] text-emerald-400/80 block">({sub.percentage}%)</span>
+                        <div className="text-left font-mono flex items-center gap-2">
+                          <span
+                            className="px-2.5 py-1 rounded-xl border-2 border-b-2 text-xs font-black text-sky-300 shadow-2xs"
+                            style={{
+                              backgroundColor: themeSecondary,
+                              borderColor: 'rgba(56, 189, 248, 0.4)',
+                              borderBottomColor: '#0284c7'
+                            }}
+                          >
+                            +{toArabicDigits(sub.pointsGrantedForLeaderboard || 0)} نقطة
+                          </span>
+                          <span
+                            className="text-[11px] text-slate-300 font-bold px-2 py-1 rounded-xl border"
+                            style={{
+                              backgroundColor: `${themeSecondary}80`,
+                              borderColor: 'rgba(255, 255, 255, 0.1)'
+                            }}
+                          >
+                            {toArabicDigits(sub.percentage)}%
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -2509,14 +3227,37 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 </div>
               )}
 
-              {/* Recitation Evaluation Criteria Details */}
+              {/* Recitation Evaluation Criteria Details in Duolingo 3D */}
               {selectedStudentForBreakdown.stEvaluations?.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>سجل تقييمات التسميع الأخيرة ({selectedStudentForBreakdown.stEvaluations.length})</span>
+                <div className="space-y-2.5">
+                  <h4 className="text-xs font-black text-white flex items-center justify-between font-heading">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="w-6 h-6 rounded-lg border-2 border-b-2 flex items-center justify-center shadow-2xs"
+                        style={{
+                          backgroundColor: `${themeAccent}25`,
+                          borderColor: `${themeAccent}60`,
+                          borderBottomColor: themeAccentShadow,
+                          color: themeAccent
+                        }}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                      </span>
+                      <span>سجل تقييمات التسميع الأخيرة</span>
+                    </span>
+                    <span
+                      className="px-2.5 py-0.5 rounded-xl text-[10px] font-black border-2 border-b-2 shadow-2xs"
+                      style={{
+                        backgroundColor: themeCardBg,
+                        color: themeAccent,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      {toArabicDigits(selectedStudentForBreakdown.stEvaluations.length)} تقييم
+                    </span>
                   </h4>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {selectedStudentForBreakdown.stEvaluations.slice(-5).reverse().map((ev: any) => {
                       const cPts = ev.recitationDetails?.criteriaPointsEarnedToday || 0;
                       const pPts = ev.recitationDetails?.pagesPointsEarnedToday || 0;
@@ -2524,16 +3265,31 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       return (
                         <div
                           key={ev.id}
-                          className="p-2.5 rounded-xl bg-[#064e3b]/30 border border-emerald-800/60 flex items-center justify-between text-xs"
+                          className="p-3 rounded-2xl border-2 border-b-3 flex items-center justify-between text-xs shadow-xs transition-all hover:brightness-105"
+                          style={{
+                            backgroundColor: themeCardBg,
+                            borderColor: `${themeAccent}35`,
+                            borderBottomColor: themeAccentShadow
+                          }}
                         >
                           <div>
-                            <span className="font-bold text-white">{ev.date} - تسميع يومي</span>
-                            <span className="text-[10px] text-emerald-300/70 block">
-                              ورد الحفظ: {ev.dailyTarget || 'مقرر الحفظ'} • التقييم: {ev.totalScore}%
+                            <span className="font-black text-white">{toArabicDigits(ev.date)} - تسميع يومي</span>
+                            <span className="text-[10px] text-slate-300 font-bold block mt-0.5">
+                              ورد الحفظ: {ev.dailyTarget || 'مقرر الحفظ'} • التقييم: {toArabicDigits(ev.totalScore)}%
                             </span>
                           </div>
                           <div className="text-left font-mono">
-                            <span className="text-emerald-300 font-bold">+{tot} نقطة</span>
+                            <span
+                              className="px-2.5 py-1 rounded-xl border-2 border-b-2 text-xs font-black shadow-2xs inline-block"
+                              style={{
+                                backgroundColor: themeSecondary,
+                                borderColor: `${themeAccent}50`,
+                                borderBottomColor: themeAccentShadow,
+                                color: themeAccent
+                              }}
+                            >
+                              +{toArabicDigits(tot)} نقطة
+                            </span>
                           </div>
                         </div>
                       );
@@ -2542,12 +3298,20 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 </div>
               )}
 
-              <div className="flex justify-end pt-3 border-t border-emerald-800">
+              {/* Duolingo 3D Bottom Close Button */}
+              <div className="flex justify-end pt-3 border-t-2 border-white/10">
                 <button
+                  type="button"
                   onClick={() => setSelectedStudentForBreakdown(null)}
-                  className="px-5 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] font-bold text-xs cursor-pointer hover:bg-amber-300 transition-colors"
+                  className="px-6 py-2.5 rounded-2xl font-black text-xs cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all shadow-lg select-none hover:brightness-105"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
-                  إغلاق
+                  إغلاق النافذة
                 </button>
               </div>
             </div>
@@ -2557,39 +3321,115 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* REVIEW PREVIOUS ATTEMPT MODAL */}
         {viewingReviewSubmission && (
           <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-[#022c22] border border-[#fbbf24]/50 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Award className="w-5 h-5 text-[#fbbf24]" />
-                    <span>مراجعة درجات: {viewingReviewSubmission.examTitle}</span>
-                  </h3>
-                  <p className="text-xs text-emerald-300/80 mt-0.5">
-                    الدرجة: {viewingReviewSubmission.totalScoreEarned} من {viewingReviewSubmission.maxPossibleScore} ({viewingReviewSubmission.percentage}%)
-                  </p>
+            <div
+              className="border-2 border-b-6 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
+              {/* Subtle 3D Top Bevel Gloss */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-3xl" />
+
+              <div className="flex items-center justify-between border-b-2 border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-md"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderColor: lightenHex(themeAccent, 0.2),
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }}
+                  >
+                    <Award className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                      <span>مراجعة درجات:</span>
+                      <span style={{ color: themeAccent }}>{viewingReviewSubmission.examTitle}</span>
+                    </h3>
+                    <p className="text-xs text-slate-300 font-bold mt-1">
+                      الدرجة المحققة:{' '}
+                      <strong className="font-mono text-sm font-black" style={{ color: themeAccent }}>
+                        {toArabicDigits(viewingReviewSubmission.totalScoreEarned)}
+                      </strong>{' '}
+                      من {toArabicDigits(viewingReviewSubmission.maxPossibleScore)} ({toArabicDigits(viewingReviewSubmission.percentage)}٪)
+                    </p>
+                  </div>
                 </div>
+
                 <button
                   onClick={() => setViewingReviewSubmission(null)}
-                  className="p-2 rounded-xl text-emerald-300 hover:text-white cursor-pointer"
+                  className="p-2 text-white/80 hover:text-white rounded-xl border-2 border-b-3 active:translate-y-[1px] active:border-b cursor-pointer transition-all shadow-sm select-none"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}40`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                  title="إغلاق النافذة"
                 >
                   <XCircle className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
                 {viewingReviewSubmission.answers.map((ans, idx) => (
-                  <div key={idx} className="p-3.5 rounded-2xl bg-[#064e3b]/40 border border-emerald-800 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="text-white">س {idx + 1}: {ans.questionTitle}</span>
-                      <span className="text-[#fbbf24]">{ans.pointsEarned} / {ans.maxPoints} درجة</span>
+                  <div
+                    key={idx}
+                    className="p-4 rounded-2xl border-2 border-b-3 space-y-2.5 text-xs shadow-xs"
+                    style={{
+                      backgroundColor: themeCardBg,
+                      borderColor: `${themeAccent}30`,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <div className="flex items-center justify-between font-black">
+                      <span className="text-white text-xs sm:text-sm font-heading">
+                        سؤال {toArabicDigits(idx + 1)}: {ans.questionTitle}
+                      </span>
+                      <span
+                        className="px-2.5 py-1 rounded-xl border-2 border-b-2 font-mono font-black shadow-2xs"
+                        style={{
+                          backgroundColor: themeSecondary,
+                          color: themeAccent,
+                          borderColor: `${themeAccent}50`,
+                          borderBottomColor: themeAccentShadow
+                        }}
+                      >
+                        {toArabicDigits(ans.pointsEarned)} / {toArabicDigits(ans.maxPoints)} درجة
+                      </span>
                     </div>
-                    <div className="p-2 rounded-xl bg-[#022c22] text-emerald-100">
-                      <span className="text-emerald-400 font-bold block">إجابتك:</span>
-                      <p className="text-white">{ans.studentAnswer || 'لم تتم الإجابة'}</p>
+
+                    <div
+                      className="p-3 rounded-xl text-slate-200 border-2 border-b-2 space-y-1"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}25`,
+                        borderBottomColor: darkenHex(themeSecondary, 0.3)
+                      }}
+                    >
+                      <span className="font-black text-[11px] block" style={{ color: themeAccent }}>
+                        إجابتك المسجلة:
+                      </span>
+                      <p className="text-white font-medium leading-relaxed">{ans.studentAnswer || 'لم يتم تقديم إجابة'}</p>
                     </div>
+
                     {ans.teacherFeedback && (
-                      <div className="text-amber-300 bg-amber-950/40 p-2 rounded-xl border border-amber-500/20">
-                        <strong>ملاحظة المعلم: </strong>{ans.teacherFeedback}
+                      <div
+                        className="p-3 rounded-xl border-2 border-b-2 text-xs"
+                        style={{
+                          backgroundColor: `${themeAccent}15`,
+                          borderColor: `${themeAccent}40`,
+                          borderBottomColor: themeAccentShadow,
+                          color: '#ffffff'
+                        }}
+                      >
+                        <strong className="font-black block mb-0.5" style={{ color: themeAccent }}>
+                          ملاحظة المعلم:
+                        </strong>
+                        <p className="font-medium leading-relaxed">{ans.teacherFeedback}</p>
                       </div>
                     )}
                   </div>
@@ -2597,18 +3437,34 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               </div>
 
               {viewingReviewSubmission.teacherGeneralFeedback && (
-                <div className="p-3 rounded-2xl bg-[#064e3b]/60 border border-[#065f46] text-xs text-white">
-                  <strong className="text-[#fbbf24]">توجيه عام من المعلم: </strong>
-                  {viewingReviewSubmission.teacherGeneralFeedback}
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-3 text-xs text-white"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}40`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <strong className="font-black block mb-1" style={{ color: themeAccent }}>
+                    توجيه عام من المعلم:
+                  </strong>
+                  <p className="leading-relaxed font-medium">{viewingReviewSubmission.teacherGeneralFeedback}</p>
                 </div>
               )}
 
-              <div className="flex justify-end pt-3 border-t border-emerald-800">
+              <div className="flex justify-end pt-3 border-t-2 border-white/10">
                 <button
+                  type="button"
                   onClick={() => setViewingReviewSubmission(null)}
-                  className="px-5 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] font-bold text-xs cursor-pointer"
+                  className="px-6 py-2.5 rounded-2xl font-black text-xs cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all shadow-lg select-none hover:brightness-105"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
-                  إغلاق
+                  إغلاق النافذة
                 </button>
               </div>
             </div>
@@ -2616,15 +3472,22 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         )}
 
         {/* Portal Global Footer */}
-        <footer className="mt-12 pt-6 border-t border-[#065f46]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#86efac]/70">
+        <footer className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-300">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+            <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
             <span className="font-bold text-white">{displayComplexName}</span>
           </div>
-          <div className="flex items-center gap-2 text-center text-xs text-[#fbbf24] font-bold bg-[#064e3b]/80 px-3.5 py-1.5 rounded-full border border-amber-400/30 shadow-sm">
+          <div
+            className="flex items-center gap-2 text-center text-xs font-bold px-3.5 py-1.5 rounded-full border shadow-sm"
+            style={{
+              backgroundColor: themeSecondary,
+              borderColor: `${themeAccent}40`,
+              color: themeAccent
+            }}
+          >
             <span>مشغل بواسطة منصة عمران</span>
           </div>
-          <p className="text-[11px] text-[#86efac]/60">
+          <p className="text-[11px] text-slate-400">
             بوابة الطالب وولي الأمر • متابعة الحفظ والتسميع والاختبارات
           </p>
         </footer>
@@ -2632,8 +3495,23 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* MANDATORY GOOGLE AUTH GATEKEEPER MODAL BEFORE EXAM ENTRY */}
         {googleAuthGateExam && (
           <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#022c22] border border-[#fbbf24]/60 rounded-3xl w-full max-w-md p-6 sm:p-7 shadow-2xl space-y-4 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] border border-[#fbbf24]/40 flex items-center justify-center mx-auto">
+            <div
+              className="border-2 border-b-6 rounded-3xl w-full max-w-md p-6 sm:p-7 shadow-2xl space-y-4 text-center"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
+              <div
+                className="w-16 h-16 rounded-2xl border-2 border-b-4 flex items-center justify-center mx-auto"
+                style={{
+                  backgroundColor: `${themeAccent}25`,
+                  borderColor: `${themeAccent}60`,
+                  borderBottomColor: themeAccentShadow,
+                  color: themeAccent
+                }}
+              >
                 <svg className="w-8 h-8" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                   <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -2646,12 +3524,18 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 تسجيل الدخول بـ Google مطلوب لدخول الاختبار
               </h3>
 
-              <div className="p-3.5 rounded-2xl bg-[#064e3b]/70 border border-emerald-700/60 text-right space-y-2">
-                <p className="text-xs text-emerald-100 font-semibold leading-relaxed">
+              <div
+                className="p-3.5 rounded-2xl border text-right space-y-2"
+                style={{
+                  backgroundColor: `${themeCardBg}90`,
+                  borderColor: `${themeAccent}30`
+                }}
+              >
+                <p className="text-xs text-white font-semibold leading-relaxed">
                   أهلاً بك يا <strong>{currentStudent.name}</strong>! لدخول اختبار:
-                  <span className="block text-[#fbbf24] font-bold mt-1 text-sm">"{googleAuthGateExam.title}"</span>
+                  <span className="block font-bold mt-1 text-sm" style={{ color: themeAccent }}>"{googleAuthGateExam.title}"</span>
                 </p>
-                <p className="text-[11px] text-emerald-300/90 leading-relaxed">
+                <p className="text-[11px] text-slate-300 leading-relaxed">
                   يشترط النظام تسجيل الدخول بحساب Google المعتمد لديك، حتى يتسنى التحقق من هويتك وتوثيق إجاباتك ورصد درجاتك في سجلك تلقائياً دون أي تدخل يدوي.
                 </p>
               </div>
@@ -2671,7 +3555,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 >
                   {isLinkingGoogle ? (
                     <div className="flex items-center gap-2 text-slate-600">
-                      <div className="w-4 h-4 border-2 border-slate-400 border-t-emerald-600 rounded-full animate-spin" />
+                      <div
+                        className="w-4 h-4 border-2 border-slate-400 rounded-full animate-spin"
+                        style={{ borderTopColor: themeAccent }}
+                      />
                       <span>جاري التحقق بحساب Google...</span>
                     </div>
                   ) : (
@@ -2687,8 +3574,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   )}
                 </button>
 
-                <p className="text-[11px] text-emerald-300/80 text-center flex items-center justify-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-[#fbbf24] shrink-0" />
+                <p className="text-[11px] text-slate-300 text-center flex items-center justify-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
                   <span>بمجرد تسجيل الدخول بحساب Google، سيتم فتح الاختبار فوراً ورصد نتيجتك لحسابك تلقائياً.</span>
                 </p>
 
@@ -2699,7 +3586,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     setGoogleLinkError('');
                   }}
                   disabled={isLinkingGoogle}
-                  className="w-full py-2 px-4 rounded-xl text-emerald-300 hover:text-white text-xs font-semibold cursor-pointer transition-colors mt-1"
+                  className="w-full py-2 px-4 rounded-xl text-slate-400 hover:text-white text-xs font-semibold cursor-pointer transition-colors mt-1"
                 >
                   إلغاء والعودة
                 </button>
@@ -2711,18 +3598,33 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {/* CERTIFICATE PREVIEW & PRINT MODAL FOR STUDENT / PARENT */}
         {selectedCertificateForView && (
           <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-[#022c22] border-2 border-[#fbbf24]/60 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 text-right relative flex flex-col">
+            <div
+              className="border-2 border-b-6 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 text-right relative flex flex-col"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
               {/* Modal Top Bar */}
-              <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40 flex items-center justify-center shrink-0">
+                  <div
+                    className="w-10 h-10 rounded-xl border-2 border-b-3 flex items-center justify-center shrink-0"
+                    style={{
+                      backgroundColor: `${themeAccent}25`,
+                      borderColor: `${themeAccent}60`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     <Award className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-white font-heading">
                       {selectedCertificateForView.templateName || 'شهادة تميز وإتقان قرآني'}
                     </h3>
-                    <p className="text-xs text-[#fbbf24] font-bold">
+                    <p className="text-xs font-bold" style={{ color: themeAccent }}>
                       الطالب: {selectedCertificateForView.studentName || currentStudent.name}
                     </p>
                   </div>
@@ -2731,7 +3633,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCertificateForView(null)}
-                  className="p-2 rounded-xl text-emerald-300 hover:text-white bg-emerald-950/60 cursor-pointer"
+                  className="p-2 rounded-xl text-slate-300 hover:text-white bg-white/10 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2740,64 +3642,65 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               {/* Certificate Canvas / Card View */}
               <div
                 id="portal-printable-certificate"
-                className="relative w-full aspect-[1.414/1] rounded-2xl overflow-hidden shadow-2xl p-6 sm:p-8 flex flex-col justify-between border-4 border-[#fbbf24] select-none text-center"
+                className="relative w-full aspect-[1.414/1] rounded-2xl overflow-hidden shadow-2xl p-6 sm:p-8 flex flex-col justify-between border-4 select-none text-center"
                 style={{
+                  borderColor: themeAccent,
                   background: selectedCertificateForView.templateType === 'custom' && selectedCertificateForView.customTemplateImageUrl
                     ? `url(${selectedCertificateForView.customTemplateImageUrl}) center/cover no-repeat`
-                    : 'linear-gradient(135deg, #022c22 0%, #064e3b 50%, #022c22 100%)',
+                    : `linear-gradient(135deg, ${themeSecondary} 0%, ${themeCardBg} 50%, ${themeSecondary} 100%)`,
                   color: '#f0f9f6'
                 }}
               >
                 {selectedCertificateForView.templateType === 'custom' && selectedCertificateForView.customTemplateImageUrl ? (
                   /* Custom template display with overlay student name */
                   <div className="w-full h-full flex flex-col justify-center items-center relative">
-                    <div className="font-quran text-2xl sm:text-4xl md:text-5xl font-black text-[#064e3b] py-2">
+                    <div className="font-quran text-2xl sm:text-4xl md:text-5xl font-black py-2" style={{ color: themeAccent }}>
                       {selectedCertificateForView.studentName || currentStudent.name}
                     </div>
                     {selectedCertificateForView.dateArabic && (
-                      <div className="text-xs sm:text-sm text-slate-700 font-bold mt-2">
-                        {selectedCertificateForView.dateArabic}
+                      <div className="text-xs sm:text-sm text-slate-300 font-bold mt-2">
+                        {toArabicDigits(selectedCertificateForView.dateArabic)}
                       </div>
                     )}
                   </div>
                 ) : (
-                  /* Ready-made emerald royal certificate */
+                  /* Ready-made royal certificate in Quranic Complex colors */
                   <>
                     <div className="flex flex-col items-center justify-center space-y-1">
-                      <div className="font-quran text-sm sm:text-lg text-[#fbbf24] font-bold">
+                      <div className="font-quran text-sm sm:text-lg font-bold" style={{ color: themeAccent }}>
                         بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
                       </div>
-                      <div className="font-quran text-xs sm:text-sm text-emerald-200 opacity-90 px-4">
+                      <div className="font-quran text-xs sm:text-sm text-slate-200 opacity-90 px-4">
                         ﴿ يَرْفَعِ اللَّهُ الَّذِينَ آمَنُوا مِنكُمْ وَالَّذِينَ أُوتُوا الْعِلْمَ دَرَجَاتٍ ﴾
                       </div>
-                      <h1 className="font-heading font-black text-xl sm:text-3xl md:text-4xl text-[#fbbf24] mt-2 tracking-wide">
+                      <h1 className="font-heading font-black text-xl sm:text-3xl md:text-4xl mt-2 tracking-wide" style={{ color: themeAccent }}>
                         شَهَادَةُ تَمَيُّزٍ وَإِتْقَانٍ قُرْآنِيٍّ
                       </h1>
                     </div>
 
                     <div className="space-y-2 sm:space-y-3 my-auto py-2">
-                      <p className="text-xs sm:text-sm text-emerald-200 font-semibold">
+                      <p className="text-xs sm:text-sm text-slate-200 font-semibold">
                         يَسُرُّ إِدَارَةَ الحِلْقَةِ أَنْ تَمْنَحَ هذِهِ الشَّهَادَةَ المُبَارَكَةَ لِلطَّالِبِ النَّجِيبِ:
                       </p>
-                      <div className="font-quran text-2xl sm:text-4xl md:text-5xl font-black text-[#fbbf24] py-1">
+                      <div className="font-quran text-2xl sm:text-4xl md:text-5xl font-black py-1" style={{ color: themeAccent }}>
                         {selectedCertificateForView.studentName || currentStudent.name}
                       </div>
                       <p className="text-xs sm:text-sm text-white/95 max-w-lg mx-auto leading-relaxed font-medium">
                         {selectedCertificateForView.occasionText || selectedCertificateForView.occasion || 'تقديراً لاجتهاده وحرصه المتميز في حفظ وتلاوة كتاب الله الكريم'}
                       </p>
-                      <div className="text-[11px] text-[#86efac]">
+                      <div className="text-[11px] text-slate-300">
                         {selectedCertificateForView.halaqahName && <span>الحلقة: <strong>{selectedCertificateForView.halaqahName}</strong> • </span>}
                         <span>المجمع: <strong>{selectedCertificateForView.complexName || displayComplexName}</strong></span>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-[#fbbf24]/30 flex items-center justify-between text-[11px] sm:text-xs text-emerald-200">
+                    <div className="pt-3 border-t flex items-center justify-between text-[11px] sm:text-xs text-slate-200" style={{ borderColor: `${themeAccent}40` }}>
                       <div className="text-right">
-                        <span className="block text-[10px] text-emerald-400">معلم ومحفظ الحلقة:</span>
+                        <span className="block text-[10px] text-slate-400">معلم ومحفظ الحلقة:</span>
                         <span className="font-bold text-white">{selectedCertificateForView.teacherName || settings.teacherName || 'الشيخ المعلم'}</span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-[#fbbf24] font-bold">
+                      <div className="flex items-center gap-1.5 font-bold" style={{ color: themeAccent }}>
                         {resolvedComplex?.stampUrl ? (
                           <div className="flex items-center gap-2">
                             <img src={resolvedComplex.stampUrl} alt="ختم المجمع" className="w-10 h-10 object-contain rounded-full shadow-md" />
@@ -2812,8 +3715,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       </div>
 
                       <div className="text-left">
-                        <span className="block text-[10px] text-emerald-400">تاريخ الإصدار:</span>
-                        <span className="font-bold text-white">{selectedCertificateForView.dateArabic || selectedCertificateForView.createdAt?.split('T')[0]}</span>
+                        <span className="block text-[10px] text-slate-400">تاريخ الإصدار:</span>
+                        <span className="font-bold text-white">{toArabicDigits(selectedCertificateForView.dateArabic || selectedCertificateForView.createdAt?.split('T')[0] || '')}</span>
                       </div>
                     </div>
                   </>
@@ -2821,7 +3724,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               </div>
 
               {/* Modal Actions */}
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-emerald-800">
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10">
                 <button
                   type="button"
                   onClick={() => {
@@ -2850,7 +3753,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       }
                     }
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-[#fbbf24] text-[#064e3b] font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer hover:bg-[#f59e0b]"
+                  className="px-5 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: lightenHex(themeAccent, 0.2),
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
                   <Award className="w-4 h-4" />
                   <span>طباعة الشهادة الرسمية</span>
@@ -2859,7 +3768,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCertificateForView(null)}
-                  className="px-4 py-2 rounded-xl bg-[#064e3b] text-emerald-200 font-bold text-xs hover:text-white cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-slate-300 hover:text-white font-bold text-xs cursor-pointer border-2 border-b-3"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}30`,
+                    borderBottomColor: darkenHex(themeCardBg, 0.35)
+                  }}
                 >
                   إغلاق
                 </button>
