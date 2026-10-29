@@ -46,7 +46,14 @@ import {
 } from '../../types';
 import { OmranDataService } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
-import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import { darkenHex, lightenHex, getContrastTextColor, applyComplexThemeToDOM } from '../../lib/themeUtils';
+
+export const toArabicDigits = (val: string | number | undefined | null): string => {
+  if (val === undefined || val === null) return '';
+  const str = String(val);
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return str.replace(/[0-9]/g, w => arabicDigits[+w]);
+};
 
 /**
  * Checks whether a shift/halaqah is remote (online)
@@ -114,6 +121,12 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
   const themeText = activeComplex?.theme?.textColor || '#ffffff';
   const themeSubtext = activeComplex?.theme?.subtextColor || lightenHex(themeAccent, 0.25);
   const themeContrastText = getContrastTextColor(themeAccent);
+
+  useEffect(() => {
+    if (activeComplex?.theme) {
+      applyComplexThemeToDOM(activeComplex.theme, true);
+    }
+  }, [activeComplex?.theme]);
 
   useEffect(() => {
     if (initialHighlightId) {
@@ -1737,7 +1750,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                   <span>تحضير الحضور والانصراف اليومي</span>
                 </h3>
                 <p className="duo-complex-subtext text-xs mt-0.5 font-bold">
-                  تاريخ اليوم: <span className="font-mono">{todayStr}</span> • المعلم:{' '}
+                  تاريخ اليوم: <span className="font-mono">{toArabicDigits(todayStr)}</span> • المعلم:{' '}
                   <strong style={{ color: themeAccent }}>
                     {currentTeacher?.name || currentUserName || 'المعلم'}
                   </strong>
@@ -1753,10 +1766,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
               const radiusM = activeMosqueForBadge?.allowedRadiusMeters || 100;
               const radiusFormatted =
                 radiusM >= 1000 && radiusM % 1000 === 0
-                  ? `${radiusM / 1000} كم`
+                  ? `${toArabicDigits(radiusM / 1000)} كم`
                   : radiusM >= 1000
-                  ? `${(radiusM / 1000).toFixed(1)} كم`
-                  : `${radiusM} متر`;
+                  ? `${toArabicDigits((radiusM / 1000).toFixed(1))} كم`
+                  : `${toArabicDigits(radiusM)} متر`;
 
               return (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1919,14 +1932,14 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                             ? 'تم الانصراف ✓'
                             : hasCheckedIn
                             ? record?.status === 'متأخر'
-                              ? `حاضر (متأخر ${record.delayMinutes ? `${record.delayMinutes} د` : ''})`
+                              ? `حاضر (متأخر ${record.delayMinutes ? `${toArabicDigits(record.delayMinutes)} د` : ''})`
                               : 'تم الحضور ✓'
                             : isHalaqahEnded
                             ? 'غائب (انتهى وقت الحلقة)'
                             : isBeforeCheckIn
-                            ? `يبدأ التحضير (${checkInStartFmt})`
+                            ? `يبدأ التحضير (${toArabicDigits(checkInStartFmt)})`
                             : isLateCheckIn
-                            ? `التحضير متأخر (${delayMinutes} د)`
+                            ? `التحضير متأخر (${toArabicDigits(delayMinutes)} د)`
                             : 'متاح للتحضير الآن'}
                         </span>
                       </div>
@@ -1959,7 +1972,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                                 الجامع: {shiftMosque?.name || shift.mosqueName || 'جامع الحلقات'}
                               </span>
                               <span className="duo-complex-shift-schedule-chip text-[11px]">
-                                النطاق: {shiftMosque?.allowedRadiusMeters || 100} متر
+                                النطاق: {toArabicDigits(shiftMosque?.allowedRadiusMeters || 100)} متر
                               </span>
                             </div>
 
@@ -2007,7 +2020,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                           <div className="duo-complex-shift-time-value text-xs sm:text-sm font-mono flex items-center justify-center gap-1.5">
                             <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
                             <span dir="ltr">
-                              {checkInStartFmt} - {checkInEndFmt}
+                              {toArabicDigits(checkInStartFmt)} - {toArabicDigits(checkInEndFmt)}
                             </span>
                           </div>
                         </div>
@@ -2019,7 +2032,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                           <div className="duo-complex-shift-time-value text-xs sm:text-sm font-mono flex items-center justify-center gap-1.5">
                             <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
                             <span dir="ltr">
-                              {checkOutStartFmt} - {checkOutEndFmt}
+                              {toArabicDigits(checkOutStartFmt)} - {toArabicDigits(checkOutEndFmt)}
                             </span>
                           </div>
                         </div>
@@ -2032,28 +2045,28 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                             <div className="duo-complex-self-notice duo-complex-self-notice--ended text-center text-xs flex items-center justify-center gap-2">
                               <XCircle className="w-4 h-4 shrink-0" />
                               <span>
-                                انتهى وقت الحلقة الرسمي بالكامل ({shiftEndFmt}) • تم إغلاق التحضير واحتسابك غائباً لهذا اليوم
+                                انتهى وقت الحلقة الرسمي بالكامل ({toArabicDigits(shiftEndFmt)}) • تم إغلاق التحضير واحتسابك غائباً لهذا اليوم
                               </span>
                             </div>
                           ) : isBeforeCheckIn ? (
                             <div className="duo-complex-self-notice text-center text-xs flex items-center justify-center gap-2">
                               <Clock className="w-4 h-4 shrink-0" />
                               <span>
-                                لا يمكن التحضير قبل الموعد • يبدأ التحضير في تمام الساعة {checkInStartFmt}
+                                لا يمكن التحضير قبل الموعد • يبدأ التحضير في تمام الساعة {toArabicDigits(checkInStartFmt)}
                               </span>
                             </div>
                           ) : isLateCheckIn ? (
                             <div className="duo-complex-self-notice duo-complex-self-notice--late text-center text-xs flex items-center justify-center gap-2">
                               <AlertCircle className="w-4 h-4 shrink-0" />
                               <span>
-                                أنت متأخر الآن ({delayMinutes} دقيقة) • التحضير متاح حتى نهاية وقت الحلقة ({shiftEndFmt}) وسيُسجَّل متأخر
+                                أنت متأخر الآن ({toArabicDigits(delayMinutes)} دقيقة) • التحضير متاح حتى نهاية وقت الحلقة ({toArabicDigits(shiftEndFmt)}) وسيُسجَّل متأخر
                               </span>
                             </div>
                           ) : (
                             <div className="duo-complex-self-notice text-center text-xs flex items-center justify-center gap-2">
                               <CheckCircle2 className="w-4 h-4 shrink-0" />
                               <span>
-                                وقت التحضير في الموعد متاح الآن حتى الساعة {checkInEndFmt}
+                                وقت التحضير في الموعد متاح الآن حتى الساعة {toArabicDigits(checkInEndFmt)}
                               </span>
                             </div>
                           )}
@@ -2163,12 +2176,12 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         ) : isBeforeCheckIn ? (
                           <>
                             <Clock className="w-4 h-4 shrink-0" />
-                            <span>التحضير يبدأ ({checkInStartFmt})</span>
+                            <span>التحضير يبدأ ({toArabicDigits(checkInStartFmt)})</span>
                           </>
                         ) : isLateCheckIn ? (
                           <>
                             <AlertCircle className="w-4 h-4 shrink-0" />
-                            <span>تسجيل الحضور (متأخر {delayMinutes} د)</span>
+                            <span>تسجيل الحضور (متأخر {toArabicDigits(delayMinutes)} د)</span>
                           </>
                         ) : isRemote ? (
                           <>
@@ -2884,7 +2897,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         الفترات المربوطة بهذا الجامع:
                       </span>
                       <strong className="font-black" style={{ color: themeAccent }}>
-                        {linkedShiftsCount} فترات
+                        {toArabicDigits(linkedShiftsCount)} فترات
                       </strong>
                     </div>
 
@@ -2894,9 +2907,9 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                         <span>مدى التحضير المسموح:</span>
                       </span>
                       <strong className="duo-complex-shift-time-value font-mono">
-                        {mosque.allowedRadiusMeters || 100} متر{' '}
+                        {toArabicDigits(mosque.allowedRadiusMeters || 100)} متر{' '}
                         {(mosque.allowedRadiusMeters || 100) >= 1000
-                          ? `(${((mosque.allowedRadiusMeters || 100) / 1000).toFixed(1)} كم)`
+                          ? `(${toArabicDigits(((mosque.allowedRadiusMeters || 100) / 1000).toFixed(1))} كم)`
                           : ''}
                       </strong>
                     </div>

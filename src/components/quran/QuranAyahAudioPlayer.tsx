@@ -133,7 +133,19 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     return `من سورة ${resolvedStartName} (${startAyah}) إلى سورة ${resolvedEndName} (${endAyah})`;
   }, [safeStartSurah, safeEndSurah, surahName, toSurahName, startSurahInfo.name, endSurahInfo.name, startAyah, endAyah]);
 
-  const reciterConfig = resolveReciterFolder(selectedSheikhName);
+  const [selectedSheikhKey, setSelectedSheikhKey] = useState<string>(() => {
+    if (!selectedSheikhName) return 'minshawi';
+    const lower = selectedSheikhName.toLowerCase();
+    if (lower.includes('حصري') || lower.includes('hussary') || lower.includes('husary')) return 'hussary';
+    if (lower.includes('عفاسي') || lower.includes('afasy') || lower.includes('alafasy')) return 'afasy';
+    if (lower.includes('عبد الباسط') || lower.includes('abdulbasit') || lower.includes('عبدالباسط')) return 'abdulbasit';
+    if (lower.includes('حذيفي') || lower.includes('hudhaify')) return 'hudhaify';
+    if (lower.includes('سويد') || lower.includes('suwaid') || lower.includes('sowaid')) return 'suwaid';
+    return 'minshawi';
+  });
+
+  // Keep reciter folder updated with current selection
+  const reciterConfig = EVERY_AYAH_RECITERS[selectedSheikhKey] || resolveReciterFolder(selectedSheikhName);
 
   // Repetition progress state (persistent in localStorage & listening_logs)
   const todayKey = new Date().toISOString().split('T')[0];
@@ -265,7 +277,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
 
   const playSequenceAtRef = useRef<(idx: number) => void>(() => {});
 
-  // Handle entire passage completion: increments repetitions and seamlessly loops again
+  // Handle entire passage completion: increments repetitions and checks if reached target
   const handlePassageCompleted = useCallback(async () => {
     const nextCount = completedRepsRef.current + 1;
     completedRepsRef.current = nextCount;
@@ -312,7 +324,22 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
     };
     OmranDataService.saveListeningLog(logEntry).catch(() => {});
 
-    // Automatically restarts from index 0 on its own without user intervention!
+    // KEY REQUIREMENT: When finished required repetitions, stop automatically!
+    // The student can press play again if they want extra repetitions.
+    if (requiredRepetitions > 0 && nextCount >= requiredRepetitions) {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      if (loopTimeoutRef.current) {
+        clearTimeout(loopTimeoutRef.current);
+        loopTimeoutRef.current = null;
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      return;
+    }
+
+    // If more repetitions needed, automatically restart from index 0 seamlessly!
     if (isPlayingRef.current) {
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current);
       loopTimeoutRef.current = setTimeout(() => {
@@ -472,26 +499,26 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   );
 
   return (
-    <div className="bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#022c22] border-2 border-[#fbbf24]/50 rounded-[32px] p-5 sm:p-7 shadow-2xl shadow-emerald-950/60 text-white relative overflow-hidden select-none">
+    <div className="bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#022c22] border-2 border-b-[6px] border-[#fbbf24] border-b-amber-700 rounded-[32px] p-5 sm:p-7 shadow-2xl text-white relative overflow-hidden select-none">
       {/* Decorative Islamic Background Pattern */}
       <div className="absolute inset-0 opacity-5 pointer-events-none artistic-pattern" />
 
       {/* Header Info */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#065f46]/80 pb-4 relative z-10">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b-2 border-emerald-600/30 pb-4 relative z-10">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] flex items-center justify-center shadow-inner">
+          <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black border-2 border-b-4 border-amber-600 shadow-md">
             <Headphones className="w-6 h-6 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b]">
+              <span className="text-[11px] font-black px-3 py-1 rounded-full bg-amber-400 text-emerald-950 shadow-sm">
                 مقرر الاستماع والتكرار
               </span>
-              <span className="text-xs text-[#86efac] font-medium">
+              <span className="text-xs text-[#86efac] font-bold">
                 بصوت: {reciterConfig.label}
               </span>
             </div>
-            <h3 className="text-lg sm:text-xl font-bold font-heading text-white mt-1">
+            <h3 className="text-lg sm:text-xl font-black font-heading text-white mt-1">
               {portionHeading}
             </h3>
           </div>
@@ -500,28 +527,72 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
         {/* Repetition Status Badge */}
         <div className="flex items-center gap-2">
           {isCompletedAll ? (
-            <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-bold text-xs shadow-md">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500/25 border-2 border-emerald-400 border-b-4 border-b-emerald-600 text-emerald-300 font-black text-xs shadow-md">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              <span>أتممت الاستماع المقرر بنجاح (+{listeningPointsReward} نقاط)</span>
+              <span>أتممت الاستماع المقرر بنجاح (+{toArabicNumerals(listeningPointsReward)} نقاط)</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[#022c22] border border-[#065f46] text-[#fbbf24] font-bold text-xs">
-              <Clock className="w-4 h-4" />
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[#011a14] border-2 border-emerald-700/60 border-b-4 border-b-[#011a14] text-amber-300 font-black text-xs shadow-sm">
+              <Clock className="w-4 h-4 text-amber-400" />
               <span>
-                المطلوب: {requiredRepetitions} تكرارات • المنجز: {completedRepetitions}
+                المطلوب: {toArabicNumerals(requiredRepetitions)} تكرارات • المنجز: {toArabicNumerals(completedRepetitions)}
               </span>
             </div>
           )}
         </div>
       </div>
 
+      {/* Reciter Selector Switcher (التبديل بين المشايخ بضغطة واحدة وبشكل مباشر) */}
+      <div className="mt-4 mb-2 p-3 sm:p-3.5 rounded-2xl bg-[#011a14]/90 border-2 border-emerald-700/60 border-b-4 border-b-[#011a14] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 relative z-10 text-xs shadow-md">
+        <div className="flex items-center gap-2 text-slate-200 font-black">
+          <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>تبديل القارئ المفضل:</span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {Object.entries(EVERY_AYAH_RECITERS).map(([key, item]) => {
+            const isSelected = selectedSheikhKey === key;
+            const shortLabel =
+              key === 'minshawi' ? 'المنشاوي (المعلم)' :
+              key === 'hussary' ? 'الحصري (المعلم)' :
+              key === 'afasy' ? 'مشاري العفاسي' :
+              key === 'abdulbasit' ? 'عبد الباسط (مرتل)' :
+              key === 'hudhaify' ? 'الحذيفي' :
+              'أيمن سويد';
+
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  if (selectedSheikhKey === key) return;
+                  setSelectedSheikhKey(key);
+                  if (isPlayingRef.current) {
+                    setTimeout(() => {
+                      playSequenceAt(sequenceIndexRef.current);
+                    }, 50);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition-all cursor-pointer border-2 active:translate-y-[2px] active:border-b-2 shadow-sm ${
+                  isSelected
+                    ? 'bg-amber-400 text-emerald-950 border-amber-300 border-b-4 border-b-amber-600 shadow-md'
+                    : 'bg-[#022c22] text-slate-200 hover:text-white border-emerald-700/60 border-b-4 border-b-[#011a14] hover:bg-[#064e3b]'
+                }`}
+                title={item.label}
+              >
+                {shortLabel}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Ayah Display Box (Verse by Verse with Smooth Animation) */}
-      <div className="my-6 relative z-10 min-h-[160px] sm:min-h-[190px] flex flex-col justify-center items-center p-6 sm:p-8 rounded-3xl bg-[#011a14]/90 border-2 border-[#fbbf24]/30 shadow-inner text-center">
+      <div className="my-6 relative z-10 min-h-[160px] sm:min-h-[190px] flex flex-col justify-center items-center p-6 sm:p-8 rounded-3xl bg-[#011a14] border-2 border-emerald-700/60 border-b-4 border-b-[#011a14] shadow-inner text-center">
         {/* Ayah Indicator */}
-        <div className="text-[11px] font-bold text-[#86efac]/80 mb-3 flex flex-wrap items-center justify-center gap-2">
-          <span>سورة {currentPairSurahName} • الآية ({currentPair.ayah})</span>
-          <span className="px-2.5 py-0.5 rounded-full bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]/40 font-mono">
-            {sequenceIndex + 1} من {ayahSequence.length}
+        <div className="text-xs font-black text-[#86efac] mb-3 flex flex-wrap items-center justify-center gap-2">
+          <span>سورة {currentPairSurahName} • الآية ({toArabicNumerals(currentPair.ayah)})</span>
+          <span className="px-3 py-0.5 rounded-full bg-[#064e3b] text-amber-300 border border-emerald-600/50 font-mono font-black">
+            {toArabicNumerals(sequenceIndex + 1)} من {toArabicNumerals(ayahSequence.length)}
           </span>
         </div>
 
@@ -535,7 +606,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
           ) : (
             <div className="font-mushaf text-2xl sm:text-3xl md:text-4xl text-[#f0f9f6] leading-[2] sm:leading-[2.15] text-center max-w-2xl px-2">
               {normalizeKfgqpcHafsText(currentAyahText)}{'\u00A0'}
-              <span className="text-[#fbbf24] mx-1 select-none">
+              <span className="text-amber-400 mx-1 select-none">
                 {toArabicNumerals(currentPair.ayah)}
               </span>
             </div>
@@ -545,31 +616,31 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
 
       {/* Progress Bar for Repetitions */}
       <div className="space-y-1.5 mb-6 relative z-10">
-        <div className="flex items-center justify-between text-xs text-[#86efac]">
-          <span className="font-medium">تقدم التكرار الإجمالي:</span>
-          <span className="font-bold text-[#fbbf24]">
-            {completedRepetitions} من {requiredRepetitions} مرات ({progressPercent}%)
+        <div className="flex items-center justify-between text-xs text-[#86efac] font-bold">
+          <span>تقدم التكرار الإجمالي:</span>
+          <span className="font-black text-amber-300 font-mono">
+            {toArabicNumerals(completedRepetitions)} من {toArabicNumerals(requiredRepetitions)} مرات ({toArabicNumerals(progressPercent)}٪)
           </span>
         </div>
-        <div className="w-full h-3 rounded-full bg-[#022c22] border border-[#065f46] overflow-hidden p-0.5">
+        <div className="w-full h-3.5 rounded-full bg-[#011a14] border-2 border-emerald-800/80 border-b-2 overflow-hidden p-0.5">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-[#fbbf24] to-emerald-400 transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-500"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
 
       {/* Controls Bar (Platform Theme: Golden & Emerald) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-[#065f46]/80 relative z-10">
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t-2 border-emerald-600/30 relative z-10">
         {/* Play/Pause Button */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleTogglePlay}
-            className={`px-6 py-3.5 rounded-2xl font-black text-sm flex items-center gap-2.5 transition-all cursor-pointer shadow-xl ${
+            className={`px-7 py-3.5 rounded-2xl font-black text-sm flex items-center gap-2.5 transition-all cursor-pointer shadow-xl border-2 border-amber-300 border-b-6 border-b-amber-600 active:translate-y-[2px] active:border-b-2 ${
               isPlaying
-                ? 'bg-amber-500 hover:bg-amber-400 text-[#064e3b] shadow-amber-950/40 ring-2 ring-[#fbbf24]'
-                : 'bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#fbbf24] text-[#064e3b] shadow-amber-950/50'
+                ? 'bg-amber-500 hover:bg-amber-400 text-emerald-950'
+                : 'bg-amber-400 hover:bg-amber-300 text-emerald-950'
             }`}
           >
             {isPlaying ? (
@@ -582,7 +653,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
                 <Play className="w-5 h-5 fill-current" />
                 <span>
                   {completedRepetitions > 0 && !isCompletedAll
-                    ? `مواصلة التكرار (${completedRepetitions + 1} من ${requiredRepetitions})`
+                    ? `مواصلة التكرار (${toArabicNumerals(completedRepetitions + 1)} من ${toArabicNumerals(requiredRepetitions)})`
                     : 'بدء الاستماع والتكرار'}
                 </span>
               </>
@@ -594,7 +665,7 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
             <button
               type="button"
               onClick={handleResetRepetitions}
-              className="p-3 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] text-[#86efac] border border-[#065f46] text-xs font-bold transition-colors cursor-pointer"
+              className="p-3.5 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] text-emerald-300 border-2 border-emerald-700/60 border-b-4 border-b-[#011a14] active:translate-y-[2px] active:border-b-2 text-xs font-bold transition-all cursor-pointer shadow-sm"
               title="إعادة بدء التكرارات من البداية"
             >
               <RotateCcw className="w-4 h-4" />
@@ -607,15 +678,15 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
           <button
             type="button"
             onClick={() => setIsMuted(prev => !prev)}
-            className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46] text-[#86efac] hover:text-white transition-colors cursor-pointer"
+            className="p-3.5 rounded-2xl bg-[#022c22] border-2 border-emerald-700/60 border-b-4 border-b-[#011a14] active:translate-y-[2px] active:border-b-2 text-emerald-300 hover:text-white transition-all cursor-pointer shadow-sm"
             title={isMuted ? 'إلغاء كتم الصوت' : 'كتم الصوت'}
           >
-            {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
           </button>
 
           <div className="text-right">
-            <span className="text-[11px] text-[#86efac]/80 block">نظام الحساب الآلي</span>
-            <span className="text-[10px] text-[#fbbf24] font-bold">
+            <span className="text-[11px] text-[#86efac] font-bold block">نظام الحساب الآلي</span>
+            <span className="text-[10px] text-amber-300 font-black">
               يُسجل التكرار تلقائياً عند سماع المقطع كاملاً
             </span>
           </div>

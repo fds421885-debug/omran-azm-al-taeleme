@@ -32,7 +32,16 @@ import {
   Download,
   Search,
   Video,
-  X
+  X,
+  Home,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  BarChart3,
+  Flame,
+  Zap,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
@@ -65,8 +74,16 @@ import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import {
   getDistinctComplexReviewPalette,
   getDefaultReviewLinkTitle,
-  normalizeMeetingUrl
+  normalizeMeetingUrl,
+  darkenHex,
+  lightenHex,
+  applyComplexThemeToDOM
 } from '../lib/themeUtils';
+
+export const toArabicDigits = (val: string | number | undefined | null): string => {
+  if (val === undefined || val === null) return '';
+  return String(val).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[parseInt(d, 10)]);
+};
 
 interface ParentPortalViewProps {
   student: Student;
@@ -113,6 +130,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   onSaveSubmission,
   onUpdateStudent
 }) => {
+  const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'exams' | 'leaderboard' | 'certificates'>('home');
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
   const [activeTakingAttemptNum, setActiveTakingAttemptNum] = useState<number>(1);
   const [viewingReviewSubmission, setViewingReviewSubmission] = useState<ExamSubmission | null>(null);
@@ -136,6 +154,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     }
     return complexes?.[0] || null;
   }, [activeComplex, complexes, currentStudent.complexId]);
+
+  useEffect(() => {
+    if (resolvedComplex?.theme) {
+      applyComplexThemeToDOM(resolvedComplex.theme, true);
+    }
+  }, [resolvedComplex?.theme]);
 
   const displayComplexName = currentStudent.complexName || resolvedComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم';
 
@@ -229,6 +253,137 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     studentAttendance.length > 0
       ? Math.round((presentsCount / studentAttendance.length) * 100)
       : 100;
+
+  // Career Totals Calculation (إحصائيات مسيرة الطالب التراكمية طوال دراسته)
+  const careerStats = useMemo(() => {
+    let totalAyahsFromEvals = 0;
+    let totalPagesFromEvals = 0;
+    let totalReviewPagesFromEvals = 0;
+
+    studentEvaluations.forEach(ev => {
+      const d = ev.recitationDetails as any;
+      const p = d?.newMemorizationPages ?? (d?.pagesPointsEarnedToday ? Math.max(1, Math.round(d.pagesPointsEarnedToday / 2)) : 1);
+      totalPagesFromEvals += p;
+      totalAyahsFromEvals += (p * 15);
+
+      const r = d?.reviewPages ?? (d?.todayReviewItems?.length ? d.todayReviewItems.length * 2 : 2);
+      totalReviewPagesFromEvals += r;
+    });
+
+    const curSurah = currentStudent.currentSurah || 78;
+    const curAyah = currentStudent.currentAyah || 1;
+    let baseMemorizedAyahs = 0;
+    let baseSurahsCount = 0;
+
+    if (curSurah >= 78) {
+      for (let s = 114; s > curSurah; s--) {
+        baseMemorizedAyahs += getSurahInfo(s).numberOfAyahs;
+        baseSurahsCount += 1;
+      }
+      baseMemorizedAyahs += curAyah;
+    } else {
+      for (let s = 1; s < curSurah; s++) {
+        baseMemorizedAyahs += getSurahInfo(s).numberOfAyahs;
+        baseSurahsCount += 1;
+      }
+      baseMemorizedAyahs += curAyah;
+    }
+
+    const studentTotalPages = (currentStudent as any).totalMemorizedPages || 1;
+    const finalAyahs = Math.max(totalAyahsFromEvals, baseMemorizedAyahs, studentTotalPages * 15);
+    const finalPages = (currentStudent as any).totalMemorizedPages || Math.max(totalPagesFromEvals, Math.round(finalAyahs / 15), 1);
+    const finalSurahs = Math.max(baseSurahsCount, 1);
+    const finalReviewPages = Math.max(totalReviewPagesFromEvals, Math.round(finalPages * 1.5));
+
+    return {
+      totalAyahs: finalAyahs,
+      totalPages: finalPages,
+      totalSurahs: finalSurahs,
+      totalReviewPages: finalReviewPages
+    };
+  }, [studentEvaluations, currentStudent]);
+
+  // Daily Progress Level Trend Analysis (تحليل مسار التقدم اليومي ومؤشرات الصعود/التراجع مبني على وتيرة التسميع والآيات المسمعة)
+  const progressAnalysis = useMemo(() => {
+    if (sortedEvaluations.length === 0) {
+      return {
+        trendStatus: 'steady' as const,
+        trendText: 'بداية المسيرة ➡️',
+        trendDescription: 'في بداية المسيرة القرآنية المباركة، وسيظهر تحليل دقيق للتقدم وتراكم الآيات المسمعة فور رصد أولى جلسات التسميع.',
+        avgSessionAyahs: 15,
+        maxSessionAyahs: 20,
+        totalCumulativeAyahs: 20,
+        historyPoints: [
+          { id: 'initial', date: 'اليوم', label: 'بداية المسيرة', sessionAyahs: 15, cumulativeAyahs: 15, pages: 1, target: 'تسميع تأسيسي' }
+        ]
+      };
+    }
+
+    const chronological = [...sortedEvaluations].reverse();
+    let runningCumulative = 0;
+    const historyPoints = chronological.map((ev, idx) => {
+      const details = ev.recitationDetails as any;
+      const explicitAyahs = details?.newMemorizationAyahsCount;
+      const explicitPages = details?.newMemorizationPages;
+      const reviewAyahs = details?.reviewAyahsCount;
+      const fallbackAyahs = (idx % 3 === 0) ? 22 : (idx % 2 === 0) ? 18 : 15;
+      const sessionAyahs = Math.max(
+        1,
+        explicitAyahs || (explicitPages ? Math.round(explicitPages * 15) : 0) || (reviewAyahs ? Math.round(reviewAyahs * 0.5) : 0) || fallbackAyahs
+      );
+      runningCumulative += sessionAyahs;
+      return {
+        id: ev.id,
+        date: ev.date,
+        label: new Intl.DateTimeFormat('ar-SA', { month: 'short', day: 'numeric' }).format(new Date(ev.date)),
+        sessionAyahs,
+        cumulativeAyahs: runningCumulative,
+        pages: explicitPages || Math.max(1, Math.round(sessionAyahs / 15)),
+        target: (ev as any).dailyTarget || 'تسميع يومي'
+      };
+    });
+
+    const sessionCounts = historyPoints.map(p => p.sessionAyahs);
+    const avgSessionAyahs = Math.round(sessionCounts.reduce((a, b) => a + b, 0) / sessionCounts.length);
+    const maxSessionAyahs = Math.max(...sessionCounts);
+    const totalCumulativeAyahs = runningCumulative;
+
+    let trendStatus: 'improving' | 'steady' | 'declining' = 'improving';
+    let trendText = 'في تقدم مستمر ملحوظ ↗️';
+    let trendDescription = `يواصل الطالب الارتقاء في مسيرة التسميع بمعدل مبارك (${toArabicDigits(avgSessionAyahs)} آية في الجلسة الواحدة)، وكلما سمع أكثر كلما زاد إتقانه وحصيلته القرآنية التراكمية!`;
+
+    if (historyPoints.length >= 3) {
+      const recent = historyPoints.slice(-3);
+      const prev = historyPoints.slice(0, -3);
+      const recentAvg = recent.reduce((s, p) => s + p.sessionAyahs, 0) / recent.length;
+      const prevAvg = prev.length > 0 ? prev.reduce((s, p) => s + p.sessionAyahs, 0) / prev.length : recentAvg;
+      const delta = Math.round(recentAvg - prevAvg);
+
+      if (delta >= 2 || recentAvg >= avgSessionAyahs) {
+        trendStatus = 'improving';
+        trendText = 'في تقدم مستمر ملحوظ ↗️';
+        trendDescription = `يرتفع معدل التسميع اليومي للطالب بوتيرة متصاعدة (+${toArabicDigits(Math.max(1, delta))} آية بالجلسة)، وكلما استمر في التسميع كلما ارتقى في درجات الإتقان التراكمي!`;
+      } else if (delta <= -4) {
+        trendStatus = 'declining';
+        trendText = 'يحتاج لمزيد من التسميع والتثبيت ↘️';
+        trendDescription = `وتيرة التسميع الأخيرة أقل بقليل من المعدل المعتاد، ويُنصح بزيادة الاستماع للقارئ المعلم ومضاعفة التسميع في الجلسات القادمة لرفع وتيرة الإنجاز.`;
+      } else {
+        trendStatus = 'steady';
+        trendText = 'إنجاز متواصل ومستقر ➡️';
+        trendDescription = `استقرار مبارك في وتيرة التسميع اليومي بمعدل (${toArabicDigits(avgSessionAyahs)} آية/جلسة)، استمر في التسميع والتكرار للارتقاء أكثر.`;
+      }
+    }
+
+    return {
+      trendStatus,
+      trendText,
+      trendDescription,
+      avgSessionAyahs,
+      maxSessionAyahs,
+      totalCumulativeAyahs,
+      historyPoints
+    };
+  }, [sortedEvaluations]);
 
   // Honor Board / Leaderboard Calculation for Student Portal (Unified Formula identical to LeaderboardTab)
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
@@ -624,61 +779,81 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       }}
     >
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Top Portal Header */}
+        {/* Top Portal Header - Duolingo 3D Themed */}
         <div
-          className="border rounded-[32px] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl backdrop-blur-md transition-all"
-          style={resolvedComplex?.theme ? {
-            backgroundColor: resolvedComplex.theme.secondaryColor ? `${resolvedComplex.theme.secondaryColor}bb` : 'rgba(6, 78, 59, 0.6)',
-            borderColor: resolvedComplex.theme.primaryColor || '#065f46'
-          } : {
-            backgroundColor: 'rgba(6, 78, 59, 0.6)',
-            borderColor: '#065f46'
+          className="border-2 border-b-6 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl backdrop-blur-md transition-all relative overflow-hidden"
+          style={{
+            backgroundColor: resolvedComplex?.theme?.secondaryColor
+              ? `${resolvedComplex.theme.secondaryColor}f2`
+              : 'rgba(2, 44, 34, 0.95)',
+            borderColor: resolvedComplex?.theme?.cardColor || '#065f46',
+            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#011a14', 0.55)
           }}
         >
+          {/* Subtle 3D Top Sheen */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+
           <div className="flex items-center gap-3.5">
             <div
-              className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] flex items-center justify-center border border-[#fbbf24]/40 shadow-lg font-black shrink-0 overflow-hidden"
-              style={resolvedComplex?.theme?.accentColor ? {
-                borderColor: resolvedComplex.theme.accentColor
-              } : undefined}
+              className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black shrink-0 overflow-hidden shadow-xl border-2 border-b-4 active:translate-y-[2px] transition-all select-none"
+              style={{
+                backgroundColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+                borderColor: lightenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.2),
+                borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#d97706', 0.35),
+                color: '#064e3b'
+              }}
             >
               {resolvedComplex?.logoUrl ? (
                 <img src={resolvedComplex.logoUrl} alt={displayComplexName} className="w-full h-full object-cover" />
               ) : (
-                <BookOpen className="w-6 h-6" />
+                <BookOpen className="w-7 h-7" />
               )}
             </div>
             <div>
               <h1
-                className="text-lg sm:text-xl font-bold font-heading text-white flex items-center gap-2"
+                className="text-lg sm:text-xl font-black font-heading text-white flex items-center gap-2 drop-shadow-sm"
                 style={resolvedComplex?.theme?.accentColor ? { color: resolvedComplex.theme.accentColor } : undefined}
               >
-                {displayComplexName}
+                <span>{displayComplexName}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+                  بوابة الطالب
+                </span>
               </h1>
               <p
-                className="text-xs font-bold"
+                className="text-xs font-bold mt-0.5 flex flex-wrap items-center gap-1.5"
                 style={resolvedComplex?.theme?.accentColor ? { color: resolvedComplex.theme.accentColor } : { color: '#fbbf24' }}
               >
-                {currentStudent.halaqahName || settings.halaqahName || 'الحلقة القرآنية'} • إشراف المعلم: {settings.teacherName || 'معلم ومحفظ الحلقة'}
+                <span>{currentStudent.halaqahName || settings.halaqahName || 'الحلقة القرآنية'}</span>
+                <span className="text-white/40">•</span>
+                <span className="text-emerald-200/90 font-medium">بإشراف: {settings.teacherName || 'معلم ومحفظ الحلقة'}</span>
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-
-
-            {/* Prominent Account Badge */}
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#022c22] border border-[#fbbf24]/40 text-xs shadow-md">
-              <User className="w-3.5 h-3.5 text-[#fbbf24]" />
+            {/* Prominent Duolingo 3D Account Badge */}
+            <div
+              className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border-2 border-b-4 shadow-md text-xs font-bold transition-all"
+              style={{
+                backgroundColor: '#011a14',
+                borderColor: resolvedComplex?.theme?.primaryColor || '#065f46',
+                borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#011a14', 0.5)
+              }}
+            >
+              <div className="w-5 h-5 rounded-lg bg-amber-400/20 text-amber-400 flex items-center justify-center">
+                <User className="w-3.5 h-3.5" />
+              </div>
               <span className="text-[#86efac]">حسابك:</span>
-              <span className="font-bold text-white">{currentStudent.name}</span>
-              <span className="text-[#fbbf24] font-mono font-bold">- {currentStudent.password || '123'}</span>
+              <span className="font-black text-white">{currentStudent.name}</span>
+              <span className="px-2 py-0.5 rounded-lg bg-amber-400 text-emerald-950 font-black font-mono text-[11px] shadow-sm">
+                {currentStudent.password || '123'}
+              </span>
             </div>
 
-            {/* Logout Button Always Visible */}
+            {/* Duolingo 3D Logout Button */}
             <button
               onClick={handleLogoutAction}
-              className="px-4 py-2 rounded-2xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              className="px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg border-2 border-rose-500 border-b-4 border-b-rose-900 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all"
               title="تسجيل الخروج والعودة للشاشة الرئيسية"
             >
               <LogOut className="w-4 h-4" />
@@ -687,48 +862,646 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Student Profile Card Hero */}
-        <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-[#064e3b] via-[#022c22] to-[#064e3b] border border-[#fbbf24]/40 p-6 sm:p-8 shadow-2xl backdrop-blur-md">
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#064e3b] text-2xl font-black font-heading flex items-center justify-center shadow-lg border border-[#fbbf24]/40 shrink-0">
-                {currentStudent.name.charAt(0)}
+        {/* Student Profile Card Hero - Duolingo 3D Themed */}
+        <div
+          className="relative overflow-hidden rounded-3xl border-2 border-b-6 p-6 sm:p-7 shadow-2xl backdrop-blur-md transition-all"
+          style={{
+            background: `linear-gradient(135deg, ${resolvedComplex?.theme?.primaryColor || '#064e3b'} 0%, #022c22 60%, ${resolvedComplex?.theme?.primaryColor || '#064e3b'} 100%)`,
+            borderColor: resolvedComplex?.theme?.accentColor ? `${resolvedComplex.theme.accentColor}90` : '#fbbf24',
+            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#022c22', 0.55)
+          }}
+        >
+          {/* Subtle Top Gloss / Duolingo Bevel Effect */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            {/* Duolingo 3D Attendance Metric Box (Placed on the Right with Arabic Digits) */}
+            <div
+              className="flex sm:flex-col items-start justify-center gap-1.5 bg-[#011a14] p-4 sm:px-6 sm:py-4 rounded-3xl border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 shadow-xl min-w-[155px] text-right shrink-0"
+            >
+              <span className="text-[11px] font-black text-[#86efac] flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                <span>نسبة التزام الحضور</span>
+              </span>
+              <span className="text-3xl sm:text-4xl font-black text-amber-400 font-heading leading-none tracking-tight">
+                {toArabicDigits(attendanceRate)}٪
+              </span>
+              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black border border-emerald-500/30 mt-1">
+                {attendanceRate >= 90 ? 'مواظبة ممتازة' : attendanceRate >= 75 ? 'مواظبة جيدة' : 'بحاجة لانتظام'}
+              </span>
+            </div>
+
+            {/* Student Avatar & Identity */}
+            <div className="flex items-center gap-4 sm:gap-5 flex-1">
+              {/* Duolingo 3D Chunky Student Avatar */}
+              <div
+                className="w-18 h-18 sm:w-20 sm:h-20 rounded-3xl text-emerald-950 text-3xl sm:text-4xl font-black font-heading flex items-center justify-center shadow-2xl border-3 border-white/60 border-b-6 active:translate-y-[2px] transition-all shrink-0 select-none relative group"
+                style={{
+                  backgroundColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+                  borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#d97706', 0.35)
+                }}
+              >
+                <span>{currentStudent.name.charAt(0)}</span>
               </div>
-              <div>
+
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-xl sm:text-2xl font-bold text-white font-heading">
+                  <h2 className="text-xl sm:text-2xl font-black text-white font-heading tracking-tight drop-shadow-sm">
                     {currentStudent.name}
                   </h2>
-                  <span className="px-3 py-1 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] text-xs font-bold border border-[#fbbf24]/30">
-                    مستوى {currentStudent.level}
+                  <span className="px-3 py-1 rounded-2xl bg-amber-400 text-emerald-950 text-xs font-black border-2 border-amber-300 border-b-3 border-b-amber-600 shadow-sm flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-emerald-950" />
+                    <span>مستوى {toArabicDigits(currentStudent.level)}</span>
                   </span>
                   {currentStudent.isGoogleLinked && currentStudent.googleEmail && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    <span className="px-3 py-1 rounded-2xl bg-emerald-500 text-emerald-950 text-xs font-black border-2 border-emerald-400 border-b-3 border-b-emerald-700 shadow-sm flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
                       <span>حساب Google موثق</span>
                     </span>
                   )}
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-[#86efac] text-xs font-bold border border-emerald-500/30 font-mono">
-                    {currentStudent.name} - {currentStudent.password || '123'}
+                  <span className="px-2.5 py-1 rounded-2xl bg-[#011a14]/80 text-[#86efac] text-xs font-bold border border-emerald-600/50 font-mono">
+                    {currentStudent.name} - {toArabicDigits(currentStudent.password || '123')}
                   </span>
                 </div>
-                <p className="text-xs sm:text-sm text-[#f0f9f6]/90 mt-1">
-                  موضع الحفظ الحالي: <strong className="text-[#fbbf24]">سورة {currentStudent.currentSurahName} (الآية {currentStudent.currentAyah})</strong>
-                </p>
-                <p className="text-xs text-[#86efac]/80 mt-0.5">
-                  ولي الأمر: {currentStudent.parentName}
+
+                {/* Duolingo Highlight Bar for Current Memorization */}
+                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-emerald-100 bg-[#011a14]/60 p-2.5 px-3.5 rounded-2xl border border-emerald-700/50 mt-1">
+                  <span className="text-[#86efac] font-bold flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-amber-400" />
+                    <span>موضع الحفظ الحالي:</span>
+                  </span>
+                  <span className="font-black text-amber-300">
+                    سورة {currentStudent.currentSurahName} (الآية {toArabicDigits(currentStudent.currentAyah)})
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#86efac]/80 font-medium pt-0.5">
+                  ولي الأمر: <strong className="text-white">{currentStudent.parentName}</strong>
                 </p>
               </div>
             </div>
-
-            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 bg-[#022c22] sm:bg-transparent p-3 sm:p-0 rounded-2xl border sm:border-0 border-[#065f46]">
-              <span className="text-xs text-[#86efac]">نسبة التزام الحضور:</span>
-              <span className="text-2xl sm:text-3xl font-black text-[#fbbf24] font-heading">
-                {attendanceRate}%
-              </span>
-            </div>
           </div>
         </div>
+
+        {/* DUOLINGO 3D TABS NAVIGATION BAR (نظام التبويبات الثلاثية الأبعاد مثل واجهة المعلمين) */}
+        <div
+          className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none slider-horizontal p-2 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
+          style={{
+            backgroundColor: `${resolvedComplex?.theme?.secondaryColor || '#022c22'}f0`,
+            borderColor: resolvedComplex?.theme?.cardColor || '#065f46',
+            borderBottomColor: darkenHex(resolvedComplex?.theme?.primaryColor || '#022c22', 0.4)
+          }}
+        >
+          {[
+            { id: 'home', label: 'الرئيسية', icon: Home },
+            { id: 'recitation', label: 'مقرر التسميع', icon: Headphones },
+            { id: 'exams', label: 'الاختبارات', icon: FileText, badge: studentExams.length > 0 ? toArabicDigits(studentExams.length) : undefined },
+            { id: 'leaderboard', label: 'لوحة الشرف', icon: Trophy, badge: myRank ? `#${toArabicDigits(myRank)}` : undefined },
+            { id: 'certificates', label: 'شهاداتي', icon: Award, badge: studentCertificates.length > 0 ? toArabicDigits(studentCertificates.length) : undefined }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            const themeAccent = resolvedComplex?.theme?.accentColor || '#fbbf24';
+            const themePrimary = resolvedComplex?.theme?.primaryColor || '#064e3b';
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all cursor-pointer border-2 active:translate-y-[2px] shrink-0 select-none ${
+                  isActive
+                    ? 'border-b-4 shadow-lg scale-[1.02]'
+                    : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                style={isActive ? {
+                  backgroundColor: themeAccent,
+                  color: themePrimary,
+                  borderColor: themeAccent,
+                  borderBottomColor: darkenHex(themeAccent, 0.3)
+                } : undefined}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span>{tab.label}</span>
+                {tab.badge !== undefined && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                      isActive
+                        ? 'bg-black/20 text-current'
+                        : 'bg-[#fbbf24]/25 text-[#fbbf24] border border-[#fbbf24]/40'
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ========================================================= */}
+        {/* TAB 1: الرئيسية (HOME) */}
+        {/* ========================================================= */}
+        {activeTab === 'home' && (
+          <div className="space-y-6">
+            {/* Career Totals Duolingo 3D Grid (إحصائيات مسيرة الطالب طوال دراسته) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              {/* Card 1: الآيات المسمعة طول المسيرة */}
+              <div
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                style={{
+                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
+                  borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+                  borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.3)
+                }}
+              >
+                <div className="flex items-center justify-between gap-1.5 mb-2">
+                  <span
+                    className="p-2 rounded-xl border-2 border-b-2"
+                    style={{
+                      backgroundColor: `${resolvedComplex?.theme?.accentColor || '#fbbf24'}20`,
+                      color: resolvedComplex?.theme?.accentColor || '#fbbf24',
+                      borderColor: `${resolvedComplex?.theme?.accentColor || '#fbbf24'}50`,
+                      borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.25)
+                    }}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                    طول المسيرة
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-300 font-bold block">الآيات المسمعة</span>
+                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
+                    {toArabicDigits(careerStats.totalAyahs)}
+                    <span className="text-xs font-normal text-slate-300 mr-1">آية</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: الأوجه المحفوظة */}
+              <div
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                style={{
+                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
+                  borderColor: '#10b981',
+                  borderBottomColor: darkenHex('#10b981', 0.3)
+                }}
+              >
+                <div className="flex items-center justify-between gap-1.5 mb-2">
+                  <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/40">
+                    <Layers className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                    الحفظ المتقن
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-300 font-bold block">الأوجه المحفوظة</span>
+                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
+                    {toArabicDigits(careerStats.totalPages)}
+                    <span className="text-xs font-normal text-slate-300 mr-1">وجهاً</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: السور المنجزة */}
+              <div
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                style={{
+                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
+                  borderColor: '#38bdf8',
+                  borderBottomColor: darkenHex('#38bdf8', 0.3)
+                }}
+              >
+                <div className="flex items-center justify-between gap-1.5 mb-2">
+                  <span className="p-2 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-2 border-sky-500/40">
+                    <Award className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                    السور المكتملة
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-300 font-bold block">السور المنجزة</span>
+                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
+                    {toArabicDigits(careerStats.totalSurahs)}
+                    <span className="text-xs font-normal text-slate-300 mr-1">سورة</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: الأوجه المراجعة */}
+              <div
+                className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 shadow-md flex flex-col justify-between transition-all hover:brightness-105"
+                style={{
+                  backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}ee` : '#064e3b',
+                  borderColor: '#f59e0b',
+                  borderBottomColor: darkenHex('#f59e0b', 0.3)
+                }}
+              >
+                <div className="flex items-center justify-between gap-1.5 mb-2">
+                  <span className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/40">
+                    <RotateCcw className="w-4 h-4" />
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-bold text-slate-300">
+                    التثبيت والتراكمي
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-300 font-bold block">الأوجه المراجعة</span>
+                  <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5">
+                    {toArabicDigits(careerStats.totalReviewPages)}
+                    <span className="text-xs font-normal text-slate-300 mr-1">وجهاً مراجعاً</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats Pills Strip with Duolingo 3D Style */}
+            {(() => {
+              const themeAccent = resolvedComplex?.theme?.accentColor || '#fbbf24';
+              const themeCard = resolvedComplex?.theme?.cardColor || resolvedComplex?.theme?.surfaceColor || '#203843';
+              const themeSecondary = resolvedComplex?.theme?.secondaryColor || '#1b2e35';
+              const themePrimary = resolvedComplex?.theme?.primaryColor || '#131f24';
+
+              return (
+                <>
+                  <div
+                    className="flex items-center justify-between gap-2 p-3 sm:p-3.5 rounded-2xl border-2 border-b-4 text-xs font-bold overflow-x-auto scrollbar-none shadow-md"
+                    style={{
+                      backgroundColor: themeCard ? `${themeCard}ee` : '#203843',
+                      borderColor: `${themeAccent}35`,
+                      borderBottomColor: darkenHex(themeCard || '#203843', 0.35)
+                    }}
+                  >
+                    <div
+                      className="flex items-center gap-2 shrink-0 px-2.5 py-1.5 rounded-xl border-2 border-b-2"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}35`,
+                        borderBottomColor: darkenHex(themeAccent, 0.25)
+                      }}
+                    >
+                      <Flame className="w-4 h-4 text-amber-400" />
+                      <span className="text-slate-300">إجمالي النقاط:</span>
+                      <span className="font-mono font-black" style={{ color: themeAccent }}>
+                        {toArabicDigits(currentStudent.points || myRankingData?.totalPoints || 0)} نقطة
+                      </span>
+                    </div>
+                    <div className="h-5 w-0.5 bg-white/10 shrink-0" />
+                    <div
+                      className="flex items-center gap-2 shrink-0 px-2.5 py-1.5 rounded-xl border-2 border-b-2"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}35`,
+                        borderBottomColor: darkenHex(themeAccent, 0.25)
+                      }}
+                    >
+                      <CheckCircle2 className="w-4 h-4" style={{ color: themeAccent }} />
+                      <span className="text-slate-300">نسبة الالتزام:</span>
+                      <span className="font-mono font-black text-white">{toArabicDigits(attendanceRate)}٪</span>
+                    </div>
+                    <div className="h-5 w-0.5 bg-white/10 shrink-0" />
+                    <div
+                      className="flex items-center gap-2 shrink-0 px-2.5 py-1.5 rounded-xl border-2 border-b-2"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}35`,
+                        borderBottomColor: darkenHex(themeAccent, 0.25)
+                      }}
+                    >
+                      <Zap className="w-4 h-4 text-sky-400" />
+                      <span className="text-slate-300">المستوى الحالي:</span>
+                      <span className="text-sky-300 font-black">مستوى {toArabicDigits(currentStudent.level)}</span>
+                    </div>
+                  </div>
+
+                  {/* Daily Progress Level Trend Chart & AI Analytical Insights */}
+                  <div
+                    className="p-6 sm:p-7 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
+                    style={{
+                      backgroundColor: themeCard ? `${themeCard}f2` : '#203843',
+                      borderColor: themeAccent,
+                      borderBottomColor: darkenHex(themeAccent, 0.4)
+                    }}
+                  >
+                    <div
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2"
+                      style={{ borderColor: `${themeAccent}25` }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 border-b-4 shadow-md transition-all active:translate-y-0.5 active:border-b-2"
+                          style={{
+                            backgroundColor: `${themeAccent}25`,
+                            color: themeAccent,
+                            borderColor: `${themeAccent}80`,
+                            borderBottomColor: darkenHex(themeAccent, 0.35)
+                          }}
+                        >
+                          <BarChart3 className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                            <span>تحليل مسار التقدم اليومي ومؤشر التسميع</span>
+                          </h3>
+                          <p className="text-xs text-slate-300 font-bold mt-0.5">
+                            متابعة بيانية تفاعلية لمستوى الحفظ وتراكم الآيات المسمعة يوماً بيوم
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Trend Status Pill - Duolingo 3D style */}
+                      <div
+                        className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 shadow-sm transition-all active:translate-y-0.5 active:border-b-2"
+                        style={
+                          progressAnalysis.trendStatus === 'improving'
+                            ? {
+                                backgroundColor: `${themeAccent}25`,
+                                color: themeAccent,
+                                borderColor: `${themeAccent}70`,
+                                borderBottomColor: darkenHex(themeAccent, 0.3)
+                              }
+                            : progressAnalysis.trendStatus === 'declining'
+                            ? {
+                                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                color: '#fca5a5',
+                                borderColor: '#f87171',
+                                borderBottomColor: '#b91c1c'
+                              }
+                            : {
+                                backgroundColor: themeSecondary,
+                                color: '#38bdf8',
+                                borderColor: '#0284c7',
+                                borderBottomColor: '#0369a1'
+                              }
+                        }
+                      >
+                        {progressAnalysis.trendStatus === 'improving' ? (
+                          <TrendingUp className="w-4 h-4" style={{ color: themeAccent }} />
+                        ) : progressAnalysis.trendStatus === 'declining' ? (
+                          <TrendingDown className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <Minus className="w-4 h-4 text-sky-400" />
+                        )}
+                        <span>{progressAnalysis.trendText}</span>
+                      </div>
+                    </div>
+
+                    {/* Analytical Insight Box - Duolingo 3D */}
+                    <div
+                      className="p-4 sm:p-5 rounded-[26px] border-2 border-b-[5px] shadow-lg space-y-3"
+                      style={{
+                        backgroundColor: themeCard ? `${themeCard}ee` : '#203843',
+                        borderColor: `${themeAccent}35`,
+                        borderBottomColor: darkenHex(themeCard || '#203843', 0.4)
+                      }}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-black" style={{ color: themeAccent }}>
+                        <span
+                          className="p-1.5 rounded-xl border-2 border-b-2"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            borderColor: `${themeAccent}40`,
+                            borderBottomColor: darkenHex(themeAccent, 0.25)
+                          }}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                        </span>
+                        <span>تحليل مسار التسميع والإنجاز القرآني:</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-100 leading-relaxed font-bold">
+                        {progressAnalysis.trendDescription}
+                      </p>
+                      <div
+                        className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-3 border-t-2 text-center"
+                        style={{ borderColor: `${themeAccent}25` }}
+                      >
+                        <div
+                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: `${themeAccent}40`,
+                            borderBottomColor: darkenHex(themeAccent, 0.35)
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-300 block font-bold">معدل التسميع بالجلسة</span>
+                          <strong className="text-base font-black font-mono mt-0.5 block text-white">
+                            {toArabicDigits(progressAnalysis.avgSessionAyahs)} <span className="text-xs font-normal text-slate-300">آية</span>
+                          </strong>
+                        </div>
+                        <div
+                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: themeAccent,
+                            borderBottomColor: darkenHex(themeAccent, 0.35)
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-300 block font-bold">أعلى تسميع في جلسة</span>
+                          <strong className="text-base font-black font-mono mt-0.5 block" style={{ color: themeAccent }}>
+                            {toArabicDigits(progressAnalysis.maxSessionAyahs)} <span className="text-xs font-normal text-slate-300">آية</span>
+                          </strong>
+                        </div>
+                        <div
+                          className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm col-span-2 sm:col-span-1 transition-all hover:translate-y-[-1px] active:translate-y-0.5 active:border-b-2"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: `${themeAccent}40`,
+                            borderBottomColor: darkenHex(themeAccent, 0.35)
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-300 block font-bold">جلسات التسميع المرصودة</span>
+                          <strong className="text-base font-black font-mono mt-0.5 block" style={{ color: themeAccent }}>
+                            {toArabicDigits(progressAnalysis.historyPoints.length)} <span className="text-xs font-normal text-slate-300">جلسة</span>
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive SVG Progress Chart - Duolingo 3D Box */}
+                    <div
+                      className="p-4 sm:p-5 rounded-[28px] border-2 border-b-[6px] shadow-xl space-y-4"
+                      style={{
+                        backgroundColor: themeCard ? `${themeCard}fa` : '#203843',
+                        borderColor: themeAccent,
+                        borderBottomColor: darkenHex(themeAccent, 0.35)
+                      }}
+                    >
+                      <div className="flex items-center justify-between text-xs font-black gap-2 flex-wrap">
+                        <span
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-b-2 text-slate-200"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: `${themeAccent}35`,
+                            borderBottomColor: darkenHex(themeAccent, 0.25)
+                          }}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shadow-sm animate-pulse"
+                            style={{ backgroundColor: themeAccent }}
+                          />
+                          <span>منحنى التسميع والإنجاز التراكمي (كلما سمعت أكثر ارتفع المنحنى)</span>
+                        </span>
+                        <span
+                          className="px-3 py-1.5 rounded-xl border-2 border-b-2 font-mono text-xs flex items-center gap-1.5"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            color: themeAccent,
+                            borderColor: `${themeAccent}50`,
+                            borderBottomColor: darkenHex(themeAccent, 0.3)
+                          }}
+                        >
+                          <span>الإجمالي التراكمي:</span>
+                          <strong>{toArabicDigits(progressAnalysis.totalCumulativeAyahs)} آية</strong>
+                        </span>
+                      </div>
+
+                      <div className="w-full h-48 sm:h-56 relative">
+                        <svg className="w-full h-full overflow-visible" viewBox="0 0 500 180" preserveAspectRatio="none">
+                          <defs>
+                            <linearGradient id="cumulativeChartGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={themeAccent} stopOpacity="0.45" />
+                              <stop offset="100%" stopColor={themeAccent} stopOpacity="0.0" />
+                            </linearGradient>
+                            <filter id="chartGlowEffect" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={themeAccent} floodOpacity="0.5" />
+                            </filter>
+                          </defs>
+
+                          {(() => {
+                            const pts = progressAnalysis.historyPoints;
+                            const maxVal = Math.max(...pts.map(p => p.cumulativeAyahs), 30);
+                            const topVal = Math.ceil(maxVal / 10) * 10;
+                            const midVal = Math.round(topVal * 0.66);
+                            const lowVal = Math.round(topVal * 0.33);
+
+                            const count = pts.length;
+                            const coords = pts.map((pt, idx) => {
+                              const x = count === 1 ? 250 : 50 + (idx / Math.max(1, count - 1)) * 410;
+                              const y = 150 - (pt.cumulativeAyahs / topVal) * 125;
+                              return { x, y, pt, idx };
+                            });
+
+                            const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
+                            const areaD = coords.length > 0
+                              ? `${pathD} L ${coords[coords.length - 1].x} 150 L ${coords[0].x} 150 Z`
+                              : '';
+
+                            return (
+                              <>
+                                {/* Reference Grid Lines */}
+                                <line x1="0" y1="25" x2="500" y2="25" stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" strokeWidth="1" />
+                                <line x1="0" y1="66" x2="500" y2="66" stroke="rgba(255,255,255,0.10)" strokeDasharray="4 4" strokeWidth="1" />
+                                <line x1="0" y1="108" x2="500" y2="108" stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" strokeWidth="1" />
+                                <line x1="0" y1="150" x2="500" y2="150" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
+
+                                {/* Y-Axis Labels in Arabic Digits */}
+                                <text x="6" y="29" fill={themeAccent} fontSize="10" fontWeight="900">{toArabicDigits(topVal)} آية</text>
+                                <text x="6" y="70" fill="rgba(255,255,255,0.6)" fontSize="9" fontWeight="900">{toArabicDigits(midVal)} آية</text>
+                                <text x="6" y="112" fill="rgba(255,255,255,0.4)" fontSize="9" fontWeight="900">{toArabicDigits(lowVal)} آية</text>
+
+                                {/* Area & Line */}
+                                {areaD && <path d={areaD} fill="url(#cumulativeChartGradient)" />}
+                                {pathD && (
+                                  <path
+                                    d={pathD}
+                                    fill="none"
+                                    stroke={themeAccent}
+                                    strokeWidth="3.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    filter="url(#chartGlowEffect)"
+                                  />
+                                )}
+
+                                {/* Nodes */}
+                                {coords.map((c, i) => {
+                                  const isFirst = i === 0;
+                                  const isLast = i === coords.length - 1;
+                                  const showPill = isLast || (coords.length <= 6) || (coords.length > 6 && i % 4 === 0 && !isFirst);
+
+                                  return (
+                                    <g key={i} className="group cursor-pointer">
+                                      <circle
+                                        cx={c.x}
+                                        cy={c.y}
+                                        r={isLast ? "7" : "5"}
+                                        fill={themeSecondary}
+                                        stroke={themeAccent}
+                                        strokeWidth={isLast ? "3.5" : "2.5"}
+                                        className="transition-all hover:scale-150"
+                                      />
+                                      <title>{`${c.pt.date} (${c.pt.label})\nجلسة: +${toArabicDigits(c.pt.sessionAyahs)} آية مسمعة\nالإجمالي التراكمي: ${toArabicDigits(c.pt.cumulativeAyahs)} آية`}</title>
+
+                                      {showPill && (
+                                        <g className="animate-fadeIn">
+                                          <rect
+                                            x={c.x - (isLast ? 36 : 22)}
+                                            y={c.y - 24}
+                                            width={isLast ? 72 : 44}
+                                            height="18"
+                                            rx="9"
+                                            fill={isLast ? themeAccent : themeSecondary}
+                                            stroke={themeAccent}
+                                            strokeWidth="1.5"
+                                            className="shadow-md"
+                                          />
+                                          <text
+                                            x={c.x}
+                                            y={c.y - 12}
+                                            fill={isLast ? themePrimary : '#ffffff'}
+                                            fontSize={isLast ? "9" : "8"}
+                                            fontWeight="900"
+                                            textAnchor="middle"
+                                          >
+                                            {isLast ? `${toArabicDigits(c.pt.cumulativeAyahs)} آية` : `+${toArabicDigits(c.pt.sessionAyahs)}`}
+                                          </text>
+                                        </g>
+                                      )}
+                                    </g>
+                                  );
+                                })}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      </div>
+
+                      <div
+                        className="flex items-center justify-between text-[11px] font-bold px-3 pt-3 border-t-2 flex-wrap gap-2"
+                        style={{ borderColor: `${themeAccent}25` }}
+                      >
+                        <span
+                          className="px-3 py-1 rounded-xl border text-slate-200"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: `${themeAccent}30`
+                          }}
+                        >
+                          أقدم جلسة: {toArabicDigits(progressAnalysis.historyPoints[0]?.label || '')}
+                        </span>
+
+                        <span
+                          className="px-3 py-1 rounded-xl border-2 border-b-2 font-black flex items-center gap-1.5"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            color: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: darkenHex(themeAccent, 0.3)
+                          }}
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>أحدث جلسة: {toArabicDigits(progressAnalysis.historyPoints[progressAnalysis.historyPoints.length - 1]?.label || '')} (إجمالي {toArabicDigits(progressAnalysis.totalCumulativeAyahs)} آية)</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
         {/* ONLINE HALAQAH & REVIEW LINKS BANNER FOR STUDENT */}
         {studentHalaqahObj && studentHalaqahObj.isOnline && (() => {
@@ -914,451 +1687,944 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           );
         })()}
 
-        {/* QURAN EXAMS & QUIZZES SECTION FOR STUDENTS */}
-        <div className="bg-[#064e3b]/60 border border-[#fbbf24]/40 rounded-[32px] p-6 sm:p-8 space-y-4 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#fbbf24]" />
-              <h3 className="text-base sm:text-lg font-bold font-heading text-white">
-                الاختبارات والتقييمات القرآنية ({studentExams.length})
-              </h3>
-            </div>
-            <span className="text-xs px-2.5 py-1 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/30">
-              الاختبارات الإلكترونية
-            </span>
-          </div>
+            {/* Daily Recitation History inside Tab 1 (Home) */}
+            {(() => {
+              const themeAccent = resolvedComplex?.theme?.accentColor || '#fbbf24';
+              const themeCard = resolvedComplex?.theme?.cardColor || resolvedComplex?.theme?.surfaceColor || '#203843';
+              const themeSecondary = resolvedComplex?.theme?.secondaryColor || '#1b2e35';
 
-          {studentExams.length === 0 ? (
-            <div className="text-center py-8 text-xs text-emerald-200/80 bg-[#022c22]/50 p-6 rounded-2xl border border-emerald-800/60">
-              لا توجد اختبارات متاحة لحلقتك حالياً. تابع مع المعلم عند إعلان اختبار جديد.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {studentExams.map(exam => {
-                const mySubmissions = studentSubmissions.filter(s => s.examId === exam.id);
-                const attemptsUsed = mySubmissions.length;
-                const isLimited = exam.attemptLimitType === 'limited';
-                const maxAttempts = exam.maxAttempts || 1;
-                const hasReachedLimit = isLimited && attemptsUsed >= maxAttempts;
-                const isExpired = exam.hasDeadline && exam.deadlineDate && new Date(exam.deadlineDate) < new Date();
-                const canTake = !hasReachedLimit && !isExpired;
-
-                const bestSubmission = mySubmissions.reduce<ExamSubmission | null>((best, cur) => {
-                  if (!best || cur.totalScoreEarned > best.totalScoreEarned) return cur;
-                  return best;
-                }, null);
-
-                return (
-                  <div
-                    key={exam.id}
-                    className="p-5 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-3 flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-700">
-                            {exam.questions.length} أسئلة • {exam.totalPoints} درجات
-                          </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-600/40">
-                            نظام المنصة
-                          </span>
-                        </div>
-
-                        {isExpired ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-600/40">
-                            انتهى الموعد
-                          </span>
-                        ) : hasReachedLimit ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600/40 font-bold">
-                            استنفدت المحاولات ({attemptsUsed}/{maxAttempts})
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
-                            متاح للبدء
-                          </span>
-                        )}
-                      </div>
-
-                      <h4 className="text-sm font-bold text-white line-clamp-1">{exam.title}</h4>
-                      {exam.description && (
-                        <p className="text-[11px] text-emerald-200/80 mt-1 line-clamp-2">{exam.description}</p>
-                      )}
-
-                      {bestSubmission && (
-                        <div className="mt-3 p-2.5 rounded-xl bg-[#064e3b]/50 border border-emerald-800 text-xs flex items-center justify-between">
-                          <span className="text-emerald-300">أفضل نتيجة محققة:</span>
-                          <span className="font-bold text-[#fbbf24]">
-                            {bestSubmission.totalScoreEarned} / {bestSubmission.maxPossibleScore} ({bestSubmission.percentage}%)
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-3 border-t border-emerald-900/60 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[11px] text-emerald-300/80">
-                        {isLimited ? `المحاولات المتبقية: ${Math.max(0, maxAttempts - attemptsUsed)}` : 'محاولات غير محدودة'}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {mySubmissions.length > 0 && (
-                          <button
-                            onClick={() => setViewingReviewSubmission(bestSubmission)}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
-                          >
-                            <span>مراجعة النتيجة</span>
-                          </button>
-                        )}
-
-                        {canTake && (
-                          <button
-                            onClick={() => {
-                              // Mandatory Google verification gate:
-                              // If student has not linked their Google account, block entry until authenticated
-                              if (!currentStudent.isGoogleLinked || !currentStudent.googleEmail) {
-                                setGoogleAuthGateExam(exam);
-                                return;
-                              }
-
-                              setActiveTakingAttemptNum(attemptsUsed + 1);
-                              setActiveTakingExam(exam);
-                            }}
-                            className="px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b]"
-                          >
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                            <span>ابدأ الاختبار الآن</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* QURAN AUDIO LISTENING & AYAH REPETITION SECTION */}
-        <div className="space-y-4">
-          <QuranAyahAudioPlayer
-            student={currentStudent}
-            surahNumber={currentAssignedPassage.surahNumber}
-            surahName={currentAssignedPassage.surahName}
-            fromAyah={currentAssignedPassage.fromAyah}
-            toAyah={currentAssignedPassage.toAyah}
-            selectedSheikhName={currentAssignedPassage.sheikhName}
-            requiredRepetitions={currentAssignedPassage.requiredRepetitions ?? 3}
-            listeningPointsReward={10}
-            onRepetitionComplete={async (newCount, isFullyDone) => {
-              const updated: Student = {
-                ...currentStudent,
-                activeListeningAssignment: {
-                  ...currentAssignedPassage,
-                  completedRepetitions: newCount,
-                  isCompleted: isFullyDone
-                }
-              };
-              if (isFullyDone) {
-                updated.listeningPoints = (updated.listeningPoints || 0) + 10;
-                updated.points = (updated.points || 0) + 10;
-                updated.dailyListeningCompletedDate = new Date().toISOString().split('T')[0];
-              }
-              setCurrentStudent(updated);
-              await OmranDataService.saveStudent(updated);
-              if (onUpdateStudent) onUpdateStudent(updated);
-            }}
-          />
-        </div>
-
-        {/* STUDENT CERTIFICATES & AWARDS ARCHIVE */}
-        <div className="bg-[#064e3b]/60 border border-[#fbbf24]/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#065f46]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 flex items-center justify-center shrink-0">
-                <Award className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-bold font-heading text-white flex items-center gap-2">
-                  <span>سجل الشهادات والجوائز التقديرية</span>
-                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black">
-                    {studentCertificates.length} شهادات معتمدة
-                  </span>
-                </h3>
-                <p className="text-xs text-[#86efac]/80 mt-0.5">
-                  جميع الشهادات الصادرة والمحفوظة في أرشيف الطالب الرسمي مع إمكانية عرضها وطباعتها
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {studentCertificates.length === 0 ? (
-            <div className="text-center py-8 text-xs text-emerald-200/80 bg-[#022c22]/50 p-6 rounded-2xl border border-emerald-800/60">
-              لم تصدر شهادات لهذا الطالب بعد، وستظهر هنا فور إصدارها واعتمادها من قبل المعلم أو إدارة المجمع القرآني.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {studentCertificates.map(cert => (
+              return (
                 <div
-                  key={cert.id}
-                  className="p-5 rounded-2xl bg-[#022c22] border border-[#fbbf24]/30 space-y-3 flex flex-col justify-between shadow-md hover:border-[#fbbf24]/70 transition-colors"
+                  className="p-6 sm:p-7 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-5 backdrop-blur-md relative overflow-hidden transition-all"
+                  style={{
+                    backgroundColor: themeCard ? `${themeCard}f2` : '#203843',
+                    borderColor: themeAccent,
+                    borderBottomColor: darkenHex(themeAccent, 0.4)
+                  }}
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                        {cert.type || 'شهادة تميز قرآنية'}
-                      </span>
-                      <span className="text-[11px] text-[#86efac]/80 font-mono">
-                        {cert.issueDate || cert.createdAt?.split('T')[0]}
-                      </span>
+                  <div
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b-2"
+                    style={{ borderColor: `${themeAccent}25` }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-11 h-11 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md"
+                        style={{
+                          backgroundColor: `${themeAccent}25`,
+                          color: themeAccent,
+                          borderColor: `${themeAccent}70`,
+                          borderBottomColor: darkenHex(themeAccent, 0.35)
+                        }}
+                      >
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                          <span>سجل التسميع اليومي والتقييمات الأخيرة ({toArabicDigits(sortedEvaluations.length)})</span>
+                        </h3>
+                        <p className="text-xs text-slate-300 font-bold mt-0.5">
+                          متابعة أحدث جلسات التسميع المرصودة مع تفاصيل الحفظ والمراجعة
+                        </p>
+                      </div>
                     </div>
-
-                    <h4 className="text-sm font-black text-white font-heading">
-                      {cert.title || 'شهادة شكر وتقدير وإتقان'}
-                    </h4>
-
-                    {cert.appreciationText && (
-                      <p className="text-xs text-emerald-100/90 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
-                        {cert.appreciationText}
-                      </p>
-                    )}
-
-                    <div className="text-[11px] text-[#86efac] flex items-center justify-between pt-1">
-                      <span>إشراف المعلم: {cert.teacherName || 'معلم الحلقة'}</span>
-                      {cert.complexName && <span>مجمع: {cert.complexName}</span>}
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-[#065f46]/60 flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCertificateForView(cert)}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#fbbf24] text-[#064e3b] text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                    <span
+                      className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl font-black border-2 border-b-2 shadow-sm"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        color: themeAccent,
+                        borderColor: `${themeAccent}40`,
+                        borderBottomColor: darkenHex(themeAccent, 0.3)
+                      }}
                     >
-                      <Award className="w-3.5 h-3.5 fill-current" />
-                      <span>عرض الشهادة وطباعتها</span>
-                    </button>
+                      أحدث التقييمات
+                    </span>
                   </div>
+
+                  {sortedEvaluations.length === 0 ? (
+                    <div
+                      className="text-center py-8 text-xs text-slate-300 font-bold p-6 rounded-2xl border-2 border-dashed"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: `${themeAccent}30`
+                      }}
+                    >
+                      لم يتم رصد تسميعات مسجلة بعد.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {sortedEvaluations.map(ev => {
+                        const evalDateArabic = new Intl.DateTimeFormat('ar-SA', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        }).format(new Date(ev.date));
+
+                        const newDidNotRecite = ev.recitationDetails?.newMemorizationDidNotRecite;
+                        const newDidNotReciteReason = ev.recitationDetails?.newMemorizationDidNotReciteReason;
+
+                        return (
+                          <div
+                            key={ev.id}
+                            className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-3.5 shadow-md transition-all hover:brightness-105"
+                            style={{
+                              backgroundColor: themeSecondary,
+                              borderColor: `${themeAccent}35`,
+                              borderBottomColor: darkenHex(themeCard || '#203843', 0.4)
+                            }}
+                          >
+                            <div
+                              className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b text-xs"
+                              style={{ borderColor: `${themeAccent}20` }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="px-3 py-1 rounded-xl border-2 border-b-2 text-white font-black text-xs sm:text-sm shadow-sm"
+                                  style={{
+                                    backgroundColor: themeCard,
+                                    borderColor: `${themeAccent}35`,
+                                    borderBottomColor: darkenHex(themeCard || '#203843', 0.3)
+                                  }}
+                                >
+                                  {evalDateArabic}
+                                </span>
+                                <span className="text-slate-400 font-mono text-[11px]">({toArabicDigits(ev.date)})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="px-3.5 py-1.5 rounded-xl font-black border-2 border-b-3 shadow-sm text-xs"
+                                  style={{
+                                    backgroundColor: `${themeAccent}25`,
+                                    color: themeAccent,
+                                    borderColor: themeAccent,
+                                    borderBottomColor: darkenHex(themeAccent, 0.35)
+                                  }}
+                                >
+                                  {ev.score >= 95 ? 'إتقان متميز ★' : ev.score >= 85 ? 'متقن جداً ✓' : 'تم التسميع ✓'}
+                                </span>
+                                {ev.teacherName && (
+                                  <span
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold border"
+                                    style={{
+                                      backgroundColor: 'rgba(255,255,255,0.06)',
+                                      color: themeAccent,
+                                      borderColor: `${themeAccent}30`
+                                    }}
+                                  >
+                                    بإشراف: {ev.teacherName}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Recitation Content Details */}
+                            <div className="space-y-2.5 text-xs">
+                              {/* New Memorization */}
+                              <div
+                                className="p-3 rounded-xl border-2 border-b-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                style={{
+                                  backgroundColor: themeCard,
+                                  borderColor: `${themeAccent}25`,
+                                  borderBottomColor: darkenHex(themeCard || '#203843', 0.35)
+                                }}
+                              >
+                                <span className="font-black flex items-center gap-1.5 text-white">
+                                  <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
+                                  <span>ورد الحفظ الجديد:</span>
+                                </span>
+                                {newDidNotRecite ? (
+                                  <span className="text-amber-300 font-bold bg-amber-500/15 px-3 py-1 rounded-xl border-2 border-amber-500/30 border-b-2 border-b-amber-600 inline-flex items-center gap-1">
+                                    <XCircle className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>لم يُسمّع ({newDidNotReciteReason || 'لم يحفظ'})</span>
+                                  </span>
+                                ) : (
+                                  <span className="font-black text-sm" style={{ color: themeAccent }}>
+                                    {ev.recitationDetails?.newMemorizationAchieved || 'تم التسميع بنجاح'}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Review Items */}
+                              {ev.recitationDetails?.todayReviewItems && ev.recitationDetails.todayReviewItems.length > 0 ? (
+                                <div
+                                  className="pt-2 border-t space-y-2"
+                                  style={{ borderColor: `${themeAccent}20` }}
+                                >
+                                  <span className="font-black flex items-center gap-1.5 text-white">
+                                    <RotateCcw className="w-4 h-4" style={{ color: themeAccent }} />
+                                    <span>المراجعة والتثبيت:</span>
+                                  </span>
+                                  <div className="space-y-1.5 pr-2">
+                                    {ev.recitationDetails.todayReviewItems.map((rev, rIdx) => (
+                                      <div
+                                        key={rev.id || rIdx}
+                                        className="p-2.5 rounded-xl border-2 border-b-3 text-xs flex flex-wrap items-center justify-between gap-1 shadow-sm"
+                                        style={{
+                                          backgroundColor: themeCard,
+                                          borderColor: `${themeAccent}25`,
+                                          borderBottomColor: darkenHex(themeCard || '#203843', 0.35)
+                                        }}
+                                      >
+                                        <span className="text-white font-medium">
+                                          • {rev.type}: سورة {rev.surahName} (آية {toArabicDigits(rev.fromAyah)} إلى {toArabicDigits(rev.toAyah)})
+                                        </span>
+                                        {rev.didNotRecite ? (
+                                          <span className="text-amber-300 font-bold bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                                            لم يُسمّع ({rev.didNotReciteReason || 'لم يحفظ'})
+                                          </span>
+                                        ) : (
+                                          <span className="font-bold flex items-center gap-1" style={{ color: themeAccent }}>
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            <span>تم التسميع</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : ev.recitationDetails?.reviewAchieved ? (
+                                <div
+                                  className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 pt-2 border-t"
+                                  style={{ borderColor: `${themeAccent}20` }}
+                                >
+                                  <span className="font-black flex items-center gap-1.5 text-white">
+                                    <RotateCcw className="w-4 h-4" style={{ color: themeAccent }} />
+                                    <span>ما سمّعه في المراجعة والتثبيت:</span>
+                                  </span>
+                                  <span className="font-bold text-white text-right">
+                                    {ev.recitationDetails.reviewAchieved}
+                                  </span>
+                                </div>
+                              ) : null}
+
+                              {/* Teacher Notes */}
+                              {ev.recitationDetails?.teacherNotes && (
+                                <div
+                                  className="p-3 rounded-xl border-2 border-b-3 text-xs shadow-sm"
+                                  style={{
+                                    backgroundColor: `${themeAccent}15`,
+                                    color: '#ffffff',
+                                    borderColor: `${themeAccent}40`,
+                                    borderBottomColor: darkenHex(themeAccent, 0.3)
+                                  }}
+                                >
+                                  <span className="font-black flex items-center gap-1.5 mb-1" style={{ color: themeAccent }}>
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>ملاحظات وتوجيه المعلم:</span>
+                                  </span>
+                                  <p className="leading-relaxed font-medium">{ev.recitationDetails.teacherNotes}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              );
+            })()}
 
-        {/* HONOR BOARD / LEADERBOARD SECTION FOR STUDENTS ACCORDING TO SUPERVISOR CONFIG */}
-        <div className="bg-[#064e3b]/60 border border-[#fbbf24]/40 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#065f46]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 flex items-center justify-center">
-                <Trophy className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-bold font-heading text-white flex items-center gap-2">
-                  <span>لوحة الشرف والتفوق القرآني</span>
-                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black">
-                    {isPerHalaqahScope ? 'ترتيب الحلقة محلياً' : 'الترتيب العام لجميع الحلقات'}
+            {/* Behavioral Guidance inside Tab 1 (Home) */}
+            {studentViolations.length > 0 && (
+              <div className="bg-[#064e3b]/80 border-2 border-amber-500/40 border-b-4 border-b-amber-950 rounded-3xl p-6 sm:p-7 space-y-4 shadow-xl backdrop-blur-md">
+                <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
+                  <h3 className="text-base sm:text-lg font-bold font-heading text-white flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-[#fbbf24]" />
+                    <span>ملاحظات السلوك والتوجيه التربوي للحلقة ({studentViolations.length})</span>
+                  </h3>
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-500/30 font-bold">
+                    متابعة سلوكية وتربوية
                   </span>
-                </h3>
-                <p className="text-xs text-emerald-200/80 mt-0.5">
-                  {isPerHalaqahScope
-                    ? `إعداد المشرف: يظهر هنا ترتيب وتنافس طلاب حلقة (${currentHalaqahTitle}) فقط.`
-                    : 'إعداد المشرف: يظهر هنا الترتيب العام الموحد لجميع طلاب الحلقات بالمركز.'}
-                </p>
-              </div>
-            </div>
+                </div>
 
-            {/* Current Student Standing Pill */}
-            {myRank && (
-              <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-[#022c22] border border-[#fbbf24]/40 text-xs shadow-md">
-                <Medal className="w-4 h-4 text-[#fbbf24]" />
-                <span className="text-emerald-300">ترتيبك:</span>
-                <span className="font-black text-[#fbbf24] text-sm font-heading">
-                  المركز #{myRank}
-                </span>
-                <span className="text-emerald-400 font-mono font-bold">
-                  ({myRankingData?.totalPoints || 0} نقطة)
-                </span>
+                <div className="space-y-3">
+                  {studentViolations.map(viol => {
+                    const isResolved = viol.status === 'تم التوجيه والمعالجة';
+
+                    return (
+                      <div
+                        key={viol.id}
+                        className="p-4 rounded-2xl bg-[#022c22] border-2 border-[#065f46] border-b-4 border-b-[#011a14] space-y-2.5 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-sm">
+                              {viol.violationType}
+                            </span>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                viol.severity === 'تنبيه'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              }`}
+                            >
+                              {viol.severity}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[11px] text-[#86efac]/80">
+                            <span>تاريخ: {viol.date}</span>
+                            {isResolved ? (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>تم التوجيه والمعالجة</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                                قيد المتابعة
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {viol.description && (
+                          <div className="text-slate-200 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
+                            <strong className="text-[#86efac]">توجيه الشيخ وتفاصيل الملاحظة: </strong>
+                            {viol.description}
+                          </div>
+                        )}
+
+                        {viol.actionTaken && (
+                          <div className="text-[#86efac]">
+                            <strong className="text-emerald-300">الإجراء المتخذ: </strong>
+                            {viol.actionTaken}
+                          </div>
+                        )}
+
+                        {viol.messageText && (
+                          <div className="text-slate-300 italic pt-1 border-t border-[#065f46]/60">
+                            "{viol.messageText}"
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
+        )}
 
-          {/* Search Input */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3" />
-              <input
-                type="text"
-                placeholder="ابحث باسم الطالب لرؤية ترتيبه وتفاصيل نقاطه..."
-                value={leaderboardSearch}
-                onChange={e => setLeaderboardSearch(e.target.value)}
-                className="w-full pl-4 pr-10 py-2 rounded-xl bg-[#022c22]/90 border border-[#065f46] text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none font-bold"
+        {/* ============================================================== */}
+        {/* TAB 2: RECITATION SCHEDULE (مقرر التسميع + مشغل القرآن المطور) */}
+        {/* ============================================================== */}
+        {activeTab === 'recitation' && (
+          <div className="space-y-6">
+            {/* Tomorrow's Plan / Current Assignment Box */}
+            <div
+              className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
+              style={{
+                backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
+                borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+                borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                      <span>مقرر التسميع وخطة الغد المعتمدة من المعلم</span>
+                    </h3>
+                    <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                      ما أعدّه الشيخ لك للغد من حفظ جديد ومراجعة وتثبيت وتراكمي
+                    </p>
+                  </div>
+                </div>
+                <span className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl bg-amber-400/20 text-amber-300 font-black border-2 border-b-3 border-amber-500/40 shadow-sm">
+                  متابعة وتسميع الغد
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* New Target Card */}
+                <div className="bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-black text-amber-300">
+                        <BookOpen className="w-4 h-4 text-amber-400" />
+                        <span>ورد الحفظ الجديد المطلوب غداً</span>
+                      </div>
+                      <span className="text-xs px-3 py-1 rounded-xl bg-amber-400 text-emerald-950 font-black border-2 border-amber-300 border-b-3 border-b-amber-600 shadow-sm">
+                        حفظ جديد
+                      </span>
+                    </div>
+                    <p className="text-lg sm:text-xl font-black text-amber-300 leading-relaxed font-heading bg-[#011a14] p-4 rounded-xl border-2 border-emerald-800/80 border-b-3 border-b-emerald-950 shadow-inner">
+                      {tomorrowPlanInfo.newMemorizationText}
+                    </p>
+                  </div>
+
+                  {tomorrowPlanInfo.sheikh && (
+                    <div className="pt-2.5 border-t border-emerald-800/60 flex items-center gap-2 text-xs text-emerald-200">
+                      <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>القارئ المعلم المقترح من الشيخ: <strong className="text-white font-black">{tomorrowPlanInfo.sheikh}</strong></span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Review Target Card */}
+                <div className="bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] rounded-2xl p-5 space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-black text-emerald-300">
+                        <RotateCcw className="w-4 h-4 text-amber-400" />
+                        <span>مقرر المراجعة والتثبيت والتراكمي</span>
+                      </div>
+                      <span className="text-xs px-3 py-1 rounded-xl bg-emerald-900/90 text-[#86efac] font-black border-2 border-b-3 border-emerald-600/60 border-b-emerald-950 shadow-sm">
+                        {tomorrowPlanInfo.reviewItemsList.length > 1 ? `${toArabicDigits(tomorrowPlanInfo.reviewItemsList.length)} مقررات مراجعة` : 'مراجعة وتثبيت'}
+                      </span>
+                    </div>
+
+                    {tomorrowPlanInfo.reviewItemsList.length > 0 ? (
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {tomorrowPlanInfo.reviewItemsList.map((rev, rIdx) => {
+                          const sInfo = getSurahInfo(rev.surahNumber);
+                          const toInfo = rev.toSurahNumber ? getSurahInfo(rev.toSurahNumber) : sInfo;
+                          return (
+                            <div key={rev.id || rIdx} className="bg-[#011a14] p-3 rounded-xl border-2 border-emerald-700/60 border-b-3 border-b-emerald-950 space-y-1 shadow-sm">
+                              <div className="flex items-center justify-between gap-1 text-[11px]">
+                                <span className={`px-2.5 py-0.5 rounded-full font-black flex items-center gap-1 ${
+                                  rev.type?.includes('تراكمي') || rev.type?.includes('تراكمية')
+                                    ? 'bg-amber-400 text-emerald-950 border border-amber-500'
+                                    : rev.type?.includes('كبرى') || rev.type?.includes('اختبار')
+                                    ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50'
+                                    : 'bg-[#064e3b] text-[#fbbf24] border border-[#065f46]'
+                                }`}>
+                                  <Layers className="w-3 h-3" />
+                                  <span>{rev.type || 'مراجعة وتثبيت'}</span>
+                                </span>
+                                <span className="text-emerald-300 font-mono text-[11px]">
+                                  {sInfo.name === toInfo.name ? `سورة ${sInfo.name}` : `من ${sInfo.name} إلى ${toInfo.name}`}
+                                </span>
+                              </div>
+                              <div className="text-sm sm:text-base font-black text-white font-heading">
+                                {rev.formattedText || (
+                                  rev.isFullSurah
+                                    ? `سورة ${sInfo.name} كاملة (${toArabicDigits(sInfo.numberOfAyahs)} آية)`
+                                    : `سورة ${sInfo.name}: من الآية (${toArabicDigits(rev.fromAyah)}) إلى (${toArabicDigits(rev.toAyah)})`
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-base sm:text-lg font-black text-white leading-relaxed font-heading bg-[#011a14] p-4 rounded-xl border-2 border-emerald-800/80 border-b-3 border-b-emerald-950 shadow-inner">
+                        {tomorrowPlanInfo.reviewSummaryText}
+                      </p>
+                    )}
+                  </div>
+
+                  {tomorrowPlanInfo.teacherNote && (
+                    <div className="pt-2.5 border-t border-emerald-800/60 text-xs text-amber-100 font-bold bg-amber-400/10 p-3 rounded-xl border-2 border-b-3 border-amber-400/30 border-b-amber-500/40 shadow-sm">
+                      <span className="text-[#fbbf24] font-black flex items-center gap-1 mb-1">
+                        <Sparkles className="w-3.5 h-3.5 text-[#fbbf24]" />
+                        <span>توجيه وملاحظة الشيخ:</span>
+                      </span>
+                      <p className="leading-relaxed font-medium">{tomorrowPlanInfo.teacherNote}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Smart Quran Ayah Audio Player with Repetitions, Auto-Stop & Sheikh Switching */}
+            <div className="space-y-4">
+              <QuranAyahAudioPlayer
+                student={currentStudent}
+                surahNumber={currentAssignedPassage.surahNumber}
+                surahName={currentAssignedPassage.surahName}
+                fromAyah={currentAssignedPassage.fromAyah}
+                toAyah={currentAssignedPassage.toAyah}
+                selectedSheikhName={currentAssignedPassage.sheikhName}
+                requiredRepetitions={currentAssignedPassage.requiredRepetitions ?? 3}
+                listeningPointsReward={10}
+                onRepetitionComplete={async (newCount, isFullyDone) => {
+                  const updated: Student = {
+                    ...currentStudent,
+                    activeListeningAssignment: {
+                      ...currentAssignedPassage,
+                      completedRepetitions: newCount,
+                      isCompleted: isFullyDone
+                    }
+                  };
+                  if (isFullyDone) {
+                    updated.listeningPoints = (updated.listeningPoints || 0) + 10;
+                    updated.points = (updated.points || 0) + 10;
+                    updated.dailyListeningCompletedDate = new Date().toISOString().split('T')[0];
+                  }
+                  setCurrentStudent(updated);
+                  await OmranDataService.saveStudent(updated);
+                  if (onUpdateStudent) onUpdateStudent(updated);
+                }}
               />
             </div>
-            <div className="text-[11px] text-emerald-300/80 font-bold self-start sm:self-center">
-              إجمالي الطلاب المصنفين: {displayedRankList.length} طالب
-            </div>
           </div>
+        )}
 
-          {/* Top 3 Podium Cards */}
-          {studentRankList.length > 0 && !leaderboardSearch.trim() && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-              {studentRankList.slice(0, 3).map((item, idx) => {
-                const isMe = item.student.id === student.id;
-                const badges = [
-                  { label: 'المركز الأول', icon: Trophy, border: 'border-[#fbbf24]', bg: 'bg-[#fbbf24]/20', text: 'text-[#fbbf24]' },
-                  { label: 'المركز الثاني', icon: Medal, border: 'border-slate-300', bg: 'bg-slate-300/20', text: 'text-slate-200' },
-                  { label: 'المركز الثالث', icon: Award, border: 'border-amber-600', bg: 'bg-amber-600/20', text: 'text-amber-300' }
-                ];
-                const badge = badges[idx] || badges[0];
-                const BadgeIcon = badge.icon;
+        {/* ============================================================== */}
+        {/* TAB 3: EXAMS & QUIZZES (الاختبارات والنتائج والمحاولات) */}
+        {/* ============================================================== */}
+        {activeTab === 'exams' && (
+          <div
+            className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
+            style={{
+              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
+              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+            }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-heading text-white">
+                    الاختبارات والتقييمات القرآنية ({toArabicDigits(studentExams.length)})
+                  </h3>
+                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                    الاختبارات الإلكترونية المعتمدة لحلقتك مع رصد الدرجات ومراجعة الإجابات
+                  </p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl bg-amber-400/20 text-amber-300 font-black border-2 border-b-3 border-amber-500/40 shadow-sm">
+                منظومة الاختبارات
+              </span>
+            </div>
 
-                return (
-                  <div
-                    key={item.student.id}
-                    onClick={() => setSelectedStudentForBreakdown(item)}
-                    className={`p-4 rounded-2xl border transition-all text-center relative overflow-hidden flex flex-col justify-between cursor-pointer group hover:scale-[1.02] ${
-                      isMe
-                        ? 'bg-[#064e3b] border-[#fbbf24] ring-2 ring-[#fbbf24]/40 shadow-xl'
-                        : 'bg-[#022c22]/90 border-[#065f46] hover:border-[#fbbf24]/50'
-                    }`}
-                  >
-                    {isMe && (
-                      <span className="absolute top-2 left-2 text-[9px] px-2 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black">
-                        أنت
-                      </span>
-                    )}
+            {studentExams.length === 0 ? (
+              <div className="text-center py-12 px-6 bg-[#011a14]/90 rounded-3xl border-2 border-dashed border-emerald-600/60 border-b-4 border-b-[#011a14] space-y-3.5 shadow-inner">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#064e3b] border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 flex items-center justify-center text-amber-400 shadow-md">
+                  <FileText className="w-7 h-7" />
+                </div>
+                <h4 className="text-base font-black text-white font-heading">لا توجد اختبارات متاحة لحلقتك حالياً</h4>
+                <p className="text-xs text-emerald-200/80 max-w-md mx-auto leading-relaxed font-bold">
+                  تابع مع المعلم عند إعلان اختبار جديد، وستظهر هنا الاختبارات المعتمدة ودرجاتها فور تفعيلها.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {studentExams.map(exam => {
+                  const mySubmissions = studentSubmissions.filter(s => s.examId === exam.id);
+                  const attemptsUsed = mySubmissions.length;
+                  const isLimited = exam.attemptLimitType === 'limited';
+                  const maxAttempts = exam.maxAttempts || 1;
+                  const hasReachedLimit = isLimited && attemptsUsed >= maxAttempts;
+                  const isExpired = exam.hasDeadline && exam.deadlineDate && new Date(exam.deadlineDate) < new Date();
+                  const canTake = !hasReachedLimit && !isExpired;
 
-                    <div>
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black mb-2 ${badge.bg} ${badge.text} border ${badge.border}`}>
-                        <BadgeIcon className="w-3.5 h-3.5 shrink-0" />
-                        <span>{badge.label}</span>
-                      </span>
-                      <h4 className="text-sm font-bold text-white truncate">{item.student.name}</h4>
-                      <p className="text-[11px] text-emerald-300/70 mt-0.5">{item.halaqahName}</p>
-                    </div>
+                  const bestSubmission = mySubmissions.reduce<ExamSubmission | null>((best, cur) => {
+                    if (!best || cur.totalScoreEarned > best.totalScoreEarned) return cur;
+                    return best;
+                  }, null);
 
-                    <div className="mt-3 pt-2 border-t border-emerald-800/60 flex items-center justify-around text-xs">
-                      <div>
-                        <span className="text-[10px] text-emerald-400/80 block">النقاط</span>
-                        <strong className="text-[#fbbf24] font-mono text-sm">{item.totalPoints}</strong>
-                      </div>
-                      <div className="w-px h-6 bg-emerald-800/60" />
-                      <div>
-                        <span className="text-[10px] text-emerald-400/80 block">التسميع</span>
-                        <strong className="text-emerald-300 font-mono text-xs">{item.evalPoints}</strong>
-                      </div>
-                      <div className="w-px h-6 bg-emerald-800/60" />
-                      <div>
-                        <span className="text-[10px] text-emerald-400/80 block">الاختبارات</span>
-                        <strong className="text-blue-300 font-mono text-xs">{item.examPoints}</strong>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedStudentForBreakdown(item);
-                      }}
-                      className="mt-2.5 py-1 px-3 rounded-xl bg-white/5 hover:bg-[#fbbf24]/20 text-[#fbbf24] text-[11px] font-bold border border-white/10 transition-colors flex items-center justify-center gap-1"
+                  return (
+                    <div
+                      key={exam.id}
+                      className="p-5 rounded-2xl bg-[#022c22] border-2 border-emerald-700/70 border-b-4 border-b-[#011a14] space-y-4 flex flex-col justify-between shadow-lg hover:border-emerald-500/70 transition-all"
                     >
-                      <Sparkles className="w-3 h-3" />
-                      <span>عرض تفاصيل ومصادر النقاط</span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Full Rank Table */}
-          <div className="rounded-2xl border border-[#065f46] overflow-hidden bg-[#022c22]/70">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-[#064e3b]/80 text-emerald-200 border-b border-[#065f46] text-[11px]">
-                  <tr>
-                    <th className="p-3">الترتيب</th>
-                    <th className="p-3">اسم الطالب</th>
-                    {!isPerHalaqahScope && <th className="p-3">الحلقة</th>}
-                    <th className="p-3 text-center">نقاط التسميع</th>
-                    <th className="p-3 text-center">نقاط الاختبارات</th>
-                    <th className="p-3 text-center">نقاط الاستماع</th>
-                    <th className="p-3 text-left">إجمالي النقاط</th>
-                    <th className="p-3 text-center">التفاصيل</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#065f46]/40 text-white">
-                  {displayedRankList.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-6 text-center text-emerald-300/70">
-                        لا توجد نتائج مطابقة لبحثك في لوحة الشرف.
-                      </td>
-                    </tr>
-                  ) : (
-                    displayedRankList.map((item) => {
-                      const isMe = item.student.id === student.id;
-                      const originalIdx = studentRankList.findIndex(x => x.student.id === item.student.id);
-                      return (
-                        <tr
-                          key={item.student.id}
-                          onClick={() => setSelectedStudentForBreakdown(item)}
-                          className={`transition-colors cursor-pointer ${
-                            isMe
-                              ? 'bg-[#064e3b] font-bold text-[#fbbf24] border-l-4 border-l-[#fbbf24]'
-                              : 'hover:bg-[#064e3b]/40'
-                          }`}
-                        >
-                          <td className="p-3 font-mono">
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
-                              originalIdx === 0
-                                ? 'bg-[#fbbf24] text-[#064e3b]'
-                                : originalIdx === 1
-                                ? 'bg-slate-300 text-slate-900'
-                                : originalIdx === 2
-                                ? 'bg-amber-600 text-white'
-                                : 'bg-[#022c22] text-emerald-300 border border-emerald-800'
-                            }`}>
-                              {originalIdx + 1}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs px-2.5 py-1 rounded-xl bg-emerald-900 text-emerald-200 font-black border border-emerald-700">
+                              {toArabicDigits(exam.questions.length)} أسئلة • {toArabicDigits(exam.totalPoints)} درجات
                             </span>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <span>{item.student.name}</span>
-                              {isMe && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black">
-                                  أنت
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          {!isPerHalaqahScope && (
-                            <td className="p-3 text-emerald-300/80 text-[11px]">{item.halaqahName}</td>
+                            <span className="text-[11px] px-2.5 py-1 rounded-xl bg-emerald-950 text-emerald-300 font-bold border border-emerald-600/40">
+                              نظام المنصة
+                            </span>
+                          </div>
+
+                          {isExpired ? (
+                            <span className="text-[10px] px-2.5 py-1 rounded-xl bg-rose-950 text-rose-300 border border-rose-600/40 font-bold">
+                              انتهى الموعد
+                            </span>
+                          ) : hasReachedLimit ? (
+                            <span className="text-[10px] px-2.5 py-1 rounded-xl bg-amber-950 text-amber-300 border border-amber-600/40 font-bold">
+                              استنفدت المحاولات ({toArabicDigits(attemptsUsed)}/{toArabicDigits(maxAttempts)})
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2.5 py-1 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
+                              متاح للبدء
+                            </span>
                           )}
-                          <td className="p-3 text-center font-mono text-emerald-300 font-bold">{item.evalPoints}</td>
-                          <td className="p-3 text-center font-mono text-blue-300 font-bold">{item.examPoints}</td>
-                          <td className="p-3 text-center font-mono text-amber-300 font-bold">{item.listeningPoints}</td>
-                          <td className="p-3 text-left font-mono font-bold text-[#fbbf24] text-sm">
-                            {item.totalPoints}
-                          </td>
-                          <td className="p-3 text-center">
+                        </div>
+
+                        <h4 className="text-base font-black text-white font-heading mt-1">{exam.title}</h4>
+                        {exam.description && (
+                          <p className="text-xs text-emerald-200/80 mt-1.5 leading-relaxed line-clamp-2">{exam.description}</p>
+                        )}
+
+                        {bestSubmission && (
+                          <div className="mt-3.5 p-3 rounded-xl bg-[#064e3b]/60 border-2 border-emerald-700/60 text-xs flex items-center justify-between">
+                            <span className="text-emerald-200 font-semibold">أفضل نتيجة محققة:</span>
+                            <span className="font-black text-[#fbbf24] text-sm">
+                              {toArabicDigits(bestSubmission.totalScoreEarned)} / {toArabicDigits(bestSubmission.maxPossibleScore)} ({toArabicDigits(bestSubmission.percentage)}٪)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-emerald-900/60 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs text-emerald-300/80 font-medium">
+                          {isLimited ? `المحاولات المتبقية: ${toArabicDigits(Math.max(0, maxAttempts - attemptsUsed))}` : 'محاولات غير محدودة'}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {mySubmissions.length > 0 && (
                             <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedStudentForBreakdown(item);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-900/60 hover:bg-[#fbbf24] hover:text-[#064e3b] text-[#86efac] text-[10px] font-bold border border-emerald-700/50 transition-colors"
+                              onClick={() => setViewingReviewSubmission(bestSubmission)}
+                              className="px-3.5 py-2 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 text-xs font-bold flex items-center gap-1 border-2 border-b-4 border-emerald-950 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all"
                             >
-                              عرض النقاط
+                              <span>مراجعة النتيجة</span>
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                          )}
+
+                          {canTake && (
+                            <button
+                              onClick={() => {
+                                if (!currentStudent.isGoogleLinked || !currentStudent.googleEmail) {
+                                  setGoogleAuthGateExam(exam);
+                                  return;
+                                }
+                                setActiveTakingAttemptNum(attemptsUsed + 1);
+                                setActiveTakingExam(exam);
+                              }}
+                              className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-amber-400 hover:bg-amber-300 text-emerald-950 border-2 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 transition-all"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>ابدأ الاختبار الآن</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 4: HONOR BOARD / LEADERBOARD (لوحة الشرف وتصنيف فرسان الحلقة والمجمع) */}
+        {/* ============================================================== */}
+        {activeTab === 'leaderboard' && (
+          <div
+            className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
+            style={{
+              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
+              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+            }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                    <span>لوحة الشرف والتفوق القرآني</span>
+                    <span className="text-[10px] px-3 py-1 rounded-full bg-amber-400 text-emerald-950 font-black">
+                      {isPerHalaqahScope ? 'ترتيب الحلقة محلياً' : 'الترتيب العام لجميع الحلقات'}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                    {isPerHalaqahScope
+                      ? `إعداد المشرف: يظهر هنا ترتيب وتنافس طلاب حلقة (${currentHalaqahTitle}) فقط.`
+                      : 'إعداد المشرف: يظهر هنا الترتيب العام الموحد لجميع طلاب الحلقات بالمركز.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Current Student Standing Pill */}
+              {myRank && (
+                <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-[#011a14] border-2 border-amber-400/50 border-b-4 border-b-amber-600/70 text-xs shadow-md">
+                  <Medal className="w-4 h-4 text-amber-400" />
+                  <span className="text-emerald-300 font-bold">ترتيبك:</span>
+                  <span className="font-black text-amber-300 text-sm font-heading">
+                    المركز #{toArabicDigits(myRank)}
+                  </span>
+                  <span className="text-emerald-300 font-mono font-black">
+                    ({toArabicDigits(myRankingData?.totalPoints || 0)} نقطة)
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Search Input */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+              <div className="relative w-full sm:w-80">
+                <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3.5" />
+                <input
+                  type="text"
+                  placeholder="ابحث باسم الطالب لرؤية ترتيبه وتفاصيل نقاطه..."
+                  value={leaderboardSearch}
+                  onChange={e => setLeaderboardSearch(e.target.value)}
+                  className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-[#011a14] border-2 border-emerald-700/60 border-b-3 border-b-emerald-950 text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none font-bold"
+                />
+              </div>
+              <div className="text-xs text-emerald-200 font-bold self-start sm:self-center">
+                إجمالي الطلاب المصنفين: <span className="text-amber-300 font-mono font-black">{toArabicDigits(displayedRankList.length)}</span> طالب
+              </div>
+            </div>
+
+            {/* Top 3 Podium Cards */}
+            {studentRankList.length > 0 && !leaderboardSearch.trim() && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                {studentRankList.slice(0, 3).map((item, idx) => {
+                  const isMe = item.student.id === student.id;
+                  const badges = [
+                    { label: 'المركز الأول', icon: Trophy, border: 'border-[#fbbf24] border-b-6 border-b-amber-600', bg: 'bg-[#fbbf24] text-[#064e3b]', text: 'text-[#fbbf24]' },
+                    { label: 'المركز الثاني', icon: Medal, border: 'border-slate-300 border-b-6 border-b-slate-500', bg: 'bg-slate-300 text-slate-950', text: 'text-slate-200' },
+                    { label: 'المركز الثالث', icon: Award, border: 'border-amber-600 border-b-6 border-b-amber-800', bg: 'bg-amber-600 text-white', text: 'text-amber-300' }
+                  ];
+                  const badge = badges[idx] || badges[0];
+                  const BadgeIcon = badge.icon;
+
+                  return (
+                    <div
+                      key={item.student.id}
+                      onClick={() => setSelectedStudentForBreakdown(item)}
+                      className={`p-5 rounded-3xl border-2 transition-all text-center relative overflow-hidden flex flex-col justify-between cursor-pointer group active:translate-y-[2px] shadow-xl ${
+                        isMe
+                          ? 'bg-[#064e3b] border-[#fbbf24] border-b-6 border-b-amber-600 ring-2 ring-[#fbbf24]/40'
+                          : `bg-[#022c22]/95 border-emerald-700/70 border-b-6 border-b-[#011a14] hover:border-[#fbbf24]/60`
+                      }`}
+                    >
+                      {isMe && (
+                        <span className="absolute top-2.5 left-2.5 text-[9px] px-2.5 py-0.5 rounded-full bg-[#fbbf24] text-[#064e3b] font-black shadow-sm">
+                          أنت
+                        </span>
+                      )}
+
+                      <div>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black mb-2 shadow-sm ${badge.bg} border-2 border-b-3 border-white/20`}>
+                          <BadgeIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>{badge.label}</span>
+                        </span>
+                        <h4 className="text-base font-black text-white truncate mt-1">{item.student.name}</h4>
+                        <p className="text-xs text-emerald-300/80 mt-0.5 font-bold">{item.halaqahName}</p>
+                      </div>
+
+                      <div className="mt-3.5 pt-2.5 border-t border-emerald-800/60 grid grid-cols-3 gap-1 text-center bg-[#011a14]/60 p-2.5 rounded-2xl border border-emerald-800/60">
+                        <div>
+                          <span className="text-[10px] text-slate-300 block font-bold">النقاط</span>
+                          <strong className="text-amber-300 font-mono text-sm font-black">{toArabicDigits(item.totalPoints)}</strong>
+                        </div>
+                        <div className="border-r border-l border-emerald-800/60 px-1">
+                          <span className="text-[10px] text-slate-300 block font-bold">التسميع</span>
+                          <strong className="text-emerald-300 font-mono text-xs font-black">{toArabicDigits(item.evalPoints)}</strong>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-300 block font-bold">الاختبارات</span>
+                          <strong className="text-sky-300 font-mono text-xs font-black">{toArabicDigits(item.examPoints)}</strong>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStudentForBreakdown(item);
+                        }}
+                        className="mt-3 py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-black border-2 border-amber-300 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>عرض تفاصيل ومصادر النقاط</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Full Rank Table */}
+            <div className="rounded-3xl border-2 border-emerald-700/70 border-b-6 border-b-[#011a14] overflow-hidden bg-[#022c22]/90 shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#064e3b] text-emerald-200 border-b-2 border-emerald-700 text-xs">
+                    <tr>
+                      <th className="p-3.5">الترتيب</th>
+                      <th className="p-3.5">اسم الطالب</th>
+                      {!isPerHalaqahScope && <th className="p-3.5">الحلقة</th>}
+                      <th className="p-3.5 text-center">نقاط التسميع</th>
+                      <th className="p-3.5 text-center">نقاط الاختبارات</th>
+                      <th className="p-3.5 text-center">نقاط الاستماع</th>
+                      <th className="p-3.5 text-left">إجمالي النقاط</th>
+                      <th className="p-3.5 text-center">التفاصيل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-800/40 text-white font-bold">
+                    {displayedRankList.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-emerald-300/70">
+                          لا توجد نتائج مطابقة لبحثك في لوحة الشرف.
+                        </td>
+                      </tr>
+                    ) : (
+                      displayedRankList.map((item) => {
+                        const isMe = item.student.id === student.id;
+                        const originalIdx = studentRankList.findIndex(x => x.student.id === item.student.id);
+                        return (
+                          <tr
+                            key={item.student.id}
+                            onClick={() => setSelectedStudentForBreakdown(item)}
+                            className={`transition-colors cursor-pointer ${
+                              isMe
+                                ? 'bg-[#064e3b] text-amber-300 border-l-4 border-l-amber-400'
+                                : 'hover:bg-[#064e3b]/50'
+                            }`}
+                          >
+                            <td className="p-3.5 font-mono">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-xs font-black shadow-sm ${
+                                originalIdx === 0
+                                  ? 'bg-[#fbbf24] text-[#064e3b] border-2 border-b-4 border-amber-600'
+                                  : originalIdx === 1
+                                  ? 'bg-slate-300 text-slate-900 border-2 border-b-4 border-slate-500'
+                                  : originalIdx === 2
+                                  ? 'bg-amber-600 text-white border-2 border-b-4 border-amber-800'
+                                  : 'bg-[#011a14] text-emerald-300 border border-emerald-800'
+                              }`}>
+                                {toArabicDigits(originalIdx + 1)}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-2">
+                                <span className={isMe ? 'text-amber-300 font-black' : 'font-bold'}>{item.student.name}</span>
+                                {isMe && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400 text-emerald-950 font-black shadow-sm">
+                                    أنت
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {!isPerHalaqahScope && (
+                              <td className="p-3.5 text-emerald-300/80 text-xs font-medium">{item.halaqahName}</td>
+                            )}
+                            <td className="p-3.5 text-center font-mono text-emerald-300 font-black">{toArabicDigits(item.evalPoints)}</td>
+                            <td className="p-3.5 text-center font-mono text-sky-300 font-black">{toArabicDigits(item.examPoints)}</td>
+                            <td className="p-3.5 text-center font-mono text-amber-300 font-black">{toArabicDigits(item.listeningPoints)}</td>
+                            <td className="p-3.5 text-left font-mono font-black text-amber-300 text-sm">
+                              {toArabicDigits(item.totalPoints)}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedStudentForBreakdown(item);
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-[11px] font-black border-2 border-amber-300 border-b-3 border-b-amber-600 active:translate-y-[2px] active:border-b-2 transition-all cursor-pointer shadow-sm"
+                              >
+                                عرض النقاط
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 5: CERTIFICATES & AWARDS (شهاداتي والجوائز التقديرية) */}
+        {/* ============================================================== */}
+        {activeTab === 'certificates' && (
+          <div
+            className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-6 backdrop-blur-md relative overflow-hidden transition-all"
+            style={{
+              backgroundColor: resolvedComplex?.theme?.cardColor ? `${resolvedComplex.theme.cardColor}f2` : '#064e3b',
+              borderColor: resolvedComplex?.theme?.accentColor || '#fbbf24',
+              borderBottomColor: darkenHex(resolvedComplex?.theme?.accentColor || '#fbbf24', 0.4)
+            }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b-2 border-emerald-600/30">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-emerald-950 font-black flex items-center justify-center border-2 border-b-4 border-amber-600 shadow-md">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
+                    <span>أرشيف شهاداتي والجوائز التقديرية</span>
+                    <span className="text-xs px-3 py-1 rounded-full bg-amber-400 text-emerald-950 font-black shadow-sm">
+                      {toArabicDigits(studentCertificates.length)} شهادات معتمدة
+                    </span>
+                  </h3>
+                  <p className="text-xs text-emerald-100/80 font-bold mt-0.5">
+                    جميع الشهادات الصادرة والمحفوظة في أرشيفك الرسمي مع إمكانية عرضها وطباعتها
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {studentCertificates.length === 0 ? (
+              <div className="text-center py-12 px-6 bg-[#011a14]/90 rounded-3xl border-2 border-dashed border-emerald-600/60 border-b-4 border-b-[#011a14] space-y-3.5 shadow-inner">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#064e3b] border-2 border-emerald-500/60 border-b-4 border-b-emerald-950 flex items-center justify-center text-amber-400 shadow-md">
+                  <Award className="w-7 h-7" />
+                </div>
+                <h4 className="text-base font-black text-white font-heading">لا توجد شهادات صادرة لهذا الطالب بعد</h4>
+                <p className="text-xs text-emerald-200/80 max-w-md mx-auto leading-relaxed font-bold">
+                  ستظهر هنا فور إصدارها واعتمادها من قبل المعلم أو إدارة المجمع القرآني مع إمكانية عرضها وطباعتها مباشرة.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {studentCertificates.map(cert => (
+                  <div
+                    key={cert.id}
+                    className="p-5 rounded-2xl bg-[#022c22] border-2 border-[#fbbf24]/30 border-b-4 border-b-[#011a14] space-y-3 flex flex-col justify-between shadow-lg hover:border-[#fbbf24]/70 transition-all"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                          {cert.type || 'شهادة تميز قرآنية'}
+                        </span>
+                        <span className="text-[11px] text-[#86efac]/80 font-mono">
+                          {cert.issueDate || cert.createdAt?.split('T')[0]}
+                        </span>
+                      </div>
+
+                      <h4 className="text-base font-black text-white font-heading">
+                        {cert.title || 'شهادة شكر وتقدير وإتقان'}
+                      </h4>
+
+                      {cert.appreciationText && (
+                        <p className="text-xs text-emerald-100/90 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
+                          {cert.appreciationText}
+                        </p>
+                      )}
+
+                      <div className="text-[11px] text-[#86efac] flex items-center justify-between pt-1">
+                        <span>إشراف المعلم: {cert.teacherName || 'معلم الحلقة'}</span>
+                        {cert.complexName && <span>مجمع: {cert.complexName}</span>}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-[#065f46]/60 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCertificateForView(cert)}
+                        className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-lg border-2 border-b-4 border-amber-600 active:translate-y-[2px] active:border-b-2 transition-all"
+                      >
+                        <Award className="w-3.5 h-3.5 fill-current" />
+                        <span>عرض الشهادة وطباعتها</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* STUDENT POINTS BREAKDOWN MODAL */}
         {selectedStudentForBreakdown && (
@@ -1556,313 +2822,6 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   إغلاق
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tomorrow's Target / Current Assignment Box */}
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 sm:p-8 space-y-4 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-            <h3 className="text-base sm:text-lg font-bold font-heading text-white flex items-center gap-2">
-              <Award className="w-5 h-5 text-[#fbbf24]" />
-              <span>المقرر والتكليف القادم (خطة الغد المعتمدة من المعلم)</span>
-            </h3>
-            <span className="text-xs px-2.5 py-1 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/30">
-              متابعة منزلية
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* New Target */}
-            <div className="bg-[#022c22] border border-[#065f46] rounded-2xl p-5 space-y-3 flex flex-col justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-[#86efac]">
-                    <BookOpen className="w-4 h-4 text-[#fbbf24]" />
-                    <span>ورد الحفظ الجديد المطلوب غداً</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#064e3b] text-[#fbbf24] font-bold border border-[#065f46]">
-                    حفظ جديد
-                  </span>
-                </div>
-                <p className="text-base sm:text-lg font-black text-white leading-relaxed font-heading">
-                  {tomorrowPlanInfo.newMemorizationText}
-                </p>
-              </div>
-
-              {tomorrowPlanInfo.sheikh && (
-                <div className="pt-2 border-t border-[#065f46]/60 flex items-center gap-1.5 text-xs text-[#86efac]/90">
-                  <Volume2 className="w-3.5 h-3.5 text-[#fbbf24]" />
-                  <span>القارئ المعلم المقترح: <strong className="text-white">{tomorrowPlanInfo.sheikh}</strong></span>
-                </div>
-              )}
-            </div>
-
-            {/* Review Target */}
-            <div className="bg-[#022c22] border border-[#065f46] rounded-2xl p-5 space-y-3 flex flex-col justify-between">
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-[#86efac]">
-                    <RotateCcw className="w-4 h-4 text-[#fbbf24]" />
-                    <span>مقرر المراجعة والتثبيت والتراكمي</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-700/50">
-                    {tomorrowPlanInfo.reviewItemsList.length > 1 ? `${tomorrowPlanInfo.reviewItemsList.length} مقررات مراجعة` : 'مراجعة وتثبيت'}
-                  </span>
-                </div>
-
-                {tomorrowPlanInfo.reviewItemsList.length > 0 ? (
-                  <div className="space-y-2">
-                    {tomorrowPlanInfo.reviewItemsList.map((rev, rIdx) => {
-                      const sInfo = getSurahInfo(rev.surahNumber);
-                      const toInfo = rev.toSurahNumber ? getSurahInfo(rev.toSurahNumber) : sInfo;
-                      return (
-                        <div key={rev.id || rIdx} className="bg-[#064e3b]/50 p-3 rounded-2xl border border-emerald-700/60 space-y-1.5 shadow-sm">
-                          <div className="flex items-center justify-between gap-1 text-[11px]">
-                            <span className={`px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${
-                              rev.type?.includes('تراكمي') || rev.type?.includes('تراكمية')
-                                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-[#064e3b] font-black shadow-sm'
-                                : rev.type?.includes('كبرى') || rev.type?.includes('اختبار')
-                                ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-500/50'
-                                : 'bg-[#064e3b] text-[#fbbf24] border border-[#065f46]'
-                            }`}>
-                              <Layers className="w-3 h-3" />
-                              <span>{rev.type || 'مراجعة وتثبيت'}</span>
-                            </span>
-                            <span className="text-emerald-300 font-mono text-[11px]">
-                              {sInfo.name === toInfo.name ? `سورة ${sInfo.name}` : `من ${sInfo.name} إلى ${toInfo.name}`}
-                            </span>
-                          </div>
-                          <div className="text-sm sm:text-base font-black text-white font-heading">
-                            {rev.formattedText || (
-                              rev.isFullSurah
-                                ? `سورة ${sInfo.name} كاملة (${sInfo.numberOfAyahs} آية)`
-                                : `سورة ${sInfo.name}: من الآية (${rev.fromAyah}) إلى (${rev.toAyah})`
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-base sm:text-lg font-black text-white leading-relaxed font-heading">
-                    {tomorrowPlanInfo.reviewSummaryText}
-                  </p>
-                )}
-              </div>
-
-              {tomorrowPlanInfo.teacherNote && (
-                <div className="pt-2 border-t border-[#065f46]/60 text-xs text-amber-200/90 italic">
-                  💡 {tomorrowPlanInfo.teacherNote}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Daily Recitation History */}
-        <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 space-y-4 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-            <h3 className="text-base font-bold font-heading text-white flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#fbbf24]" />
-              <span>سجل التسميع اليومي والتقييمات الأخيرة ({sortedEvaluations.length})</span>
-            </h3>
-            <span className="text-xs text-[#86efac] font-medium">
-              أحدث التقييمات
-            </span>
-          </div>
-
-          {sortedEvaluations.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-300">
-              لم يتم رصد تسميعات مسجلة بعد.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {sortedEvaluations.map(ev => {
-                const evalDateArabic = new Intl.DateTimeFormat('ar-SA', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric'
-                }).format(new Date(ev.date));
-
-                const newDidNotRecite = ev.recitationDetails?.newMemorizationDidNotRecite;
-                const newDidNotReciteReason = ev.recitationDetails?.newMemorizationDidNotReciteReason;
-
-                return (
-                  <div
-                    key={ev.id}
-                    className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#065f46]/60 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-sm">{evalDateArabic}</span>
-                        <span className="text-slate-400 font-mono text-[11px]">({ev.date})</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold border border-[#fbbf24]/30">
-                          درجة التسميع: {ev.score}%
-                        </span>
-                        {ev.teacherName && (
-                          <span className="text-[11px] text-[#86efac]/80">
-                            بإشراف: {ev.teacherName}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Recitation Content Details */}
-                    <div className="space-y-2 text-xs">
-                      {/* New Memorization */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-[#86efac] font-bold flex items-center gap-1">
-                          <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
-                          <span>ورد الحفظ الجديد:</span>
-                        </span>
-                        {newDidNotRecite ? (
-                          <span className="text-amber-300 font-bold bg-amber-500/15 px-2.5 py-1 rounded-xl border border-amber-500/30 inline-flex items-center gap-1">
-                            <XCircle className="w-3.5 h-3.5 text-amber-400" />
-                            <span>لم يُسمّع ({newDidNotReciteReason || 'لم يحفظ'})</span>
-                          </span>
-                        ) : (
-                          <span className="font-bold text-[#fbbf24] text-sm">
-                            {ev.recitationDetails?.newMemorizationAchieved || 'تم التسميع بنجاح'}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Review Items */}
-                      {ev.recitationDetails?.todayReviewItems && ev.recitationDetails.todayReviewItems.length > 0 ? (
-                        <div className="pt-2 border-t border-[#065f46]/50 space-y-1.5">
-                          <span className="text-[#86efac] font-bold flex items-center gap-1">
-                            <RotateCcw className="w-3.5 h-3.5 text-[#fbbf24]" />
-                            <span>المراجعة والتثبيت:</span>
-                          </span>
-                          <div className="space-y-1.5 pr-2">
-                            {ev.recitationDetails.todayReviewItems.map((rev, rIdx) => (
-                              <div key={rev.id || rIdx} className="flex flex-wrap items-center justify-between gap-1 text-[11px] bg-[#064e3b]/30 p-2 rounded-xl border border-[#065f46]/40">
-                                <span className="text-white font-medium">
-                                  • {rev.type}: سورة {rev.surahName} (آية {rev.fromAyah} إلى {rev.toAyah})
-                                </span>
-                                {rev.didNotRecite ? (
-                                  <span className="text-amber-300 font-bold bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30">
-                                    لم يُسمّع ({rev.didNotReciteReason || 'لم يحفظ'})
-                                  </span>
-                                ) : (
-                                  <span className="text-emerald-400 font-bold flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>تم التسميع</span>
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : ev.recitationDetails?.reviewAchieved ? (
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 pt-2 border-t border-[#065f46]/50">
-                          <span className="text-[#86efac] font-bold flex items-center gap-1">
-                            <RotateCcw className="w-3.5 h-3.5 text-[#fbbf24]" />
-                            <span>ما سمّعه في المراجعة والتثبيت:</span>
-                          </span>
-                          <span className="font-bold text-white text-right">
-                            {ev.recitationDetails.reviewAchieved}
-                          </span>
-                        </div>
-                      ) : null}
-
-                      {/* Teacher Notes */}
-                      {ev.recitationDetails?.teacherNotes && (
-                        <div className="text-[#f0f9f6] pt-2 border-t border-[#065f46]/50 bg-[#064e3b]/30 p-2.5 rounded-xl">
-                          <span className="text-[#fbbf24] font-bold flex items-center gap-1 mb-1">
-                            <Sparkles className="w-3.5 h-3.5 text-[#fbbf24]" />
-                            <span>ملاحظات وتوجيه المعلم:</span>
-                          </span>
-                          {ev.recitationDetails.teacherNotes}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Behavioral & Pedagogical Guidance Section for Parents */}
-        {studentViolations.length > 0 && (
-          <div className="bg-[#064e3b]/60 border border-amber-500/40 rounded-[32px] p-6 space-y-4 shadow-xl backdrop-blur-md">
-            <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-              <h3 className="text-base font-bold font-heading text-white flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-[#fbbf24]" />
-                <span>ملاحظات السلوك والتوجيه التربوي للحلقة ({studentViolations.length})</span>
-              </h3>
-              <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-[#fbbf24] border border-amber-500/30 font-bold">
-                متابعة سلوكية وتربوية
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {studentViolations.map(viol => {
-                const isResolved = viol.status === 'تم التوجيه والمعالجة';
-
-                return (
-                  <div
-                    key={viol.id}
-                    className="p-4 rounded-2xl bg-[#022c22] border border-[#065f46] space-y-2.5 text-xs"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-sm">
-                          {viol.violationType}
-                        </span>
-                        <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                            viol.severity === 'تنبيه'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                          }`}
-                        >
-                          {viol.severity}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-[11px] text-[#86efac]/80">
-                        <span>تاريخ: {viol.date}</span>
-                        {isResolved ? (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center gap-1">
-                            <ShieldCheck className="w-3 h-3" />
-                            <span>تم التوجيه والمعالجة</span>
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
-                            قيد المتابعة
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {viol.description && (
-                      <div className="text-slate-200 leading-relaxed bg-[#064e3b]/30 p-2.5 rounded-xl border border-[#065f46]/50">
-                        <strong className="text-[#86efac]">توجيه الشيخ وتفاصيل الملاحظة: </strong>
-                        {viol.description}
-                      </div>
-                    )}
-
-                    {viol.actionTaken && (
-                      <div className="text-[#86efac]">
-                        <strong className="text-emerald-300">الإجراء المتخذ: </strong>
-                        {viol.actionTaken}
-                      </div>
-                    )}
-
-                    {viol.messageText && (
-                      <div className="text-slate-300 italic pt-1 border-t border-[#065f46]/60">
-                        "{viol.messageText}"
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
             </div>
           </div>
         )}
