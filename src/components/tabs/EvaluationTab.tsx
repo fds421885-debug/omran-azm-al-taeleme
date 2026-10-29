@@ -64,12 +64,10 @@ import {
   calculatePortionFromPace
 } from '../../data/quranPagesData';
 import {
-  analyzeMonthlyProgression,
   calculateRecentlyCompletedSurahsReview,
   analyzeAndDistributeAyahErrors,
   generateAdaptiveDailyReviews
 } from '../../lib/aiPlanService';
-import { checkStudentHiatusStatus } from '../../lib/quranAdaptivePlanEngine';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
@@ -569,10 +567,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     }
   };
 
-  const hiatusStatus = useMemo(() => {
-    if (!activeStudent) return null;
-    return checkStudentHiatusStatus(activeStudent);
-  }, [activeStudent]);
+
 
   const openMushafReader = (surah: number, ayah: number, itemId?: string) => {
     setMushafInitialSurah(surah);
@@ -677,54 +672,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     .filter(e => e.studentId === activeStudentId)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  // Adaptive Monthly Progression Analyzer
-  const monthlyProgression = useMemo(() => {
-    if (!activeStudent) return null;
-    return analyzeMonthlyProgression(
-      studentEvaluationsHistory,
-      activeStudent.memorizationPlan?.dailyNewPages || 0.5,
-      Object.keys(mushafAyahErrors).length
-    );
-  }, [activeStudent, studentEvaluationsHistory, mushafAyahErrors]);
 
-  const [isUpgradingPace, setIsUpgradingPace] = useState(false);
-  const handleUpgradeMonthlyPace = async () => {
-    if (!activeStudent || !monthlyProgression?.shouldIncreasePace) return;
-    setIsUpgradingPace(true);
-    try {
-      const newPace = monthlyProgression.recommendedPace;
-      const newTargetLabel = newPace === 1.0 ? 'وجه واحد' : newPace === 1.5 ? 'وجه ونصف' : newPace === 2.0 ? 'وجهان' : `${newPace} أوجه`;
-      const updatedPortion = calculatePortionFromPace(tomNewSurah, tomNewFromAyah, newPace);
-      setTomNewToSurah(updatedPortion.toSurah);
-      setTomNewToAyah(updatedPortion.toAyah);
-
-      const latestStdForPace = latestStudentsMapRef.current[activeStudent.id] || activeStudent;
-      const updatedStudent: Student = {
-        ...latestStdForPace,
-        mushafErrors: studentMushafRecordsRef.current[activeStudent.id] ?? latestStdForPace.mushafErrors,
-        mushafErrorsUpdatedAt: latestStdForPace.mushafErrorsUpdatedAt,
-        dailyNewTarget: newTargetLabel,
-        memorizationPlan: {
-          ...latestStdForPace.memorizationPlan!,
-          dailyNewPages: newPace,
-          nextDayAssignment: {
-            ...latestStdForPace.memorizationPlan?.nextDayAssignment!,
-            newMemorization: updatedPortion.description
-          },
-          aiNotes: `🌟 تم ترقية ورد الحفظ بنصف وجه إضافي بفضل التميز والتطور في التسميع الشهري (${newPace} وجه).`,
-          lastUpdated: new Date().toISOString()
-        }
-      };
-
-      latestStudentsMapRef.current[updatedStudent.id] = updatedStudent;
-      await OmranDataService.saveStudent(updatedStudent);
-      window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: updatedStudent }));
-    } catch (e) {
-      console.warn('Upgrade pace notice:', e);
-    } finally {
-      setIsUpgradingPace(false);
-    }
-  };
 
   const [isManualGeneratingPlan, setIsManualGeneratingPlan] = useState(false);
   const handleForceGeneratePlan = async () => {
@@ -2726,55 +2674,64 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                    className={`p-4 sm:p-5 rounded-3xl border transition-all shadow-lg backdrop-blur-md relative overflow-hidden ${
-                      isCompleted
-                        ? 'bg-gradient-to-r from-emerald-950/70 via-[#064e3b] to-emerald-900/60 border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
-                        : isNearing
-                        ? 'bg-gradient-to-r from-[#022c22] via-[#064e3b]/80 to-[#022c22] border-amber-400/40 shadow-[0_0_15px_rgba(251,191,36,0.1)]'
-                        : 'bg-[#022c22]/90 border-[#065f46]'
-                    }`}
+                    className="p-5 sm:p-6 rounded-[28px] border-2 border-b-4 transition-all shadow-xl backdrop-blur-md relative overflow-hidden"
+                    style={{
+                      backgroundColor: 'var(--complex-card, #203843)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                    }}
                   >
                     {/* Background subtle glow decoration */}
-                    <div className="absolute -top-12 -left-12 w-32 h-32 bg-[#fbbf24]/5 rounded-full blur-2xl pointer-events-none" />
+                    <div 
+                      className="absolute -top-12 -left-12 w-36 h-36 rounded-full blur-2xl pointer-events-none opacity-20"
+                      style={{ backgroundColor: themeAccent }}
+                    />
 
                     {/* Progress Bar Header Info */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 relative z-10">
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-bold shrink-0 border shadow-sm ${
-                            isCompleted
-                              ? 'bg-amber-400 text-[#064e3b] border-amber-300'
-                              : isNearing
-                              ? 'bg-amber-500/20 text-[#fbbf24] border-amber-400/40'
-                              : 'bg-emerald-500/20 text-[#86efac] border-emerald-500/30'
-                          }`}
+                          className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black shrink-0 border-2 border-b-4 shadow-md"
+                          style={{
+                            backgroundColor: isCompleted ? '#58cc02' : 'var(--complex-primary, #131f24)',
+                            borderColor: isCompleted ? '#58cc02' : themeAccent,
+                            borderBottomColor: isCompleted ? '#46a302' : themeAccentShadow,
+                            color: isCompleted ? '#ffffff' : themeAccent
+                          }}
                         >
                           {isCompleted ? (
-                            <Trophy className="w-5 h-5 text-[#064e3b]" />
+                            <Trophy className="w-6 h-6 text-white" />
                           ) : isNearing ? (
-                            <Flame className="w-5 h-5 text-orange-400 animate-pulse" />
+                            <Flame className="w-6 h-6 text-orange-400 animate-pulse" />
                           ) : (
-                            <Award className="w-5 h-5 text-[#fbbf24]" />
+                            <Award className="w-6 h-6" style={{ color: themeAccent }} />
                           )}
                         </div>
 
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-[#86efac] font-bold">
+                            <span className="text-xs sm:text-sm font-black" style={{ color: themeAccent }}>
                               التقدم في سورة {sInfo.name}:
                             </span>
-                            <span className="text-[11px] px-2 py-0.2 rounded-full bg-[#064e3b] text-slate-300 border border-[#065f46]">
+                            <span 
+                              className="text-[11px] px-2.5 py-0.5 rounded-xl font-bold border"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                color: '#cbd5e1'
+                              }}
+                            >
                               {sInfo.revelationType || 'مكية'}
                             </span>
 
                             {isCompleted ? (
-                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-[#fbbf24] font-black border border-amber-400/40 flex items-center gap-1 shadow-sm">
-                                <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span className="text-xs px-3 py-1 rounded-2xl bg-emerald-500/20 text-emerald-300 font-black border-2 border-b-2 border-emerald-400/50 flex items-center gap-1 shadow-sm">
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
                                 <span>مكتملة بحمد الله</span>
                               </span>
                             ) : isNearing ? (
-                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-[#fbbf24] font-black border border-amber-400/50 flex items-center gap-1 shadow-sm">
-                                <Flame className="w-3 h-3 text-orange-400 animate-bounce" />
+                              <span className="text-xs px-3 py-1 rounded-2xl bg-orange-500/20 text-orange-300 font-black border-2 border-b-2 border-orange-400/50 flex items-center gap-1 shadow-sm">
+                                <Flame className="w-3.5 h-3.5 text-orange-400 animate-bounce" />
                                 <span>على وشك الختام!</span>
                               </span>
                             ) : null}
@@ -2782,11 +2739,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                           <div className="text-xs font-bold text-white mt-1 flex items-center gap-2 flex-wrap">
                             <span>
-                              أنجز الآية <span className="text-[#fbbf24] font-extrabold text-sm font-mono">{currentAyah}</span> من أصل <span className="font-mono text-slate-300 font-bold">{totalAyahs}</span> آية
+                              أنجز الآية <span className="font-black text-sm font-mono" style={{ color: themeAccent }}>{currentAyah}</span> من أصل <span className="font-mono text-slate-300 font-bold">{totalAyahs}</span> آية
                             </span>
                             {!isCompleted && (
-                              <span className="text-[#86efac] font-medium text-[11px]">
-                                (متبقٍ <strong className="text-[#fbbf24]">{remainingAyahs}</strong> {remainingAyahs === 1 ? 'آية واحدة' : remainingAyahs === 2 ? 'آيتان' : remainingAyahs <= 10 ? 'آيات' : 'آية'} للإتمام)
+                              <span className="text-[11px] font-bold" style={{ color: `${themeAccent}cc` }}>
+                                (متبقٍ <strong style={{ color: themeAccent }}>{remainingAyahs}</strong> {remainingAyahs === 1 ? 'آية واحدة' : remainingAyahs === 2 ? 'آيتان' : remainingAyahs <= 10 ? 'آيات' : 'آية'} للإتمام)
                               </span>
                             )}
                           </div>
@@ -2796,15 +2753,15 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       {/* Percentage & Quick Action */}
                       <div className="flex items-center gap-3 self-end sm:self-center">
                         <div className="text-left">
-                          <div className="text-xl sm:text-2xl font-black text-[#fbbf24] font-mono tracking-tight flex items-center gap-1.5 justify-end">
+                          <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight flex items-center gap-1.5 justify-end" style={{ color: themeAccent }}>
                             <span>{percent}%</span>
                             {isCompleted ? (
-                              <Sparkles className="w-5 h-5 text-amber-300" />
+                              <Sparkles className="w-5 h-5 text-emerald-400" />
                             ) : (
-                              <TrendingUp className="w-4 h-4 text-emerald-400" />
+                              <TrendingUp className="w-5 h-5 text-emerald-400" />
                             )}
                           </div>
-                          <div className="text-[10px] text-[#86efac] font-medium text-left">
+                          <div className="text-[11px] font-bold text-slate-300 text-left">
                             {isCompleted ? 'إتمام مبارك' : isNearing ? 'اقترب الختام' : 'مسيرة الحفظ'}
                           </div>
                         </div>
@@ -2813,7 +2770,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           <button
                             type="button"
                             onClick={triggerCelebrationConfetti}
-                            className="px-3 py-1.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs font-black transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                            className="px-4 py-2 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 font-black text-xs transition-all cursor-pointer shadow-md flex items-center gap-1.5 hover:brightness-110"
+                            style={{
+                              backgroundColor: themeAccent,
+                              borderColor: themeAccent,
+                              borderBottomColor: themeAccentShadow,
+                              color: accentTextColor
+                            }}
                             title="إطلاق ألعاب نارية احتفالاً بالطالب"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
@@ -2828,10 +2791,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               setTodayNewFromAyah(Math.min(currentAyah + 1, totalAyahs));
                               setTodayNewToAyah(totalAyahs);
                             }}
-                            className="px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-[#fbbf24] border border-amber-400/40 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                            className="px-3 py-1.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: themeAccent,
+                              borderBottomColor: themeAccentShadow,
+                              color: themeAccent
+                            }}
                             title="تحديد نهاية السورة لتسميع اليوم لختمها الآن"
                           >
-                            <Zap className="w-3 h-3 text-amber-300" />
+                            <Zap className="w-3.5 h-3.5" />
                             <span>ختم السورة اليوم</span>
                           </button>
                         ) : null}
@@ -2839,23 +2808,37 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* Calculated Recited Pages Strip (احتساب دقيق للأوجه المسمعة من واقع السجل) */}
-                    <div className="my-2.5 p-2.5 rounded-2xl bg-[#011a14]/80 border border-[#065f46] flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div 
+                      className="my-3 p-3 rounded-2xl border-2 border-b-4 flex flex-wrap items-center justify-between gap-3 text-xs shadow-sm"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                      }}
+                    >
                       <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-[#fbbf24] shrink-0" />
-                        <span className="text-[#86efac] font-semibold">إجمالي الأوجه المسمّعة من السجل:</span>
-                        <span className="font-mono font-black text-amber-300 text-sm px-2 py-0.5 rounded-lg bg-[#064e3b] border border-[#065f46]">
+                        <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+                        <span className="font-bold text-slate-200">إجمالي الأوجه المسمّعة من السجل:</span>
+                        <span 
+                          className="font-mono font-black text-xs px-2.5 py-0.5 rounded-xl border-2 border-b-2"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            borderColor: `${themeAccent}60`,
+                            color: themeAccent
+                          }}
+                        >
                           {pagesInfo.totalPagesCount} وجه
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-emerald-200">
-                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
                           حفظ جديد: <strong className="text-white font-mono">{pagesInfo.newPagesCount}</strong> وجه
                         </span>
-                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
+                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
                           مراجعة: <strong className="text-white font-mono">{pagesInfo.reviewPagesCount}</strong> وجه
                         </span>
-                        <span className="bg-[#022c22] px-2 py-0.5 rounded-lg border border-[#065f46]">
-                          موضع المصحف: <strong className="text-[#fbbf24] font-mono">الوجه {pagesInfo.currentMushafPage}</strong> (الجزء {pagesInfo.currentJuz})
+                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
+                          موضع المصحف: <strong className="font-mono" style={{ color: themeAccent }}>الوجه {pagesInfo.currentMushafPage}</strong> (الجزء {pagesInfo.currentJuz})
                         </span>
                       </div>
                     </div>
@@ -2865,8 +2848,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div
                         className="h-4 sm:h-5 w-full rounded-full p-0.5 relative overflow-hidden shadow-inner border-2 border-b-2"
                         style={{
-                          backgroundColor: themePrimary,
-                          borderColor: themeBorder
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)'
                         }}
                       >
                         <motion.div
@@ -2896,33 +2879,39 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* Motivational Encouragement Banner */}
-                    <div className="mt-2.5 pt-2.5 border-t border-[#065f46]/60 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2 text-xs">
+                    <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 text-xs font-bold">
                         {isCompleted ? (
-                          <p className="text-amber-300 font-bold flex items-center gap-1.5">
-                            <Sparkles className="w-4 h-4 text-[#fbbf24] shrink-0" />
+                          <p className="font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                            <Sparkles className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                             <span>مبارك للطالب {activeStudent.name}! أتم سورة {sInfo.name} بالكامل بحفظ متقن ومبارك، هنيئاً له هذا الشرف العظيم!</span>
                           </p>
                         ) : isNearing ? (
-                          <p className="text-amber-200 font-bold flex items-center gap-1.5">
+                          <p className="text-orange-300 font-black flex items-center gap-1.5">
                             <Flame className="w-4 h-4 text-orange-400 shrink-0 animate-bounce" />
                             <span>همّة وثبات يا بطل! اقتربت جداً من ختام سورة {sInfo.name}؛ بقيت {remainingAyahs} آيات فقط لتتوج بإتمامها!</span>
                           </p>
                         ) : isHalfway ? (
-                          <p className="text-emerald-200 font-medium flex items-center gap-1.5">
+                          <p className="text-emerald-300 font-bold flex items-center gap-1.5">
                             <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
                             <span>رائع! تجاوزت منتصف سورة {sInfo.name}، استمر بنفس العزيمة نحو إتمام السورة بإذن الله!</span>
                           </p>
                         ) : (
-                          <p className="text-emerald-200/80 font-medium flex items-center gap-1.5">
-                            <BookOpen className="w-4 h-4 text-[#fbbf24] shrink-0" />
+                          <p className="text-slate-300 font-bold flex items-center gap-1.5">
+                            <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                             <span>بداية مباركة في سورة {sInfo.name}، كل آية تحفظها نور في صدرك ورفعة لدرجاتك في الجنة.</span>
                           </p>
                         )}
                       </div>
 
                       {/* Surah Verses Counter Chip */}
-                      <div className="text-[11px] font-mono text-[#86efac]/90 bg-[#064e3b]/80 px-2 py-0.5 rounded-lg border border-[#065f46] shrink-0 hidden sm:block">
+                      <div 
+                        className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-xl border border-white/10 shrink-0 hidden sm:block"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          color: '#cbd5e1'
+                        }}
+                      >
                         السورة {sNumber} من 114
                       </div>
                     </div>
@@ -2930,24 +2919,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 );
               })()}
 
-              {/* Hiatus Alert Banner (> 30 Days Absence) */}
-              {hiatusStatus?.isHiatusDetected && (
-                <div className="bg-gradient-to-r from-rose-900/40 via-amber-950/40 to-rose-900/40 border-2 border-rose-500/80 rounded-3xl p-5 shadow-xl space-y-2 animate-pulse">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black shrink-0">
-                      <AlertTriangle className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-black text-sm text-rose-300">
-                        تنبيه انقطاع لأكثر من 30 يوماً ({hiatusStatus.hiatusDaysCount} يوماً)
-                      </h4>
-                      <p className="text-xs text-slate-200">
-                        {hiatusStatus.alertMessageArabic}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+
 
               {/* AI Plan Generating Card (Blocks recitation until plan is finalized) */}
               {(activeStudent.isGeneratingPlan || isManualGeneratingPlan) && (
@@ -2991,153 +2963,64 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
               )}
 
-              {/* Monthly AI Progression Elevation Card */}
-              {monthlyProgression?.shouldIncreasePace && (
-                <div className="bg-gradient-to-r from-amber-500/25 via-[#064e3b] to-emerald-600/25 border-2 border-amber-400 rounded-3xl p-4.5 space-y-3 shadow-lg">
-                  <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-amber-400/25 border border-amber-400/50 flex items-center justify-center text-amber-300 shrink-0">
-                        <Trophy className="w-5 h-5 text-amber-300 animate-bounce" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-0.5 rounded-lg bg-amber-400 text-[#064e3b] text-[11px] font-black">
-                            ترقية استثنائية بالذكاء الاصطناعي
-                          </span>
-                          <span className="text-xs font-bold text-amber-200">
-                            تطور وتميز الطالب على مدار شهر ({monthlyProgression.evaluationsCount} جلسة)
-                          </span>
-                        </div>
-                        <p className="text-xs text-emerald-100 leading-relaxed">
-                          {monthlyProgression.reasoning}
-                        </p>
-                      </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      disabled={isUpgradingPace}
-                      onClick={handleUpgradeMonthlyPace}
-                      className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-[#064e3b] text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all shrink-0 w-full sm:w-auto"
-                    >
-                      <Zap className="w-4 h-4 text-[#064e3b]" />
-                      <span>{isUpgradingPace ? 'جاري الترقية...' : `اعتماد ترقية الورد إلى (${monthlyProgression.recommendedPace} وجه)`}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {monthlyProgression?.isStruggling && (
-                <div className="bg-emerald-950/40 border border-emerald-600/40 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs">
-                  <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <span className="font-bold text-emerald-200">توجيه الذكاء الاصطناعي لمسار الطالب:</span>
-                    <p className="text-emerald-100/90 leading-relaxed">
-                      {monthlyProgression.reasoning}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {/* ============================================================ */}
               {/* SECTION 1: TODAY'S RECITATION (ما تم تسميعه بالتفصيل) */}
               {/* ============================================================ */}
-              <div className={`bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-5 transition-opacity ${(activeStudent.isGeneratingPlan || isManualGeneratingPlan) ? 'opacity-40 pointer-events-none select-none' : ''}`}>
-                <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-                  <h4 className="text-sm font-bold text-[#fbbf24] font-heading flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+              <div 
+                className={`border-2 border-b-4 rounded-[28px] p-5 sm:p-6 space-y-5 shadow-xl transition-opacity ${(activeStudent.isGeneratingPlan || isManualGeneratingPlan) ? 'opacity-40 pointer-events-none select-none' : ''}`}
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                  <h4 className="text-sm sm:text-base font-black font-heading flex items-center gap-2" style={{ color: themeAccent }}>
+                    <BookOpen className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
                     <span>1. ما سمّعه الطالب في الحلقة (التسميع الفعلي):</span>
                   </h4>
-                  <span className="text-[11px] text-[#86efac] font-bold">
+                  <span 
+                    className="text-xs font-black px-3.5 py-1.5 rounded-2xl border-2 border-b-4 self-start sm:self-auto shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                      color: themeAccent
+                    }}
+                  >
                     تاريخ التسميع: {selectedDate}
                   </span>
                 </div>
 
-                {/* Student Active Plan Overview & Quick Apply Button */}
-                {activeStudent && (activeStudent.memorizationPlan || activeStudent.aiPlan) && (
-                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-[#064e3b] to-amber-500/15 border border-amber-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-400/30">
-                        <Sparkles className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-black text-amber-300">الخطة القرآنية المنهجية المعتمدة:</span>
-                          {activeStudent.memorizationPlan?.targetCompletionDate && (
-                            <span className="text-white font-bold">
-                              الختم المتوقع: <strong className="text-emerald-300">{activeStudent.memorizationPlan.targetCompletionDate}</strong>
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#86efac]/90 font-bold">
-                          المقرر: {activeStudent.memorizationPlan?.dailyNewPages || 1} وجه جديد • {activeStudent.memorizationPlan?.dailyReviewPages || 5} أوجه مراجعة وتثبيت
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const plan = activeStudent.memorizationPlan;
-                        const aiPlan = activeStudent.aiPlan;
-                        const aiAssignment = aiPlan?.currentDailyAssignment;
-                        const planAssignment = plan?.nextDayAssignment;
-                        if (planAssignment?.surahNumber) {
-                          setTodayNewSurah(planAssignment.surahNumber);
-                          setTodayNewFromAyah(planAssignment.fromAyah || 1);
-                          setTodayNewToSurah(planAssignment.toSurahNumber || planAssignment.surahNumber);
-                          setTodayNewToAyah(planAssignment.toAyah || 10);
-                        } else if (aiAssignment?.newItem) {
-                          setTodayNewSurah(aiAssignment.newItem.surahNumber || activeStudent.currentSurah || 78);
-                          setTodayNewFromAyah(aiAssignment.newItem.fromAyah || activeStudent.currentAyah || 1);
-                          setTodayNewToSurah(aiAssignment.newItem.toSurahNumber || activeStudent.currentSurah || 78);
-                          setTodayNewToAyah(aiAssignment.newItem.toAyah || 10);
-                        } else if (plan?.dailyNewPages) {
-                          const sNum = activeStudent.currentSurah || 78;
-                          const fAyah = activeStudent.currentAyah || 1;
-                          const portion = calculatePortionFromPace(sNum, fAyah, plan.dailyNewPages);
-                          setTodayNewSurah(portion.fromSurah);
-                          setTodayNewFromAyah(portion.fromAyah);
-                          setTodayNewToSurah(portion.toSurah);
-                          setTodayNewToAyah(portion.toAyah);
-                        }
-                        setAutoFilledNotice(`✨ تم تطبيق وضبط الورد اليومي بنجاح استناداً إلى الخطة المنهجية المعتمدة للطالب (${activeStudent.name})`);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#064e3b] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 self-start sm:self-auto shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>تطبيق وضبط الورد فوراً من الخطة</span>
-                    </button>
-                  </div>
-                )}
-
                 {/* Real-time Indicator: Did the student listen to yesterday's / current assignment? */}
                 {activeStudent && (
-                  <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs font-bold transition-all shadow-sm ${
+                  <div className={`p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold transition-all shadow-sm ${
                     activeStudent.activeListeningAssignment?.isCompleted
-                      ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-200'
+                      ? 'bg-emerald-950/80 border-emerald-500/60 border-b-emerald-600 text-emerald-200'
                       : (activeStudent.activeListeningAssignment?.completedRepetitions || 0) > 0
-                        ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
-                        : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+                        ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-200'
+                        : 'bg-rose-950/60 border-rose-500/50 border-b-rose-600 text-rose-300'
                   }`}>
-                    <div className="flex items-center gap-2">
-                      <Headphones className="w-4 h-4 text-[#fbbf24] shrink-0" />
-                      <span>حالة استماع الطالب للورد المنزلي:</span>
+                    <div className="flex items-center gap-2.5">
+                      <Headphones className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
+                      <span className="font-black text-sm">حالة استماع الطالب للورد المنزلي:</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {activeStudent.activeListeningAssignment?.isCompleted ? (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/50 font-black">
+                          <Check className="w-4 h-4 text-emerald-400" />
                           <span>استمع للمقطع المقرر بالكامل ({activeStudent.activeListeningAssignment.completedRepetitions || activeStudent.activeListeningAssignment.requiredRepetitions} من {activeStudent.activeListeningAssignment.requiredRepetitions} مرات)</span>
                         </span>
                       ) : (activeStudent.activeListeningAssignment?.completedRepetitions || 0) > 0 ? (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/50 font-black">
+                          <Clock className="w-4 h-4 text-amber-400" />
                           <span>استمع جزئياً ({activeStudent.activeListeningAssignment.completedRepetitions} من {activeStudent.activeListeningAssignment.requiredRepetitions} مرات)</span>
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/50 font-black">
+                          <XCircle className="w-4 h-4 text-rose-400" />
                           <span>لم يستمع للمقطع المقرر</span>
                         </span>
                       )}
@@ -3146,27 +3029,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 )}
 
                 {/* 1.1 New Memorization (Flexible Multi-Surah Range) */}
-                <div className="space-y-3 bg-[#064e3b]/40 p-4 rounded-2xl border border-[#065f46]">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
+                <div 
+                  className="space-y-4 p-4 sm:p-5 rounded-2xl border-2 border-b-4 shadow-md"
+                  style={{
+                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                  }}
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#fbbf24]" />
+                      <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full border border-black/20" style={{ backgroundColor: themeAccent }} />
                         <span>الحفظ الجديد (بداية ونهاية التسميع):</span>
                       </span>
                       {activeStudent?.activeListeningAssignment?.isCompleted || (activeStudent?.dailyListeningCompletedDate && activeStudent?.dailyListeningCompletedDate >= (activeStudent?.activeListeningAssignment?.assignedDate || '')) ? (
-                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold inline-flex items-center gap-1 shadow-sm">
-                          <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
                           <span>استمع للمقطع المقرر ({activeStudent.activeListeningAssignment?.completedRepetitions || activeStudent.activeListeningAssignment?.requiredRepetitions || 3} مرات)</span>
                         </span>
                       ) : (
-                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold inline-flex items-center gap-1 shadow-sm">
-                          <XCircle className="w-3 h-3 text-rose-400" />
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
                           <span>لم يستمع للمقطع المقرر</span>
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -3175,7 +3065,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setTodayNewToAyah(startTodaySurahInfo.numberOfAyahs);
                           recalculateTomorrowFromToday(todayNewSurah, 1, todayNewSurah, startTodaySurahInfo.numberOfAyahs, todayNewDidNotRecite);
                         }}
-                        className="px-2.5 py-1 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#fbbf24] border border-[#065f46] text-[11px] font-bold transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                          color: themeAccent
+                        }}
                       >
                         كامل سورة {startTodaySurahInfo.name} ({startTodaySurahInfo.numberOfAyahs} آية)
                       </button>
@@ -3187,7 +3083,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             setTodayNewToAyah(startTodaySurahInfo.numberOfAyahs);
                             recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewSurah, startTodaySurahInfo.numberOfAyahs, todayNewDidNotRecite);
                           }}
-                          className="px-2.5 py-1 rounded-xl bg-[#022c22] text-[#86efac] border border-[#065f46] text-[11px] font-bold cursor-pointer"
+                          className="px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                            color: '#86efac'
+                          }}
                         >
                           نفس السورة
                         </button>
@@ -3196,20 +3098,42 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   {/* Multi-Surah Range Selector Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#022c22]/70 p-3.5 rounded-2xl border border-[#065f46]">
+                  <div 
+                    className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl border-2 border-b-4 shadow-inner"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                    }}
+                  >
                     {/* START POINT */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold text-[#fbbf24]">نقطة البداية (من):</span>
-                      <div className="grid grid-cols-2 gap-2">
+                    <div 
+                      className="space-y-2.5 p-3.5 rounded-2xl border-2 border-b-4"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                      }}
+                    >
+                      <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <span>نقطة البداية (من):</span>
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5">
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">من سورة:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">من سورة:</label>
                           <select
                             value={todayNewSurah}
                             onChange={e => handleTodayStartSurahChange(Number(e.target.value))}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number}>
+                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                 {s.number}. سورة {s.name} ({s.numberOfAyahs} آية)
                               </option>
                             ))}
@@ -3217,7 +3141,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">من الآية:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">من الآية:</label>
                           <select
                             value={todayNewFromAyah}
                             onChange={e => {
@@ -3230,10 +3154,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }
                               recalculateTomorrowFromToday(todayNewSurah, val, todayNewToSurah, targetTo, todayNewDidNotRecite);
                             }}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {Array.from({ length: startTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                              <option key={ayahNum} value={ayahNum}>
+                              <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                 آية {ayahNum}
                               </option>
                             ))}
@@ -3243,18 +3173,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* END POINT */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold text-[#86efac]">نقطة النهاية (إلى):</span>
-                      <div className="grid grid-cols-2 gap-2">
+                    <div 
+                      className="space-y-2.5 p-3.5 rounded-2xl border-2 border-b-4"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                      }}
+                    >
+                      <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <span>نقطة النهاية (إلى):</span>
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5">
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">إلى سورة:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">إلى سورة:</label>
                           <select
                             value={todayNewToSurah}
                             onChange={e => handleTodayEndSurahChange(Number(e.target.value))}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number}>
+                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                 {s.number}. سورة {s.name} ({s.numberOfAyahs} آية)
                               </option>
                             ))}
@@ -3262,7 +3207,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">
                             إلى الآية (حتى {endTodaySurahInfo.numberOfAyahs}):
                           </label>
                           <select
@@ -3272,12 +3217,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               setTodayNewToAyah(val);
                               recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewToSurah, val, todayNewDidNotRecite);
                             }}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {Array.from({ length: endTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1)
                               .filter(ayahNum => todayNewSurah !== todayNewToSurah || ayahNum >= todayNewFromAyah)
                               .map(ayahNum => (
-                                <option key={ayahNum} value={ayahNum}>
+                                <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                   آية {ayahNum}
                                 </option>
                               ))}
@@ -3288,9 +3239,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   {/* Live preview banner */}
-                  <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46] text-xs text-[#fbbf24] flex items-center justify-between">
-                    <span className="text-[#86efac] font-bold">صيغة التسميع المعتمدة:</span>
-                    <span className="font-bold text-sm">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                    }}
+                  >
+                    <span className="font-black text-xs sm:text-sm" style={{ color: themeAccent }}>صيغة التسميع المعتمدة:</span>
+                    <span className="font-black text-xs sm:text-sm text-white font-mono bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
                       {formatQuranPortion(
                         startTodaySurahInfo.name,
                         todayNewFromAyah,
@@ -3307,17 +3265,30 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <button
                     type="button"
                     onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600/30 via-[#064e3b] to-emerald-600/30 hover:from-emerald-600/50 hover:to-emerald-600/50 border border-emerald-500/40 text-emerald-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm group"
+                    className="w-full py-3 px-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2.5 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 group"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }}
                   >
-                    <BookOpen className="w-4 h-4 text-[#fbbf24] group-hover:scale-110 transition-transform" />
+                    <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
                     <span>
                       قراءة ومتابعة في مصحف الملك فهد ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • الوجه {getPageOfAyah(todayNewSurah, todayNewFromAyah)})
                     </span>
                   </button>
 
                   {/* Did not recite toggle */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#022c22]/90 border border-[#065f46]">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold select-none">
+                  <div 
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border-2 border-b-4 transition-all"
+                    style={{
+                      backgroundColor: todayNewDidNotRecite ? 'rgba(239, 68, 68, 0.15)' : 'var(--complex-primary, #131f24)',
+                      borderColor: todayNewDidNotRecite ? '#ef4444' : 'var(--complex-border, #2b4550)',
+                      borderBottomColor: todayNewDidNotRecite ? '#b91c1c' : 'var(--complex-card-shadow, #16262e)'
+                    }}
+                  >
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-black select-none">
                       <input
                         type="checkbox"
                         checked={todayNewDidNotRecite}
@@ -3349,9 +3320,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             setTomNewToAyah(tomPortion.toAyah);
                           }
                         }}
-                        className="w-4 h-4 rounded text-red-500 bg-[#064e3b] border-[#065f46] focus:ring-red-400 focus:ring-offset-0 cursor-pointer"
+                        className="w-4 h-4 rounded-lg text-red-500 bg-[#131f24] border-red-400 focus:ring-0 cursor-pointer"
                       />
-                      <span className={todayNewDidNotRecite ? "text-red-400 font-black" : "text-emerald-200"}>
+                      <span className={todayNewDidNotRecite ? "text-red-400 font-black" : "text-slate-300"}>
                         لم يُسمّع الطالب هذا الورد اليوم (تثبيت نفس الورد لليوم التالي وعدم تقدمه)
                       </span>
                     </label>
@@ -3362,7 +3333,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           value={todayNewDidNotReciteReason}
                           onChange={e => setTodayNewDidNotReciteReason(e.target.value)}
                           placeholder="سبب عدم التسميع (مثال: لم يحفظ، تعثر شديد، غياب...)"
-                          className="w-full bg-[#064e3b] border border-red-500/40 focus:border-red-400 rounded-xl py-1.5 px-3 text-xs text-red-200 outline-none placeholder:text-red-300/40"
+                          className="w-full bg-[#131f24] border-2 border-red-500/50 focus:border-red-400 rounded-2xl py-2 px-3 text-xs text-red-200 outline-none placeholder:text-red-300/40"
                         />
                       </div>
                     )}
@@ -3370,16 +3341,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
 
                 {/* 1.2 Today's Reviews */}
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-[#86efac]" />
+                    <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                      <Layers className="w-4 h-4" style={{ color: themeAccent }} />
                       <span>المراجعة والتثبيت والاختبارات ({todayReviews.length}):</span>
                     </span>
                     <button
                       type="button"
                       onClick={handleAddReviewItem}
-                      className="px-3 py-1.5 rounded-xl bg-[#064e3b] hover:bg-[#064e3b]/80 border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>إضافة مراجعة أو اختبار آخر</span>
@@ -3387,11 +3364,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   {todayReviews.length === 0 ? (
-                    <div className="p-4 rounded-2xl bg-[#064e3b]/20 border border-dashed border-[#065f46] text-center text-xs text-[#86efac]/70">
-                      لا توجد مراجعات مسجلة. اضغط على "إضافة مراجعة" لإضافة موضع مراجعة أو اختبار.
+                    <div 
+                      className="p-5 rounded-2xl border-2 border-dashed text-center text-xs font-bold text-slate-400"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)'
+                      }}
+                    >
+                      لا توجد مراجعات مسجلة. اضغط على "إضافة مراجعة أو اختبار آخر" لإضافة موضع مراجعة أو اختبار.
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {todayReviews.map((rev, index) => {
                         const revStartSurahInfo = getSurahInfo(rev.surahNumber);
                         const revEndSurahInfo = rev.toSurahNumber ? getSurahInfo(rev.toSurahNumber) : revStartSurahInfo;
@@ -3399,14 +3382,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         return (
                           <div
                             key={rev.id}
-                            className="bg-[#064e3b]/30 p-4 rounded-2xl border border-[#065f46] space-y-3 relative"
+                            className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-3.5 shadow-md relative"
+                            style={{
+                              backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                            }}
                           >
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="flex items-center gap-3">
-                                <span className="text-xs font-bold text-[#86efac]">
+                                <span className="text-xs font-black px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-primary, #131f24)', color: themeAccent }}>
                                   بند مراجعة #{index + 1}
                                 </span>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold select-none">
+                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold select-none">
                                   <input
                                     type="checkbox"
                                     checked={!!rev.didNotRecite}
@@ -3414,9 +3402,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                       didNotRecite: e.target.checked,
                                       didNotReciteReason: e.target.checked ? (rev.didNotReciteReason || 'لم يتقن الورد') : undefined
                                     })}
-                                    className="w-3.5 h-3.5 rounded text-red-500 bg-[#022c22] border-[#065f46]"
+                                    className="w-3.5 h-3.5 rounded text-red-500 bg-[#131f24] border-red-500/60"
                                   />
-                                  <span className={rev.didNotRecite ? "text-red-400 font-bold" : "text-[#86efac]/80"}>
+                                  <span className={rev.didNotRecite ? "text-red-400 font-black" : "text-slate-300"}>
                                     لم يُسمّع
                                   </span>
                                 </label>
@@ -3426,7 +3414,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                     value={rev.didNotReciteReason || ''}
                                     onChange={e => handleUpdateReviewItem(rev.id, { didNotReciteReason: e.target.value })}
                                     placeholder="السبب..."
-                                    className="bg-[#022c22] border border-red-500/40 rounded-lg py-0.5 px-2 text-[11px] text-red-200 outline-none w-28 placeholder:text-red-300/40"
+                                    className="bg-[#131f24] border border-red-500/40 rounded-xl py-1 px-2.5 text-xs text-red-200 outline-none w-32 placeholder:text-red-300/40"
                                   />
                                 )}
                               </div>
@@ -3442,14 +3430,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                       isFullSurah: true
                                     })
                                   }
-                                  className="px-2 py-0.5 rounded-lg bg-[#022c22] text-[#fbbf24] text-[10px] font-bold border border-[#065f46] cursor-pointer"
+                                  className="px-2.5 py-1 rounded-xl border-2 border-b-2 text-[11px] font-black cursor-pointer shadow-sm active:translate-y-[1px]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-primary, #131f24)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    color: themeAccent
+                                  }}
                                 >
                                   كامل السورة ({revStartSurahInfo.numberOfAyahs})
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveReviewItem(rev.id)}
-                                  className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-colors cursor-pointer"
+                                  className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-xl transition-colors cursor-pointer border border-red-500/30"
                                   title="حذف هذا البند"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3457,19 +3450,32 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                            <div 
+                              className="grid grid-cols-1 sm:grid-cols-5 gap-3 p-3.5 rounded-2xl border-2 border-b-4 shadow-inner"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                              }}
+                            >
                               {/* Review Type */}
                               <div className="sm:col-span-1">
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   نوع المراجعة:
                                 </label>
                                 <select
                                   value={rev.type}
                                   onChange={e => handleUpdateReviewItem(rev.id, { type: e.target.value })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {REVIEW_TYPES.map(t => (
-                                    <option key={t} value={t}>
+                                    <option key={t} value={t} className="bg-[#131f24] text-white">
                                       {t}
                                     </option>
                                   ))}
@@ -3478,16 +3484,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* Start Surah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من سورة:
                                 </label>
                                 <select
                                   value={rev.surahNumber}
                                   onChange={e => handleUpdateReviewItem(rev.id, { surahNumber: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number}>
+                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                       {s.number}. {s.name}
                                     </option>
                                   ))}
@@ -3496,7 +3508,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* From Ayah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من الآية:
                                 </label>
                                 <select
@@ -3508,10 +3520,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                       toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < val ? val : rev.toAyah
                                     });
                                   }}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                                    <option key={ayahNum} value={ayahNum}>
+                                    <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                       آية {ayahNum}
                                     </option>
                                   ))}
@@ -3520,16 +3538,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* End Surah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى سورة:
                                 </label>
                                 <select
                                   value={rev.toSurahNumber || rev.surahNumber}
                                   onChange={e => handleUpdateReviewItem(rev.id, { toSurahNumber: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number}>
+                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                       {s.number}. {s.name}
                                     </option>
                                   ))}
@@ -3538,18 +3562,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* To Ayah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى الآية:
                                 </label>
                                 <select
                                   value={rev.toAyah}
                                   onChange={e => handleUpdateReviewItem(rev.id, { toAyah: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
-                                   {Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
+                                  {Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                                     .filter(ayahNum => (rev.toSurahNumber || rev.surahNumber) !== rev.surahNumber || ayahNum >= rev.fromAyah)
                                     .map(ayahNum => (
-                                      <option key={ayahNum} value={ayahNum}>
+                                      <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                         آية {ayahNum}
                                       </option>
                                     ))}
@@ -3557,24 +3587,39 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               </div>
                             </div>
 
-                            <div className="text-[11px] text-[#fbbf24] bg-[#022c22] p-2.5 rounded-xl border border-[#065f46] font-bold">
-                              {formatQuranPortion(
-                                revStartSurahInfo.name,
-                                rev.fromAyah,
-                                rev.toAyah,
-                                revStartSurahInfo.numberOfAyahs,
-                                rev.type,
-                                revEndSurahInfo.name,
-                                revEndSurahInfo.numberOfAyahs
-                              )}
+                            <div 
+                              className="p-3 rounded-2xl border-2 border-b-2 font-black text-xs shadow-sm flex items-center justify-between"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                color: themeAccent
+                              }}
+                            >
+                              <span>
+                                {formatQuranPortion(
+                                  revStartSurahInfo.name,
+                                  rev.fromAyah,
+                                  rev.toAyah,
+                                  revStartSurahInfo.numberOfAyahs,
+                                  rev.type,
+                                  revEndSurahInfo.name,
+                                  revEndSurahInfo.numberOfAyahs
+                                )}
+                              </span>
                             </div>
 
                             <button
                               type="button"
                               onClick={() => openMushafReader(rev.surahNumber, rev.fromAyah, rev.id)}
-                              className="w-full py-2 px-3 rounded-xl bg-[#064e3b]/50 hover:bg-[#064e3b] border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                              className="w-full py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                color: themeAccent
+                              }}
                             >
-                              <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
+                              <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                               <span>قراءة في المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
                             </button>
                           </div>
@@ -3588,14 +3633,21 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               {/* ============================================================ */}
               {/* SECTION 2: TOMORROW'S ASSIGNMENT & MULTI-REVIEWS             */}
               {/* ============================================================ */}
-              <div className="bg-[#022c22] border border-[#065f46] rounded-3xl p-5 space-y-5 shadow-xl relative overflow-hidden">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#065f46]">
+              <div 
+                className="border-2 border-b-4 rounded-[28px] p-5 sm:p-6 space-y-5 shadow-xl relative overflow-hidden"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                   <div>
-                    <h4 className="text-sm font-bold text-[#fbbf24] font-heading flex items-center gap-2">
-                      <Compass className="w-4 h-4 text-[#fbbf24]" />
+                    <h4 className="text-sm sm:text-base font-black font-heading flex items-center gap-2" style={{ color: themeAccent }}>
+                      <Compass className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
                       <span>2. المقرر المطلوب تسميعه غداً (حفظ جديد + مراجعات وتراكميات محفوظة):</span>
                     </h4>
-                    <p className="text-[11px] text-[#86efac]/80 mt-0.5">
+                    <p className="text-xs text-slate-300 mt-1 font-bold">
                       يبقى الورد والمراجعات والتراكميات محفوظة للغد وثابتة للأبد حتى يقوم المعلم بتعديلها أو حذفها
                     </p>
                   </div>
@@ -3604,17 +3656,23 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     type="button"
                     disabled={isGeneratingTomPlan}
                     onClick={handleGenerateTomorrowPlanWithAI}
-                    className="px-4 py-2.5 rounded-2xl bg-[#064e3b] hover:bg-[#047857] border-2 border-amber-400 text-[#fbbf24] text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
+                    className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }}
                     title="الذكاء الاصطناعي يحلل ما سمعه الطالب وأخطاءه اليوم مقارنة بالأيام السابقة ويضع خطة ومقرر غد مع مراعاة زمن وتوقيت الحلقة"
                   >
                     {isGeneratingTomPlan ? (
                       <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                        <RefreshCw className="w-4 h-4 animate-spin" />
                         <span>الذكاء الاصطناعي يحلل ويضع خطة غد...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                        <Sparkles className="w-4 h-4 animate-pulse" />
                         <span>وضع خطة غد</span>
                       </>
                     )}
@@ -3622,10 +3680,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
 
                 {/* 2.1 Tomorrow's New Memorization */}
-                <div className="space-y-3 bg-[#064e3b]/40 p-4 rounded-2xl border border-[#065f46]">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#fbbf24]" />
+                <div 
+                  className="space-y-4 p-4 sm:p-5 rounded-2xl border-2 border-b-4 shadow-md"
+                  style={{
+                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                  }}
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2.5">
+                    <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full border border-black/20" style={{ backgroundColor: themeAccent }} />
                       <span>ورد الحفظ الجديد المطلوب لغد (بداية ونهاية المقرر):</span>
                     </span>
                     <button
@@ -3636,26 +3701,54 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         setTomNewToSurah(p.toSurah);
                         setTomNewToAyah(p.toAyah);
                       }}
-                      className="px-2.5 py-1 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#fbbf24] border border-[#065f46] text-[11px] font-bold cursor-pointer transition-colors"
+                      className="px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                        color: themeAccent
+                      }}
                     >
                       ضبط بمعدل الورد ({activeStudent?.dailyNewTarget || 'نصف وجه'})
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#022c22]/70 p-3.5 rounded-2xl border border-[#065f46]">
+                  <div 
+                    className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl border-2 border-b-4 shadow-inner"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                    }}
+                  >
                     {/* START POINT */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold text-[#fbbf24]">نقطة البداية (من):</span>
-                      <div className="grid grid-cols-2 gap-2">
+                    <div 
+                      className="space-y-2.5 p-3.5 rounded-2xl border-2 border-b-4"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                      }}
+                    >
+                      <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <span>نقطة البداية (من):</span>
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5">
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">من سورة:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">من سورة:</label>
                           <select
                             value={tomNewSurah}
                             onChange={e => handleTomNewStartSurahChange(Number(e.target.value))}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number}>
+                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                 {s.number}. {s.name}
                               </option>
                             ))}
@@ -3663,7 +3756,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">من الآية:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">من الآية:</label>
                           <select
                             value={tomNewFromAyah}
                             onChange={e => {
@@ -3673,10 +3766,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 setTomNewToAyah(val);
                               }
                             }}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {Array.from({ length: startTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                              <option key={ayahNum} value={ayahNum}>
+                              <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                 آية {ayahNum}
                               </option>
                             ))}
@@ -3686,18 +3785,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* END POINT */}
-                    <div className="space-y-2">
-                      <span className="text-[11px] font-bold text-[#86efac]">نقطة النهاية (إلى):</span>
-                      <div className="grid grid-cols-2 gap-2">
+                    <div 
+                      className="space-y-2.5 p-3.5 rounded-2xl border-2 border-b-4"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                      }}
+                    >
+                      <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <span>نقطة النهاية (إلى):</span>
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5">
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">إلى سورة:</label>
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">إلى سورة:</label>
                           <select
                             value={tomNewToSurah}
                             onChange={e => handleTomNewEndSurahChange(Number(e.target.value))}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number}>
+                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                 {s.number}. {s.name}
                               </option>
                             ))}
@@ -3705,18 +3819,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </div>
 
                         <div>
-                          <label className="text-[10px] text-[#86efac] block mb-1">
+                          <label className="text-[11px] font-bold block mb-1 text-slate-300">
                             إلى الآية (حتى {endTomNewSurahInfo.numberOfAyahs}):
                           </label>
                           <select
                             value={tomNewToAyah}
                             onChange={e => setTomNewToAyah(Number(e.target.value))}
-                            className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2.5 text-xs text-white outline-none"
+                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                            style={{
+                              backgroundColor: 'var(--complex-primary, #131f24)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                              color: '#ffffff'
+                            }}
                           >
                             {Array.from({ length: endTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                               .filter(ayahNum => tomNewSurah !== tomNewToSurah || ayahNum >= tomNewFromAyah)
                               .map(ayahNum => (
-                                <option key={ayahNum} value={ayahNum}>
+                                <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                   آية {ayahNum}
                                 </option>
                               ))}
@@ -3726,9 +3846,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#022c22] border border-[#065f46] text-xs text-[#fbbf24] flex items-center justify-between">
-                    <span className="text-[#86efac] font-bold">المقرر الجديد لغد:</span>
-                    <span className="font-bold text-sm">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                    }}
+                  >
+                    <span className="font-black text-xs sm:text-sm" style={{ color: themeAccent }}>المقرر الجديد لغد:</span>
+                    <span className="font-black text-xs sm:text-sm text-white font-mono bg-white/5 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
                       {formatQuranPortion(
                         startTomNewSurahInfo.name,
                         tomNewFromAyah,
@@ -3745,24 +3872,36 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <button
                     type="button"
                     onClick={() => openMushafReader(tomNewSurah, tomNewFromAyah, 'new_tomorrow')}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600/30 via-[#064e3b] to-emerald-600/30 hover:from-emerald-600/50 hover:to-emerald-600/50 border border-emerald-500/40 text-emerald-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm group"
+                    className="w-full py-3 px-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2.5 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 group"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }}
                   >
-                    <BookOpen className="w-4 h-4 text-[#fbbf24] group-hover:scale-110 transition-transform" />
+                    <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
                     <span>قراءة في مصحف الملك فهد ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • الوجه {getPageOfAyah(tomNewSurah, tomNewFromAyah)})</span>
                   </button>
                 </div>
 
                 {/* 2.2 Tomorrow's Reviews (Multi-item) */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-[#86efac]" />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2.5">
+                    <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                      <Layers className="w-4 h-4" style={{ color: themeAccent }} />
                       <span>ورد المراجعة والتثبيت والاختبارات لغد ({tomReviews.length}):</span>
                     </span>
                     <button
                       type="button"
                       onClick={handleAddTomReviewItem}
-                      className="px-3 py-1.5 rounded-xl bg-[#064e3b] hover:bg-[#064e3b]/80 border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>إضافة مراجعة أو اختبار لغد</span>
@@ -3770,11 +3909,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   {tomReviews.length === 0 ? (
-                    <div className="p-4 rounded-2xl bg-[#064e3b]/20 border border-dashed border-[#065f46] text-center text-xs text-[#86efac]/70">
+                    <div 
+                      className="p-5 rounded-2xl border-2 border-dashed text-center text-xs font-bold text-slate-400"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)'
+                      }}
+                    >
                       لا توجد مراجعات مقررة لغد. اضغط على "إضافة مراجعة أو اختبار لغد" لتحديد المقرر.
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {tomReviews.map((rev, index) => {
                         const revStartSurahInfo = getSurahInfo(rev.surahNumber);
                         const revEndSurahInfo = rev.toSurahNumber ? getSurahInfo(rev.toSurahNumber) : revStartSurahInfo;
@@ -3782,10 +3927,15 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         return (
                           <div
                             key={rev.id}
-                            className="bg-[#064e3b]/30 p-4 rounded-2xl border border-[#065f46] space-y-3 relative"
+                            className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-3.5 shadow-md relative"
+                            style={{
+                              backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                            }}
                           >
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <span className="text-xs font-bold text-[#86efac]">
+                              <span className="text-xs font-black px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-primary, #131f24)', color: themeAccent }}>
                                 مقرر مراجعة لغد #{index + 1}
                               </span>
                               <div className="flex items-center gap-2">
@@ -3800,14 +3950,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                       isFullSurah: true
                                     })
                                   }
-                                  className="px-2 py-0.5 rounded-lg bg-[#022c22] text-[#fbbf24] text-[10px] font-bold border border-[#065f46] cursor-pointer"
+                                  className="px-2.5 py-1 rounded-xl border-2 border-b-2 text-[11px] font-black cursor-pointer shadow-sm active:translate-y-[1px]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-primary, #131f24)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    color: themeAccent
+                                  }}
                                 >
                                   كامل السورة ({revStartSurahInfo.numberOfAyahs})
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveTomReviewItem(rev.id)}
-                                  className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-colors cursor-pointer"
+                                  className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-xl transition-colors cursor-pointer border border-red-500/30"
                                   title="حذف هذا المقرر لغد"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3815,19 +3970,32 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                            <div 
+                              className="grid grid-cols-1 sm:grid-cols-5 gap-3 p-3.5 rounded-2xl border-2 border-b-4 shadow-inner"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                              }}
+                            >
                               {/* Review Type */}
                               <div className="sm:col-span-1">
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   نوع المراجعة:
                                 </label>
                                 <select
                                   value={rev.type}
                                   onChange={e => handleUpdateTomReviewItem(rev.id, { type: e.target.value })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {REVIEW_TYPES.map(t => (
-                                    <option key={t} value={t}>
+                                    <option key={t} value={t} className="bg-[#131f24] text-white">
                                       {t}
                                     </option>
                                   ))}
@@ -3836,16 +4004,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* Start Surah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من سورة:
                                 </label>
                                 <select
                                   value={rev.surahNumber}
                                   onChange={e => handleUpdateTomReviewItem(rev.id, { surahNumber: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number}>
+                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                       {s.number}. {s.name}
                                     </option>
                                   ))}
@@ -3854,7 +4028,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* From Ayah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من الآية:
                                 </label>
                                 <select
@@ -3866,10 +4040,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                       toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < val ? val : rev.toAyah
                                     });
                                   }}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                                    <option key={ayahNum} value={ayahNum}>
+                                    <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                       آية {ayahNum}
                                     </option>
                                   ))}
@@ -3878,16 +4058,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* End Surah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى سورة:
                                 </label>
                                 <select
                                   value={rev.toSurahNumber || rev.surahNumber}
                                   onChange={e => handleUpdateTomReviewItem(rev.id, { toSurahNumber: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number}>
+                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
                                       {s.number}. {s.name}
                                     </option>
                                   ))}
@@ -3896,18 +4082,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                               {/* To Ayah */}
                               <div>
-                                <label className="text-[10px] font-semibold text-[#86efac] block mb-1">
+                                <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى الآية:
                                 </label>
                                 <select
                                   value={rev.toAyah}
                                   onChange={e => handleUpdateTomReviewItem(rev.id, { toAyah: Number(e.target.value) })}
-                                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-xl py-1.5 px-2 text-xs text-white outline-none"
+                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                                  style={{
+                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                                    borderColor: 'var(--complex-border, #2b4550)',
+                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                                    color: '#ffffff'
+                                  }}
                                 >
                                   {Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                                     .filter(ayahNum => (rev.toSurahNumber || rev.surahNumber) !== rev.surahNumber || ayahNum >= rev.fromAyah)
                                     .map(ayahNum => (
-                                      <option key={ayahNum} value={ayahNum}>
+                                      <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
                                         آية {ayahNum}
                                       </option>
                                     ))}
@@ -3915,24 +4107,39 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               </div>
                             </div>
 
-                            <div className="text-[11px] text-[#fbbf24] bg-[#022c22] p-2.5 rounded-xl border border-[#065f46] font-bold">
-                              {formatQuranPortion(
-                                revStartSurahInfo.name,
-                                rev.fromAyah,
-                                rev.toAyah,
-                                revStartSurahInfo.numberOfAyahs,
-                                rev.type,
-                                revEndSurahInfo.name,
-                                revEndSurahInfo.numberOfAyahs
-                              )}
+                            <div 
+                              className="p-3 rounded-2xl border-2 border-b-2 font-black text-xs shadow-sm flex items-center justify-between"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                color: themeAccent
+                              }}
+                            >
+                              <span>
+                                {formatQuranPortion(
+                                  revStartSurahInfo.name,
+                                  rev.fromAyah,
+                                  rev.toAyah,
+                                  revStartSurahInfo.numberOfAyahs,
+                                  rev.type,
+                                  revEndSurahInfo.name,
+                                  revEndSurahInfo.numberOfAyahs
+                                )}
+                              </span>
                             </div>
 
                             <button
                               type="button"
                               onClick={() => openMushafReader(rev.surahNumber, rev.fromAyah, rev.id)}
-                              className="w-full py-2 px-3 rounded-xl bg-[#064e3b]/50 hover:bg-[#064e3b] border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                              className="w-full py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: 'var(--complex-primary, #131f24)',
+                                borderColor: 'var(--complex-border, #2b4550)',
+                                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                color: themeAccent
+                              }}
                             >
-                              <BookOpen className="w-3.5 h-3.5 text-[#fbbf24]" />
+                              <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                               <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
                             </button>
                           </div>
@@ -3943,10 +4150,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
 
                 {/* 2.3 Reciter & Repetitions Selector */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div 
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl border-2 border-b-4 shadow-inner"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                  }}
+                >
                   <div>
-                    <label className="text-xs font-semibold text-[#86efac] block mb-1 flex items-center gap-1.5">
-                      <Volume2 className="w-4 h-4 text-[#fbbf24]" />
+                    <label className="text-xs font-black block mb-2 flex items-center gap-1.5" style={{ color: themeAccent }}>
+                      <Volume2 className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>القارئ المقترح للاستماع له بالمنزل:</span>
                     </label>
                     <select
@@ -3966,11 +4180,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setTargetRepetitions(3);
                         }
                       }}
-                      className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2 px-3 text-xs text-white outline-none cursor-pointer"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                        color: '#ffffff'
+                      }}
                     >
-                      <option value="بدون">بدون (لا يتطلب استماع - ٠ مرات)</option>
+                      <option value="بدون" className="bg-[#131f24] text-white">بدون (لا يتطلب استماع - ٠ مرات)</option>
                       {FAMOUS_RECITERS.filter(r => (r as any).hasAudio).map(r => (
-                        <option key={r.id} value={r.name}>
+                        <option key={r.id} value={r.name} className="bg-[#131f24] text-white">
                           {r.name}
                         </option>
                       ))}
@@ -3978,8 +4198,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-[#86efac] block mb-1 flex items-center gap-1.5">
-                      <RotateCcw className="w-4 h-4 text-[#fbbf24]" />
+                    <label className="text-xs font-black block mb-2 flex items-center gap-1.5" style={{ color: themeAccent }}>
+                      <RotateCcw className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>مرات التكرار المقررة للطالب (0 - 20):</span>
                     </label>
                     <select
@@ -3993,11 +4213,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setSelectedSheikh(FAMOUS_RECITERS[0].name);
                         }
                       }}
-                      className="w-full bg-[#064e3b] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2 px-3 text-xs text-white outline-none font-bold cursor-pointer"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
+                        color: '#ffffff'
+                      }}
                     >
-                      <option value={0}>0 (معفى - لا يحتاج استماع)</option>
+                      <option value={0} className="bg-[#131f24] text-white">0 (معفى - لا يحتاج استماع)</option>
                       {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                        <option key={num} value={num}>
+                        <option key={num} value={num} className="bg-[#131f24] text-white">
                           {num === 1 ? 'مرة واحدة' : num === 2 ? 'مرتان' : `${num} مرات`}
                         </option>
                       ))}
@@ -4009,34 +4235,71 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               {/* ============================================================ */}
               {/* SECTION 3: DAILY STUDENT POINTS (نقاط الطالب اليوم)          */}
               {/* ============================================================ */}
-              <div className="bg-[#022c22] border-2 border-[#fbbf24]/50 rounded-3xl p-5 sm:p-6 space-y-5 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#065f46]">
+              <div 
+                className="border-2 border-b-4 rounded-[28px] p-5 sm:p-6 space-y-5 shadow-xl"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] flex items-center justify-center shrink-0 shadow-sm">
-                      <Award className="w-5 h-5" />
+                    <div 
+                      className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-md"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
+                      <Award className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="text-base sm:text-lg font-black text-[#fbbf24] font-heading flex items-center gap-2">
+                      <h3 className="text-base sm:text-lg font-black font-heading flex items-center gap-2" style={{ color: themeAccent }}>
                         <span>نقاط الطالب اليوم</span>
-                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700">
+                        <span 
+                          className="text-xs font-mono font-black px-2.5 py-0.5 rounded-xl border-2 border-b-2"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            borderColor: `${themeAccent}60`,
+                            color: themeAccent
+                          }}
+                        >
                           {studentPointsToday.toFixed(2).replace(/\.00$/, '')} نقطة
                         </span>
                       </h3>
-                      <p className="text-xs text-[#86efac]/80">
+                      <p className="text-xs text-slate-300 font-bold mt-0.5">
                         تُحسب تلقائياً من أوجه التسميع (الجديد والمراجعات) مع إمكانية التعديل والخصم والزيادة من قبل المعلم.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-center px-3.5 py-1.5 rounded-2xl bg-[#064e3b] border border-[#fbbf24]/30 text-xs text-amber-200">
-                    <Sparkles className="w-4 h-4 text-[#fbbf24]" />
+                  <div 
+                    className="flex items-center gap-2 self-end sm:self-center px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                      color: themeAccent
+                    }}
+                  >
+                    <Sparkles className="w-4 h-4" />
                     <span>رصيد الطالب الإجمالي: <strong className="text-white font-mono font-black text-sm">{activeStudent.points || 0}</strong> نقطة</span>
                   </div>
                 </div>
 
                 {/* Main Points Stepper / Counter */}
-                <div className="bg-[#011a14] border border-[#065f46] rounded-2xl p-4 sm:p-5 flex flex-col items-center justify-center gap-4">
-                  <span className="text-xs font-bold text-[#86efac]">
+                <div 
+                  className="rounded-2xl border-2 border-b-4 p-5 flex flex-col items-center justify-center gap-4 shadow-inner"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                  }}
+                >
+                  <span className="text-xs font-black" style={{ color: themeAccent }}>
                     العداد اليومي لنقاط الطالب (يمكنك الخصم والزيادة حسب إتقان الطالب):
                   </span>
 
@@ -4049,7 +4312,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 1).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-rose-950/60 hover:text-rose-300 border border-[#065f46] text-white text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="خصم نقطة واحدة"
                       >
                         -1.0
@@ -4060,7 +4323,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 0.5).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-rose-950/60 hover:text-rose-300 border border-[#065f46] text-white text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="خصم نصف نقطة"
                       >
                         -0.5
@@ -4071,7 +4334,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 0.25).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-rose-950/60 hover:text-rose-300 border border-[#065f46] text-white text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="خصم ربع نقطة"
                       >
                         -0.25
@@ -4079,7 +4342,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     </div>
 
                     {/* Prominent Score Counter Display / Direct Input */}
-                    <div className="flex items-center gap-2 bg-[#064e3b] border-2 border-[#fbbf24] rounded-2xl px-4 py-2 shadow-[0_0_20px_rgba(251,191,36,0.25)]">
+                    <div 
+                      className="flex items-center gap-2 border-2 border-b-4 rounded-2xl px-5 py-2.5 shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
                       <input
                         type="number"
                         min="0"
@@ -4090,9 +4360,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(val);
                           setIsManualPointsModified(true);
                         }}
-                        className="w-20 sm:w-24 bg-transparent text-center font-black text-2xl sm:text-3xl text-[#fbbf24] font-mono outline-none"
+                        className="w-20 sm:w-24 bg-transparent text-center font-black text-2xl sm:text-3xl font-mono outline-none"
+                        style={{ color: themeAccent }}
                       />
-                      <span className="text-xs sm:text-sm font-black text-emerald-300 font-heading">
+                      <span className="text-xs sm:text-sm font-black text-white font-heading">
                         نقطة
                       </span>
                     </div>
@@ -4105,7 +4376,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 0.25).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-emerald-700 hover:text-white border border-[#065f46] text-emerald-300 text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="إضافة ربع نقطة"
                       >
                         +0.25
@@ -4116,7 +4387,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 0.5).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-emerald-700 hover:text-white border border-[#065f46] text-emerald-300 text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="إضافة نصف نقطة"
                       >
                         +0.5
@@ -4127,7 +4398,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 1).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-2.5 sm:px-3 py-2 rounded-xl bg-[#064e3b] hover:bg-emerald-700 hover:text-white border border-[#065f46] text-emerald-300 text-xs font-black transition-all cursor-pointer"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
                         title="إضافة نقطة واحدة"
                       >
                         +1.0
@@ -4136,8 +4407,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </div>
 
                   {/* Fast Preset Options and Reset Button */}
-                  <div className="flex items-center gap-2 flex-wrap justify-center pt-2 border-t border-[#065f46]/60 w-full">
-                    <span className="text-[11px] text-[#86efac]/70">خيارات سريعة:</span>
+                  <div className="flex items-center gap-2 flex-wrap justify-center pt-3 border-t border-white/10 w-full">
+                    <span className="text-xs font-bold text-slate-300">خيارات سريعة:</span>
                     {[0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5].map(preset => (
                       <button
                         key={preset}
@@ -4146,11 +4417,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(preset);
                           setIsManualPointsModified(true);
                         }}
-                        className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-xl text-xs font-mono font-black border-2 border-b-2 transition-all cursor-pointer active:translate-y-[1px] ${
                           studentPointsToday === preset
-                            ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
-                            : 'bg-[#064e3b]/80 hover:bg-[#064e3b] text-[#86efac] border border-[#065f46]'
+                            ? 'shadow-md brightness-110'
+                            : 'hover:brightness-110 text-slate-200'
                         }`}
+                        style={studentPointsToday === preset ? {
+                          backgroundColor: themeAccent,
+                          borderColor: themeAccent,
+                          color: accentTextColor
+                        } : {
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: 'var(--complex-border, #2b4550)'
+                        }}
                       >
                         {preset}
                       </button>
@@ -4162,88 +4441,135 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         setStudentPointsToday(calculatedRecitationPoints);
                         setIsManualPointsModified(false);
                       }}
-                      className="px-3 py-1 rounded-lg text-xs font-bold bg-[#022c22] hover:bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]/30 hover:border-[#fbbf24] transition-all cursor-pointer flex items-center gap-1.5 mr-auto"
+                      className="px-3.5 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 mr-auto shadow-sm active:translate-y-[1px]"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: themeAccent,
+                        color: themeAccent
+                      }}
                       title="استعادة النقاط المحسوبة تلقائياً من أوجه التسميع"
                     >
-                      <RotateCcw className="w-3.5 h-3.5 text-[#fbbf24]" />
+                      <RotateCcw className="w-3.5 h-3.5" />
                       <span>إعادة ضبط للمحسوب ({calculatedRecitationPoints.toFixed(2).replace(/\.00$/, '')})</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Detailed Automatic Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
-                  <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] flex flex-col justify-between gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                    }}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-emerald-300 font-bold">الحفظ الجديد:</span>
-                      <span className="text-[#fbbf24] font-mono font-bold">
+                      <span className="text-slate-200 font-black">الحفظ الجديد:</span>
+                      <span className="font-mono font-black" style={{ color: themeAccent }}>
                         {liveNewFacesCount.toFixed(2).replace(/\.00$/, '')} وجه
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#86efac]/80 flex justify-between">
+                    <div className="text-[11px] text-slate-300 flex justify-between font-bold">
                       <span>نقاط الوجه (×{newPageMultiplier}):</span>
                       <strong className="text-white font-mono">+{liveNewPagePoints.toFixed(2).replace(/\.00$/, '')}</strong>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] flex flex-col justify-between gap-1.5">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                    }}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-emerald-300 font-bold">المراجعات:</span>
-                      <span className="text-[#fbbf24] font-mono font-bold">
+                      <span className="text-slate-200 font-black">المراجعات:</span>
+                      <span className="font-mono font-black" style={{ color: themeAccent }}>
                         {liveReviewFacesCount.toFixed(2).replace(/\.00$/, '')} وجه
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#86efac]/80 flex justify-between">
+                    <div className="text-[11px] text-slate-300 flex justify-between font-bold">
                       <span>نقاط المراجعة (×{reviewPageMultiplier}):</span>
                       <strong className="text-white font-mono">+{liveReviewPagePoints.toFixed(2).replace(/\.00$/, '')}</strong>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] flex flex-col justify-between gap-1.5">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                    }}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-emerald-300 font-bold">معايير التقييم والنجوم:</span>
-                      <span className="text-amber-300 font-mono font-bold">
+                      <span className="text-slate-200 font-black">معايير التقييم والنجوم:</span>
+                      <span className="font-mono font-black" style={{ color: themeAccent }}>
                         +{liveCriteriaPoints} نقطة
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#86efac]/80 flex justify-between">
+                    <div className="text-[11px] text-slate-300 flex justify-between font-bold">
                       <span>الحضور ({selectedDateAtt?.status || 'حاضر'}):</span>
                       <strong className="text-white font-mono">{attendancePoints >= 0 ? `+${attendancePoints}` : attendancePoints} نقطة</strong>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-[#064e3b]/80 border border-[#fbbf24]/30 flex flex-col justify-between gap-1.5">
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-amber-300 font-bold">الرصيد الكلي:</span>
-                      <span className="text-[#fbbf24] font-mono font-black text-sm">
+                      <span className="font-black" style={{ color: themeAccent }}>الرصيد الكلي:</span>
+                      <span className="font-mono font-black text-base" style={{ color: themeAccent }}>
                         {((activeStudent.points || 0) + studentPointsToday).toFixed(2).replace(/\.00$/, '')}
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#86efac]/80 flex justify-between">
+                    <div className="text-[11px] text-slate-300 flex justify-between font-bold">
                       <span>المستحق لليوم:</span>
-                      <strong className="text-emerald-300 font-mono">+{studentPointsToday.toFixed(2).replace(/\.00$/, '')}</strong>
+                      <strong className="text-emerald-300 font-mono font-black">+{studentPointsToday.toFixed(2).replace(/\.00$/, '')}</strong>
                     </div>
                   </div>
                 </div>
               </div>
 
               {saveSuccessMsg && (
-                <div className="p-4 rounded-2xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] text-xs sm:text-sm font-bold text-center animate-fadeIn flex items-center justify-center gap-2">
-                  <Check className="w-5 h-5 text-[#fbbf24]" />
+                <div 
+                  className="p-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black text-center animate-fadeIn flex items-center justify-center gap-2 shadow-md"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
+                  <Check className="w-5 h-5" />
                   <span>{saveSuccessMsg}</span>
                 </div>
               )}
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#065f46]">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
+                <div className="flex flex-wrap items-center gap-2.5">
                   {onNavigateToWhatsApp && (
                     <button
                       type="button"
                       onClick={() => onNavigateToWhatsApp(activeStudent.id)}
-                      className="px-4 py-3 rounded-2xl bg-[#022c22] hover:bg-[#022c22]/80 border border-[#065f46] text-[#fbbf24] text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      className="px-4 py-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                        color: themeAccent
+                      }}
                     >
-                      <Send className="w-4 h-4 text-[#fbbf24]" />
+                      <Send className="w-4 h-4" />
                       <span>رسالة واتساب اليومية</span>
                     </button>
                   )}
@@ -4252,7 +4578,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onNavigateToBehavior(activeStudent.id)}
-                      className="px-4 py-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      className="px-4 py-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 border-b-amber-600 text-amber-300"
                     >
                       <ShieldAlert className="w-4 h-4 text-amber-400" />
                       <span>تسجيل مخالفة/ملاحظة سلوكية</span>
@@ -4264,18 +4590,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   type="button"
                   disabled={isSaving || !!activeStudent.isGeneratingPlan || isManualGeneratingPlan}
                   onClick={handleSaveEvaluationRecord}
-                  className="px-8 py-3.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-sm font-black shadow-[0_0_25px_rgba(251,191,36,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  className="px-8 py-3.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 disabled:opacity-50 text-sm font-black shadow-xl flex items-center justify-center gap-2.5 cursor-pointer transition-all hover:brightness-110"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
                   {isSaving ? (
                     <span>جاري حفظ السجل وتحديث البيانات...</span>
                   ) : (activeStudent.isGeneratingPlan || isManualGeneratingPlan) ? (
                     <span className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-[#064e3b] animate-spin" />
+                      <Sparkles className="w-4 h-4 animate-spin" />
                       <span>يرجى الانتظار حتى اكتمال خطة الذكاء الاصطناعي...</span>
                     </span>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-5 h-5 text-[#064e3b]" />
+                      <CheckCircle2 className="w-5 h-5" />
                       <span>حفظ التسميع والتقييم وتثبيت مقرر الغد</span>
                     </>
                   )}
