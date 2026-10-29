@@ -136,198 +136,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  // Bulk Students Addition Modal State
-  const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
-  const [bulkNamesInput, setBulkNamesInput] = useState('');
-  const [bulkPassword, setBulkPassword] = useState('123');
-  const [bulkHalaqahId, setBulkHalaqahId] = useState<string>('');
-  const [bulkLevel, setBulkLevel] = useState<StudentLevel>('متوسط');
-  const [bulkStartingSurah, setBulkStartingSurah] = useState<number>(78);
-  const [isBulkAdding, setIsBulkAdding] = useState(false);
-  const [bulkAddResult, setBulkAddResult] = useState<{ addedCount: number; failedCount: number } | null>(null);
-
-  // Editable candidate rows state for the modal table
-  const [bulkCandidates, setBulkCandidates] = useState<Array<{ id: string; name: string }>>([]);
-
-  // Sync candidate items whenever bulkNamesInput is edited from textarea
-  const syncCandidatesFromInput = (inputText: string) => {
-    if (!inputText.trim()) {
-      setBulkCandidates([]);
-      return;
-    }
-    // Split by newlines or semicolons strictly
-    const rawLines = inputText
-      .split(/[\r\n;]+/)
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
-
-    setBulkCandidates(
-      rawLines.map((name, i) => ({
-        id: `cand-${Date.now()}-${i}`,
-        name
-      }))
-    );
-  };
-
-  // When bulk modal opens or input changes externally
-  const handleOpenBulkAddModal = () => {
-    setIsBulkAddModalOpen(true);
-    setBulkAddResult(null);
-    syncCandidatesFromInput(bulkNamesInput);
-  };
-
-  // Edit candidate directly from table row
-  const handleCandidateNameChange = (index: number, newName: string) => {
-    setBulkCandidates(prev => {
-      const next = prev.map((c, i) => (i === index ? { ...c, name: newName } : c));
-      setBulkNamesInput(next.map(c => c.name).join('\n'));
-      return next;
-    });
-  };
-
-  // Remove single candidate row
-  const handleRemoveCandidateRow = (index: number) => {
-    setBulkCandidates(prev => {
-      const next = prev.filter((_, i) => i !== index);
-      setBulkNamesInput(next.map(c => c.name).join('\n'));
-      return next;
-    });
-  };
-
-  // Add new empty candidate row
-  const handleAddNewCandidateRow = () => {
-    setBulkCandidates(prev => {
-      const next = [
-        ...prev,
-        { id: `cand-${Date.now()}-${prev.length}`, name: '' }
-      ];
-      return next;
-    });
-  };
-
-  // Auto clean all candidates
-  const handleAutoCleanCandidates = () => {
-    setBulkCandidates(prev => {
-      const next = prev
-        .map(c => ({
-          ...c,
-          name: cleanStudentBulkName(c.name)
-        }))
-        .filter(c => c.name.length > 0);
-      setBulkNamesInput(next.map(c => c.name).join('\n'));
-      return next;
-    });
-  };
-
   // Set default bulk halaqah when modal opens or halaqahs change
   useEffect(() => {
-    if (!bulkHalaqahId && halaqahs.length > 0) {
-      setBulkHalaqahId(activeHalaqahId && activeHalaqahId !== 'all' ? activeHalaqahId : halaqahs[0].id);
+    if (halaqahs.length > 0 && !bulkTargetHalaqahId) {
+      setBulkTargetHalaqahId(halaqahs[0].id);
     }
-  }, [halaqahs, activeHalaqahId, bulkHalaqahId]);
-
-  // Live validation of parsed students
-  const parsedBulkStudents = useMemo(() => {
-    if (bulkCandidates.length === 0) return [];
-    const seenInBulk = new Set<string>();
-
-    return bulkCandidates.map((candidate, index) => {
-      const raw = candidate.name;
-      const cleanName = cleanStudentBulkName(raw);
-      const nameVal = getThreePartNameValidation(cleanName, 'طالب');
-      const norm = normalizeArabicText(cleanName);
-      
-      const isDuplicateInDb = cleanName.length > 0 && (students || []).some(
-        s => normalizeArabicText(s.name || '') === norm
-      );
-      const isDuplicateInBatch = cleanName.length > 0 && seenInBulk.has(norm);
-      if (cleanName.length > 0) {
-        seenInBulk.add(norm);
-      }
-
-      let status: 'valid' | 'not_three_parts' | 'duplicate_db' | 'duplicate_batch' = 'valid';
-      let message = 'الاسم مستوفٍ وجاهز للإضافة';
-
-      if (!cleanName) {
-        status = 'not_three_parts';
-        message = 'السطر فارغ، يرجى كتابة اسم الطالب';
-      } else if (!nameVal.isValid) {
-        status = 'not_three_parts';
-        message = nameVal.message || 'الاسم غير ثلاثي (يحتاج اسم الأب والجد)';
-      } else if (isDuplicateInDb) {
-        status = 'duplicate_db';
-        message = 'اسم متكرر مسجل مسبقاً في قاعدة بيانات المجمع';
-      } else if (isDuplicateInBatch) {
-        status = 'duplicate_batch';
-        message = 'اسم متكرر داخل نفس القائمة المدخلة';
-      }
-
-      return {
-        id: candidate.id,
-        index: index + 1,
-        name: raw,
-        cleanName: cleanName || raw,
-        status,
-        message,
-        isValid: status === 'valid'
-      };
-    });
-  }, [bulkCandidates, students]);
-
-  const validBulkCandidatesCount = parsedBulkStudents.filter(s => s.isValid).length;
-  const invalidBulkCandidatesCount = parsedBulkStudents.length - validBulkCandidatesCount;
-
-  const handleConfirmBulkAdd = async () => {
-    const validCandidates = parsedBulkStudents.filter(s => s.isValid);
-    if (validCandidates.length === 0) return;
-
-    setIsBulkAdding(true);
-    try {
-      const chosenHalaqah = halaqahs.find(h => h.id === bulkHalaqahId);
-      const halaqahName = chosenHalaqah ? chosenHalaqah.name : '';
-      const surahObj = QURAN_SURAHS.find(s => s.number === bulkStartingSurah);
-
-      const studentsToInsert: Student[] = validCandidates.map((c, i) => ({
-        id: `std-bulk-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
-        name: c.cleanName,
-        password: bulkPassword.trim() || '123',
-        phone: '',
-        age: 12,
-        parentName: `ولي أمر ${c.cleanName}`,
-        parentPhones: [],
-        parentPhone: '',
-        currentSurah: bulkStartingSurah,
-        currentSurahName: surahObj?.name || 'النبأ',
-        currentAyah: 1,
-        dailyNewTarget: 'نصف وجه',
-        dailyReviewTarget: 'وجه واحد',
-        level: bulkLevel,
-        halaqahId: bulkHalaqahId,
-        halaqahName: halaqahName,
-        createdAt: new Date().toISOString()
-      }));
-
-      if (onBatchAddStudents) {
-        await onBatchAddStudents(studentsToInsert);
-      } else {
-        for (const st of studentsToInsert) {
-          await onAddStudent(st);
-        }
-      }
-
-      setBulkAddResult({ addedCount: studentsToInsert.length, failedCount: invalidBulkCandidatesCount });
-      setBulkNamesInput('');
-      setBulkCandidates([]);
-      setTimeout(() => {
-        setIsBulkAddModalOpen(false);
-        setBulkAddResult(null);
-      }, 2000);
-    } catch (err) {
-      console.error('Bulk add error:', err);
-    } finally {
-      setIsBulkAdding(false);
-    }
-  };
+  }, [halaqahs, bulkTargetHalaqahId]);
 
   const handleSelectAllFiltered = () => {
     const allFilteredIds = filteredStudents.map(s => s.id);
@@ -453,21 +267,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
-  // Open add modal
-  const openAddModal = () => {
-    setEditingStudent(null);
-    setFormName('');
-    setFormPassword('123');
-    setFormAge(11);
-    setFormParentName('');
-    setFormParentPhones(['']);
-    setFormSurahNum(78);
-    setFormAyah(1);
-    setFormHalaqahId(activeHalaqahId && activeHalaqahId !== 'all' ? activeHalaqahId : '');
-    setFormError('');
-    setIsAddModalOpen(true);
-  };
-
   // Open edit modal
   const openEditModal = (student: Student) => {
     setEditingStudent(student);
@@ -491,7 +290,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       !!studentToDelete ||
       !!quickAssignStudent ||
       isBulkTransferModalOpen ||
-      isBulkAddModalOpen ||
       isBulkDeleteModalOpen;
 
     if (isAnyModalOpen) {
@@ -507,7 +305,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     studentToDelete,
     quickAssignStudent,
     isBulkTransferModalOpen,
-    isBulkAddModalOpen,
     isBulkDeleteModalOpen
   ]);
 
@@ -1244,8 +1041,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         )}
       </div>
 
-      {/* Add / Edit Student Modal */}
-      {isAddModalOpen && (
+      {/* Edit Student Modal */}
+      {isAddModalOpen && editingStudent && (
         <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto overscroll-contain">
           <div className="relative w-full max-w-2xl bg-[#064e3b] border border-[#fbbf24]/30 rounded-2xl sm:rounded-[32px] shadow-2xl shadow-emerald-950/90 flex flex-col max-h-[90vh] my-auto overflow-hidden overscroll-contain animate-fadeIn">
             {/* Pinned Modal Header */}
@@ -1256,10 +1053,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-bold font-heading text-[#fbbf24]">
-                    {editingStudent ? 'تعديل بيانات الطالب' : 'تسجيل طالب جديد في الحلقة'}
+                    تعديل بيانات الطالب
                   </h3>
                   <p className="text-[11px] sm:text-xs text-[#86efac]">
-                    إدخال بيانات الطالب لضبط خطة الحفظ والمتابعة القرآنية المنهجية
+                    تحديث بيانات الطالب وموضعه الحالي وسجلاته في الحلقة
                   </p>
                 </div>
               </div>
@@ -1503,286 +1300,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     <span>جاري حفظ البيانات...</span>
                   ) : (
                     <>
-                      <UserPlus className="w-4 h-4 text-[#064e3b]" />
-                      <span>{editingStudent ? 'حفظ التعديلات' : 'تسجيل واعتماد الطالب في الحلقة'}</span>
+                      <Edit className="w-4 h-4 text-[#064e3b]" />
+                      <span>حفظ التعديلات</span>
                     </>
                   )}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* BULK ADD STUDENTS MODAL (إضافة الطلاب دفعة واحدة) */}
-      {isBulkAddModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-4xl bg-[#064e3b] border border-[#fbbf24]/50 rounded-3xl shadow-2xl shadow-emerald-950/80 flex flex-col max-h-[92vh] my-auto overflow-hidden animate-fadeIn">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#022c22]/90">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 flex items-center justify-center text-[#fbbf24]">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black font-heading text-white flex items-center gap-2">
-                    <span>إضافة الطلاب دفعة واحدة (تسجيل مجمّع ذكي)</span>
-                    <span className="text-xs bg-[#fbbf24] text-[#064e3b] px-2.5 py-0.5 rounded-full font-sans font-black">
-                      فحص فوري
-                    </span>
-                  </h3>
-                  <p className="text-xs text-[#86efac]/90 mt-0.5">
-                    اكتب أو الصق أسماء الطلاب سطراً بسطر أو مفصولة بفواصل، ويمكنك تعديل وحذف وفحص أي اسم مباشرة من الجدول
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsBulkAddModalOpen(false)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#064e3b] transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-right">
-              {/* Batch Global Configuration */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#022c22]/70 p-4 rounded-2xl border border-[#065f46]">
-                <div>
-                  <label className="block text-xs font-bold text-amber-300 mb-1">
-                    الحلقة المستهدفة للدفعة:
-                  </label>
-                  <select
-                    value={bulkHalaqahId}
-                    onChange={e => setBulkHalaqahId(e.target.value)}
-                    className="w-full bg-[#064e3b] border border-amber-400/40 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400 cursor-pointer"
-                  >
-                    <option value="">-- بدون إسناد (قائمة انتظار) --</option>
-                    {halaqahs.map(h => (
-                      <option key={h.id} value={h.id}>
-                        {h.name} {h.primaryTeacherName ? `(${h.primaryTeacherName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-amber-300 mb-1">
-                    كلمة المرور الموحدة للحسابات:
-                  </label>
-                  <input
-                    type="text"
-                    value={bulkPassword}
-                    onChange={e => setBulkPassword(e.target.value)}
-                    placeholder="مثال: 123"
-                    className="w-full bg-[#064e3b] border border-amber-400/40 rounded-xl px-3 py-2 text-xs font-mono font-bold text-amber-200 focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-amber-300 mb-1">
-                    المستوى المبدئي للدفعة:
-                  </label>
-                  <select
-                    value={bulkLevel}
-                    onChange={e => setBulkLevel(e.target.value as StudentLevel)}
-                    className="w-full bg-[#064e3b] border border-amber-400/40 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400 cursor-pointer"
-                  >
-                    <option value="مبتدئ">مبتدئ</option>
-                    <option value="متوسط">متوسط</option>
-                    <option value="قوي">قوي</option>
-                    <option value="خاتم">خاتم للقرآن</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Textarea for line-by-line input */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <label className="block text-xs font-bold text-emerald-200">
-                    أدخل أو الصق قائمة أسماء الطلاب:
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {bulkCandidates.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleAutoCleanCandidates}
-                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                        title="إزالة الترقيم (1- ، 2.) والرموز والشرطات والأقواس تلقائياً"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>تنظيف وتنسيق الأسماء تلقائياً</span>
-                      </button>
-                    )}
-                    <span className="text-[11px] text-[#86efac]/80 font-mono">
-                      {parsedBulkStudents.length} سطر
-                    </span>
-                  </div>
-                </div>
-                <textarea
-                  rows={4}
-                  value={bulkNamesInput}
-                  onChange={e => {
-                    setBulkNamesInput(e.target.value);
-                    syncCandidatesFromInput(e.target.value);
-                  }}
-                  placeholder={`عبدالرحمن أحمد السعيد\nيوسف عمر الكردي\nمحمد خالد الدوسري\nعبدالله إبراهيم الشمري`}
-                  className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl p-3.5 text-xs sm:text-sm text-white font-sans leading-relaxed placeholder:text-emerald-300/30 outline-none resize-y"
-                  dir="rtl"
-                />
-              </div>
-
-              {/* Live Validation & Status Summary */}
-              {parsedBulkStudents.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-[#065f46]">
-                    <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
-                      <span className="text-white">نتيجة التدقيق المباشر:</span>
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-900/90 text-emerald-200 border border-emerald-500/50 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{validBulkCandidatesCount} مؤهل ومعتمد للإضافة</span>
-                      </span>
-                      {invalidBulkCandidatesCount > 0 && (
-                        <span className="px-2.5 py-1 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/50 flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                          <span>{invalidBulkCandidatesCount} يحتاج تعديل / إكمال</span>
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddNewCandidateRow}
-                      className="px-3 py-1 rounded-xl bg-[#064e3b] hover:bg-[#022c22] border border-[#065f46] text-[#86efac] hover:text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>إضافة سطر طالب جديد</span>
-                    </button>
-                  </div>
-
-                  {/* Interactive Candidates Validation & Edit Table */}
-                  <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#065f46] bg-[#022c22]/90">
-                    <table className="w-full text-right text-xs">
-                      <thead className="bg-[#064e3b] text-emerald-200 border-b border-[#065f46] sticky top-0 z-10">
-                        <tr>
-                          <th className="p-2.5 w-10 text-center">#</th>
-                          <th className="p-2.5">اسم الطالب (يمكنك التعديل المباشر هنا)</th>
-                          <th className="p-2.5 w-52 sm:w-64">حالة التدقيق</th>
-                          <th className="p-2.5 w-10 text-center">حذف</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-emerald-900/40">
-                        {parsedBulkStudents.map((studentRow, idx) => (
-                          <tr
-                            key={studentRow.id || studentRow.index}
-                            className={`transition-colors ${
-                              studentRow.isValid
-                                ? 'hover:bg-emerald-900/20'
-                                : 'bg-amber-950/20 hover:bg-amber-950/30'
-                            }`}
-                          >
-                            <td className="p-2.5 text-center font-mono text-[#86efac]/70">
-                              {studentRow.index}
-                            </td>
-                            <td className="p-2">
-                              <input
-                                type="text"
-                                value={studentRow.name}
-                                onChange={e => handleCandidateNameChange(idx, e.target.value)}
-                                placeholder="اكتب اسم الطالب كاملاً..."
-                                className={`w-full bg-[#064e3b]/80 border rounded-xl py-1.5 px-2.5 text-xs text-white font-bold outline-none transition-all ${
-                                  studentRow.isValid
-                                    ? 'border-emerald-500/50 focus:border-emerald-400 focus:bg-[#064e3b]'
-                                    : 'border-amber-500/60 focus:border-amber-400 bg-amber-950/30'
-                                }`}
-                                dir="rtl"
-                              />
-                            </td>
-                            <td className="p-2.5">
-                              {studentRow.status === 'valid' ? (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-300">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                  <span>مستوفٍ وجاهز للإضافة</span>
-                                </span>
-                              ) : studentRow.status === 'not_three_parts' ? (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-300" title={studentRow.message}>
-                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <span className="line-clamp-1">{studentRow.message || 'الاسم غير ثلاثي (أضف الأب والجد)'}</span>
-                                </span>
-                              ) : studentRow.status === 'duplicate_db' ? (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-red-300" title={studentRow.message}>
-                                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                  <span className="line-clamp-1">مسجل مسبقاً في المجمع</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-300" title={studentRow.message}>
-                                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                  <span className="line-clamp-1">اسم مكرر في نفس القائمة</span>
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCandidateRow(idx)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer transition-colors"
-                                title="حذف هذا السطر"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Result Feedback */}
-              {bulkAddResult && (
-                <div className="p-3.5 rounded-2xl bg-emerald-950/90 border border-emerald-500 text-xs font-bold text-emerald-200 flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400" />
-                  <span>
-                    تم بنجاح إضافة ({bulkAddResult.addedCount}) طالب إلى الحلقة سحابياً!
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95">
-              <span className="text-xs text-emerald-300/80">
-                {validBulkCandidatesCount > 0
-                  ? `سيتم تسجيل (${validBulkCandidatesCount}) طالب معتمد بكلمة مرور "${bulkPassword}"`
-                  : 'أدخل أسماء ثلاثية للطلاب لتفعيل زر الاعتماد والإضافة'}
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-[#86efac] hover:text-white hover:bg-[#064e3b] text-xs font-bold transition-colors cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmBulkAdd}
-                  disabled={isBulkAdding || validBulkCandidatesCount === 0}
-                  className="px-6 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-xs sm:text-sm font-black shadow-lg flex items-center gap-2 transition-all cursor-pointer"
-                >
-                  {isBulkAdding ? (
-                    <span>جاري إضافة الدفعة سحابياً...</span>
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4 text-[#064e3b]" />
-                      <span>إضافة ({validBulkCandidatesCount}) طالب معتمد سحابياً</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1800,7 +1324,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 <div>
                   <h3 className="text-base font-bold text-white">تأكيد حذف الطلاب المحددين نهائياً</h3>
                   <p className="text-xs text-red-200/90 mt-0.5">
-                    سيتم حذف ({selectedStudentIds.length}) طالب وكافة سجلاتهم نهائياً من قاعدة البيانات
+                    سيتم حذف ({selectedStudentIds.length}) طالب وكافة سجلاتهم نهائياً من السحابة
                   </p>
                 </div>
               </div>
@@ -2018,74 +1542,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               </div>
 
               {/* Footer */}
-              <div className="p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const planCfg = activeComplex?.planScheduleConfig;
-                    const weeklyDays = planCfg?.selectedDays?.length || 5;
-                    const dailyHours = planCfg?.dailyHours || 2;
-                    const todayDate = new Date();
-
-                    const timeline = calculateRealisticKhatmTimeline({
-                      memorizedJuz: studentMemJuz,
-                      consolidatedJuz: Math.max(0, studentMemJuz - 2),
-                      dailyNewPages: viewingPlanStudent.memorizationPlan?.dailyNewPages || 1,
-                      dailyReviewPages: viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5,
-                      weeklyDaysCount: weeklyDays,
-                      dailyHoursCount: dailyHours,
-                      startDate: todayDate
-                    });
-                    const updatedPlan: StudentMemorizationPlan = {
-                      dailyNewPages: viewingPlanStudent.memorizationPlan?.dailyNewPages || 1,
-                      dailyReviewPages: viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5,
-                      consolidatedJuzCount: Math.max(0, studentMemJuz - 2),
-                      memorizedJuzCount: studentMemJuz,
-                      targetJuz: 30,
-                      targetCompletionDate: timeline.targetCompletionDate,
-                      estimatedDaysRemaining: timeline.estimatedDaysRemaining,
-                      progressPercentage: timeline.progressPercentage,
-                      status: 'on_track',
-                      weeklyDaysCount: weeklyDays,
-                      dailyHoursCount: dailyHours,
-                      tathbeetStopsCount: timeline.tathbeetStopsCount,
-                      milestones: timeline.milestones,
-                      nextDayAssignment: {
-                        newMemorization: `سورة ${viewingPlanStudent.currentSurahName || 'النبأ'}: وجه جديد`,
-                        review: `مراجعة ${viewingPlanStudent.memorizationPlan?.dailyReviewPages || 5} أوجه من الماضي مع التثبيت`,
-                        action: 'advance_page',
-                        reason: 'تحديث منهجي بالذكاء الاصطناعي'
-                      },
-                      aiNotes: `تم الضبط بواسطة المشرف بناءً على جدول (${weeklyDays} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من (${timeline.calculatedFromDate}). ${timeline.pedagogicalNote}`,
-                      lastUpdated: new Date().toISOString()
-                    };
-                    const updatedStudent: Student = {
-                      ...viewingPlanStudent,
-                      memorizationPlan: updatedPlan,
-                      aiPlan: {
-                        roadmapSummary: `خطة تثبيت منهجي، والختم بإذن الله: ${timeline.targetCompletionDate}.`,
-                        currentDailyAssignment: {
-                          newMemorization: updatedPlan.nextDayAssignment?.newMemorization || 'وجه جديد',
-                          review: updatedPlan.nextDayAssignment?.review || '5 أوجه مراجعة',
-                          suggestedSheikh: 'الشيخ محمود خليل الحصري',
-                          dailyNote: 'التكرار 3 مرات قبل النوم',
-                          targetRepetitions: 3
-                        },
-                        difficultyAdjustment: 'متزن',
-                        estimatedDaysToFinishJuz: 20,
-                        lastUpdated: new Date().toISOString()
-                      }
-                    };
-                    await OmranDataService.saveStudent(updatedStudent);
-                    setViewingPlanStudent(updatedStudent);
-                    if (onUpdateStudent) onUpdateStudent(updatedStudent);
-                    alert(`✨ تم تحديث وضبط الخطة القرآنية للطالب (${viewingPlanStudent.name}) وموعد الختم المحسوب: ${timeline.targetCompletionDate}`);
-                  }}
-                  className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-amber-300 font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-all"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>إعادة توليد الخطة بالذكاء الاصطناعي</span>
-                </button>
+              <div className="p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setViewingPlanStudent(null)}
@@ -2187,7 +1644,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             </div>
 
             <p className="text-xs text-[#86efac]/90 leading-relaxed">
-              اختر الحلقة القرآنية التي ترغب في إلحاق الطالب بها. بعد التأكيد، سيتم الحفظ سحابياً في قاعدة البيانات وسيتمكن الطالب من الدخول لمعلمه ومتابعة الحفظ فوراً.
+              اختر الحلقة القرآنية التي ترغب في إلحاق الطالب بها. بعد التأكيد، سيتم الحفظ سحابياً وبشكل دائم وسيتمكن الطالب من الدخول لمعلمه ومتابعة الحفظ فوراً.
             </p>
 
             <div className="space-y-2">
@@ -2344,7 +1801,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
               </div>
 
               <div className="p-3 bg-[#022c22]/60 border border-[#065f46] rounded-xl text-[11px] text-[#86efac]/80 leading-relaxed">
-                ℹ️ سيتم نقل جميع الطلاب المحددين إلى الحلقة المختارة سحابياً عبر قاعدة البيانات المركزية، مع الاحتفاظ بكامل سجلات التسميع والتقييمات والخطط اليومية دون أي فقدان.
+                ℹ️ سيتم نقل جميع الطلاب المحددين إلى الحلقة المختارة سحابياً وبشكل دائم، مع الاحتفاظ بكامل سجلات التسميع والتقييمات والخطط اليومية دون أي فقدان.
               </div>
 
               {/* Actions */}

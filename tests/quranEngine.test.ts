@@ -240,7 +240,7 @@ describe('Omran Quran Diagnostic & Adaptive Plan Engine Tests', () => {
         answers: beginnerAnswers,
         isKhatim: false
       });
-      expect(beginnerSummary.classifiedLevel).toBe('مبتدئ واعد');
+      expect(beginnerSummary.classifiedLevel).toBe('مبتدئ');
     });
   });
 

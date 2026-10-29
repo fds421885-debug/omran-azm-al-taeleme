@@ -154,7 +154,7 @@ export const LiveSyncButton: React.FC<LiveSyncButtonProps> = ({
         borderBottomColor: accentShadow,
         color: contrastText
       }}
-      title="مزامنة وتأكيد البيانات فورياً مع قاعدة البيانات السحابية"
+      title="مزامنة وتأكيد البيانات فورياً مع السحابة المركزية"
     >
       <RefreshCw
         className={`w-3.5 h-3.5 transition-transform duration-500 shrink-0 ${

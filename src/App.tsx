@@ -3154,7 +3154,21 @@ export function App() {
     );
   }
 
-  // Priority 1.5: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
+  // Priority 1.5: Modern Opening Splash Screen for ALL visitors (Platform & Direct Portal Links)
+  if (isInitialAppBoot) {
+    const targetPortalComplex = portalComplexId ? (complexes.find(c => c.id === portalComplexId) || null) : null;
+    return (
+      <ModernOpeningSplash
+        title={targetPortalComplex ? `بَوَّابَةُ ${targetPortalComplex.name}` : "مَنْظُومَةُ عِمْرَانَ القُرْآنِيَّةِ"}
+        subtitle={targetPortalComplex ? "بَوَّابَةُ التَّسْجِيلِ وَالخِدْمَاتِ الإِلِكْتَرُونِيَّةِ الذَّكِيَّةِ" : "النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ"}
+        activeComplex={targetPortalComplex || activeComplex}
+        onFinish={() => setIsInitialAppBoot(false)}
+        minDurationMs={900}
+      />
+    );
+  }
+
+  // Priority 1.8: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
   if (portalComplexId) {
     const targetComplex = complexes.find(c => c.id === portalComplexId) || (complexes.length > 0 ? complexes[0] : null);
     if (!targetComplex) {
@@ -3194,18 +3208,6 @@ export function App() {
             window.history.pushState({}, '', url.pathname);
           } catch {}
         }}
-      />
-    );
-  }
-
-  // Priority 1.8: Modern Opening Splash Screen for Platform Visitors
-  if (isInitialAppBoot) {
-    return (
-      <ModernOpeningSplash
-        title="مَنْظُومَةُ عِمْرَانَ القُرْآنِيَّةِ"
-        subtitle="النِّظَامُ الذَّكِيُّ لِإِدَارَةِ الحَلَقَاتِ وَالمُجَمَّعَاتِ التَّعْلِيمِيَّةِ"
-        onFinish={() => setIsInitialAppBoot(false)}
-        minDurationMs={850}
       />
     );
   }

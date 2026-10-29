@@ -19,7 +19,6 @@ import { GoogleWorkspaceService, UnregisteredGoogleAccountError, normalizeArabic
 import { OmranDataService } from '../lib/firebase';
 import { verifyPassword, hashPassword } from '../utils/security';
 import { FirebaseAuthService } from '../lib/firebaseAuthService';
-import { StudentAIPlacementModal } from './assistant/StudentAIPlacementModal';
 
 interface LoginModalProps {
   onLoginSuccess: (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => void;

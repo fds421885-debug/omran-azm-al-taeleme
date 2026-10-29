@@ -13,6 +13,7 @@ import {
   EyeOff,
   Copy,
   Database,
+  Cloud,
   ShieldCheck,
   Building2,
   Trash2
@@ -140,7 +141,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
       setIsSavedInCloud(true);
       setStatusMsg({
         type: 'success',
-        text: 'تم حفظ البريد والمفتاح للأبد في قاعدة البيانات السحابية (Firestore)! يمكنك تعديلها في أي وقت.'
+        text: 'تم حفظ البريد والمفتاح للأبد في السحابة المركزية الآمنة! يمكنك تعديلها في أي وقت.'
       });
 
       // 5. Automatically test the saved credentials with real email verification
@@ -154,9 +155,9 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
             subject: `🎉 تم حفظ وتفعيل خدمة البريد بنجاح • ${targetComplexName}`,
             html: `<div dir="rtl" style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc; border-radius: 16px; color: #1e293b; border: 1px solid #e2e8f0;">
               <h2 style="color: #064e3b; margin-top: 0;">تهانينا! خدمة البريد والمفتاح محفوظة وتعمل بنجاح</h2>
-              <p>تم حفظ وتفعيل إعدادات خادم البريد للمجمع (${targetComplexName}) عبر الحساب (${cleanUser}) في قاعدة البيانات بصورة دائمة.</p>
+              <p>تم حفظ وتفعيل إعدادات خادم البريد للمجمع (${targetComplexName}) عبر الحساب (${cleanUser}) في السحابة المركزية بصورة دائمة.</p>
               <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px; margin: 16px 0;">
-                <strong style="color: #065f46;">المفتاح والبريد محفوظان في قاعدة البيانات للأبد</strong> ويمكنك تعديلهم أو تحديثهم في أي وقت من لوحة المجمع أو رابط الدخول.
+                <strong style="color: #065f46;">المفتاح والبريد محفوظان في السحابة المركزية للأبد</strong> ويمكنك تعديلهم أو تحديثهم في أي وقت من لوحة المجمع أو رابط الدخول.
               </div>
               <p>رسائل التحقق (OTP) وتذاكر القبول وإشعارات الحلقات ستصل للطلاب وأولياء الأمور مباشرة وبشكل فوري.</p>
               <div style="font-size: 12px; color: #64748b; margin-top: 20px;">منظومة عُمْرَان لإدارة المجمعات القرآنية</div>
@@ -177,13 +178,13 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
         } else {
           setTestResult({
             success: false,
-            text: `تم الحفظ في قاعدة البيانات ولكن فشل اختبار الإرسال: ${testData?.error || 'يرجى مراجعة كلمة مرور التطبيقات والتأكد من إتاحتها من Google.'}`
+            text: `تم الحفظ في السحابة بنجاح ولكن فشل اختبار الإرسال: ${testData?.error || 'يرجى مراجعة كلمة مرور التطبيقات والتأكد من إتاحتها من Google.'}`
           });
         }
       } catch (tErr: any) {
         setTestResult({
           success: false,
-          text: `تم الحفظ بنجاح في قاعدة البيانات، ولكن تعذر فحص الإرسال: ${tErr?.message || 'خطأ اتصال'}`
+          text: `تم الحفظ بنجاح في السحابة، ولكن تعذر فحص الإرسال: ${tErr?.message || 'خطأ اتصال'}`
         });
       } finally {
         setIsTesting(false);
@@ -272,8 +273,8 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-sm sm:text-base font-black text-white">إعدادات البريد والمفتاح الدائم</h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 font-bold flex items-center gap-1">
-                  <Database className="w-3 h-3" />
-                  حفظ للأبد في قاعدة البيانات
+                  <Cloud className="w-3 h-3" />
+                  حفظ دائم في السحابة المركزية
                 </span>
               </div>
               <p className="text-xs text-[#86efac]/90 mt-0.5">
@@ -296,7 +297,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
           <div className="px-5 py-2.5 bg-emerald-950/70 border-b border-emerald-500/30 flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-emerald-300 font-bold">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>البريد والمفتاح محفوظان سحابياً في قاعدة البيانات للأبد ✓</span>
+              <span>البريد والمفتاح محفوظان في السحابة المركزية للأبد ✓</span>
             </div>
             {lastSavedAt && (
               <span className="text-[10px] font-mono text-slate-400">
@@ -314,7 +315,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
               <label className="text-xs font-bold text-[#86efac]">
                 عنوان بريد Gmail المعتمد: <span className="text-amber-400">*</span>
               </label>
-              <span className="text-[10px] text-slate-400">يُحفظ في قاعدة البيانات</span>
+              <span className="text-[10px] text-slate-400">يُحفظ سحابياً للمجمع</span>
             </div>
             <div className="relative">
               <input
@@ -381,7 +382,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
               </div>
             </div>
             <p className="text-[10px] text-slate-300 leading-relaxed">
-              يتم حفظ المفتاح بصورة دائمة ومحمية في قاعدة البيانات السحابية، ويبقى ظاهراً وقابلاً للتعديل في أي وقت.
+              يتم حفظ المفتاح بصورة دائمة ومحمية سحابياً، ويبقى ظاهراً وقابلاً للتعديل في أي وقت.
             </p>
           </div>
 
@@ -496,7 +497,7 @@ export const QuickMailSetupModal: React.FC<QuickMailSetupModalProps> = ({
                 ) : (
                   <>
                     <Check className="w-4 h-4 stroke-[2.5]" />
-                    <span>حفظ وتعديل الإعدادات في قاعدة البيانات</span>
+                    <span>حفظ وتعديل الإعدادات في السحابة</span>
                   </>
                 )}
               </button>

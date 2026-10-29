@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import confetti from 'canvas-confetti';
 import {
   Calendar,
   Clock,
@@ -31,7 +30,7 @@ import {
   StudentMemorizationPlan,
   ComplexPlanScheduleConfig
 } from '../../types';
-import { calculateRealisticKhatmTimeline, getExactTodayArabicInfo, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
+import { getExactTodayArabicInfo } from '../../lib/aiPlanService';
 import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
@@ -104,11 +103,6 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
     }
   }, [initialHighlightId, initialSearchQuery, students]);
 
-  // AI Recalculation States
-  const [isRecalculating, setIsRecalculating] = useState(false);
-  const [recalcProgress, setRecalcProgress] = useState(0);
-  const [currentProcessingName, setCurrentProcessingName] = useState('');
-  const [recalcSuccessMsg, setRecalcSuccessMsg] = useState('');
   const [selectedViewingStudent, setSelectedViewingStudent] = useState<Student | null>(null);
   const [isSavingConfigOnly, setIsSavingConfigOnly] = useState(false);
   const [saveConfigToast, setSaveConfigToast] = useState('');
@@ -192,7 +186,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
     setSaveConfigToast('');
     try {
       await persistPlanConfig(selectedDays, dailyHours, strategyPreset, targetScope);
-      setSaveConfigToast('🎉 تم بنجاح تام حفظ وتثبيت إعدادات الخطة القرآنية في السحابة وقاعدة البيانات!');
+      setSaveConfigToast('🎉 تم بنجاح تام حفظ وتثبيت إعدادات الجدول القرآني في السحابة المركزية!');
       setTimeout(() => setSaveConfigToast(''), 4500);
     } catch {
       setSaveConfigToast('تم الحفظ محلياً وجاري المزامنة مع السحابة.');
@@ -254,149 +248,6 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
     persistPlanConfig(nextDays, dailyHours, strategyPreset, targetScope);
   };
 
-  // Run AI Recalibration for all students in scope
-  const handleRunAIRecalibration = async () => {
-    if (targetStudents.length === 0) {
-      alert('لا يوجد طلاب ضمن النطاق المحدد لإعادة جدولة خططهم.');
-      return;
-    }
-
-    setIsRecalculating(true);
-    setRecalcProgress(0);
-    setRecalcSuccessMsg('');
-
-    const weeklyDaysCount = selectedDays.length;
-    const updatedList: Student[] = [];
-
-    try {
-      // 1. Persist the overall plan configuration directly to Cloud Firestore & parent complex
-      await persistPlanConfig(selectedDays, dailyHours, strategyPreset, targetScope);
-
-      // 2. Exact current date for calculating timeline
-      const todayDate = new Date();
-
-      for (let i = 0; i < targetStudents.length; i++) {
-        const student = targetStudents[i];
-        setCurrentProcessingName(student.name);
-        setRecalcProgress(Math.round(((i + 1) / targetStudents.length) * 100));
-
-        // Determine student memorized juz precisely using calculateStudentMemorizedJuz
-        const memCount = calculateStudentMemorizedJuz(student);
-
-        const consCount = student.memorizationPlan?.consolidatedJuzCount || Math.max(0, memCount - 2);
-
-        // Calculate pace according to strategy
-        let dailyNew = 1;
-        let dailyReview = 5;
-        if (strategyPreset === 'tathbeet_first') {
-          dailyNew = memCount >= 25 ? 0.5 : 1;
-          dailyReview = Math.max(5, consCount * 1.5);
-        } else if (strategyPreset === 'standard') {
-          dailyNew = 1;
-          dailyReview = 5;
-        } else if (strategyPreset === 'intensive') {
-          dailyNew = 2;
-          dailyReview = 10;
-        }
-
-        // Calculate realistic Khatmah timeline using verified pedagogical math from today's exact date
-        const timeline = calculateRealisticKhatmTimeline({
-          memorizedJuz: memCount,
-          consolidatedJuz: consCount,
-          dailyNewPages: dailyNew,
-          dailyReviewPages: dailyReview,
-          weeklyDaysCount,
-          dailyHoursCount: dailyHours,
-          startDate: todayDate
-        });
-
-        // Generate tailored next day assignment respecting errors
-        const hasErrors = (student.mushafErrors || []).some(e => !e.cleared && e.errorCount > 0);
-        const nextAction = hasErrors ? 'repeat_surah' : 'advance_page';
-        const nextReason = hasErrors
-          ? 'تم تعليق التقدم وتخصيص جلسة الغد لتكرار وتثبيت الآيات التي وقع فيها خطأ'
-          : 'تقدم منهجي متزن مع مراجعة الماضي';
-
-        const updatedPlan: StudentMemorizationPlan = {
-          dailyNewPages: dailyNew,
-          dailyReviewPages: dailyReview,
-          consolidatedJuzCount: consCount,
-          memorizedJuzCount: memCount,
-          targetJuz: 30,
-          targetCompletionDate: timeline.targetCompletionDate,
-          estimatedDaysRemaining: timeline.estimatedDaysRemaining,
-          progressPercentage: timeline.progressPercentage,
-          status: hasErrors ? 'needs_reinforcement' : 'on_track',
-          weeklyDaysCount,
-          dailyHoursCount: dailyHours,
-          tathbeetStopsCount: timeline.tathbeetStopsCount,
-          milestones: timeline.milestones,
-          nextDayAssignment: {
-            newMemorization: hasErrors
-              ? `إعادة وتثبيت: سورة ${student.currentSurahName || 'الحالية'} الآيات 1 إلى ${student.currentAyah || 10}`
-              : `الحفظ الجديد: سورة ${student.targetSurahName || student.currentSurahName || 'النبأ'} (${dailyNew} وجه)`,
-            review: `مراجعة وتثبيت: ${dailyReview} أوجه من الأجزاء السابقة`,
-            action: nextAction,
-            reason: nextReason
-          },
-          aiNotes: `تم الضبط بواسطة المشرف بناءً على جدول (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من (${timeline.calculatedFromDate}). ${timeline.pedagogicalNote}`,
-          lastUpdated: new Date().toISOString()
-        };
-
-        const updatedStudent: Student = {
-          ...student,
-          memorizationPlan: updatedPlan,
-          aiPlan: {
-            roadmapSummary: `خطة تثبيت منهجي بواقع ${dailyNew} وجه جديد و${dailyReview} أوجه مراجعة، والختم بإذن الله: ${timeline.targetCompletionDate}.`,
-            currentDailyAssignment: {
-              newMemorization: updatedPlan.nextDayAssignment?.newMemorization || 'وجه جديد',
-              review: updatedPlan.nextDayAssignment?.review || 'مراجعة الماضي',
-              suggestedSheikh: 'الشيخ محمود خليل الحصري (مرتل ومجود)',
-              dailyNote: hasErrors ? 'التركيز على تكرار الآيات التي فيها أخطاء' : 'التكرار 3 مرات قبل النوم',
-              targetRepetitions: 3
-            },
-            difficultyAdjustment: hasErrors ? 'مراجعة وتكرار مكثف' : 'متزن',
-            estimatedDaysToFinishJuz: Math.ceil(20 / dailyNew),
-            lastUpdated: new Date().toISOString()
-          }
-        };
-
-        updatedList.push(updatedStudent);
-
-        // Instant Progressive Cloud Save: Save every student directly to Cloud Firestore as it processes
-        await OmranDataService.saveStudent(updatedStudent).catch(e => {
-          console.warn(`Notice saving student ${student.name} plan to cloud:`, e);
-        });
-
-        // Small delay for UI smoothness
-        if (targetStudents.length < 20) {
-          await new Promise(r => setTimeout(r, 40));
-        }
-      }
-
-      // 3. Batch save all updated students directly to Cloud Firestore across all active and central databases
-      await OmranDataService.saveStudentsBatch(updatedList);
-
-      // 4. Update memory / state in parent component
-      if (onUpdateStudents) {
-        await onUpdateStudents(updatedList);
-      }
-
-      setRecalcSuccessMsg(`🎉 تم بنجاح تام حفظ وتحديث الخطط القرآنية ومواعيد الختم لـ (${targetStudents.length}) طالباً في السحابة وقاعدة البيانات بناءً على جدولك الجديد (${weeklyDaysCount} أيام أسبوعياً / ${dailyHours} ساعات يومياً) ابتداءً من تاريخ اليوم المعتمد: (${todayInfo.formattedArabic})!`);
-      confetti({
-        particleCount: 90,
-        spread: 90,
-        origin: { y: 0.6 }
-      });
-    } catch (err) {
-      console.error('Error during AI recalibration:', err);
-      alert('حدث تنبيه أثناء تحديث بعض السجلات، ولكن تم حفظ الأغلب بنجاح.');
-    } finally {
-      setIsRecalculating(false);
-      setCurrentProcessingName('');
-    }
-  };
-
   return (
     <div className="space-y-6 pb-12 text-right" dir="rtl">
       {/* Header Duolingo Card */}
@@ -424,7 +275,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
               ضبط أوقات الحلقات وجدولة الختم بالذكاء الاصطناعي
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 font-bold max-w-2xl leading-relaxed">
-              حدّد كم يوم تكون الحلقة أسبوعياً وساعات الحلقة والوتيرة المعتمدة. عند اعتماد التعديل، يبدأ الذكاء الاصطناعي في إعادة احتساب وتحديث مواعيد الختم وأوراد التثبيت لكافة الطلاب تلقائياً وحفظ كل شيء فوراً في قاعدة البيانات السحابية.
+              حدّد أيام الأسبوع وساعات الحلقة والوتيرة المعتمدة للمجمع. يتم حفظ وتثبيت كافة المعايير فوراً في السحابة المركزية تمهيداً لاعتماد المنظومة الشاملة الجديدة.
             </p>
 
             {/* Prominent Exact Today Date Banner */}
@@ -457,25 +308,6 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
         </div>
       </div>
 
-      {/* Success Notification Banner */}
-      {recalcSuccessMsg && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-4 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500/50 text-emerald-200 text-xs sm:text-sm font-black flex items-center justify-between gap-3 shadow-lg"
-        >
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span>{recalcSuccessMsg}</span>
-          </div>
-          <button
-            onClick={() => setRecalcSuccessMsg('')}
-            className="p-1 rounded-lg hover:bg-white/10 text-emerald-300 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </motion.div>
-      )}
 
       {/* Controls Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -692,11 +524,11 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
           </div>
 
           {/* Action Trigger Buttons */}
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <button
               type="button"
-              disabled={isRecalculating}
-              onClick={handleRunAIRecalibration}
+              disabled={isSavingConfigOnly}
+              onClick={handleExplicitSaveConfig}
               className="w-full py-3.5 px-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xl active:translate-y-0.5 hover:brightness-110 disabled:opacity-50"
               style={{
                 backgroundColor: themeAccent,
@@ -705,19 +537,16 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
                 color: accentTextColor
               }}
             >
-              <Sparkles className="w-4 h-4" />
-              <span>حفظ وتحديث خطط ومواعيد ختم الطلاب بالذكاء الاصطناعي في السحابة ({targetStudents.length} طالباً)</span>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isSavingConfigOnly ? 'جاري حفظ الإعدادات في السحابة...' : 'حفظ ومزامنة ضبط أوقات وأيام الحلقات في السحابة المركزية'}</span>
             </button>
 
-            <button
-              type="button"
-              disabled={isSavingConfigOnly || isRecalculating}
-              onClick={handleExplicitSaveConfig}
-              className="w-full py-2.5 px-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:translate-y-0.5 disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{isSavingConfigOnly ? 'جاري حفظ الإعدادات في السحابة...' : 'حفظ ومزامنة ضبط الجدول والإعدادات فقط في السحابة'}</span>
-            </button>
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 text-amber-200 text-xs font-bold flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                تم بنجاح تصفير نظام توليد الخطط القديم، وجاهزون لاستقبال مواصفات ومعايير المنظومة الذكية الشاملة الجديدة.
+              </span>
+            </div>
 
             {saveConfigToast && (
               <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-200 text-xs font-black text-center animate-fadeIn">
@@ -727,72 +556,6 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Recalibration Fullscreen Overlay Modal (Requested: الرجاء عدم الخروج) */}
-      <AnimatePresence>
-        {isRecalculating && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100005] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
-          >
-            <div
-              className="w-full max-w-lg rounded-3xl border-2 border-b-4 p-6 sm:p-8 space-y-6 shadow-2xl text-center"
-              style={{
-                backgroundColor: themeSecondary,
-                borderColor: themeAccent,
-                borderBottomColor: themeAccentShadow
-              }}
-            >
-              <div
-                className="w-16 h-16 rounded-3xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg animate-bounce"
-                style={{
-                  backgroundColor: `${themeAccent}25`,
-                  borderColor: themeAccent,
-                  color: themeAccent
-                }}
-              >
-                <BrainCircuit className="w-8 h-8" />
-              </div>
-
-              <div className="space-y-2">
-                <span className="inline-block px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                  ⚠️ تنبيه: الرجاء عدم الخروج من الصفحة
-                </span>
-                <h3 className="text-lg sm:text-xl font-black text-white font-heading">
-                  الذكاء الاصطناعي يعيد ضبط وجدولة خطط الحفظ والتثبيت...
-                </h3>
-                <p className="text-xs text-slate-300 font-bold max-w-sm mx-auto leading-relaxed">
-                  يتم الآن احتساب مسار الأيام المتبقية وتواريخ الختم الدقيقة لكل طالب بناءً على ({selectedDays.length} أيام أسبوعياً / {dailyHours} ساعات يومياً) وموازنة وقفات التثبيت.
-                </p>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-black text-slate-200">
-                  <span>جاري معالجة: {currentProcessingName || '...' }</span>
-                  <span style={{ color: themeAccent }}>{recalcProgress}%</span>
-                </div>
-                <div className="w-full h-3.5 rounded-full bg-black/40 border border-white/10 overflow-hidden p-0.5">
-                  <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${recalcProgress}%`,
-                      backgroundColor: themeAccent
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-center gap-2 text-[11px] text-slate-400 font-bold">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                <span>يرجى الانتظار حتى اكتمال تحديث السجلات وحفظها سحابياً...</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Student Plans Explorer Table */}
       <div

@@ -99,6 +99,26 @@ const QUESTION_TYPE_LABELS: Record<PortalQuestionType, { label: string; icon: st
   phone: { label: 'رقم هاتف بديل', icon: '📞', desc: 'حقل مخصص لأرقام الهواتف والتواصل' }
 };
 
+function toDatetimeLocalString(isoDateStr?: string | null): string {
+  if (!isoDateStr) return '';
+  const d = new Date(isoDateStr);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function fromDatetimeLocalString(localStr?: string): string | null {
+  if (!localStr) return null;
+  const d = new Date(localStr);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -152,7 +172,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       memorizedJuzRequired: true,
       preferredHalaqahRequired: true,
       notesAllowed: true,
-      showHalaqahQuestion: true,
+      showHalaqahQuestion: false,
       halaqahQuestionLabel: 'الحلقة القرآنية المفضلة',
       halaqahSelectionMode: 'all',
       allowedHalaqahIds: [],
@@ -171,9 +191,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   const [preferredHalaqahRequired, setPreferredHalaqahRequired] = useState(initialConfig.fieldConfig.preferredHalaqahRequired ?? true);
   const [notesAllowed, setNotesAllowed] = useState(initialConfig.fieldConfig.notesAllowed ?? true);
 
-  // Registration Closing & Deadline Controls
+  // Registration Closing & Deadline Controls (100% Timezone-Accurate)
   const [registrationDeadline, setRegistrationDeadline] = useState<string>(
-    initialConfig.registrationDeadline ? initialConfig.registrationDeadline.substring(0, 16) : ''
+    toDatetimeLocalString(initialConfig.registrationDeadline)
   );
   const [isRegistrationClosedManually, setIsRegistrationClosedManually] = useState<boolean>(
     Boolean(initialConfig.isRegistrationClosedManually)
@@ -182,10 +202,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
     initialConfig.closedMessage || 'عذراً، تم إغلاق باب التسجيل وتقديم الطلبات للفترة الحالية لاكتمال المقاعد المتاحة في حلقات المجمع.'
   );
 
-  // Halaqah Question Advanced Control
-  const [showHalaqahQuestion, setShowHalaqahQuestion] = useState<boolean>(
-    initialConfig.fieldConfig.showHalaqahQuestion !== false
-  );
+  // Halaqah Question Advanced Control (Removed from registration form by request)
+  const [showHalaqahQuestion, setShowHalaqahQuestion] = useState<boolean>(false);
   const [halaqahQuestionLabel, setHalaqahQuestionLabel] = useState<string>(
     initialConfig.fieldConfig.halaqahQuestionLabel || 'الحلقة القرآنية المفضلة'
   );
@@ -466,7 +484,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
         portalMode,
         portalTitle: `بوابة ${complex.name}`,
         welcomeMessage,
-        registrationDeadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
+        registrationDeadline: fromDatetimeLocalString(registrationDeadline),
         isRegistrationClosedManually,
         closedMessage: closedMessage.trim(),
         fieldConfig: {
@@ -478,7 +496,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           memorizedJuzRequired,
           preferredHalaqahRequired,
           notesAllowed,
-          showHalaqahQuestion,
+          showHalaqahQuestion: false,
           halaqahQuestionLabel: halaqahQuestionLabel.trim() || 'الحلقة القرآنية المفضلة',
           halaqahSelectionMode,
           allowedHalaqahIds: halaqahSelectionMode === 'specific' ? allowedHalaqahIds : [],
@@ -1514,196 +1532,6 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               {/* Questionnaire Customizer (إذا كان مسموح بالتسجيل) */}
               {portalMode !== 'login_only' && (
                 <div className="space-y-6 pt-3 border-t border-white/10">
-                  {/* Halaqah Question Configuration Card */}
-                  <div
-                    className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-md"
-                    style={{
-                      backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: showHalaqahQuestion ? themeAccent : themeCardBorder,
-                      borderBottomColor: showHalaqahQuestion ? themeAccentShadow : themeCardShadow
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center font-black"
-                          style={{
-                            backgroundColor: `${themeAccent}25`,
-                            color: themeAccent
-                          }}
-                        >
-                          <Building2 className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-white">سؤال اختيار الحلقة في استمارة التسجيل</h4>
-                          <p className="text-[11px] text-slate-300 font-bold">
-                            التحكم الكامل في ظهور سؤال الحلقة، أو تحديد حلقات معينة فقط تظهر للطلاب
-                          </p>
-                        </div>
-                      </div>
-
-                      <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-xl border border-white/10 bg-white/5">
-                        <span className="text-xs font-black text-white">
-                          {showHalaqahQuestion ? 'السؤال مفعل وظاهر' : 'السؤال محذوف / مخفي'}
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={showHalaqahQuestion}
-                          onChange={e => setShowHalaqahQuestion(e.target.checked)}
-                          className="w-4 h-4 accent-amber-400 cursor-pointer"
-                        />
-                      </label>
-                    </div>
-
-                    {!showHalaqahQuestion ? (
-                      <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs font-bold leading-relaxed">
-                        💡 <strong>ملاحظة:</strong> تم إخفاء سؤال اختيار الحلقة تماماً من استمارة التسجيل. سيسجل الطالب دون مطالبته باختيار حلقة معينة، وسيقوم المشرف بتعيين حلقته لاحقاً عند اعتماد الطلب.
-                      </div>
-                    ) : (
-                      <div className="space-y-4 pt-2 border-t border-white/10">
-                        {/* Custom label for halaqah question */}
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-black text-slate-200 block">
-                            صيغة وتسمية سؤال الحلقة في الاستمارة:
-                          </label>
-                          <input
-                            type="text"
-                            value={halaqahQuestionLabel}
-                            onChange={e => setHalaqahQuestionLabel(e.target.value)}
-                            placeholder="مثال: اختر الحلقة المرغوبة في المجمع..."
-                            className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
-                            style={{
-                              backgroundColor: themeCard,
-                              borderColor: themeCardBorder
-                            }}
-                          />
-                        </div>
-
-                        {/* Halaqah Visibility Mode */}
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-slate-200 block">
-                            الحلقات التي تظهر للمسجلين في القائمة:
-                          </label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <label
-                              className={`p-3 rounded-xl border-2 flex items-center justify-between cursor-pointer ${
-                                halaqahSelectionMode === 'all' ? 'border-amber-400 bg-amber-400/10' : 'border-white/10 bg-white/5'
-                              }`}
-                            >
-                              <div>
-                                <span className="text-xs font-black text-white block">جميع حلقات المجمع</span>
-                                <span className="text-[10px] text-slate-300 font-bold">
-                                  إتاحة كل الحلقات المقيدة بالمجمع ({halaqahs.length} حلقات)
-                                </span>
-                              </div>
-                              <input
-                                type="radio"
-                                name="halaqahSelectionMode"
-                                checked={halaqahSelectionMode === 'all'}
-                                onChange={() => setHalaqahSelectionMode('all')}
-                                className="w-4 h-4 accent-amber-400 cursor-pointer"
-                              />
-                            </label>
-
-                            <label
-                              className={`p-3 rounded-xl border-2 flex items-center justify-between cursor-pointer ${
-                                halaqahSelectionMode === 'specific' ? 'border-amber-400 bg-amber-400/10' : 'border-white/10 bg-white/5'
-                              }`}
-                            >
-                              <div>
-                                <span className="text-xs font-black text-white block">تحديد حلقات معينة فقط</span>
-                                <span className="text-[10px] text-slate-300 font-bold">
-                                  إظهار الحلقات المفتوحة واستبعاد الحلقات المكتملة
-                                </span>
-                              </div>
-                              <input
-                                type="radio"
-                                name="halaqahSelectionMode"
-                                checked={halaqahSelectionMode === 'specific'}
-                                onChange={() => setHalaqahSelectionMode('specific')}
-                                className="w-4 h-4 accent-amber-400 cursor-pointer"
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        {/* Specific Halaqahs Selector */}
-                        {halaqahSelectionMode === 'specific' && (
-                          <div className="space-y-2 pt-2 border-t border-white/10">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-amber-300">
-                                اختر الحلقات المسموح بظهورها في الاستمارة ({allowedHalaqahIds.length} من {halaqahs.length}):
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setAllowedHalaqahIds(halaqahs.map(h => h.id))}
-                                  className="text-[11px] font-bold text-slate-300 hover:text-white underline cursor-pointer"
-                                >
-                                  تحديد الكل
-                                </button>
-                                <span>•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setAllowedHalaqahIds([])}
-                                  className="text-[11px] font-bold text-slate-300 hover:text-red-300 underline cursor-pointer"
-                                >
-                                  إلغاء التحديد
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
-                              {halaqahs.map(h => {
-                                const isChecked = allowedHalaqahIds.includes(h.id);
-                                return (
-                                  <label
-                                    key={h.id}
-                                    className={`p-2.5 rounded-xl border text-xs font-black flex items-center justify-between gap-2 cursor-pointer transition-all ${
-                                      isChecked
-                                        ? 'bg-amber-400/20 border-amber-400 text-white'
-                                        : 'bg-white/5 border-white/10 text-slate-300 hover:border-white/20'
-                                    }`}
-                                  >
-                                    <div className="truncate">
-                                      <span className="block truncate">{h.name}</span>
-                                      {h.primaryTeacherName && (
-                                        <span className="text-[10px] text-slate-400 font-bold block truncate">
-                                          {h.primaryTeacherName}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={() => handleToggleHalaqahAllowed(h.id)}
-                                      className="w-4 h-4 accent-amber-400 shrink-0 cursor-pointer"
-                                    />
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Allow Auto Placement Option */}
-                        <label className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
-                          <div>
-                            <span className="text-xs font-black text-white block">إتاحة خيار "توجيه تلقائي من المشرف"</span>
-                            <span className="text-[10px] text-slate-400 font-bold">
-                              يسمح للطالب باختيار توجيهه للحلقة الأنسب لمستواه إذا لم يكن يعرف الحلقة المناسبة
-                            </span>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={allowAutoPlacement}
-                            onChange={e => setAllowAutoPlacement(e.target.checked)}
-                            className="w-4 h-4 accent-amber-400 cursor-pointer"
-                          />
-                        </label>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Standard Default Fields */}
                   <div className="space-y-3">

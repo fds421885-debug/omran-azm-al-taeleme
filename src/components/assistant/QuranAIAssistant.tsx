@@ -3048,7 +3048,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
     { label: 'كشف التنبيهات والمخالفات', query: 'اعمل لي كشف الطلاب اللي عليهم تنبيهات ومخالفات', icon: 'alert' },
     { label: 'كشف الحضور والغياب', query: 'اعرض لي كشف الحضور والغياب اليومي', icon: 'calendar' },
     { label: 'مستويات حفظ الطلاب', query: 'وين وصلوا في الحفظ؟ اعطني كشف مستويات حفظ الطلاب', icon: 'book' },
-    { label: 'تسجيل طالب جديد', query: 'أريد تسجيل طالب جديد', icon: 'userPlus' },
+    { label: 'رابط تسجيل المجمع', query: 'أريد رابط وبوابة تسجيل المجمع واستقبال الطلاب', icon: 'link' },
   ];
 
   return (
