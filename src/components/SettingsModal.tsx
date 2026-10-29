@@ -453,7 +453,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const meetingUri = editingHalaqah.meetingUri?.trim() || '';
       const meetingCode = meetingUri.includes('meet.google.com') ? (meetingUri.split('/').pop() || '') : '';
 
+      const normalizedReviewLinks = (editingHalaqah.reviewLinks || []).map((link, idx) => ({
+        ...link,
+        id: link.id || `rev-link-${Date.now()}-${idx}`,
+        title: (link.title || '').trim() || `رابط المراجعة ${['١','٢','٣','٤','٥','٦','٧','٨','٩','١٠'][idx] || (idx + 1)}`,
+        url: (link.url || '').trim(),
+        isEnabled: link.isEnabled !== false,
+        updatedAt: new Date().toISOString()
+      }));
+
       const halaqahPayload: Halaqah = {
+        ...editingHalaqah,
         id: editingHalaqah.id || `halaqah-${Date.now()}`,
         name: editingHalaqah.name.trim(),
         description: editingHalaqah.description?.trim() || '',
@@ -470,6 +480,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         meetingUri,
         meetingCode,
         googleSpaceName: editingHalaqah.googleSpaceName || '',
+        reviewLinks: normalizedReviewLinks,
         createdAt: editingHalaqah.createdAt || new Date().toISOString()
       };
 
@@ -1607,12 +1618,125 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </a>
                             </div>
                             <input
-                              type="url"
+                              type="text"
                               placeholder="https://meet.google.com/abc-defg-hij"
                               value={editingHalaqah.meetingUri || ''}
                               onChange={e => setEditingHalaqah({ ...editingHalaqah, meetingUri: e.target.value })}
                               className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400 ltr text-left"
                             />
+                          </div>
+
+                          {/* Review Links inside Settings Modal */}
+                          <div className="pt-2 border-t border-[#065f46] space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-black text-sky-300">
+                                روابط المراجعة الإضافية ({(editingHalaqah.reviewLinks || []).length})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const existing = editingHalaqah.reviewLinks || [];
+                                  const nextIdx = existing.length + 1;
+                                  const arDigits = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+                                  const arNum = String(nextIdx).split('').map(d => arDigits[Number(d)] || d).join('');
+                                  setEditingHalaqah({
+                                    ...editingHalaqah,
+                                    reviewLinks: [
+                                      ...existing,
+                                      {
+                                        id: `rev-link-${Date.now()}-${nextIdx}`,
+                                        title: `رابط المراجعة ${arNum}`,
+                                        url: '',
+                                        isEnabled: true,
+                                        createdAt: new Date().toISOString()
+                                      }
+                                    ]
+                                  });
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-sky-500 text-slate-950 font-black text-[11px] cursor-pointer hover:bg-sky-400"
+                              >
+                                + أضف رابط مراجعة
+                              </button>
+                            </div>
+
+                            {(editingHalaqah.reviewLinks || []).map((link, idx) => {
+                              const isEnabled = link.isEnabled !== false;
+                              return (
+                                <div key={link.id || idx} className="p-2.5 rounded-xl bg-black/25 border border-white/10 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <label className="flex items-center gap-1.5 text-[11px] font-black cursor-pointer shrink-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={isEnabled}
+                                        onChange={e => {
+                                          const checked = e.target.checked;
+                                          setEditingHalaqah({
+                                            ...editingHalaqah,
+                                            reviewLinks: (editingHalaqah.reviewLinks || []).map((l, i) =>
+                                              i === idx ? { ...l, isEnabled: checked } : l
+                                            )
+                                          });
+                                        }}
+                                        className="w-4 h-4 rounded accent-[#58cc02]"
+                                      />
+                                      <span className={isEnabled ? 'text-[#58cc02]' : 'text-slate-400'}>
+                                        {isEnabled ? 'مفعل' : 'غير مفعل'}
+                                      </span>
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={link.title}
+                                      onChange={e =>
+                                        setEditingHalaqah({
+                                          ...editingHalaqah,
+                                          reviewLinks: (editingHalaqah.reviewLinks || []).map((l, i) =>
+                                            i === idx ? { ...l, title: e.target.value } : l
+                                          )
+                                        })
+                                      }
+                                      placeholder={`رابط المراجعة ${idx + 1}`}
+                                      className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2 py-1 text-xs text-white font-bold outline-none focus:border-sky-400"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditingHalaqah({
+                                          ...editingHalaqah,
+                                          reviewLinks: (editingHalaqah.reviewLinks || []).filter((_, i) => i !== idx)
+                                        })
+                                      }
+                                      className="px-2 py-1 rounded-lg bg-red-500/20 text-red-300 text-[10px] font-bold hover:bg-red-500/30 cursor-pointer"
+                                    >
+                                      حذف
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={link.url || ''}
+                                      onChange={e =>
+                                        setEditingHalaqah({
+                                          ...editingHalaqah,
+                                          reviewLinks: (editingHalaqah.reviewLinks || []).map((l, i) =>
+                                            i === idx ? { ...l, url: e.target.value } : l
+                                          )
+                                        })
+                                      }
+                                      placeholder="https://meet.google.com/abc-defg-hij"
+                                      className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-sky-400 ltr text-left"
+                                    />
+                                    <a
+                                      href="https://meet.google.com/new"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-400/50 text-sky-300 text-[10px] font-bold hover:bg-sky-500/30 shrink-0"
+                                    >
+                                      Google Meet ↗
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

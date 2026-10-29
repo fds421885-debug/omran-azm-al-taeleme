@@ -62,6 +62,11 @@ import { getSurahInfo } from '../data/quranData';
 import { OmranDataService, auth } from '../lib/firebase';
 import { GoogleWorkspaceService } from '../lib/googleWorkspace';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import {
+  getDistinctComplexReviewPalette,
+  getDefaultReviewLinkTitle,
+  normalizeMeetingUrl
+} from '../lib/themeUtils';
 
 interface ParentPortalViewProps {
   student: Student;
@@ -417,12 +422,38 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const myRankIndex = studentRankList.findIndex(item => item.student.id === student.id);
   const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
   const myRankingData = myRankIndex >= 0 ? studentRankList[myRankIndex] : null;
-  const studentHalaqahObj = halaqahs?.find(h => h.id === student.halaqahId);
+  const studentHalaqahObj = useMemo(() => {
+    if (!halaqahs || halaqahs.length === 0) return undefined;
+    return (
+      halaqahs.find(h => h.id === student.halaqahId) ||
+      halaqahs.find(
+        h => student.halaqahName && h.name && h.name.trim() === student.halaqahName.trim()
+      )
+    );
+  }, [halaqahs, student.halaqahId, student.halaqahName]);
+
+  const studentComplexObj = useMemo(() => {
+    if (studentHalaqahObj?.complexId) {
+      const byHal = complexes?.find(c => c.id === studentHalaqahObj.complexId);
+      if (byHal) return byHal;
+    }
+    if (student.complexId) {
+      const byStd = complexes?.find(c => c.id === student.complexId);
+      if (byStd) return byStd;
+    }
+    return activeComplex || null;
+  }, [studentHalaqahObj, student.complexId, complexes, activeComplex]);
+
+  const [onlineClockTick, setOnlineClockTick] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setOnlineClockTick(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   const currentHalaqahTitle = student.halaqahName || studentHalaqahObj?.name || 'حلقتك القرآنية';
 
-
-
   const isOnlineHalaqahActive = (h?: Halaqah | null): boolean => {
+    void onlineClockTick;
     if (!h) return false;
     const start = h.onlineStartTime || h.startTime || '16:00';
     const end = h.onlineEndTime || h.endTime || '20:00';
@@ -836,84 +867,186 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
         </div>
 
-        {/* ONLINE HALAQAH BANNER FOR STUDENT */}
-        {studentHalaqahObj && studentHalaqahObj.isOnline && studentHalaqahObj.meetingUri && (() => {
+        {/* ONLINE HALAQAH & REVIEW LINKS BANNER FOR STUDENT */}
+        {studentHalaqahObj && studentHalaqahObj.isOnline && (() => {
+          const mainHref = normalizeMeetingUrl(studentHalaqahObj.meetingUri);
+          // Only enabled review links with a valid URL are shown to students
+          const enabledReviewLinks = (studentHalaqahObj.reviewLinks || []).filter(
+            link => link && link.isEnabled !== false && Boolean(normalizeMeetingUrl(link.url))
+          );
+
+          if (!mainHref && enabledReviewLinks.length === 0) return null;
+
           const isActive = isOnlineHalaqahActive(studentHalaqahObj);
           const startStr = studentHalaqahObj.onlineStartTime || studentHalaqahObj.startTime || '16:00';
           const endStr = studentHalaqahObj.onlineEndTime || studentHalaqahObj.endTime || '20:00';
+          const palette = getDistinctComplexReviewPalette(
+            studentComplexObj?.theme,
+            studentComplexObj?.themeColor
+          );
 
           return (
             <div
-              className={`relative overflow-hidden rounded-[32px] border-2 p-6 sm:p-7 shadow-2xl backdrop-blur-md space-y-4 transition-all ${
-                isActive
-                  ? 'bg-gradient-to-r from-[#064e3b] via-[#022c22] to-[#064e3b] border-[#fbbf24] ring-2 ring-emerald-400/50'
-                  : 'bg-slate-900/80 border-slate-700 opacity-80'
+              className={`relative overflow-hidden rounded-[28px] border-2 border-b-[5px] p-6 sm:p-7 shadow-2xl space-y-5 transition-all ${
+                isActive ? 'opacity-100' : 'opacity-85'
               }`}
+              style={{
+                backgroundColor: isActive ? palette.cardBg : '#0f172a',
+                borderColor: isActive ? palette.mainBtnBg : '#334155',
+                borderBottomColor: isActive ? palette.mainBtnShadow : '#1e293b'
+              }}
             >
+              {/* Header Info */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <span
-                      className={`p-2 rounded-2xl border ${
+                      className="p-2.5 rounded-2xl border-2 border-b-4"
+                      style={
                         isActive
-                          ? 'bg-[#fbbf24]/20 text-[#fbbf24] border-[#fbbf24]/40 animate-pulse'
-                          : 'bg-slate-800 text-slate-500 border-slate-700'
-                      }`}
+                          ? {
+                              backgroundColor: `${palette.mainBtnBg}22`,
+                              color: palette.mainBtnBg,
+                              borderColor: `${palette.mainBtnBg}66`,
+                              borderBottomColor: palette.mainBtnShadow
+                            }
+                          : {
+                              backgroundColor: '#1e293b',
+                              color: '#64748b',
+                              borderColor: '#334155',
+                              borderBottomColor: '#0f172a'
+                            }
+                      }
                     >
                       <Video className="w-5 h-5" />
                     </span>
-                    <h3 className="text-base sm:text-lg font-black font-heading text-white">
-                      حلقة التسميع عن بُعد (Google Meet)
-                    </h3>
-                    {isActive ? (
-                      <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/50 flex items-center gap-1.5 animate-pulse shadow-md">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        <span>الحلقة نشطة الآن (في موعدها)</span>
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-slate-500" />
-                        <span>زر الدخول مغلق (خارج وقت الحلقة)</span>
-                      </span>
-                    )}
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black font-heading text-white">
+                        حلقة التسميع والمراجعة عن بُعد
+                      </h3>
+                      <p className="text-xs text-slate-200 font-bold mt-0.5">
+                        حلقة: <strong style={{ color: palette.mainBtnBg }}>{studentHalaqahObj.name}</strong> · الموعد: {startStr} إلى {endStr}
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-200">
-                    حلقة: <strong className="text-[#fbbf24]">{studentHalaqahObj.name}</strong> • الموعد: {startStr} إلى {endStr}
-                  </p>
-                  {!isActive && (
-                    <p className="text-[11px] text-amber-300 font-bold">
-                      ⚠️ الدخول مغلق حالياً • يُسمح للطلاب بالانضمام حصرياً خلال فترة موعد الحلقة ({startStr} - {endStr}).
-                    </p>
-                  )}
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="shrink-0">
                   {isActive ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isOnlineHalaqahActive(studentHalaqahObj)) return;
-                        window.open(studentHalaqahObj.meetingUri, '_blank', 'noopener,noreferrer');
-                      }}
-                      className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] hover:from-[#f59e0b] hover:to-[#d97706] text-[#064e3b] font-black text-xs flex items-center gap-2 shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
-                    >
-                      <Video className="w-4 h-4" />
-                      <span>دخول حلقة Google Meet الآن 🚀</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
+                    <span className="text-xs font-black text-emerald-300">
+                      الحلقة نشطة الآن (في موعدها)
+                    </span>
                   ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="px-6 py-3 rounded-2xl bg-slate-800/90 border border-slate-700 text-slate-500 font-bold text-xs flex items-center gap-2 cursor-not-allowed opacity-50 shadow-none"
-                      title="زر الدخول لا يعمل حالياً لعدم تواجده في وقت الحلقة المجدول"
-                    >
-                      <Video className="w-4 h-4 opacity-40" />
-                      <span>زر الدخول مغلق (خارج وقت الحلقة)</span>
-                    </button>
+                    <span className="text-xs font-bold text-slate-400">
+                      خارج وقت الحلقة ({startStr} - {endStr})
+                    </span>
                   )}
                 </div>
               </div>
+
+              {/* Active Halaqah Time: Main Link followed by Stacked Duolingo Review Links */}
+              {isActive ? (
+                <div className="space-y-4 pt-1">
+                  {/* 1. Primary Halaqah Button (Complex Primary Accent) */}
+                  {mainHref && (
+                    <a
+                      href={mainHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-4 px-5 rounded-2xl font-black text-sm flex items-center justify-between gap-3 shadow-xl transition-all hover:brightness-105 active:translate-y-[2px] cursor-pointer"
+                      style={{
+                        backgroundColor: palette.mainBtnBg,
+                        color: palette.mainBtnText,
+                        border: `2px solid ${palette.mainBtnBorder}`,
+                        borderBottom: `5px solid ${palette.mainBtnShadow}`
+                      }}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Video className="w-5 h-5 shrink-0" />
+                        <span>دخول رابط الحلقة الأساسي الآن</span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs font-black shrink-0">
+                        <span>انضمام مباشر</span>
+                        <ExternalLink className="w-4 h-4" />
+                      </span>
+                    </a>
+                  )}
+
+                  {/* 2. Review Links Section (Distinct Complex Color + Duolingo 3D Stacked Buttons) */}
+                  {enabledReviewLinks.length > 0 && (
+                    <div
+                      className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-3"
+                      style={{
+                        backgroundColor: palette.reviewBoxBg,
+                        borderColor: palette.reviewBoxBorder,
+                        borderBottomColor: palette.reviewBoxBottomBorder
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-4 h-4 shrink-0" style={{ color: palette.reviewBtnBg }} />
+                          <h4 className="text-xs sm:text-sm font-black text-white">
+                            روابط المراجعة المتاحة للحلقة
+                          </h4>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-300">
+                          اضغط للانضمام لغرفة المراجعة
+                        </span>
+                      </div>
+
+                      {/* Vertically Stacked Review Link Buttons (كل رابط له زر تحت بعضهم) */}
+                      <div className="flex flex-col gap-3 w-full">
+                        {enabledReviewLinks.map((link, idx) => {
+                          const reviewHref = normalizeMeetingUrl(link.url);
+                          const originalIdx = (studentHalaqahObj.reviewLinks || []).findIndex(r => r.id === link.id);
+                          const label =
+                            (link.title || '').trim() ||
+                            getDefaultReviewLinkTitle((originalIdx >= 0 ? originalIdx : idx) + 1);
+
+                          return (
+                            <a
+                              key={link.id || idx}
+                              href={reviewHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full py-3.5 px-5 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-3 shadow-lg transition-all hover:brightness-110 active:translate-y-[2px] cursor-pointer"
+                              style={{
+                                backgroundColor: palette.reviewBtnBg,
+                                color: palette.reviewBtnText,
+                                border: `2px solid ${palette.reviewBtnBorder}`,
+                                borderBottom: `5px solid ${palette.reviewBtnShadow}`
+                              }}
+                            >
+                              <span className="flex items-center gap-2.5 truncate">
+                                <BookOpen className="w-4 h-4 shrink-0" />
+                                <span className="truncate">{label}</span>
+                              </span>
+                              <span className="flex items-center gap-1.5 text-xs font-black shrink-0">
+                                <span>دخول غرفة المراجعة</span>
+                                <ExternalLink className="w-4 h-4" />
+                              </span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs text-amber-300 font-bold">
+                    الدخول مغلق حالياً · تفتح روابط الحلقة الأساسية وروابط المراجعة للطلاب تلقائياً خلال وقت الحلقة ({startStr} - {endStr}).
+                  </p>
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full py-3.5 px-5 rounded-2xl bg-slate-800/90 border-2 border-slate-700 border-b-4 border-b-slate-900 text-slate-400 font-bold text-xs flex items-center justify-center gap-2 cursor-not-allowed opacity-60"
+                  >
+                    <Video className="w-4 h-4 opacity-50" />
+                    <span>زر الدخول مغلق (خارج وقت الحلقة المجدول)</span>
+                  </button>
+                </div>
+              )}
             </div>
           );
         })()}

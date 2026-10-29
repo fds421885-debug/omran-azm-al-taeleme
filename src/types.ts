@@ -517,6 +517,16 @@ export interface StudentRegistrationApplication {
   }>;
 }
 
+export interface HalaqahReviewLink {
+  id: string;
+  title: string; // e.g. "رابط المراجعة ١"
+  url: string; // رابط Google Meet أو رابط اجتماع مخصص للمراجعة
+  meetingCode?: string;
+  isEnabled: boolean; // true = مفعل (يظهر للطلاب في وقت الحلقة)، false = غير مفعل (مخفي عن الطلاب)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Halaqah {
   id: string;
   name: string; // e.g. "حلقة القرآن الكريم"
@@ -546,11 +556,12 @@ export interface Halaqah {
   isOnline?: boolean; // هل الحلقة أونلاين / عن بعد
   onlineStartTime?: string; // وقت بدء الحلقة أونلاين
   onlineEndTime?: string; // وقت انتهاء الحلقة أونلاين
-  meetingUri?: string; // رابط Google Meet الأونلاين
+  meetingUri?: string; // رابط Google Meet الأونلاين الأساسي
   meetingCode?: string; // كود الاجتماع
   googleSpaceName?: string; // اسم السبيس في Google Meet API
   meetingCreatedAt?: string; // تاريخ إنشاء وتفعيل الاجتماع
   meetingCreatedBy?: string; // الحساب أو المعلم الذي أنشأ الاجتماع
+  reviewLinks?: HalaqahReviewLink[]; // روابط المراجعة الإضافية للحلقة الأونلاين
   updatedAt?: string; // تاريخ آخر تحديث
 }
 

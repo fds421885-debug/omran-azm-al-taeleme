@@ -25,6 +25,9 @@
         "complexId": { "type": "string", "maxLength": 128 },
         "complexName": { "type": "string", "maxLength": 200 },
         "primaryTeacherName": { "type": "string", "maxLength": 200 },
+        "isOnline": { "type": "boolean" },
+        "meetingUri": { "type": "string", "maxLength": 500 },
+        "reviewLinks": { "type": "array" },
         "createdAt": { "type": "string" }
       },
       "required": ["name", "complexId"]

@@ -374,108 +374,45 @@ export class OmranAIService {
     }
 
     const startTime = performance.now();
-    const testPrompt = 'اختبار اتصال: أجب بعبارة قصيرة واحدة باللغة العربية تبدأ بـ "تم الاتصال بنجاح بمنظومة عمران القرآنية".';
 
-    // 1. Try server proxy endpoint first for maximum compatibility
+    // Server-side proxy endpoint only (keeps API keys off direct browser requests to Google APIs)
     try {
       const serverRes = await fetch(ApiConfig.getEndpoint('/api/gemini/test-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey: cleanKey, model: cleanModel })
       });
+      const latencyMs = Math.round(performance.now() - startTime);
       if (serverRes.ok) {
         const sData = await serverRes.json();
         if (sData?.success) {
           this.recordUsage();
           return {
             success: true,
-            latencyMs: sData.latencyMs || Math.round(performance.now() - startTime),
+            latencyMs: sData.latencyMs || latencyMs,
             responseText: sData.responseText || 'تم الاتصال بنجاح بمنظومة عمران القرآنية'
           };
-        } else if (sData?.error) {
-          return {
-            success: false,
-            latencyMs: Math.round(performance.now() - startTime),
-            responseText: '',
-            error: sData.error
-          };
         }
-      }
-    } catch (serverErr) {
-      // Fallback to direct client fetch
-    }
-
-    // 2. Direct client fetch fallback
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: testPrompt }]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              maxOutputTokens: 100
-            }
-          })
-        }
-      );
-
-      const endTime = performance.now();
-      const latencyMs = Math.round(endTime - startTime);
-
-      if (!response.ok) {
-        let errorMsg = `فشل الاتصال بجوجل (كود ${response.status})`;
-        try {
-          const errData = await response.json();
-          if (errData?.error?.message) {
-            const raw = errData.error.message;
-            if (raw.includes('API_KEY_INVALID') || raw.includes('API key not valid')) {
-              errorMsg = 'مفتاح API غير صالح أو تم إلغاؤه من Google Cloud Console.';
-            } else if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('Quota exceeded')) {
-              errorMsg = 'تم استنفاد الحصة المجانية الحالية لهذا المفتاح، يرجى فحص الحصص أو استخدام مفتاح آخر.';
-            } else if (raw.includes('models/') && raw.includes('is not found')) {
-              errorMsg = `النموذج المحدد (${cleanModel}) غير مدعوم على هذا المفتاح، يرجى اختيار نموذج آخر مثل gemini-3.8-flash.`;
-            } else {
-              errorMsg = `تنبيه من Google Gemini: ${raw}`;
-            }
-          }
-        } catch {}
-
         return {
           success: false,
           latencyMs,
           responseText: '',
-          error: errorMsg
+          error: sData?.error || 'فشل الاتصال بخدمة Google Gemini'
         };
       }
-
-      const data = await response.json();
-      const text =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'تم الاتصال بنجاح بمنظومة عمران القرآنية';
-
-      this.recordUsage();
-
-      return {
-        success: true,
-        latencyMs,
-        responseText: text.trim()
-      };
-    } catch (netErr: any) {
-      const endTime = performance.now();
+      const errData = await serverRes.json().catch(() => ({}));
       return {
         success: false,
-        latencyMs: Math.round(endTime - startTime),
+        latencyMs,
         responseText: '',
-        error: `خطأ شبكة أثناء الاتصال المباشر بـ Google Gemini: ${netErr?.message || 'تعذر الوصول للخادم'}`
+        error: errData?.error || `فشل الاتصال بالخادم (كود ${serverRes.status})`
+      };
+    } catch (serverErr: any) {
+      return {
+        success: false,
+        latencyMs: Math.round(performance.now() - startTime),
+        responseText: '',
+        error: `تعذر الوصول لخادم المنظومة: ${serverErr?.message || 'خطأ في الاتصال'}`
       };
     }
   }
@@ -606,60 +543,7 @@ export class OmranAIService {
       };
     }
 
-    // 1. DIRECT CLIENT-SIDE EXECUTION (Works on Netlify / Static without Node.js server)
-    if (apiKey && apiKey.trim()) {
-      try {
-        const bodyPayload: any = {
-          contents: [
-            {
-              parts: [{ text: options.prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: options.temperature ?? 0.7,
-            maxOutputTokens: options.maxOutputTokens ?? 2048,
-            ...(options.jsonMode ? { responseMimeType: 'application/json' } : {})
-          }
-        };
-
-        if (options.systemInstruction) {
-          bodyPayload.systemInstruction = {
-            parts: [{ text: options.systemInstruction }]
-          };
-        }
-
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey.trim())}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(bodyPayload)
-          }
-        );
-
-        if (res.ok) {
-          const data = await res.json();
-          const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          this.recordUsage();
-          return {
-            text: generatedText,
-            success: true,
-            model
-          };
-        } else {
-          // If direct call returned error, parse clean message
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData?.error?.message || `Google API status ${res.status}`;
-          console.warn('[OmranAIService] Direct Google Gemini notice:', errMsg);
-        }
-      } catch (directErr) {
-        console.warn('[OmranAIService] Direct call attempt failed, checking server fallback:', directErr);
-      }
-    }
-
-    // 2. SERVER FALLBACK (If Express backend is running on port 3000 / localhost)
+    // Route exclusively through the server-side Express proxy (/api/gemini/generate)
     try {
       const serverEndpoint = ApiConfig.getEndpoint('/api/gemini/generate');
       const serverRes = await fetch(serverEndpoint, {

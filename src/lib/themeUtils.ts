@@ -478,3 +478,165 @@ export async function extractColorsFromImageDataUrl(dataUrl: string): Promise<{
   });
 }
 
+const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+
+export function toArabicNumerals(num: number): string {
+  return String(Math.max(1, Math.floor(num)))
+    .split('')
+    .map(ch => (ch >= '0' && ch <= '9' ? ARABIC_DIGITS[Number(ch)] : ch))
+    .join('');
+}
+
+export function getDefaultReviewLinkTitle(indexOneBased: number): string {
+  return `رابط المراجعة ${toArabicNumerals(indexOneBased)}`;
+}
+
+export function extractMeetingUrlAndCode(rawText?: string | null): { url: string; code: string } | null {
+  if (!rawText) return null;
+  const clean = rawText.trim();
+  if (!clean) return null;
+
+  // Match meet.google.com/xxx-yyyy-zzz
+  const meetMatch = clean.match(/(?:https?:\/\/)?meet\.google\.com\/([a-z0-9-]+)/i);
+  if (meetMatch && meetMatch[1]) {
+    const code = meetMatch[1].split('?')[0].trim();
+    return { url: `https://meet.google.com/${code}`, code };
+  }
+
+  // Match xxx-yyyy-zzz raw Meet code
+  const codeMatch = clean.match(/^([a-z]{3}-[a-z]{4}-[a-z]{3})$/i);
+  if (codeMatch && codeMatch[1]) {
+    const code = codeMatch[1].trim();
+    return { url: `https://meet.google.com/${code}`, code };
+  }
+
+  // Generic URL (Zoom / Teams / custom domain with or without https://)
+  if (/^https?:\/\//i.test(clean)) {
+    return { url: clean, code: clean.split('/').pop()?.split('?')[0] || '' };
+  }
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+\//i.test(clean)) {
+    const normalized = `https://${clean}`;
+    return { url: normalized, code: clean.split('/').pop()?.split('?')[0] || '' };
+  }
+
+  return null;
+}
+
+export function normalizeMeetingUrl(rawUrl?: string | null): string {
+  if (!rawUrl) return '';
+  const extracted = extractMeetingUrlAndCode(rawUrl);
+  if (extracted) return extracted.url;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const clean = extractHexColor(hex) || '#1cb0f6';
+  let c = clean.replace('#', '');
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  const num = parseInt(c.slice(0, 6), 16);
+  const r = ((num >> 16) & 255) / 255;
+  const g = ((num >> 8) & 255) / 255;
+  const b = (num & 255) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+        break;
+      case g:
+        h = ((b - r) / d + 2) * 60;
+        break;
+      case b:
+        h = ((r - g) / d + 4) * 60;
+        break;
+    }
+  }
+  return { h, s, l };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const normH = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((normH / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r1 = 0, g1 = 0, b1 = 0;
+
+  if (normH < 60) [r1, g1, b1] = [c, x, 0];
+  else if (normH < 120) [r1, g1, b1] = [x, c, 0];
+  else if (normH < 180) [r1, g1, b1] = [0, c, x];
+  else if (normH < 240) [r1, g1, b1] = [0, x, c];
+  else if (normH < 300) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
+
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r1)}${toHex(g1)}${toHex(b1)}`;
+}
+
+/**
+ * Generates a Duolingo 3D tactile color palette derived from the Complex's identity,
+ * ensuring the Main Halaqah button uses the Complex's primary accent while Review Link
+ * buttons use a harmoniously related YET unmistakably distinct Complex-derived color.
+ */
+export function getDistinctComplexReviewPalette(
+  theme?: ComplexThemeConfig | null,
+  fallbackThemeColor?: string | null
+) {
+  const cardBg = theme?.cardColor || theme?.secondaryColor || '#1b2e35';
+  const mainBtnBg = theme?.accentColor || fallbackThemeColor || '#ffc800';
+  const mainBtnBorder = lightenHex(mainBtnBg, 0.12);
+  const mainBtnShadow = darkenHex(mainBtnBg, 0.28);
+  const mainBtnText = getContrastTextColor(mainBtnBg);
+
+  const surfaceCandidate = theme?.secondaryColor || theme?.cardColor || theme?.primaryColor || '#1b2e35';
+  const mainHsl = hexToHsl(mainBtnBg);
+  const surfHsl = hexToHsl(surfaceCandidate);
+
+  // Derive review button hue from the Complex's own secondary/surface hue if chromatic,
+  // shifting hue when needed so it is always visually distinct from mainBtnBg.
+  let reviewHue = surfHsl.s >= 0.14 ? surfHsl.h : (mainHsl.h + 150) % 360;
+  const hueDistance = Math.min(
+    Math.abs(reviewHue - mainHsl.h),
+    360 - Math.abs(reviewHue - mainHsl.h)
+  );
+  if (hueDistance < 42) {
+    reviewHue = (mainHsl.h + 58) % 360;
+  }
+
+  const reviewBtnBg = hslToHex(reviewHue, Math.max(0.68, Math.min(0.86, surfHsl.s + 0.35)), 0.45);
+  const reviewBtnBorder = lightenHex(reviewBtnBg, 0.14);
+  const reviewBtnShadow = darkenHex(reviewBtnBg, 0.32);
+  const reviewBtnText = getContrastTextColor(reviewBtnBg);
+
+  const reviewBoxBg = darkenHex(cardBg, 0.18);
+  const reviewBoxBorder = `${reviewBtnBg}66`;
+  const reviewBoxBottomBorder = darkenHex(reviewBtnBg, 0.42);
+
+  return {
+    cardBg,
+    cardBorder: lightenHex(cardBg, 0.2),
+    cardShadow: darkenHex(cardBg, 0.36),
+    mainBtnBg,
+    mainBtnBorder,
+    mainBtnShadow,
+    mainBtnText,
+    reviewBtnBg,
+    reviewBtnBorder,
+    reviewBtnShadow,
+    reviewBtnText,
+    reviewBoxBg,
+    reviewBoxBorder,
+    reviewBoxBottomBorder
+  };
+}
+
+

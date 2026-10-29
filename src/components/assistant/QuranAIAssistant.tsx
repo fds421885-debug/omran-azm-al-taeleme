@@ -1327,8 +1327,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
       };
 
       let clientApiKey = (
-        (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-        (import.meta as any).env?.GEMINI_API_KEY ||
         (typeof window !== 'undefined' ? (localStorage.getItem('omran_gemini_api_key') || localStorage.getItem('gemini_api_key') || '') : '') ||
         ''
       ).trim();
