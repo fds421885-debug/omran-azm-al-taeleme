@@ -1215,6 +1215,9 @@ export interface StudentEvaluation {
       youtubeUrl?: string;
       youtubeVideoId?: string;
     };
+    wasListened?: boolean;
+    listeningReps?: number;
+    listeningRequiredReps?: number;
     pagesCompletedToday?: number[];
     pointsEarnedToday?: number;
     pagesPointsEarnedToday?: number;

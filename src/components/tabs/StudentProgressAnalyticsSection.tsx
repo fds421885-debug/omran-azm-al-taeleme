@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -26,7 +27,10 @@ import {
   Calendar,
   Flame,
   ArrowUpRight,
-  PlusCircle
+  PlusCircle,
+  Search,
+  Check,
+  X
 } from 'lucide-react';
 import { Student, StudentEvaluation, QuranComplex, AppSettings } from '../../types';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
@@ -72,6 +76,54 @@ export const StudentProgressAnalyticsSection: React.FC<StudentProgressAnalyticsS
   const [metricUnit, setMetricUnit] = useState<'pages' | 'ayahs'>('pages');
   const [chartType, setChartType] = useState<'bar' | 'area'>('bar');
   const [timeRangeDays, setTimeRangeDays] = useState<7 | 14>(7);
+
+  // Custom In-Platform Dropdown State (الخيارات كلها جوا المنصة)
+  const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const studentDropdownContainerRef = useRef<HTMLDivElement>(null);
+
+  const selectedStudent = useMemo(() => {
+    if (selectedStudentId === 'all') return null;
+    return students.find(s => s.id === selectedStudentId) || null;
+  }, [students, selectedStudentId]);
+
+  // Close custom dropdown on outside click or Escape key
+  useEffect(() => {
+    if (!isStudentDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        studentDropdownContainerRef.current &&
+        !studentDropdownContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsStudentDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsStudentDropdownOpen(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }, 10);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isStudentDropdownOpen]);
+
+  const filteredStudentsForDropdown = useMemo(() => {
+    if (!studentSearchTerm.trim()) return students;
+    const term = studentSearchTerm.trim().toLowerCase();
+    return students.filter(s =>
+      s.name.toLowerCase().includes(term) ||
+      (s.currentSurahName && s.currentSurahName.toLowerCase().includes(term))
+    );
+  }, [students, studentSearchTerm]);
 
   // 1. Calculate Quran Memorization Metrics (Total Ayat, Total Pages, Total Surahs)
   const studentMetricsMap = useMemo(() => {
@@ -476,29 +528,290 @@ export const StudentProgressAnalyticsSection: React.FC<StudentProgressAnalyticsS
         {/* Filter Controls Bar in Theme Colors (Strictly no green) */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Student Selector */}
-          <div className="relative min-w-[200px] sm:min-w-[240px]">
+          <div ref={studentDropdownContainerRef} className="relative min-w-[210px] sm:min-w-[270px]">
+            {/* Native select element for DOM matching and forms - completely clean text with zero raw emojis */}
             <select
               value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-              className="w-full appearance-none px-3.5 py-2.5 pl-9 rounded-2xl text-xs font-black border-2 border-b-4 cursor-pointer transition-all shadow-md focus:outline-none focus:ring-2"
-              style={{
-                backgroundColor: themeSecondary,
-                borderColor: `${themeAccent}60`,
-                borderBottomColor: themeBorderBottom,
-                color: '#ffffff'
+              onChange={(e) => {
+                setSelectedStudentId(e.target.value);
+                setIsStudentDropdownOpen(false);
               }}
+              tabIndex={-1}
+              aria-hidden="true"
+              className="sr-only pointer-events-none opacity-0 absolute w-0 h-0"
             >
-              <option value="all">📊 جميع طلاب الحلقة (الإجمالي العام)</option>
+              <option value="all">جميع طلاب الحلقة (الإجمالي العام)</option>
               {students.map(s => (
                 <option key={s.id} value={s.id}>
-                  👤 {s.name} ({s.currentSurahName ? `سورة ${s.currentSurahName}` : 'طالب'})
+                  {s.name} {s.currentSurahName ? `(سورة ${s.currentSurahName})` : ''}
                 </option>
               ))}
             </select>
-            <ChevronDown
-              className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: themeAccent }}
-            />
+
+            {/* Duolingo 3D Tactile Interactive Button (الزرار الحقيقي يعمل بسلاسة وبثيم دولنجو وألوان المنصة) */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsStudentDropdownOpen(prev => !prev);
+              }}
+              aria-expanded={isStudentDropdownOpen}
+              aria-haspopup="listbox"
+              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl text-xs font-black border-2 border-b-4 cursor-pointer transition-all shadow-md select-none active:translate-y-[2px] active:border-b-2 hover:brightness-105"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: isStudentDropdownOpen ? themeAccent : `${themeAccent}70`,
+                borderBottomColor: isStudentDropdownOpen ? themeAccentShadow : themeBorderBottom,
+                color: '#ffffff'
+              }}
+              title="تحديد الطالب لعرض إحصائياته"
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                {selectedStudent ? (
+                  <>
+                    <div
+                      className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-xs font-black border-2 shadow-xs"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}80`,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
+                      {selectedStudent.name.trim().charAt(0) || 'ط'}
+                    </div>
+                    <div className="flex flex-col text-right min-w-0 flex-1">
+                      <span className="truncate text-white font-black text-xs">{selectedStudent.name}</span>
+                      <span className="text-[10px] text-slate-300 font-bold truncate">
+                        {selectedStudent.currentSurahName ? `سورة ${selectedStudent.currentSurahName}` : 'طالب'} {selectedStudent.level ? `• ${selectedStudent.level}` : ''}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border-2 shadow-xs"
+                      style={{
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}80`,
+                        borderBottomColor: themeAccentShadow,
+                        color: themeAccent
+                      }}
+                    >
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div className="flex flex-col text-right min-w-0 flex-1">
+                      <span className="truncate text-white font-black text-xs">جميع طلاب الحلقة</span>
+                      <span className="text-[10px] text-slate-300 font-bold truncate">الإجمالي العام ({students.length} طلاب)</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div
+                className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 border transition-all"
+                style={{
+                  backgroundColor: isStudentDropdownOpen ? `${themeAccent}30` : 'rgba(255, 255, 255, 0.05)',
+                  borderColor: isStudentDropdownOpen ? themeAccent : 'rgba(255, 255, 255, 0.1)',
+                  color: themeAccent
+                }}
+              >
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    isStudentDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </div>
+            </button>
+
+            {/* In-Platform Custom Themed Dropdown Menu (الخيارات كلها جوا المنصة) */}
+            <AnimatePresence>
+              {isStudentDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute right-0 left-0 sm:left-auto sm:w-[320px] mt-2 rounded-2xl border-2 border-b-4 shadow-2xl z-50 overflow-hidden backdrop-blur-xl"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: `${themeAccent}90`,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  {/* Search box if more than 3 students */}
+                  {students.length > 3 && (
+                    <div
+                      className="p-2.5 border-b"
+                      style={{
+                        backgroundColor: `${themeSecondary}dd`,
+                        borderColor: `${themeAccent}30`
+                      }}
+                    >
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={studentSearchTerm}
+                          onChange={(e) => setStudentSearchTerm(e.target.value)}
+                          placeholder="ابحث عن اسم الطالب أو السورة..."
+                          className="w-full border rounded-xl pr-8 pl-8 py-1.5 text-xs text-white placeholder:text-slate-400 focus:outline-none font-bold transition-colors"
+                          style={{
+                            backgroundColor: `${themePrimary}bb`,
+                            borderColor: `${themeAccent}40`
+                          }}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        {studentSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStudentSearchTerm('');
+                            }}
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Options List */}
+                  <div className="max-h-64 overflow-y-auto scrollbar-thin p-1.5 space-y-1" role="listbox">
+                    {/* All Students Option */}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selectedStudentId === 'all'}
+                      onClick={() => {
+                        setSelectedStudentId('all');
+                        setIsStudentDropdownOpen(false);
+                        setStudentSearchTerm('');
+                      }}
+                      className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer text-right group border active:scale-[0.99]"
+                      style={selectedStudentId === 'all' ? {
+                        backgroundColor: `${themeAccent}25`,
+                        borderColor: `${themeAccent}80`,
+                        color: '#ffffff'
+                      } : {
+                        backgroundColor: 'transparent',
+                        borderColor: 'transparent',
+                        color: '#e2e8f0'
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div
+                          className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border shadow-xs"
+                          style={{
+                            backgroundColor: selectedStudentId === 'all' ? `${themeAccent}35` : `${themeSecondary}aa`,
+                            borderColor: selectedStudentId === 'all' ? themeAccent : 'rgba(255,255,255,0.12)',
+                            color: selectedStudentId === 'all' ? themeAccent : '#94a3b8'
+                          }}
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                        </div>
+                        <div className="truncate text-right">
+                          <span className="block truncate font-black text-white">جميع طلاب الحلقة</span>
+                          <span className="block text-[10px] text-slate-300 font-medium">
+                            الإجمالي العام للحلقة ({students.length} طلاب)
+                          </span>
+                        </div>
+                      </div>
+                      {selectedStudentId === 'all' && (
+                        <div
+                          className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: `${themeAccent}30`, color: themeAccent }}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                    </button>
+
+                    {/* Divider */}
+                    <div className="h-px bg-white/10 my-1 mx-2" />
+
+                    {/* Student Items */}
+                    {filteredStudentsForDropdown.length === 0 ? (
+                      <div className="py-5 text-center text-xs text-slate-400 font-bold">
+                        لم يتم العثور على طالب يطابق البحث
+                      </div>
+                    ) : (
+                      filteredStudentsForDropdown.map(s => {
+                        const isSelected = selectedStudentId === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => {
+                              setSelectedStudentId(s.id);
+                              setIsStudentDropdownOpen(false);
+                              setStudentSearchTerm('');
+                            }}
+                            className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer text-right group border active:scale-[0.99] hover:bg-white/5"
+                            style={isSelected ? {
+                              backgroundColor: `${themeAccent}25`,
+                              borderColor: `${themeAccent}80`,
+                              color: '#ffffff'
+                            } : {
+                              backgroundColor: 'transparent',
+                              borderColor: 'transparent',
+                              color: '#e2e8f0'
+                            }}
+                          >
+                            <div className="flex items-center gap-2.5 truncate">
+                              <div
+                                className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-xs font-black border shadow-xs"
+                                style={{
+                                  backgroundColor: isSelected ? `${themeAccent}35` : `${themeSecondary}aa`,
+                                  borderColor: isSelected ? themeAccent : 'rgba(255,255,255,0.12)',
+                                  color: isSelected ? themeAccent : '#cbd5e1'
+                                }}
+                              >
+                                {s.name.trim().charAt(0) || 'ط'}
+                              </div>
+                              <div className="truncate text-right">
+                                <span className="block truncate font-black text-white">{s.name}</span>
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-300 font-medium">
+                                  <span>{s.currentSurahName ? `سورة ${s.currentSurahName}` : 'طالب'}</span>
+                                  {s.level && (
+                                    <>
+                                      <span>•</span>
+                                      <span
+                                        className="px-1.5 py-0.2 rounded font-bold"
+                                        style={{
+                                          backgroundColor: `${themeAccent}15`,
+                                          color: themeAccent
+                                        }}
+                                      >
+                                        {s.level}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <div
+                                className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                                style={{ backgroundColor: `${themeAccent}30`, color: themeAccent }}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Metric Toggle: Pages vs Ayat */}

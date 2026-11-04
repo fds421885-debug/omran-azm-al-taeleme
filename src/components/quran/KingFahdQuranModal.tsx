@@ -220,26 +220,21 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
   const browsedPageStorageKey = `omran_mushaf_browsed_page_${studentId || 'anon'}`;
 
-  // Determine starting page for the assigned recitation
+  // Determine starting page for the assigned recitation (grounded strictly in King Fahd Mushaf 604 pages)
   const resolvedStartPage = useMemo(() => {
+    if (activeItemId) {
+      const found = highlightItems.find(h => h.id === activeItemId);
+      if (found) {
+        return getPageOfAyah(found.surahNumber, found.fromAyah);
+      }
+    }
     if (initialPage && initialPage >= 1 && initialPage <= 604) {
       return initialPage;
     }
     return getPageOfAyah(initialSurah, initialAyah);
-  }, [initialPage, initialSurah, initialAyah]);
+  }, [activeItemId, highlightItems, initialPage, initialSurah, initialAyah]);
 
-  const [currentPage, setCurrentPage] = useState<number>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const saved = sessionStorage.getItem(browsedPageStorageKey);
-        const parsed = saved ? parseInt(saved, 10) : NaN;
-        if (!isNaN(parsed) && parsed >= 1 && parsed <= 604) {
-          return parsed;
-        }
-      }
-    } catch {}
-    return resolvedStartPage;
-  });
+  const [currentPage, setCurrentPage] = useState<number>(resolvedStartPage);
 
   const [fontSize, setFontSize] = useState<number>(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 640) {
@@ -660,7 +655,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
       return;
     }
 
-    const sessionId = `${studentId || 'anon'}__${openRequestVersion}`;
+    const sessionId = `${studentId || 'anon'}__${openRequestVersion}__${initialSurah}__${initialAyah}__${activeItemId || ''}__${resolvedStartPage}`;
     if (lastHandledOpenSessionRef.current !== sessionId) {
       lastHandledOpenSessionRef.current = sessionId;
       setCurrentPage(resolvedStartPage);
@@ -676,7 +671,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
         setSelectedHighlightId(highlightItems[0].id);
       }
     }
-  }, [isOpen, studentId, openRequestVersion, resolvedStartPage, activeItemId, browsedPageStorageKey]);
+  }, [isOpen, studentId, openRequestVersion, initialSurah, initialAyah, resolvedStartPage, activeItemId, browsedPageStorageKey, highlightItems]);
 
   // Master Continuous Ayah Player: Plays sequentially verse by verse, turns pages, and NEVER stops until user clicks stop!
   const currentPlayingVerseRef = useRef<{ surah: number; ayah: number } | null>(null);

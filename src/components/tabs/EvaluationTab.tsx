@@ -33,7 +33,9 @@ import {
   Flame,
   TrendingUp,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Search,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -72,6 +74,342 @@ import { OmranDataService } from '../../lib/firebase';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { ApiConfig } from '../../lib/apiConfig';
 import { OmranAIService } from '../../lib/omranAIService';
+
+export interface DuoSelectOption {
+  value: string | number;
+  label: string;
+  subLabel?: string;
+}
+
+export interface DuoPlatformSelectProps {
+  value: string | number;
+  onChange: (value: any) => void;
+  options: DuoSelectOption[];
+  placeholder?: string;
+  className?: string;
+  accentColor?: string;
+  primaryColor?: string;
+  borderColor?: string;
+  shadowColor?: string;
+  compact?: boolean;
+}
+
+export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+  className = '',
+  accentColor = 'var(--complex-accent, #ffc800)',
+  primaryColor = 'var(--complex-primary, #131f24)',
+  borderColor = 'var(--complex-border, #2b4550)',
+  shadowColor = 'var(--complex-card-shadow, #16262e)',
+  compact = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isOpen]);
+
+  const selectedOption = useMemo(() => {
+    return options.find(o => String(o.value) === String(value)) || options[0];
+  }, [options, value]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const term = searchTerm.trim().toLowerCase();
+    return options.filter(o =>
+      o.label.toLowerCase().includes(term) ||
+      (o.subLabel && o.subLabel.toLowerCase().includes(term))
+    );
+  }, [options, searchTerm]);
+
+  return (
+    <div ref={containerRef} className={`relative w-full ${className}`}>
+      {/* Hidden standard select for form autofill and CSS selector compatibility */}
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="sr-only pointer-events-none opacity-0 absolute w-0 h-0"
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {/* 3D Duolingo Tactile Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between gap-2 border-2 border-b-4 rounded-2xl ${
+          compact ? 'py-1.5 px-2.5 text-xs' : 'py-2 px-3 text-xs sm:text-sm'
+        } font-black text-white transition-all shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110 cursor-pointer text-right`}
+        style={{
+          backgroundColor: primaryColor,
+          borderColor: isOpen ? accentColor : borderColor,
+          borderBottomColor: isOpen ? accentColor : shadowColor,
+          color: '#ffffff'
+        }}
+      >
+        <span className="truncate flex-1 text-right">
+          {selectedOption?.label || placeholder || 'اختر...'}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 shrink-0 transition-transform ${
+            isOpen ? 'rotate-180 text-[var(--complex-accent)]' : 'text-slate-400'
+          }`}
+          style={{ color: isOpen ? accentColor : undefined }}
+        />
+      </button>
+
+      {/* In-Platform Floating Options Popover */}
+      {isOpen && (
+        <div
+          className="absolute z-50 mt-1.5 w-full min-w-[210px] max-h-72 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1 backdrop-blur-md"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: accentColor,
+            borderBottomColor: shadowColor
+          }}
+        >
+          {options.length > 7 && (
+            <div className="p-1 mb-1 border-b border-white/10 sticky top-0 bg-[#203843] z-10">
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 absolute right-2.5 text-slate-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="بحث سريع..."
+                  className="w-full pr-8 pl-2 py-1 text-xs rounded-xl bg-black/40 border border-white/15 text-white placeholder-slate-400 focus:outline-none focus:border-[var(--complex-accent)] font-bold text-right"
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+            {filteredOptions.length === 0 ? (
+              <div className="p-3 text-center text-xs text-slate-400 font-bold">
+                لا توجد نتائج مطابقة
+              </div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isSelected = String(opt.value) === String(value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange(opt.value);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-right transition-all cursor-pointer ${
+                      isSelected
+                        ? 'font-black shadow-sm'
+                        : 'text-white hover:bg-white/10'
+                    }`}
+                    style={isSelected ? {
+                      backgroundColor: accentColor,
+                      color: '#000000'
+                    } : {}}
+                  >
+                    <div className="flex flex-col text-right truncate">
+                      <span className="truncate">{opt.label}</span>
+                      {opt.subLabel && (
+                        <span className={`text-[10px] ${isSelected ? 'text-black/80' : 'text-slate-400'}`}>
+                          {opt.subLabel}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <Check className="w-4 h-4 shrink-0 text-black font-black" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export function formatMushafPageLabel(startSurah: number, startAyah: number, endSurah?: number, endAyah?: number) {
+  const p1 = getPageOfAyah(startSurah, startAyah);
+  const p2 = (endSurah !== undefined && endAyah !== undefined) ? getPageOfAyah(endSurah, endAyah) : p1;
+  if (!p1) return '';
+  if (!p2 || p1 === p2) {
+    return `الوجه ${p1}`;
+  }
+  const minP = Math.min(p1, p2);
+  const maxP = Math.max(p1, p2);
+  return `الأوجه (${minP} - ${maxP})`;
+}
+
+export function getStudentListeningStatus(
+  student: Student | null | undefined,
+  evaluationForDate?: StudentEvaluation | null
+) {
+  if (!student) {
+    return {
+      isListened: false,
+      isPartial: false,
+      isExempt: false,
+      completedReps: 0,
+      requiredReps: 0,
+      label: 'لم يستمع للمقطع المقرر',
+      badgeText: 'لم يستمع',
+      badgeColor: 'rose' as const
+    };
+  }
+
+  // 1. If an evaluation exists for this date with recorded listening details
+  if (evaluationForDate?.recitationDetails?.wasListened !== undefined) {
+    const isL = !!evaluationForDate.recitationDetails.wasListened;
+    const reps = evaluationForDate.recitationDetails.listeningReps ?? 0;
+    const req = evaluationForDate.recitationDetails.listeningRequiredReps ?? 3;
+    if (req === 0) {
+      return {
+        isListened: true,
+        isPartial: false,
+        isExempt: true,
+        completedReps: 0,
+        requiredReps: 0,
+        label: 'معفى من الاستماع (بدون استماع مقرر)',
+        badgeText: 'معفى',
+        badgeColor: 'slate' as const
+      };
+    }
+    if (isL) {
+      return {
+        isListened: true,
+        isPartial: false,
+        isExempt: false,
+        completedReps: reps || req,
+        requiredReps: req,
+        label: `استمع للمقطع المقرر بالكامل (${reps || req} من ${req} مرات)`,
+        badgeText: 'مستمع',
+        badgeColor: 'emerald' as const
+      };
+    }
+    if (reps > 0) {
+      return {
+        isListened: false,
+        isPartial: true,
+        isExempt: false,
+        completedReps: reps,
+        requiredReps: req,
+        label: `استمع جزئياً (${reps} من ${req} مرات)`,
+        badgeText: `استماع جزئي (${reps}/${req})`,
+        badgeColor: 'amber' as const
+      };
+    }
+    return {
+      isListened: false,
+      isPartial: false,
+      isExempt: false,
+      completedReps: 0,
+      requiredReps: req,
+      label: 'لم يستمع للمقطع المقرر',
+      badgeText: 'لم يستمع',
+      badgeColor: 'rose' as const
+    };
+  }
+
+  // 2. Active assignment & persistence across holidays/gaps:
+  // As long as no new evaluation has been recorded by the teacher,
+  // the student's listening status from their current assignment persists.
+  const assign = student.activeListeningAssignment;
+  const isExempt = assign?.sheikhName === 'بدون' || assign?.requiredRepetitions === 0;
+  if (isExempt) {
+    return {
+      isListened: true,
+      isPartial: false,
+      isExempt: true,
+      completedReps: 0,
+      requiredReps: 0,
+      label: 'معفى من الاستماع (بدون استماع مقرر)',
+      badgeText: 'معفى',
+      badgeColor: 'slate' as const
+    };
+  }
+
+  const req = assign?.requiredRepetitions ?? 3;
+  const completed = assign?.completedRepetitions ?? 0;
+
+  const isDone = Boolean(
+    assign?.isCompleted ||
+    (completed >= req && req > 0) ||
+    (student.dailyListeningCompletedDate && assign?.assignedDate && student.dailyListeningCompletedDate >= assign.assignedDate)
+  );
+
+  if (isDone) {
+    return {
+      isListened: true,
+      isPartial: false,
+      isExempt: false,
+      completedReps: Math.max(completed, req),
+      requiredReps: req,
+      label: `استمع للمقطع المقرر بالكامل (${Math.max(completed, req)} من ${req} مرات)`,
+      badgeText: 'مستمع',
+      badgeColor: 'emerald' as const
+    };
+  }
+
+  if (completed > 0) {
+    return {
+      isListened: false,
+      isPartial: true,
+      isExempt: false,
+      completedReps: completed,
+      requiredReps: req,
+      label: `استمع جزئياً (${completed} من ${req} مرات)`,
+      badgeText: `استماع جزئي (${completed}/${req})`,
+      badgeColor: 'amber' as const
+    };
+  }
+
+  return {
+    isListened: false,
+    isPartial: false,
+    isExempt: false,
+    completedReps: 0,
+    requiredReps: req,
+    label: 'لم يستمع للمقطع المقرر',
+    badgeText: 'لم يستمع',
+    badgeColor: 'rose' as const
+  };
+}
 
 interface EvaluationTabProps {
   students: Student[];
@@ -160,6 +498,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     lastStableStudentRef.current = undefined;
   }
   const activeStudent = rawFoundStudent || (activeStudentId && lastStableStudentRef.current?.id === activeStudentId ? lastStableStudentRef.current : undefined);
+
+  // Memoized evaluation for the currently selected student on the currently selected date
+  const selectedDateEvaluation = useMemo(() => {
+    if (!activeStudent) return null;
+    return evaluations.find(e => e.date === selectedDate && e.studentId === activeStudent.id) || null;
+  }, [evaluations, selectedDate, activeStudent?.id]);
+
+  // Unified listening status that persists across holidays and gaps
+  const currentStudentListeningStatus = useMemo(() => {
+    return getStudentListeningStatus(activeStudent, selectedDateEvaluation);
+  }, [activeStudent, selectedDateEvaluation]);
 
   // History Drawer toggle
   const [showHistoryDrawer, setShowHistoryDrawer] = useState<boolean>(false);
@@ -1878,6 +2227,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           tomorrowSuggestedSheikh: finalSuggestedSheikh,
           tomorrowTargetRepetitions: finalTargetReps,
           tomorrowDailyNote: finalDailyNote,
+          wasListened: currentStudentListeningStatus.isListened,
+          listeningReps: currentStudentListeningStatus.completedReps,
+          listeningRequiredReps: currentStudentListeningStatus.requiredReps,
           criteriaPointsEarnedToday: liveCriteriaPoints,
           pagesPointsEarnedToday: livePagesTotalPoints,
           attendancePointsEarnedToday: attendancePoints,
@@ -2533,6 +2885,32 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           <CheckCircle2 className="w-4 h-4" />
                         </span>
                       )}
+                      {(() => {
+                        const evalForDate = evaluations.find(e => e.date === selectedDate && e.studentId === student.id);
+                        const lStatus = getStudentListeningStatus(student, evalForDate);
+                        if (lStatus.isExempt) return null;
+                        return (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-lg border font-black flex items-center gap-1 ${
+                              lStatus.isListened
+                                ? isSelected
+                                  ? 'bg-emerald-950/40 text-emerald-900 border-emerald-800/40'
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : lStatus.isPartial
+                                ? isSelected
+                                  ? 'bg-amber-950/40 text-amber-900 border-amber-800/40'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : isSelected
+                                ? 'bg-rose-950/40 text-rose-900 border-rose-800/40'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                            }`}
+                            title={lStatus.label}
+                          >
+                            <Headphones className="w-3 h-3 shrink-0" />
+                            <span>{lStatus.badgeText}</span>
+                          </span>
+                        );
+                      })()}
                       {isStudentAbsent && (
                         <span className="text-[10px] px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300 font-bold">
                           غائب
@@ -2997,10 +3375,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 {/* Real-time Indicator: Did the student listen to yesterday's / current assignment? */}
                 {activeStudent && (
                   <div className={`p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold transition-all shadow-sm ${
-                    activeStudent.activeListeningAssignment?.isCompleted
+                    currentStudentListeningStatus.isListened
                       ? 'bg-emerald-950/80 border-emerald-500/60 border-b-emerald-600 text-emerald-200'
-                      : (activeStudent.activeListeningAssignment?.completedRepetitions || 0) > 0
+                      : currentStudentListeningStatus.isPartial
                         ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-200'
+                        : currentStudentListeningStatus.isExempt
+                        ? 'bg-slate-900/80 border-slate-600/60 border-b-slate-700 text-slate-300'
                         : 'bg-rose-950/60 border-rose-500/50 border-b-rose-600 text-rose-300'
                   }`}>
                     <div className="flex items-center gap-2.5">
@@ -3008,15 +3388,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <span className="font-black text-sm">حالة استماع الطالب للورد المنزلي:</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {activeStudent.activeListeningAssignment?.isCompleted ? (
+                      {currentStudentListeningStatus.isExempt ? (
+                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-slate-500/20 text-slate-300 border-2 border-b-2 border-slate-500/50 font-black">
+                          <Check className="w-4 h-4 text-slate-400" />
+                          <span>معفى من الاستماع (بدون استماع مقرر)</span>
+                        </span>
+                      ) : currentStudentListeningStatus.isListened ? (
                         <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/50 font-black">
                           <Check className="w-4 h-4 text-emerald-400" />
-                          <span>استمع للمقطع المقرر بالكامل ({activeStudent.activeListeningAssignment.completedRepetitions || activeStudent.activeListeningAssignment.requiredRepetitions} من {activeStudent.activeListeningAssignment.requiredRepetitions} مرات)</span>
+                          <span>{currentStudentListeningStatus.label}</span>
                         </span>
-                      ) : (activeStudent.activeListeningAssignment?.completedRepetitions || 0) > 0 ? (
+                      ) : currentStudentListeningStatus.isPartial ? (
                         <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/50 font-black">
                           <Clock className="w-4 h-4 text-amber-400" />
-                          <span>استمع جزئياً ({activeStudent.activeListeningAssignment.completedRepetitions} من {activeStudent.activeListeningAssignment.requiredRepetitions} مرات)</span>
+                          <span>{currentStudentListeningStatus.label}</span>
                         </span>
                       ) : (
                         <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/50 font-black">
@@ -3043,10 +3428,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         <span className="w-3 h-3 rounded-full border border-black/20" style={{ backgroundColor: themeAccent }} />
                         <span>الحفظ الجديد (بداية ونهاية التسميع):</span>
                       </span>
-                      {activeStudent?.activeListeningAssignment?.isCompleted || (activeStudent?.dailyListeningCompletedDate && activeStudent?.dailyListeningCompletedDate >= (activeStudent?.activeListeningAssignment?.assignedDate || '')) ? (
+                      {currentStudentListeningStatus.isExempt ? (
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-slate-500/20 text-slate-300 border-2 border-b-2 border-slate-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <Check className="w-3.5 h-3.5 text-slate-400" />
+                          <span>معفى من الاستماع</span>
+                        </span>
+                      ) : currentStudentListeningStatus.isListened ? (
                         <span className="text-[11px] px-3 py-1 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
                           <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>استمع للمقطع المقرر ({activeStudent.activeListeningAssignment?.completedRepetitions || activeStudent.activeListeningAssignment?.requiredRepetitions || 3} مرات)</span>
+                          <span>استمع للمقطع المقرر ({currentStudentListeningStatus.completedReps} مرات)</span>
+                        </span>
+                      ) : currentStudentListeningStatus.isPartial ? (
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>استمع جزئياً ({currentStudentListeningStatus.completedReps} من {currentStudentListeningStatus.requiredReps})</span>
                         </span>
                       ) : (
                         <span className="text-[11px] px-3 py-1 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
@@ -3121,53 +3516,37 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="grid grid-cols-2 gap-2.5">
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">من سورة:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={todayNewSurah}
-                            onChange={e => handleTodayStartSurahChange(Number(e.target.value))}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                {s.number}. سورة {s.name} ({s.numberOfAyahs} آية)
-                              </option>
-                            ))}
-                          </select>
+                            onChange={val => handleTodayStartSurahChange(Number(val))}
+                            options={QURAN_SURAHS.map(s => ({
+                              value: s.number,
+                              label: `${s.number}. سورة ${s.name} (${s.numberOfAyahs} آية)`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
 
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">من الآية:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={todayNewFromAyah}
-                            onChange={e => {
-                              const val = Number(e.target.value);
-                              setTodayNewFromAyah(val);
+                            onChange={val => {
+                              const numVal = Number(val);
+                              setTodayNewFromAyah(numVal);
                               let targetTo = todayNewToAyah;
-                              if (todayNewSurah === todayNewToSurah && todayNewToAyah < val) {
-                                targetTo = val;
-                                setTodayNewToAyah(val);
+                              if (todayNewSurah === todayNewToSurah && todayNewToAyah < numVal) {
+                                targetTo = numVal;
+                                setTodayNewToAyah(numVal);
                               }
-                              recalculateTomorrowFromToday(todayNewSurah, val, todayNewToSurah, targetTo, todayNewDidNotRecite);
+                              recalculateTomorrowFromToday(todayNewSurah, numVal, todayNewToSurah, targetTo, todayNewDidNotRecite);
                             }}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {Array.from({ length: startTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                              <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                آية {ayahNum}
-                              </option>
-                            ))}
-                          </select>
+                            options={Array.from({ length: startTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => ({
+                              value: ayahNum,
+                              label: `آية ${ayahNum}`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
                       </div>
                     </div>
@@ -3187,52 +3566,36 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="grid grid-cols-2 gap-2.5">
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">إلى سورة:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={todayNewToSurah}
-                            onChange={e => handleTodayEndSurahChange(Number(e.target.value))}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                {s.number}. سورة {s.name} ({s.numberOfAyahs} آية)
-                              </option>
-                            ))}
-                          </select>
+                            onChange={val => handleTodayEndSurahChange(Number(val))}
+                            options={QURAN_SURAHS.map(s => ({
+                              value: s.number,
+                              label: `${s.number}. سورة ${s.name} (${s.numberOfAyahs} آية)`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
 
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">
                             إلى الآية (حتى {endTodaySurahInfo.numberOfAyahs}):
                           </label>
-                          <select
+                          <DuoPlatformSelect
                             value={todayNewToAyah}
-                            onChange={e => {
-                              const val = Number(e.target.value);
-                              setTodayNewToAyah(val);
-                              recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewToSurah, val, todayNewDidNotRecite);
+                            onChange={val => {
+                              const numVal = Number(val);
+                              setTodayNewToAyah(numVal);
+                              recalculateTomorrowFromToday(todayNewSurah, todayNewFromAyah, todayNewToSurah, numVal, todayNewDidNotRecite);
                             }}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {Array.from({ length: endTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1)
+                            options={Array.from({ length: endTodaySurahInfo.numberOfAyahs }, (_, i) => i + 1)
                               .filter(ayahNum => todayNewSurah !== todayNewToSurah || ayahNum >= todayNewFromAyah)
-                              .map(ayahNum => (
-                                <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                  آية {ayahNum}
-                                </option>
-                              ))}
-                          </select>
+                              .map(ayahNum => ({
+                                value: ayahNum,
+                                label: `آية ${ayahNum}`
+                              }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
                       </div>
                     </div>
@@ -3275,7 +3638,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   >
                     <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
                     <span>
-                      قراءة ومتابعة في مصحف الملك فهد ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • الوجه {getPageOfAyah(todayNewSurah, todayNewFromAyah)})
+                      قراءة ومتابعة في مصحف الملك فهد ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • {formatMushafPageLabel(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)})
                     </span>
                   </button>
 
@@ -3459,27 +3822,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }}
                             >
                               {/* Review Type */}
+                              {/* Review Type */}
                               <div className="sm:col-span-1">
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   نوع المراجعة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.type}
-                                  onChange={e => handleUpdateReviewItem(rev.id, { type: e.target.value })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {REVIEW_TYPES.map(t => (
-                                    <option key={t} value={t} className="bg-[#131f24] text-white">
-                                      {t}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateReviewItem(rev.id, { type: String(val) })}
+                                  options={REVIEW_TYPES.map(t => ({ value: t, label: t }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* Start Surah */}
@@ -3487,23 +3841,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من سورة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.surahNumber}
-                                  onChange={e => handleUpdateReviewItem(rev.id, { surahNumber: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                      {s.number}. {s.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateReviewItem(rev.id, { surahNumber: Number(val) })}
+                                  options={QURAN_SURAHS.map(s => ({
+                                    value: s.number,
+                                    label: `${s.number}. ${s.name}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* From Ayah */}
@@ -3511,29 +3858,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من الآية:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.fromAyah}
-                                  onChange={e => {
-                                    const val = Number(e.target.value);
+                                  onChange={val => {
+                                    const numVal = Number(val);
                                     handleUpdateReviewItem(rev.id, {
-                                      fromAyah: val,
-                                      toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < val ? val : rev.toAyah
+                                      fromAyah: numVal,
+                                      toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < numVal ? numVal : rev.toAyah
                                     });
                                   }}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                                    <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                      آية {ayahNum}
-                                    </option>
-                                  ))}
-                                </select>
+                                  options={Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => ({
+                                    value: ayahNum,
+                                    label: `آية ${ayahNum}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* End Surah */}
@@ -3541,23 +3881,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى سورة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.toSurahNumber || rev.surahNumber}
-                                  onChange={e => handleUpdateReviewItem(rev.id, { toSurahNumber: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                      {s.number}. {s.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateReviewItem(rev.id, { toSurahNumber: Number(val) })}
+                                  options={QURAN_SURAHS.map(s => ({
+                                    value: s.number,
+                                    label: `${s.number}. ${s.name}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* To Ayah */}
@@ -3565,25 +3898,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى الآية:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.toAyah}
-                                  onChange={e => handleUpdateReviewItem(rev.id, { toAyah: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
+                                  onChange={val => handleUpdateReviewItem(rev.id, { toAyah: Number(val) })}
+                                  options={Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                                     .filter(ayahNum => (rev.toSurahNumber || rev.surahNumber) !== rev.surahNumber || ayahNum >= rev.fromAyah)
-                                    .map(ayahNum => (
-                                      <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                        آية {ayahNum}
-                                      </option>
-                                    ))}
-                                </select>
+                                    .map(ayahNum => ({
+                                      value: ayahNum,
+                                      label: `آية ${ayahNum}`
+                                    }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
                             </div>
 
@@ -3620,7 +3946,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }}
                             >
                               <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
-                              <span>قراءة في المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
+                              <span>قراءة في المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
                             </button>
                           </div>
                         );
@@ -3736,50 +4062,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="grid grid-cols-2 gap-2.5">
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">من سورة:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={tomNewSurah}
-                            onChange={e => handleTomNewStartSurahChange(Number(e.target.value))}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                {s.number}. {s.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={val => handleTomNewStartSurahChange(Number(val))}
+                            options={QURAN_SURAHS.map(s => ({
+                              value: s.number,
+                              label: `${s.number}. ${s.name}`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
 
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">من الآية:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={tomNewFromAyah}
-                            onChange={e => {
-                              const val = Number(e.target.value);
-                              setTomNewFromAyah(val);
-                              if (tomNewSurah === tomNewToSurah && tomNewToAyah < val) {
-                                setTomNewToAyah(val);
+                            onChange={val => {
+                              const numVal = Number(val);
+                              setTomNewFromAyah(numVal);
+                              if (tomNewSurah === tomNewToSurah && tomNewToAyah < numVal) {
+                                setTomNewToAyah(numVal);
                               }
                             }}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {Array.from({ length: startTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                              <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                آية {ayahNum}
-                              </option>
-                            ))}
-                          </select>
+                            options={Array.from({ length: startTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => ({
+                              value: ayahNum,
+                              label: `آية ${ayahNum}`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
                       </div>
                     </div>
@@ -3799,48 +4109,32 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <div className="grid grid-cols-2 gap-2.5">
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">إلى سورة:</label>
-                          <select
+                          <DuoPlatformSelect
                             value={tomNewToSurah}
-                            onChange={e => handleTomNewEndSurahChange(Number(e.target.value))}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {QURAN_SURAHS.map(s => (
-                              <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                {s.number}. {s.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={val => handleTomNewEndSurahChange(Number(val))}
+                            options={QURAN_SURAHS.map(s => ({
+                              value: s.number,
+                              label: `${s.number}. ${s.name}`
+                            }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
 
                         <div>
                           <label className="text-[11px] font-bold block mb-1 text-slate-300">
                             إلى الآية (حتى {endTomNewSurahInfo.numberOfAyahs}):
                           </label>
-                          <select
+                          <DuoPlatformSelect
                             value={tomNewToAyah}
-                            onChange={e => setTomNewToAyah(Number(e.target.value))}
-                            className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                            style={{
-                              backgroundColor: 'var(--complex-primary, #131f24)',
-                              borderColor: 'var(--complex-border, #2b4550)',
-                              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
-                              color: '#ffffff'
-                            }}
-                          >
-                            {Array.from({ length: endTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1)
+                            onChange={val => setTomNewToAyah(Number(val))}
+                            options={Array.from({ length: endTomNewSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                               .filter(ayahNum => tomNewSurah !== tomNewToSurah || ayahNum >= tomNewFromAyah)
-                              .map(ayahNum => (
-                                <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                  آية {ayahNum}
-                                </option>
-                              ))}
-                          </select>
+                              .map(ayahNum => ({
+                                value: ayahNum,
+                                label: `آية ${ayahNum}`
+                              }))}
+                            accentColor={themeAccent}
+                          />
                         </div>
                       </div>
                     </div>
@@ -3881,7 +4175,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     }}
                   >
                     <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
-                    <span>قراءة في مصحف الملك فهد ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • الوجه {getPageOfAyah(tomNewSurah, tomNewFromAyah)})</span>
+                    <span>قراءة في مصحف الملك فهد ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • {formatMushafPageLabel(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)})</span>
                   </button>
                 </div>
 
@@ -3983,23 +4277,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   نوع المراجعة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.type}
-                                  onChange={e => handleUpdateTomReviewItem(rev.id, { type: e.target.value })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {REVIEW_TYPES.map(t => (
-                                    <option key={t} value={t} className="bg-[#131f24] text-white">
-                                      {t}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateTomReviewItem(rev.id, { type: String(val) })}
+                                  options={REVIEW_TYPES.map(t => ({ value: t, label: t }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* Start Surah */}
@@ -4007,23 +4291,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من سورة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.surahNumber}
-                                  onChange={e => handleUpdateTomReviewItem(rev.id, { surahNumber: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                      {s.number}. {s.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateTomReviewItem(rev.id, { surahNumber: Number(val) })}
+                                  options={QURAN_SURAHS.map(s => ({
+                                    value: s.number,
+                                    label: `${s.number}. ${s.name}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* From Ayah */}
@@ -4031,29 +4308,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   من الآية:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.fromAyah}
-                                  onChange={e => {
-                                    const val = Number(e.target.value);
+                                  onChange={val => {
+                                    const numVal = Number(val);
                                     handleUpdateTomReviewItem(rev.id, {
-                                      fromAyah: val,
-                                      toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < val ? val : rev.toAyah
+                                      fromAyah: numVal,
+                                      toAyah: (rev.toSurahNumber || rev.surahNumber) === rev.surahNumber && rev.toAyah < numVal ? numVal : rev.toAyah
                                     });
                                   }}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => (
-                                    <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                      آية {ayahNum}
-                                    </option>
-                                  ))}
-                                </select>
+                                  options={Array.from({ length: revStartSurahInfo.numberOfAyahs }, (_, i) => i + 1).map(ayahNum => ({
+                                    value: ayahNum,
+                                    label: `آية ${ayahNum}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* End Surah */}
@@ -4061,23 +4331,16 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى سورة:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.toSurahNumber || rev.surahNumber}
-                                  onChange={e => handleUpdateTomReviewItem(rev.id, { toSurahNumber: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {QURAN_SURAHS.map(s => (
-                                    <option key={s.number} value={s.number} className="bg-[#131f24] text-white">
-                                      {s.number}. {s.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={val => handleUpdateTomReviewItem(rev.id, { toSurahNumber: Number(val) })}
+                                  options={QURAN_SURAHS.map(s => ({
+                                    value: s.number,
+                                    label: `${s.number}. ${s.name}`
+                                  }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
 
                               {/* To Ayah */}
@@ -4085,25 +4348,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                                 <label className="text-[11px] font-bold block mb-1 text-slate-300">
                                   إلى الآية:
                                 </label>
-                                <select
+                                <DuoPlatformSelect
                                   value={rev.toAyah}
-                                  onChange={e => handleUpdateTomReviewItem(rev.id, { toAyah: Number(e.target.value) })}
-                                  className="w-full border-2 border-b-4 rounded-2xl py-2 px-2.5 text-xs font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                                  style={{
-                                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                                    borderColor: 'var(--complex-border, #2b4550)',
-                                    borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
+                                  onChange={val => handleUpdateTomReviewItem(rev.id, { toAyah: Number(val) })}
+                                  options={Array.from({ length: revEndSurahInfo.numberOfAyahs }, (_, i) => i + 1)
                                     .filter(ayahNum => (rev.toSurahNumber || rev.surahNumber) !== rev.surahNumber || ayahNum >= rev.fromAyah)
-                                    .map(ayahNum => (
-                                      <option key={ayahNum} value={ayahNum} className="bg-[#131f24] text-white">
-                                        آية {ayahNum}
-                                      </option>
-                                    ))}
-                                </select>
+                                    .map(ayahNum => ({
+                                      value: ayahNum,
+                                      label: `آية ${ayahNum}`
+                                    }))}
+                                  accentColor={themeAccent}
+                                  compact
+                                />
                               </div>
                             </div>
 
@@ -4140,7 +4396,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }}
                             >
                               <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
-                              <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • الوجه {getPageOfAyah(rev.surahNumber, rev.fromAyah)})</span>
+                              <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
                             </button>
                           </div>
                         );
@@ -4163,38 +4419,32 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <Volume2 className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>القارئ المقترح للاستماع له بالمنزل:</span>
                     </label>
-                    <select
+                    <DuoPlatformSelect
                       value={selectedSheikh}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setSelectedSheikh(val);
-                        const found = FAMOUS_RECITERS.find(r => r.name === val || r.id === val);
+                      onChange={val => {
+                        const strVal = String(val);
+                        setSelectedSheikh(strVal);
+                        const found = FAMOUS_RECITERS.find(r => r.name === strVal || r.id === strVal);
                         if (found) {
                           try {
                             localStorage.setItem('omran_mushaf_reciter', found.id);
                           } catch {}
                         }
-                        if (val === 'بدون') {
+                        if (strVal === 'بدون') {
                           setTargetRepetitions(0);
                         } else if (targetRepetitions === 0) {
                           setTargetRepetitions(3);
                         }
                       }}
-                      className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                      style={{
-                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                        borderColor: 'var(--complex-border, #2b4550)',
-                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                        color: '#ffffff'
-                      }}
-                    >
-                      <option value="بدون" className="bg-[#131f24] text-white">بدون (لا يتطلب استماع - ٠ مرات)</option>
-                      {FAMOUS_RECITERS.filter(r => (r as any).hasAudio).map(r => (
-                        <option key={r.id} value={r.name} className="bg-[#131f24] text-white">
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: 'بدون', label: 'بدون (لا يتطلب استماع - ٠ مرات)' },
+                        ...FAMOUS_RECITERS.filter(r => (r as any).hasAudio).map(r => ({
+                          value: r.name,
+                          label: r.name
+                        }))
+                      ]}
+                      accentColor={themeAccent}
+                    />
                   </div>
 
                   <div>
@@ -4202,10 +4452,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       <RotateCcw className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>مرات التكرار المقررة للطالب (0 - 20):</span>
                     </label>
-                    <select
+                    <DuoPlatformSelect
                       value={targetRepetitions}
-                      onChange={e => {
-                        const count = Number(e.target.value);
+                      onChange={val => {
+                        const count = Number(val);
                         setTargetRepetitions(count);
                         if (count === 0) {
                           setSelectedSheikh('بدون');
@@ -4213,21 +4463,15 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setSelectedSheikh(FAMOUS_RECITERS[0].name);
                         }
                       }}
-                      className="w-full border-2 border-b-4 rounded-2xl py-2 px-3 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition-all shadow-sm focus:border-[var(--complex-accent)]"
-                      style={{
-                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
-                        borderColor: 'var(--complex-border, #2b4550)',
-                        borderBottomColor: 'var(--complex-secondary-shadow, #122026)',
-                        color: '#ffffff'
-                      }}
-                    >
-                      <option value={0} className="bg-[#131f24] text-white">0 (معفى - لا يحتاج استماع)</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                        <option key={num} value={num} className="bg-[#131f24] text-white">
-                          {num === 1 ? 'مرة واحدة' : num === 2 ? 'مرتان' : `${num} مرات`}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: 0, label: '0 (معفى - لا يحتاج استماع)' },
+                        ...Array.from({ length: 20 }, (_, i) => i + 1).map(num => ({
+                          value: num,
+                          label: num === 1 ? 'مرة واحدة' : num === 2 ? 'مرتان' : `${num} مرات`
+                        }))
+                      ]}
+                      accentColor={themeAccent}
+                    />
                   </div>
                 </div>
               </div>
