@@ -2691,68 +2691,85 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       {/* Expandable History Drawer (Previous Days Archive) */}
       {showHistoryDrawer && activeStudent && (
-        <div className="bg-[#022c22] border border-[#fbbf24]/30 rounded-3xl p-5 space-y-4 animate-fadeIn shadow-2xl">
-          <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
+        <div 
+          className="border-2 border-b-4 rounded-[28px] p-5 space-y-4 animate-fadeIn shadow-2xl backdrop-blur-md"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: themeAccent,
+            borderBottomColor: themeAccentShadow
+          }}
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <History className="w-5 h-5 text-[#fbbf24]" />
-              <h3 className="text-sm font-bold text-white font-heading">
-                سجل التسميعات السابقة للطالب: <span className="text-[#fbbf24]">{activeStudent.name}</span> ({studentEvaluationsHistory.length} يوم مسجل)
+              <History className="w-5 h-5" style={{ color: themeAccent }} />
+              <h3 className="text-sm font-black text-white font-heading">
+                سجل التسميعات السابقة للطالب: <span style={{ color: themeAccent }}>{activeStudent.name}</span> ({studentEvaluationsHistory.length} يوم مسجل)
               </h3>
             </div>
             <button
               onClick={() => setShowHistoryDrawer(false)}
-              className="p-1 text-[#86efac] hover:text-white rounded-lg cursor-pointer"
+              className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-all"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {studentEvaluationsHistory.length === 0 ? (
-            <div className="p-6 text-center text-xs text-[#86efac]/70">
+            <div className="p-6 text-center text-xs text-slate-300 font-bold">
               لا توجد سجلات تسميع سابقة مسجلة لهذا الطالب حتى الآن.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[320px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
               {studentEvaluationsHistory.map(ev => {
                 const isCurrentView = ev.date === selectedDate;
                 return (
                   <div
                     key={ev.id}
-                    className={`p-3.5 rounded-2xl border transition-all space-y-2 text-right ${
-                      isCurrentView
-                        ? 'bg-[#064e3b] border-[#fbbf24] shadow-md ring-1 ring-[#fbbf24]'
-                        : 'bg-[#064e3b]/40 border-[#065f46] hover:bg-[#064e3b]/70'
-                    }`}
+                    className="p-3.5 rounded-2xl border-2 border-b-4 transition-all space-y-2 text-right shadow-sm"
+                    style={isCurrentView ? {
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    } : {
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: 'var(--complex-border, #2b4550)',
+                      borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+                    }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-[#fbbf24] flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-[#86efac]" />
+                      <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
                         <span>{ev.date}</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => setSelectedDate(ev.date)}
-                        className={`text-[11px] px-2.5 py-0.5 rounded-lg font-bold cursor-pointer transition-colors ${
-                          isCurrentView
-                            ? 'bg-[#fbbf24] text-[#064e3b] font-black'
-                            : 'bg-[#022c22] text-[#86efac] hover:text-white border border-[#065f46]'
-                        }`}
+                        className="text-[11px] px-3 py-1 rounded-xl border-2 border-b-2 font-black cursor-pointer transition-all active:translate-y-[1px]"
+                        style={isCurrentView ? {
+                          backgroundColor: themeAccent,
+                          borderColor: themeAccent,
+                          color: '#000000'
+                        } : {
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          color: '#ffffff'
+                        }}
                       >
                         {isCurrentView ? 'المعروض حالياً' : 'عرض هذا اليوم'}
                       </button>
                     </div>
 
-                    <div className="text-[11px] text-[#f0f9f6] space-y-1">
+                    <div className="text-[11px] text-white space-y-1 font-bold">
                       <div>
-                        <span className="text-[#86efac] font-bold">الجديد: </span>
+                        <span className="text-slate-400">الجديد: </span>
                         <span>{ev.recitationDetails?.newMemorizationAchieved || 'لم يحدد'}</span>
                       </div>
                       <div>
-                        <span className="text-[#86efac] font-bold">المراجعة: </span>
+                        <span className="text-slate-400">المراجعة: </span>
                         <span className="line-clamp-1">{ev.recitationDetails?.reviewAchieved || 'لم يحدد'}</span>
                       </div>
                       {ev.recitationDetails?.teacherNotes && (
-                        <div className="text-[10px] text-amber-200/90 italic line-clamp-1">
+                        <div className="text-[10px] text-amber-200/90 italic line-clamp-1 pt-0.5">
                           "{ev.recitationDetails.teacherNotes}"
                         </div>
                       )}
@@ -2767,19 +2784,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Students List */}
-        <div className="lg:col-span-4 bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-5 space-y-4 shadow-xl backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-            <h3 className="text-sm font-bold text-white font-heading">
+        <div 
+          className="lg:col-span-4 rounded-[32px] p-5 space-y-4 shadow-xl backdrop-blur-md border-2 border-b-4"
+          style={{
+            backgroundColor: 'var(--complex-card, #203843)',
+            borderColor: 'var(--complex-border, #2b4550)',
+            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+          }}
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <h3 className="text-sm font-black text-white font-heading">
               قائمة طلاب الحلقة ({students.length})
             </h3>
-            <span className="text-[11px] text-[#86efac] font-bold">
+            <span 
+              className="text-[11px] font-black px-3 py-1 rounded-xl border-2 border-b-2 shadow-xs"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                color: themeAccent
+              }}
+            >
               تاريخ: {selectedDate}
             </span>
           </div>
 
-          <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1 custom-scrollbar">
             {students.length === 0 ? (
-              <div className="p-8 text-center text-xs text-[#86efac]/70">
+              <div className="p-8 text-center text-xs text-slate-400 font-bold">
                 لا يوجد طلاب مسجلين في الحلقة حالياً.
               </div>
             ) : (
@@ -2798,9 +2829,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <button
                     key={student.id}
                     onClick={() => setActiveStudentId(student.id)}
-                    className={`w-full p-3.5 rounded-2xl text-right transition-all flex items-center justify-between gap-3 cursor-pointer border-2 border-b-4 active:translate-y-0.5 ${
+                    className={`w-full p-3.5 rounded-2xl text-right transition-all flex items-center justify-between gap-3 cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 ${
                       isSelected
-                        ? 'shadow-md'
+                        ? 'shadow-lg'
                         : isStudentAbsent
                         ? 'opacity-60'
                         : isStudentExcused
@@ -2819,26 +2850,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       color: 'var(--complex-text, #ffffff)'
                     }}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      {/* High-Contrast 3D Duolingo Squircle Avatar: Never blends into selection color */}
                       <div
-                        className="w-9 h-9 rounded-xl border-2 border-b-2 flex items-center justify-center font-black text-xs shrink-0 shadow-xs duo-avatar"
+                        className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-sm shrink-0 shadow-md duo-avatar transition-transform"
                         style={isSelected ? {
-                          backgroundColor: themeAccent,
-                          borderColor: themeAccent,
-                          color: accentTextColor
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'rgba(0, 0, 0, 0.4)',
+                          borderBottomColor: 'rgba(0, 0, 0, 0.75)',
+                          color: 'var(--complex-accent, #ffc800)'
                         } : {
-                          backgroundColor: themePrimary,
-                          borderColor: themeBorder,
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)',
                           color: themeAccent
                         }}
                       >
                         {student.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-bold text-xs line-clamp-1">{student.name}</div>
+                        <div 
+                          className="font-black text-xs line-clamp-1"
+                          style={{ color: isSelected ? 'var(--complex-primary, #131f24)' : '#ffffff' }}
+                        >
+                          {student.name}
+                        </div>
                         <div
-                          className="text-[10px] mt-0.5"
-                          style={{ color: isSelected ? themePrimary : `${themeAccent}dd` }}
+                          className="text-[10px] mt-0.5 font-bold line-clamp-1"
+                          style={{ color: isSelected ? 'rgba(19, 31, 36, 0.85)' : 'rgba(255, 255, 255, 0.65)' }}
                         >
                           سورة {student.currentSurahName || getSurahInfo(student.currentSurah || 78).name} (آية {student.currentAyah || 1})
                         </div>
@@ -2851,20 +2890,23 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           return (
                             <div className="w-full mt-1.5 flex items-center gap-1.5">
                               <div
-                                className="h-1.5 flex-1 rounded-full overflow-hidden"
-                                style={{ backgroundColor: isSelected ? 'rgba(0,0,0,0.2)' : themePrimary }}
+                                className="h-2 flex-1 rounded-full overflow-hidden border"
+                                style={{ 
+                                  backgroundColor: isSelected ? 'rgba(0,0,0,0.2)' : 'var(--complex-primary, #131f24)',
+                                  borderColor: isSelected ? 'rgba(0,0,0,0.15)' : 'var(--complex-border, #2b4550)'
+                                }}
                               >
                                 <div
                                   className="h-full rounded-full transition-all"
                                   style={{
                                     width: `${pct}%`,
-                                    backgroundColor: isSelected ? themePrimary : themeAccent
+                                    backgroundColor: isSelected ? 'var(--complex-primary, #131f24)' : themeAccent
                                   }}
                                 />
                               </div>
                               <span
-                                className="text-[9px] font-mono shrink-0 font-bold"
-                                style={{ color: isSelected ? themePrimary : themeAccent }}
+                                className="text-[9px] font-mono shrink-0 font-black"
+                                style={{ color: isSelected ? 'var(--complex-primary, #131f24)' : themeAccent }}
                               >
                                 {pct}%
                               </span>
@@ -2874,11 +2916,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                       {hasEvaluatedOnSelectedDate && (
                         <span
-                          className={`p-1 rounded-lg ${
-                            isSelected ? 'bg-[#064e3b]/20 text-[#064e3b]' : 'text-[#fbbf24]'
+                          className={`p-1 rounded-xl border-2 border-b-2 shadow-xs ${
+                            isSelected ? 'bg-black/15 text-emerald-950 border-black/20' : 'text-[#fbbf24] border-white/10'
                           }`}
                           title={`تم تسجيل التسميع في ${selectedDate}`}
                         >
@@ -2891,18 +2933,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         if (lStatus.isExempt) return null;
                         return (
                           <span
-                            className={`text-[10px] px-2 py-0.5 rounded-lg border font-black flex items-center gap-1 ${
+                            className={`text-[10px] px-2.5 py-1 rounded-xl border-2 border-b-2 font-black flex items-center gap-1 shadow-xs ${
                               lStatus.isListened
                                 ? isSelected
-                                  ? 'bg-emerald-950/40 text-emerald-900 border-emerald-800/40'
-                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  ? 'bg-emerald-950 text-emerald-200 border-emerald-950'
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                                 : lStatus.isPartial
                                 ? isSelected
-                                  ? 'bg-amber-950/40 text-amber-900 border-amber-800/40'
-                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  ? 'bg-amber-950 text-amber-200 border-amber-950'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                                 : isSelected
-                                ? 'bg-rose-950/40 text-rose-900 border-rose-800/40'
-                                : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                ? 'bg-rose-950 text-rose-200 border-rose-950'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                             }`}
                             title={lStatus.label}
                           >
@@ -2912,12 +2954,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         );
                       })()}
                       {isStudentAbsent && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300 font-bold">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-xl border-2 border-b-2 font-black shadow-xs ${
+                          isSelected
+                            ? 'bg-rose-950 text-rose-200 border-rose-950'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                        }`}>
                           غائب
                         </span>
                       )}
                       {isStudentExcused && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-[#86efac] font-bold">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-xl border-2 border-b-2 font-black shadow-xs ${
+                          isSelected
+                            ? 'bg-emerald-950 text-emerald-200 border-emerald-950'
+                            : 'bg-emerald-500/20 text-[#86efac] border-emerald-500/40'
+                        }`}>
                           معتذر
                         </span>
                       )}
