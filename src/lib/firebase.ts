@@ -52,7 +52,9 @@ import {
   getTeacherSixDigitCode,
   StudentRegistrationApplication,
   ComplexPortalConfig,
-  ComplexPlanScheduleConfig
+  ComplexPlanScheduleConfig,
+  DateRangePurgeParams,
+  DateRangePurgeResult
 } from '../types';
 
 // Web app's Firebase configuration from firebase-applet-config.json
@@ -2621,10 +2623,67 @@ export class OmranDataService {
     return true;
   }
 
-  // Export specific complex data (Halaqahs, Students, Attendance, Evaluations, Violations)
+  // =========================================================================
+  // Image Base64 Extraction & Backup Portability Utilities
+  // =========================================================================
+  static async convertImageUrlToBase64(url: string, timeoutMs: number = 3500): Promise<string> {
+    if (!url || typeof url !== 'string') return url;
+    const trimmed = url.trim();
+    if (!trimmed || trimmed.startsWith('data:image/')) return trimmed;
+    if (typeof window !== 'undefined' && typeof fetch === 'function') {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const res = await fetch(trimmed, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) return trimmed;
+        const blob = await res.blob();
+        return await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const res = reader.result as string;
+            if (res && res.startsWith('data:image/')) {
+              resolve(res);
+            } else {
+              resolve(trimmed);
+            }
+          };
+          reader.onerror = () => resolve(trimmed);
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+
+  static async extractAndEmbedAllImages(
+    urls: string[],
+    onProgress?: (percent: number, current: number, total: number) => void
+  ): Promise<Record<string, string>> {
+    const uniqueUrls = Array.from(new Set(urls.filter(u => u && typeof u === 'string' && u.trim().length > 0)));
+    const map: Record<string, string> = {};
+    let done = 0;
+    const batchSize = 4;
+    for (let i = 0; i < uniqueUrls.length; i += batchSize) {
+      const batch = uniqueUrls.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async url => {
+          const base64 = await OmranDataService.convertImageUrlToBase64(url);
+          map[url] = base64;
+          done++;
+          onProgress?.(Math.round((done / uniqueUrls.length) * 100), done, uniqueUrls.length);
+        })
+      );
+    }
+    return map;
+  }
+
+  // Export specific complex data (Complete with all collections & embedded Base64 images)
   static async exportComplexBackup(complexId: string): Promise<ComplexBackupData> {
     const complexes = await this.loadComplexes();
-    const complex = complexes.find(c => c.id === complexId) || {
+    const rawComplex = complexes.find(c => c.id === complexId) || {
       id: complexId,
       name: 'مجمع قرآني',
       createdAt: new Date().toISOString()
@@ -2651,6 +2710,67 @@ export class OmranDataService {
     const allViolations = await this.loadViolations();
     const complexViolations = allViolations.filter(v => studentIds.has(v.studentId));
 
+    const allExams = await this.loadExams();
+    const complexExams = allExams.filter(ex => ex.complexId === complexId || (Array.isArray(ex.targetHalaqat) && ex.targetHalaqat.some(th => halaqahIds.has(th))));
+
+    const allSubmissions = await this.loadSubmissions();
+    const complexSubmissions = allSubmissions.filter(sub => studentIds.has(sub.studentId) || sub.complexId === complexId);
+
+    const allCertificates = await this.loadCertificates();
+    const complexCertificates = allCertificates.filter(c => c.complexId === complexId || studentIds.has(c.studentId));
+
+    const allTeachers = await this.loadTeachers();
+    const complexTeachers = allTeachers.filter(t => t.complexId === complexId || (Array.isArray(t.complexIds) && t.complexIds.includes(complexId)));
+
+    const mosques = await this.loadMosques(complexId);
+    const teacherShifts = await this.loadTeacherShifts(complexId);
+    const teacherAttendance = await this.loadTeacherAttendance(undefined, complexId);
+    const registrationApplications = await this.loadRegistrationApplications(complexId);
+    const libraryDocs = await this.loadLibraryDocuments(complexId);
+
+    const allListeningLogs = await this.loadListeningLogs();
+    const complexListeningLogs = allListeningLogs.filter(l => studentIds.has(l.studentId));
+
+    const allRecordings = await this.loadRecordings();
+    const complexRecordings = allRecordings.filter(r => studentIds.has(r.studentId) || r.complexId === complexId);
+
+    // Collect all image URLs for 100% self-contained embedding
+    const imageUrls: string[] = [];
+    if (rawComplex.logoUrl) imageUrls.push(rawComplex.logoUrl);
+    if (rawComplex.stampUrl) imageUrls.push(rawComplex.stampUrl);
+    if (rawComplex.customTheme?.logoUrl) imageUrls.push(rawComplex.customTheme.logoUrl);
+    if (rawComplex.customTheme?.backgroundImageUrl) imageUrls.push(rawComplex.customTheme.backgroundImageUrl);
+    complexCertificates.forEach(cert => {
+      if (cert.customTemplateImageUrl) imageUrls.push(cert.customTemplateImageUrl);
+    });
+    mosques.forEach(m => {
+      if ((m as any).photoUrl) imageUrls.push((m as any).photoUrl);
+      if ((m as any).imageUrl) imageUrls.push((m as any).imageUrl);
+    });
+    complexStudents.forEach(s => {
+      if ((s as any).photoUrl) imageUrls.push((s as any).photoUrl);
+      if ((s as any).avatarUrl) imageUrls.push((s as any).avatarUrl);
+    });
+
+    const embeddedImages = await OmranDataService.extractAndEmbedAllImages(imageUrls);
+    const safeResolve = (u?: string) => (u && embeddedImages[u] ? embeddedImages[u] : u);
+
+    const complex: QuranComplex = {
+      ...rawComplex,
+      logoUrl: safeResolve(rawComplex.logoUrl),
+      stampUrl: safeResolve(rawComplex.stampUrl),
+      customTheme: rawComplex.customTheme ? {
+        ...rawComplex.customTheme,
+        logoUrl: safeResolve(rawComplex.customTheme.logoUrl),
+        backgroundImageUrl: safeResolve(rawComplex.customTheme.backgroundImageUrl)
+      } : undefined
+    };
+
+    const selfContainedCerts = complexCertificates.map(cert => ({
+      ...cert,
+      customTemplateImageUrl: safeResolve(cert.customTemplateImageUrl)
+    }));
+
     return {
       version: '2.0.0',
       exportDate: new Date().toISOString(),
@@ -2659,7 +2779,19 @@ export class OmranDataService {
       students: complexStudents,
       attendance: complexAttendance,
       evaluations: complexEvaluations,
-      violations: complexViolations
+      violations: complexViolations,
+      exams: complexExams,
+      submissions: complexSubmissions,
+      certificates: selfContainedCerts,
+      teachers: complexTeachers,
+      mosques,
+      teacherShifts,
+      teacherAttendance,
+      registrationApplications,
+      listeningLogs: complexListeningLogs,
+      recordings: complexRecordings,
+      libraryDocs,
+      embeddedImages
     };
   }
 
@@ -2689,7 +2821,7 @@ export class OmranDataService {
 
     const yieldTick = (ms = 35) => new Promise(r => setTimeout(r, ms));
 
-    onProgress?.(10, 'فحص ملف المجمع', `جاري تحليل بيانات مجمع (${data.complex?.name || complexId})...`);
+    onProgress?.(5, 'فحص ملف المجمع والوسائط المرفقة', `جاري تحليل بيانات مجمع (${data.complex?.name || complexId})...`);
     await yieldTick(50);
 
     if (data.complex) {
@@ -2697,7 +2829,7 @@ export class OmranDataService {
     }
     await yieldTick(30);
 
-    onProgress?.(30, 'حفظ الحلقات القرآنية', `جاري رفع الحلقات (${data.halaqahs?.length || 0} حلقة)...`);
+    onProgress?.(20, 'حفظ الحلقات القرآنية', `جاري رفع الحلقات (${data.halaqahs?.length || 0} حلقة)...`);
     await yieldTick(30);
     if (Array.isArray(data.halaqahs)) {
       for (const h of data.halaqahs) {
@@ -2706,7 +2838,7 @@ export class OmranDataService {
     }
     await yieldTick(30);
 
-    onProgress?.(55, 'حفظ بيانات الطلاب', `جاري رفع طلاب المجمع (${data.students?.length || 0} طالب)...`);
+    onProgress?.(40, 'حفظ بيانات الطلاب', `جاري رفع طلاب المجمع (${data.students?.length || 0} طالب)...`);
     await yieldTick(30);
     if (Array.isArray(data.students)) {
       for (const s of data.students) {
@@ -2715,7 +2847,7 @@ export class OmranDataService {
     }
     await yieldTick(30);
 
-    onProgress?.(75, 'حفظ الحضور والتقييمات', 'جاري رفع سجلات الحضور والتقييمات الخاصة بالمجمع...');
+    onProgress?.(60, 'حفظ الحضور والتقييمات والمخالفات', 'جاري رفع سجلات الحضور والتقييمات الخاصة بالمجمع...');
     await yieldTick(30);
     if (Array.isArray(data.attendance)) {
       for (const a of data.attendance) {
@@ -2734,6 +2866,54 @@ export class OmranDataService {
     }
     await yieldTick(30);
 
+    onProgress?.(75, 'حفظ الاختبارات والشهادات والطلبات', 'جاري رفع الاختبارات والشهادات والطلبات...');
+    if (Array.isArray(data.exams)) {
+      for (const ex of data.exams) {
+        await setDoc(doc(this.getActiveDb(), 'exams', ex.id), cleanFirestoreData(ex));
+      }
+    }
+    if (Array.isArray(data.submissions)) {
+      for (const sub of data.submissions) {
+        await setDoc(doc(this.getActiveDb(), 'exam_submissions', sub.id), cleanFirestoreData(sub));
+      }
+    }
+    if (Array.isArray(data.certificates)) {
+      for (const cert of data.certificates) {
+        await setDoc(doc(this.getActiveDb(), 'certificates', cert.id), cleanFirestoreData(cert));
+      }
+    }
+    if (Array.isArray(data.mosques)) {
+      for (const m of data.mosques) {
+        await setDoc(doc(this.getActiveDb(), 'mosques', m.id), cleanFirestoreData(m));
+      }
+    }
+    if (Array.isArray(data.teacherShifts)) {
+      for (const sh of data.teacherShifts) {
+        await setDoc(doc(this.getActiveDb(), 'teacher_shifts', sh.id), cleanFirestoreData(sh));
+      }
+    }
+    if (Array.isArray(data.teacherAttendance)) {
+      for (const ta of data.teacherAttendance) {
+        await setDoc(doc(this.getActiveDb(), 'teacher_attendance', ta.id), cleanFirestoreData(ta));
+      }
+    }
+    if (Array.isArray(data.registrationApplications)) {
+      for (const app of data.registrationApplications) {
+        await setDoc(doc(this.getActiveDb(), 'registration_applications', app.id), cleanFirestoreData(app));
+      }
+    }
+    if (Array.isArray(data.listeningLogs)) {
+      for (const l of data.listeningLogs) {
+        await setDoc(doc(this.getActiveDb(), 'listening_logs', l.id), cleanFirestoreData(l));
+      }
+    }
+    if (Array.isArray(data.recordings)) {
+      for (const r of data.recordings) {
+        await setDoc(doc(this.getActiveDb(), 'surah_recordings', r.id), cleanFirestoreData(r));
+      }
+    }
+    await yieldTick(30);
+
     onProgress?.(95, 'مزامنة وتطهير الكاش', 'جاري مسح أي كاش قديم وتوحيد بيانات فايربيس...');
     await yieldTick(40);
     purgeAllLocalDataCaches();
@@ -2747,7 +2927,7 @@ export class OmranDataService {
     };
   }
 
-  // Purge / empty all data belonging to a complex from the central database
+  // Purge / empty all data belonging to a complex from the central database (Completely & Permanently)
   static async purgeComplexData(
     complexId: string,
     onProgress?: (progress: number, stageName: string, detailText?: string) => void
@@ -2778,39 +2958,41 @@ export class OmranDataService {
     });
     const studentIds = new Set(complexStudents.map(s => s.id));
 
-    onProgress?.(30, 'حذف سجلات الحضور والغياب...', `جاري حذف سجلات الحضور لـ (${studentIds.size}) طالباً...`);
+    onProgress?.(25, 'حذف سجلات الحضور والغياب...', `جاري حذف سجلات الحضور لـ (${studentIds.size}) طالباً...`);
     await yieldTick();
 
-    // Delete attendance from central
+    // 1. Delete attendance
     const allAttendance = await this.loadAttendance();
     let deletedAttendance = 0;
     for (const a of allAttendance) {
       if (studentIds.has(a.studentId)) {
-        await deleteDoc(doc(centralDb, 'attendance', a.id));
-        deletedAttendance++;
+        try {
+          await deleteDoc(doc(centralDb, 'attendance', a.id));
+          deletedAttendance++;
+        } catch {}
       }
     }
 
-    onProgress?.(50, 'حذف تقييمات التسميع والاختبارات...', 'جاري تفريغ التقييمات والاختبارات والشهادات التابعة للمجمع...');
+    onProgress?.(40, 'حذف تقييمات التسميع والاختبارات والشهادات...', 'جاري تفريغ التقييمات والاختبارات والشهادات التابعة للمجمع...');
     await yieldTick();
 
-    // Delete evaluations from central
+    // 2. Delete evaluations
     const allEvaluations = await this.loadEvaluations();
     for (const ev of allEvaluations) {
       if (studentIds.has(ev.studentId)) {
-        await deleteDoc(doc(centralDb, 'evaluations', ev.id));
+        try { await deleteDoc(doc(centralDb, 'evaluations', ev.id)); } catch {}
       }
     }
 
-    // Delete violations from central
+    // 3. Delete violations
     const allViolations = await this.loadViolations();
     for (const v of allViolations) {
       if (studentIds.has(v.studentId)) {
-        await deleteDoc(doc(centralDb, 'violations', v.id));
+        try { await deleteDoc(doc(centralDb, 'violations', v.id)); } catch {}
       }
     }
 
-    // Delete exams from central
+    // 4. Delete exams
     const allExams = await this.loadExams();
     for (const ex of allExams) {
       if (ex.complexId === complexId || (Array.isArray(ex.targetHalaqat) && ex.targetHalaqat.some(th => halaqahIds.has(th)))) {
@@ -2818,7 +3000,7 @@ export class OmranDataService {
       }
     }
 
-    // Delete exam submissions from central
+    // 5. Delete exam submissions
     const allSubmissions = await this.loadSubmissions();
     for (const sub of allSubmissions) {
       if (studentIds.has(sub.studentId) || sub.complexId === complexId) {
@@ -2826,7 +3008,7 @@ export class OmranDataService {
       }
     }
 
-    // Delete certificates from central
+    // 6. Delete certificates
     const allCerts = await this.loadCertificates();
     for (const cert of allCerts) {
       if (cert.complexId === complexId || studentIds.has(cert.studentId)) {
@@ -2834,20 +3016,20 @@ export class OmranDataService {
       }
     }
 
-    onProgress?.(75, 'حذف سجلات الطلاب والحلقات...', `جاري حذف (${complexStudents.length}) طالباً و (${complexHalaqahs.length}) حلقة...`);
+    onProgress?.(60, 'حذف سجلات الطلاب والحلقات والورديات...', `جاري حذف (${complexStudents.length}) طالباً و (${complexHalaqahs.length}) حلقة...`);
     await yieldTick();
 
-    // Delete students from central
+    // 7. Delete students
     for (const s of complexStudents) {
-      await deleteDoc(doc(centralDb, 'students', s.id));
+      try { await deleteDoc(doc(centralDb, 'students', s.id)); } catch {}
     }
 
-    // Delete halaqahs from central
+    // 8. Delete halaqahs
     for (const h of complexHalaqahs) {
-      await deleteDoc(doc(centralDb, 'halaqahs', h.id));
+      try { await deleteDoc(doc(centralDb, 'halaqahs', h.id)); } catch {}
     }
 
-    // Delete teacher_shifts of this complex from central
+    // 9. Delete teacher_shifts
     try {
       const shiftsSnap = await getDocs(collection(centralDb, 'teacher_shifts'));
       for (const d of shiftsSnap.docs) {
@@ -2857,7 +3039,7 @@ export class OmranDataService {
       }
     } catch {}
 
-    // Delete teacher_attendance of this complex from central
+    // 10. Delete teacher_attendance
     try {
       const tAttSnap = await getDocs(collection(centralDb, 'teacher_attendance'));
       for (const d of tAttSnap.docs) {
@@ -2867,7 +3049,7 @@ export class OmranDataService {
       }
     } catch {}
 
-    // Delete mosques of this complex from central
+    // 11. Delete mosques
     try {
       const mosquesSnap = await getDocs(collection(centralDb, 'mosques'));
       for (const d of mosquesSnap.docs) {
@@ -2877,10 +3059,73 @@ export class OmranDataService {
       }
     } catch {}
 
+    onProgress?.(75, 'حذف طلبات التسجيل والتسجيلات والمستندات...', 'جاري تفريغ طلبات التسجيل والتلاوات والمكتبة...');
+    await yieldTick();
+
+    // 12. Delete listening_logs
+    try {
+      const allListening = await this.loadListeningLogs();
+      for (const log of allListening) {
+        if (studentIds.has(log.studentId)) {
+          await deleteDoc(doc(centralDb, 'listening_logs', log.id));
+        }
+      }
+    } catch {}
+
+    // 13. Delete surah_recordings
+    try {
+      const allRecordings = await this.loadRecordings();
+      for (const rec of allRecordings) {
+        if (rec.complexId === complexId || studentIds.has(rec.studentId)) {
+          await deleteDoc(doc(centralDb, 'surah_recordings', rec.id));
+        }
+      }
+    } catch {}
+
+    // 14. Delete registration_applications
+    try {
+      const regSnap = await getDocs(collection(centralDb, 'registration_applications'));
+      for (const d of regSnap.docs) {
+        if (d.data()?.complexId === complexId) {
+          await deleteDoc(doc(centralDb, 'registration_applications', d.id));
+        }
+      }
+    } catch {}
+
+    // 15. Delete library_docs
+    try {
+      const libSnap = await getDocs(collection(centralDb, 'library_docs'));
+      for (const d of libSnap.docs) {
+        if (d.data()?.complexId === complexId) {
+          await deleteDoc(doc(centralDb, 'library_docs', d.id));
+        }
+      }
+    } catch {}
+
+    // 16. Delete chats
+    try {
+      const chatsSnap = await getDocs(collection(centralDb, 'chats'));
+      for (const d of chatsSnap.docs) {
+        if (d.data()?.complexId === complexId) {
+          await deleteDoc(doc(centralDb, 'chats', d.id));
+        }
+      }
+    } catch {}
+
+    // 17. Delete tombstones for this complex
+    try {
+      const tombSnap = await getDocs(collection(centralDb, 'deleted_records'));
+      for (const d of tombSnap.docs) {
+        if (d.data()?.complexId === complexId) {
+          await deleteDoc(doc(centralDb, 'deleted_records', d.id));
+        }
+      }
+    } catch {}
+
     onProgress?.(90, 'تحديث حسابات المعلمين وحماية المبرمج...', 'فحص الحسابات وحماية حساب المبرمج وتطهير الذاكرة...');
     await yieldTick();
 
-    // Delete / Unlink teachers belonging to this complex from central (protecting developer accounts)
+    // 18. Delete / Unlink teachers belonging solely to this complex from central (protecting developer accounts)
     try {
       const allTeachers = await this.loadTeachers();
       for (const t of allTeachers) {
@@ -2909,7 +3154,7 @@ export class OmranDataService {
     };
   }
 
-  // Developer Master Feature: Purge / Wipe ALL platform data from the database
+  // Developer Master Feature: Purge / Wipe ALL platform data permanently (Master Reset)
   static async purgeAllPlatformData(
     onProgress?: (progress: number, stageName: string, detailText?: string) => void
   ): Promise<{
@@ -2931,7 +3176,7 @@ export class OmranDataService {
 
     // 1. Students
     const allStudents = await this.loadStudents();
-    onProgress?.(25, 'حذف سجلات الطلاب والخطط الذكية...', `جاري حذف (${allStudents.length}) طالب من فايربيس...`);
+    onProgress?.(22, 'حذف سجلات الطلاب والخطط الذكية...', `جاري حذف (${allStudents.length}) طالب من فايربيس...`);
     for (const s of allStudents) {
       if (s?.id) {
         try { await deleteDoc(doc(centralDb, 'students', s.id)); } catch {}
@@ -2941,7 +3186,7 @@ export class OmranDataService {
 
     // 2. Attendance
     const allAttendance = await this.loadAttendance();
-    onProgress?.(45, 'حذف سجلات الحضور والغياب...', `جاري حذف (${allAttendance.length}) سجل حضور...`);
+    onProgress?.(38, 'حذف سجلات الحضور والغياب...', `جاري حذف (${allAttendance.length}) سجل حضور...`);
     for (const a of allAttendance) {
       if (a?.id) {
         try { await deleteDoc(doc(centralDb, 'attendance', a.id)); } catch {}
@@ -2951,7 +3196,7 @@ export class OmranDataService {
 
     // 3. Evaluations
     const allEvaluations = await this.loadEvaluations();
-    onProgress?.(60, 'حذف تقييمات التسميع وسجلات الأخطاء...', `جاري حذف (${allEvaluations.length}) تقييم تسميع...`);
+    onProgress?.(52, 'حذف تقييمات التسميع وسجلات الأخطاء...', `جاري حذف (${allEvaluations.length}) تقييم تسميع...`);
     for (const ev of allEvaluations) {
       if (ev?.id) {
         try { await deleteDoc(doc(centralDb, 'evaluations', ev.id)); } catch {}
@@ -2960,7 +3205,7 @@ export class OmranDataService {
     await yieldTick();
 
     // 4. Violations, Exams, Submissions, Certificates
-    onProgress?.(75, 'حذف الاختبارات القرآنية والتسليمات والشهادات...', 'جاري تفريغ الاختبارات وسجلات الشكر...');
+    onProgress?.(65, 'حذف الاختبارات القرآنية والتسليمات والشهادات...', 'جاري تفريغ الاختبارات وسجلات الشكر...');
     const allViolations = await this.loadViolations();
     for (const v of allViolations) {
       if (v?.id) {
@@ -2992,14 +3237,14 @@ export class OmranDataService {
 
     // 5. Halaqahs
     const allHalaqahs = await this.loadHalaqahs();
-    onProgress?.(88, 'حذف الحلقات القرآنية والورديات...', `جاري تفريغ (${allHalaqahs.length}) حلقة...`);
+    onProgress?.(75, 'حذف الحلقات القرآنية والورديات...', `جاري تفريغ (${allHalaqahs.length}) حلقة...`);
     for (const h of allHalaqahs) {
       if (h?.id) {
         try { await deleteDoc(doc(centralDb, 'halaqahs', h.id)); } catch {}
       }
     }
 
-    // Teacher shifts and attendance
+    // 6. Teacher shifts, attendance, and mosques
     try {
       const shiftsSnap = await getDocs(collection(centralDb, 'teacher_shifts'));
       for (const d of shiftsSnap.docs) {
@@ -3011,6 +3256,65 @@ export class OmranDataService {
       const tAttSnap = await getDocs(collection(centralDb, 'teacher_attendance'));
       for (const d of tAttSnap.docs) {
         await deleteDoc(doc(centralDb, 'teacher_attendance', d.id));
+      }
+    } catch {}
+
+    try {
+      const mosquesSnap = await getDocs(collection(centralDb, 'mosques'));
+      for (const d of mosquesSnap.docs) {
+        await deleteDoc(doc(centralDb, 'mosques', d.id));
+      }
+    } catch {}
+
+    // 7. Listening logs, Recordings, Applications, Library docs, Chats, Tombstones
+    onProgress?.(85, 'حذف التلاوات والطلبات والمستندات...', 'جاري تفريغ كافة المجموعات السحابية المتبقية...');
+    try {
+      const logsSnap = await getDocs(collection(centralDb, 'listening_logs'));
+      for (const d of logsSnap.docs) {
+        await deleteDoc(doc(centralDb, 'listening_logs', d.id));
+      }
+    } catch {}
+
+    try {
+      const recsSnap = await getDocs(collection(centralDb, 'surah_recordings'));
+      for (const d of recsSnap.docs) {
+        await deleteDoc(doc(centralDb, 'surah_recordings', d.id));
+      }
+    } catch {}
+
+    try {
+      const regSnap = await getDocs(collection(centralDb, 'registration_applications'));
+      for (const d of regSnap.docs) {
+        await deleteDoc(doc(centralDb, 'registration_applications', d.id));
+      }
+    } catch {}
+
+    try {
+      const libSnap = await getDocs(collection(centralDb, 'library_docs'));
+      for (const d of libSnap.docs) {
+        await deleteDoc(doc(centralDb, 'library_docs', d.id));
+      }
+    } catch {}
+
+    try {
+      const chatsSnap = await getDocs(collection(centralDb, 'chats'));
+      for (const d of chatsSnap.docs) {
+        await deleteDoc(doc(centralDb, 'chats', d.id));
+      }
+    } catch {}
+
+    try {
+      const tombSnap = await getDocs(collection(centralDb, 'deleted_records'));
+      for (const d of tombSnap.docs) {
+        await deleteDoc(doc(centralDb, 'deleted_records', d.id));
+      }
+    } catch {}
+
+    // 8. Complexes
+    try {
+      const compSnap = await getDocs(collection(centralDb, 'complexes'));
+      for (const d of compSnap.docs) {
+        await deleteDoc(doc(centralDb, 'complexes', d.id));
       }
     } catch {}
 
@@ -3040,6 +3344,198 @@ export class OmranDataService {
       deletedHalaqahs: allHalaqahs.length
     };
   }
+
+  // Developer Feature: Purge Data by Date Range (حذف بيانات فترة زمنية محددة للمنصة أو لمجمع محدد)
+  static async purgeDataByDateRange(params: DateRangePurgeParams): Promise<DateRangePurgeResult> {
+    const { scope, complexId, fromDate, toDate, categories, onProgress } = params;
+    const yieldTick = (ms = 30) => new Promise(r => setTimeout(r, ms));
+    const centralDb = this.getCentralDb();
+
+    onProgress?.(5, 'بدء فحص النطاق الزمني المحدد...', `الفترة من ${fromDate} إلى ${toDate}...`);
+    await yieldTick(50);
+
+    let targetStudentIds: Set<string> | null = null;
+    let targetHalaqahIds: Set<string> | null = null;
+
+    if (scope === 'complex' && complexId) {
+      const allHalaqahs = await this.loadHalaqahs();
+      const compHalaqahs = allHalaqahs.filter(h => h.complexId === complexId);
+      targetHalaqahIds = new Set(compHalaqahs.map(h => h.id));
+
+      const allStudents = await this.loadStudents();
+      const compStudents = allStudents.filter(s => {
+        if (s.complexId && s.complexId !== complexId) return false;
+        if (s.complexId === complexId) return true;
+        if (s.halaqahId && targetHalaqahIds!.has(s.halaqahId)) return true;
+        return false;
+      });
+      targetStudentIds = new Set(compStudents.map(s => s.id));
+    }
+
+    let deletedAttendance = 0;
+    let deletedEvaluations = 0;
+    let deletedTeacherAttendance = 0;
+    let deletedViolations = 0;
+    let deletedSubmissions = 0;
+    let deletedListeningLogs = 0;
+    let deletedRecordings = 0;
+
+    const isWithinRange = (dStr?: string) => {
+      if (!dStr) return false;
+      const clean = dStr.slice(0, 10);
+      return clean >= fromDate && clean <= toDate;
+    };
+
+    // 1. Attendance
+    if (categories.attendance) {
+      onProgress?.(15, 'حذف سجلات الحضور والغياب...', 'جاري فحص وحذف سجلات الحضور في الفترة المحددة...');
+      const allAttendance = await this.loadAttendance();
+      for (const att of allAttendance) {
+        if (isWithinRange(att.date)) {
+          if (!targetStudentIds || targetStudentIds.has(att.studentId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'attendance', att.id));
+              deletedAttendance++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    // 2. Evaluations
+    if (categories.evaluations) {
+      onProgress?.(35, 'حذف تقييمات التسميع والأخطاء...', 'جاري فحص وحذف تقييمات التسميع في الفترة المحددة...');
+      const allEvaluations = await this.loadEvaluations();
+      for (const ev of allEvaluations) {
+        if (isWithinRange(ev.date)) {
+          if (!targetStudentIds || targetStudentIds.has(ev.studentId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'evaluations', ev.id));
+              deletedEvaluations++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    // 3. Teacher Attendance
+    if (categories.teacherAttendance) {
+      onProgress?.(50, 'حذف سجلات حضور المعلمين...', 'جاري فحص وحذف بصمات حضور المعلمين في الفترة...');
+      try {
+        const snap = await getDocs(collection(centralDb, 'teacher_attendance'));
+        for (const d of snap.docs) {
+          const raw = d.data();
+          if (isWithinRange(raw.date)) {
+            if (scope === 'all' || (complexId && raw.complexId === complexId)) {
+              await deleteDoc(doc(centralDb, 'teacher_attendance', d.id));
+              deletedTeacherAttendance++;
+            }
+          }
+        }
+      } catch {}
+      await yieldTick();
+    }
+
+    // 4. Violations
+    if (categories.violations) {
+      onProgress?.(65, 'حذف الملاحظات السلوكية...', 'جاري حذف مخالفات وملاحظات الطلاب في الفترة...');
+      const allViolations = await this.loadViolations();
+      for (const v of allViolations) {
+        if (isWithinRange(v.date)) {
+          if (!targetStudentIds || targetStudentIds.has(v.studentId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'violations', v.id));
+              deletedViolations++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    // 5. Exam Submissions
+    if (categories.submissions) {
+      onProgress?.(78, 'حذف تسليمات ونتائج الاختبارات...', 'جاري حذف تسليمات الاختبارات في الفترة...');
+      const allSubs = await this.loadSubmissions();
+      for (const sub of allSubs) {
+        const subDate = sub.submittedAt || sub.createdAt || '';
+        if (isWithinRange(subDate)) {
+          if (!targetStudentIds || targetStudentIds.has(sub.studentId) || (complexId && sub.complexId === complexId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'exam_submissions', sub.id));
+              deletedSubmissions++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    // 6. Listening Logs
+    if (categories.listeningLogs) {
+      onProgress?.(88, 'حذف سجلات استماع المصحف...', 'جاري تفريغ سجلات استماع الطلاب في الفترة...');
+      const allLogs = await this.loadListeningLogs();
+      for (const log of allLogs) {
+        const logDate = log.timestamp || log.date || '';
+        if (isWithinRange(logDate)) {
+          if (!targetStudentIds || targetStudentIds.has(log.studentId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'listening_logs', log.id));
+              deletedListeningLogs++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    // 7. Recordings
+    if (categories.recordings) {
+      onProgress?.(93, 'حذف التلاوات المسجلة...', 'جاري حذف تلاوات الطلاب المسجلة في الفترة...');
+      const allRecs = await this.loadRecordings();
+      for (const rec of allRecs) {
+        const recDate = rec.createdAt || rec.date || '';
+        if (isWithinRange(recDate)) {
+          if (!targetStudentIds || targetStudentIds.has(rec.studentId) || (complexId && rec.complexId === complexId)) {
+            try {
+              await deleteDoc(doc(centralDb, 'surah_recordings', rec.id));
+              deletedRecordings++;
+            } catch {}
+          }
+        }
+      }
+      await yieldTick();
+    }
+
+    onProgress?.(98, 'تحديث ومزامنة الذاكرة المؤقتة...', 'جاري مسح الكاش المحلي...');
+    purgeAllLocalDataCaches();
+    await yieldTick(50);
+
+    const totalDeleted =
+      deletedAttendance +
+      deletedEvaluations +
+      deletedTeacherAttendance +
+      deletedViolations +
+      deletedSubmissions +
+      deletedListeningLogs +
+      deletedRecordings;
+
+    onProgress?.(100, 'اكتمل حذف بيانات الفترة بنجاح 100%!', `تم حذف إجمالي (${totalDeleted}) سجلاً في الفترة من ${fromDate} إلى ${toDate}.`);
+
+    return {
+      deletedAttendance,
+      deletedEvaluations,
+      deletedTeacherAttendance,
+      deletedViolations,
+      deletedSubmissions,
+      deletedListeningLogs,
+      deletedRecordings,
+      totalDeleted
+    };
+  }
+
 
   // Developer Feature: Test Live Real Connection to Any External Firebase Project
   static async testRealFirebaseConnection(config: {
@@ -5447,7 +5943,7 @@ export class OmranDataService {
     }
   }
 
-  // Export Full Database (Complete Cloud Firestore Backup)
+  // Export Full Database (Complete Cloud Firestore Backup with embedded Base64 images)
   static async exportFullBackup(): Promise<FullBackupData> {
     const [
       students,
@@ -5466,7 +5962,13 @@ export class OmranDataService {
       googleOAuth,
       recordings,
       recordingsConfig,
-      listeningLogs
+      listeningLogs,
+      certificates,
+      mosques,
+      teacherShifts,
+      teacherAttendance,
+      registrationApplications,
+      libraryDocs
     ] = await Promise.all([
       this.loadStudents(),
       this.loadAttendance(),
@@ -5484,8 +5986,64 @@ export class OmranDataService {
       this.loadGoogleOAuthConfig(),
       this.loadRecordings(),
       this.loadRecordingsConfig(),
-      this.loadListeningLogs()
+      this.loadListeningLogs(),
+      OmranDataService.loadCertificates(),
+      OmranDataService.loadMosques(),
+      OmranDataService.loadTeacherShifts(),
+      OmranDataService.loadTeacherAttendance(),
+      OmranDataService.loadRegistrationApplications(),
+      OmranDataService.loadLibraryDocuments()
     ]);
+
+    // Collect all image URLs across all entities to make the backup 100% self-contained & portable
+    const imageUrls: string[] = [];
+    complexes.forEach(c => {
+      if (c.logoUrl) imageUrls.push(c.logoUrl);
+      if (c.stampUrl) imageUrls.push(c.stampUrl);
+      if (c.customTheme?.logoUrl) imageUrls.push(c.customTheme.logoUrl);
+      if (c.customTheme?.backgroundImageUrl) imageUrls.push(c.customTheme.backgroundImageUrl);
+    });
+    if (settings.logoUrl) imageUrls.push(settings.logoUrl);
+    if (settings.stampUrl) imageUrls.push(settings.stampUrl);
+    students.forEach(s => {
+      if ((s as any).photoUrl) imageUrls.push((s as any).photoUrl);
+      if ((s as any).avatarUrl) imageUrls.push((s as any).avatarUrl);
+    });
+    certificates.forEach(c => {
+      if (c.customTemplateImageUrl) imageUrls.push(c.customTemplateImageUrl);
+    });
+    mosques.forEach(m => {
+      if ((m as any).photoUrl) imageUrls.push((m as any).photoUrl);
+      if ((m as any).imageUrl) imageUrls.push((m as any).imageUrl);
+    });
+    libraryDocs.forEach(d => {
+      if (d.coverUrl) imageUrls.push(d.coverUrl);
+    });
+
+    const embeddedImages = await OmranDataService.extractAndEmbedAllImages(imageUrls);
+    const safeResolve = (u?: string) => (u && embeddedImages[u] ? embeddedImages[u] : u);
+
+    const selfContainedComplexes = complexes.map(c => ({
+      ...c,
+      logoUrl: safeResolve(c.logoUrl),
+      stampUrl: safeResolve(c.stampUrl),
+      customTheme: c.customTheme ? {
+        ...c.customTheme,
+        logoUrl: safeResolve(c.customTheme.logoUrl),
+        backgroundImageUrl: safeResolve(c.customTheme.backgroundImageUrl)
+      } : undefined
+    }));
+
+    const selfContainedCertificates = certificates.map(cert => ({
+      ...cert,
+      customTemplateImageUrl: safeResolve(cert.customTemplateImageUrl)
+    }));
+
+    const selfContainedSettings = {
+      ...settings,
+      logoUrl: safeResolve(settings.logoUrl),
+      stampUrl: safeResolve(settings.stampUrl)
+    };
 
     return {
       version: '2.0.0',
@@ -5494,10 +6052,10 @@ export class OmranDataService {
       attendance,
       evaluations,
       evaluationCriteria,
-      settings,
+      settings: selfContainedSettings,
       chatMessages,
       teachers,
-      complexes,
+      complexes: selfContainedComplexes,
       halaqahs,
       violations,
       exams,
@@ -5507,7 +6065,13 @@ export class OmranDataService {
       recordings,
       recordingsConfig,
       listeningLogs,
-      certificates: await OmranDataService.loadCertificates(),
+      certificates: selfContainedCertificates,
+      mosques,
+      teacherShifts,
+      teacherAttendance,
+      registrationApplications,
+      libraryDocs,
+      embeddedImages,
       userAccounts: [
         {
           id: 'admin-1',
@@ -5865,6 +6429,31 @@ export class OmranDataService {
     }
     for (const cert of certificatesList) {
       if (cert?.id) await setDoc(doc(this.getActiveDb(), 'certificates', cert.id), cleanFirestoreData(cert));
+    }
+    if (Array.isArray(backup.mosques)) {
+      for (const m of backup.mosques) {
+        if (m?.id) await setDoc(doc(this.getActiveDb(), 'mosques', m.id), cleanFirestoreData(m));
+      }
+    }
+    if (Array.isArray(backup.teacherShifts)) {
+      for (const sh of backup.teacherShifts) {
+        if (sh?.id) await setDoc(doc(this.getActiveDb(), 'teacher_shifts', sh.id), cleanFirestoreData(sh));
+      }
+    }
+    if (Array.isArray(backup.teacherAttendance)) {
+      for (const ta of backup.teacherAttendance) {
+        if (ta?.id) await setDoc(doc(this.getActiveDb(), 'teacher_attendance', ta.id), cleanFirestoreData(ta));
+      }
+    }
+    if (Array.isArray(backup.registrationApplications)) {
+      for (const app of backup.registrationApplications) {
+        if (app?.id) await setDoc(doc(this.getActiveDb(), 'registration_applications', app.id), cleanFirestoreData(app));
+      }
+    }
+    if (Array.isArray(backup.libraryDocs)) {
+      for (const docItem of backup.libraryDocs) {
+        if (docItem?.id) await setDoc(doc(this.getActiveDb(), 'library_docs', docItem.id), cleanFirestoreData(docItem));
+      }
     }
     await yieldTick();
 

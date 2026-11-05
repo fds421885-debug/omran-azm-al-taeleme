@@ -45,7 +45,8 @@ import {
   BarChart3,
   Clock,
   TrendingUp,
-  Info
+  Info,
+  Calendar
 } from 'lucide-react';
 import { OmranDataService, firebaseConfig, TARGET_FIRESTORE_DATABASE_ID } from '../../lib/firebase';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
@@ -62,7 +63,9 @@ import {
   GOOGLE_GEMINI_MODELS,
   DEFAULT_AI_CONFIG,
   AIUsageMetrics,
-  DEFAULT_AI_USAGE_METRICS
+  DEFAULT_AI_USAGE_METRICS,
+  DateRangePurgeParams,
+  DateRangePurgeResult
 } from '../../types';
 import { OmranAIService } from '../../lib/omranAIService';
 import { ComplexDatabaseTransferModal } from '../ComplexDatabaseTransferModal';
@@ -130,8 +133,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [importStats, setImportStats] = useState<any>(null);
   const [importTargetTitle, setImportTargetTitle] = useState('');
 
-  // Operation Progress Type: 'import' | 'purge_complex' | 'purge_all'
-  const [operationType, setOperationType] = useState<'import' | 'purge_complex' | 'purge_all'>('import');
+  // Operation Progress Type: 'import' | 'purge_complex' | 'purge_all' | 'purge_range'
+  const [operationType, setOperationType] = useState<'import' | 'purge_complex' | 'purge_all' | 'purge_range'>('import');
 
   // Complex purge dialog
   const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
@@ -142,6 +145,29 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [isMasterPurgeModalOpen, setIsMasterPurgeModalOpen] = useState(false);
   const [masterPurgeConfirmationText, setMasterPurgeConfirmationText] = useState('');
   const [isMasterPurging, setIsMasterPurging] = useState(false);
+
+  // Date Range Purge dialog (حذف بيانات فترة زمنية محددة للمنصة أو لمجمع محدد)
+  const [isDateRangePurgeModalOpen, setIsDateRangePurgeModalOpen] = useState(false);
+  const [dateRangeScope, setDateRangeScope] = useState<'all' | 'complex'>('complex');
+  const [dateRangeComplexId, setDateRangeComplexId] = useState<string>('');
+  const [dateRangeFromDate, setDateRangeFromDate] = useState<string>(() => {
+    const d = new Date(Date.now() - 7 * 86400000);
+    return d.toISOString().slice(0, 10);
+  });
+  const [dateRangeToDate, setDateRangeToDate] = useState<string>(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [dateRangeCategories, setDateRangeCategories] = useState({
+    attendance: true,
+    evaluations: true,
+    teacherAttendance: true,
+    violations: true,
+    submissions: true,
+    listeningLogs: true,
+    recordings: true
+  });
+  const [dateRangeConfirmationText, setDateRangeConfirmationText] = useState('');
+  const [isDateRangePurging, setIsDateRangePurging] = useState(false);
 
   // Complex migration / transfer dialog
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -1022,6 +1048,58 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       setStatusMsg({ type: 'error', text: 'فشل حذف بيانات المنصة: ' + err.message });
     } finally {
       setIsMasterPurging(false);
+    }
+  };
+
+  // 5.3 Purge Data by Date Range (حذف بيانات فترة زمنية محددة للمنصة أو لمجمع محدد)
+  const handlePurgeDataByDateRange = async () => {
+    if (dateRangeConfirmationText.trim() !== 'تأكيد حذف الفترة') return;
+    setIsDateRangePurgeModalOpen(false);
+    setDateRangeConfirmationText('');
+
+    const targetLabel = dateRangeScope === 'all'
+      ? 'كامل المنصة (كافة المجمعات)'
+      : `مجمع: ${complexes.find(c => c.id === dateRangeComplexId)?.name || activeComplex?.name || dateRangeComplexId}`;
+
+    setOperationType('purge_range');
+    setIsImportModalOpen(true);
+    setImportProgress(5);
+    setImportStageText(`بدء حذف بيانات الفترة من ${dateRangeFromDate} إلى ${dateRangeToDate}...`);
+    setImportDetailText(`الهدف المستهدف: ${targetLabel} - جاري فحص السجلات والاتصال بقاعدة بيانات فايربيس...`);
+    setIsImportComplete(false);
+    setImportError(null);
+    setImportStats(null);
+    setImportTargetTitle(`حذف فترة: ${dateRangeFromDate} إلى ${dateRangeToDate} (${targetLabel})`);
+
+    try {
+      setIsDateRangePurging(true);
+      const res = await OmranDataService.purgeDataByDateRange({
+        scope: dateRangeScope,
+        complexId: dateRangeScope === 'complex' ? (dateRangeComplexId || activeComplex?.id) : undefined,
+        fromDate: dateRangeFromDate,
+        toDate: dateRangeToDate,
+        categories: dateRangeCategories,
+        onProgress: (progress, stageName, detailText) => {
+          setImportProgress(progress);
+          setImportStageText(stageName);
+          if (detailText) setImportDetailText(detailText);
+        }
+      });
+      setImportStats(res);
+      setImportProgress(100);
+      setImportStageText(`اكتمل حذف بيانات الفترة بنجاح 100%!`);
+      setImportDetailText(`تم حذف إجمالي (${res.totalDeleted}) سجل بنجاح من قاعدة البيانات.`);
+      setIsImportComplete(true);
+      await onRefreshAllData();
+      setStatusMsg({
+        type: 'success',
+        text: `تم حذف بيانات الفترة من ${dateRangeFromDate} إلى ${dateRangeToDate} بنجاح: تم حذف إجمالي (${res.totalDeleted}) سجل (${res.deletedAttendance} حضور، ${res.deletedEvaluations} تقييم، ${res.deletedTeacherAttendance} حضور معلمين).`
+      });
+    } catch (err: any) {
+      setImportError(err.message || 'فشل حذف بيانات الفترة');
+      setStatusMsg({ type: 'error', text: 'فشل حذف بيانات الفترة: ' + err.message });
+    } finally {
+      setIsDateRangePurging(false);
     }
   };
 
@@ -2958,8 +3036,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               </form>
             )}
 
-            {/* 5 ACTION TILES FOR THIS COMPLEX & PLATFORM (DUOLINGO 3D) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {/* 6 ACTION TILES FOR THIS COMPLEX & PLATFORM (DUOLINGO 3D) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               
               {/* Tile 1: Export Complex Data */}
               <div
@@ -3187,6 +3265,55 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>حذف وتصفير جميع البيانات...</span>
+                </button>
+              </div>
+
+              {/* Tile 6: Purge Data by Date Range (حذف بيانات فترة زمنية محددة للمبرمج) */}
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: '#f59e0b',
+                  borderBottomColor: '#d97706'
+                }}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div
+                      className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center text-amber-400 shadow-sm"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: '#f59e0b',
+                        borderBottomColor: '#d97706'
+                      }}
+                    >
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/50 font-black">
+                      فترة مخصصة
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-black text-white">حذف بيانات فترة محددة</h4>
+                  <p className="text-[11px] text-amber-200/80 font-bold mt-1 leading-relaxed">
+                    حذف سجلات الحضور أو التقييمات أو التلاوات لفترة زمنية محددة للمنصة أو لمجمع معين مع حماية باقي المنظومة.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateRangeScope('complex');
+                    setDateRangeComplexId(activeComplex?.id || '');
+                    setDateRangeConfirmationText('');
+                    setIsDateRangePurgeModalOpen(true);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 bg-amber-950/80 hover:bg-amber-900 active:translate-y-[2px] active:border-b-2 text-amber-200 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                  style={{
+                    borderColor: '#f59e0b',
+                    borderBottomColor: '#d97706'
+                  }}
+                >
+                  <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                  <span>تحديد وحذف فترة...</span>
                 </button>
               </div>
 
@@ -3606,8 +3733,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
             className="w-full max-w-xl border-4 border-b-8 rounded-[36px] p-6 sm:p-8 shadow-2xl space-y-6 text-right relative overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             style={{
               backgroundColor: 'var(--complex-card, #203843)',
-              borderColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
-              borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)'
+              borderColor: (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
+              borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)'
             }}
           >
             {/* Header */}
@@ -3620,16 +3747,16 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   className="w-14 h-14 rounded-3xl border-2 border-b-4 flex items-center justify-center shadow-lg shrink-0"
                   style={{
                     backgroundColor: 'var(--complex-primary, #131f24)',
-                    borderColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
-                    borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)',
-                    color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
+                    borderColor: (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
+                    borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)',
+                    color: (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
                   }}
                 >
                   {isImportComplete ? (
                     <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                   ) : importError ? (
                     <AlertTriangle className="w-8 h-8 text-rose-400" />
-                  ) : (operationType === 'purge_complex' || operationType === 'purge_all') ? (
+                  ) : (operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range') ? (
                     <Trash2 className="w-8 h-8 animate-bounce text-rose-400" />
                   ) : (
                     <Cloud className="w-8 h-8 animate-pulse" />
@@ -3638,7 +3765,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-white font-heading">
                     {isImportComplete
-                      ? ((operationType === 'purge_complex' || operationType === 'purge_all')
+                      ? ((operationType === 'purge_complex' || operationType === 'purge_all' || operationType === 'purge_range')
                           ? 'اكتمل الحذف وتصفير البيانات بنجاح 100%!'
                           : 'اكتمل استيراد وتفريغ النسخة الاحتياطية بنجاح 100%!')
                       : importError
@@ -3647,6 +3774,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                           ? 'جاري حذف وتصفير جميع بيانات المنصة بالكامل...'
                           : operationType === 'purge_complex'
                           ? 'جاري إفراغ بيانات المجمع من السحابة...'
+                          : operationType === 'purge_range'
+                          ? 'جاري حذف بيانات الفترة المحددة من السحابة...'
                           : 'جاري رفع وحفظ النسخة في فايربيس (Firestore)...')}
                   </h3>
                   <p
@@ -3831,13 +3960,70 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                     }}
                   />
                   <span>
-                    {(operationType === 'purge_complex' || operationType === 'purge_all')
+                    {operationType === 'purge_range'
+                      ? 'ملخص السجلات المحذوفة للفترة المحددة:'
+                      : (operationType === 'purge_complex' || operationType === 'purge_all')
                       ? 'ملخص السجلات المفرغة والمحذوفة بأمان:'
                       : 'إحصائيات السجلات المفروغة والمحفوظة في فايربيس (Firestore):'}
                   </span>
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
-                  {(operationType === 'purge_complex' || operationType === 'purge_all') ? (
+                  {operationType === 'purge_range' ? (
+                    <>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: '#f59e0b',
+                          borderBottomColor: '#d97706'
+                        }}
+                      >
+                        <div className="text-lg font-black text-amber-300 font-mono">
+                          {importStats.deletedAttendance ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">سجل حضور محذوف</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: '#f59e0b',
+                          borderBottomColor: '#d97706'
+                        }}
+                      >
+                        <div className="text-lg font-black text-rose-400 font-mono">
+                          {importStats.deletedEvaluations ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">تقييم تسميع محذوف</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: '#f59e0b',
+                          borderBottomColor: '#d97706'
+                        }}
+                      >
+                        <div className="text-lg font-black text-emerald-400 font-mono">
+                          {importStats.deletedTeacherAttendance ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">حضور معلمين محذوف</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: '#f59e0b',
+                          borderBottomColor: '#d97706'
+                        }}
+                      >
+                        <div className="text-lg font-black text-white font-mono">
+                          {importStats.totalDeleted ?? 0}
+                        </div>
+                        <div className="text-[10px] text-amber-300 font-bold">إجمالي السجلات المحذوفة</div>
+                      </div>
+                    </>
+                  ) : (operationType === 'purge_complex' || operationType === 'purge_all') ? (
                     <>
                       <div
                         className="p-3 rounded-2xl border-2 border-b-4"
@@ -4175,6 +4361,375 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{isMasterPurging ? 'جاري الحذف والتصفير...' : 'حذف وتصفير جميع البيانات'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL 6: Purge Data by Date Range Modal (Duolingo 3D) */}
+      {/* ---------------------------------------------------- */}
+      {isDateRangePurgeModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div
+            className="w-full max-w-lg border-4 border-b-8 rounded-[36px] p-6 sm:p-7 shadow-2xl space-y-5 text-right relative overflow-hidden animate-in fade-in zoom-in-95 my-8"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: '#f59e0b',
+              borderBottomColor: '#d97706'
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b pb-3.5" style={{ borderColor: 'var(--complex-border, #2b4550)' }}>
+              <div className="flex items-center gap-3 text-amber-400">
+                <div
+                  className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: '#f59e0b',
+                    borderBottomColor: '#d97706'
+                  }}
+                >
+                  <Calendar className="w-6 h-6 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">حذف بيانات فترة زمنية محددة</h3>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/50 font-black">
+                    ميزة متقدمة للمبرمج
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDateRangePurgeModalOpen(false)}
+                className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-xl border-2 border-b-4 font-bold cursor-pointer transition-all active:translate-y-[1px]"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)'
+                }}
+              >
+                إغلاق
+              </button>
+            </div>
+
+            {/* Scope Selector: All Platform vs Specific Complex */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-white">نطاق الحذف المستهدف:</label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDateRangeScope('complex')}
+                  className={`py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer text-center ${
+                    dateRangeScope === 'complex'
+                      ? 'bg-amber-400 text-[#064e3b] border-amber-400 border-b-amber-600 shadow-md'
+                      : 'bg-[#131f24] text-slate-300 border-[#2b4550] border-b-[#16262e] hover:text-white'
+                  }`}
+                >
+                  مجمع محدد فقط
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateRangeScope('all')}
+                  className={`py-2.5 px-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer text-center ${
+                    dateRangeScope === 'all'
+                      ? 'bg-amber-400 text-[#064e3b] border-amber-400 border-b-amber-600 shadow-md'
+                      : 'bg-[#131f24] text-slate-300 border-[#2b4550] border-b-[#16262e] hover:text-white'
+                  }`}
+                >
+                  كامل المنصة (كافة المجمعات)
+                </button>
+              </div>
+
+              {/* Complex dropdown if complex scope selected */}
+              {dateRangeScope === 'complex' && (
+                <div className="pt-1.5 animate-in fade-in">
+                  <select
+                    value={dateRangeComplexId || activeComplex?.id || ''}
+                    onChange={e => setDateRangeComplexId(e.target.value)}
+                    className="w-full bg-[#131f24] border-2 border-b-4 border-amber-500/60 rounded-2xl px-4 py-2.5 text-xs font-black text-amber-300 outline-none cursor-pointer"
+                  >
+                    {complexes.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.id === activeComplex?.id ? '(المجمع الحالي)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Date Range Inputs with Quick Presets */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-white">تحديد الفترة الزمنية:</label>
+                {/* Presets */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      setDateRangeFromDate(today);
+                      setDateRangeToDate(today);
+                    }}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/30 text-amber-300 hover:bg-amber-400/20 cursor-pointer"
+                  >
+                    اليوم
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const past7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+                      setDateRangeFromDate(past7);
+                      setDateRangeToDate(today);
+                    }}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/30 text-amber-300 hover:bg-amber-400/20 cursor-pointer"
+                  >
+                    آخر 7 أيام
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const past30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+                      setDateRangeFromDate(past30);
+                      setDateRangeToDate(today);
+                    }}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/30 text-amber-300 hover:bg-amber-400/20 cursor-pointer"
+                  >
+                    آخر 30 يوماً
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                      const today = now.toISOString().slice(0, 10);
+                      setDateRangeFromDate(firstDay);
+                      setDateRangeToDate(today);
+                    }}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/30 text-amber-300 hover:bg-amber-400/20 cursor-pointer"
+                  >
+                    هذا الشهر
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">من تاريخ:</span>
+                  <input
+                    type="date"
+                    value={dateRangeFromDate}
+                    onChange={e => setDateRangeFromDate(e.target.value)}
+                    className="w-full bg-[#131f24] border-2 border-b-4 border-[#2b4550] rounded-2xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-300">إلى تاريخ:</span>
+                  <input
+                    type="date"
+                    value={dateRangeToDate}
+                    onChange={e => setDateRangeToDate(e.target.value)}
+                    className="w-full bg-[#131f24] border-2 border-b-4 border-[#2b4550] rounded-2xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Categories Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-white">اختر أنواع البيانات المراد حذفها:</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDateRangeCategories({
+                      attendance: true,
+                      evaluations: true,
+                      teacherAttendance: true,
+                      violations: true,
+                      submissions: true,
+                      listeningLogs: true,
+                      recordings: true
+                    })}
+                    className="text-[10px] text-amber-300 hover:underline font-bold cursor-pointer"
+                  >
+                    تحديد الكل
+                  </button>
+                  <span className="text-slate-500 text-[10px]">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setDateRangeCategories({
+                      attendance: false,
+                      evaluations: false,
+                      teacherAttendance: false,
+                      violations: false,
+                      submissions: false,
+                      listeningLogs: false,
+                      recordings: false
+                    })}
+                    className="text-[10px] text-slate-400 hover:underline font-bold cursor-pointer"
+                  >
+                    إلغاء الكل
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {/* Attendance */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, attendance: !prev.attendance }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.attendance
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>الحضور والغياب</span>
+                  {dateRangeCategories.attendance ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Evaluations */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, evaluations: !prev.evaluations }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.evaluations
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>تقييمات التسميع</span>
+                  {dateRangeCategories.evaluations ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Teacher Attendance */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, teacherAttendance: !prev.teacherAttendance }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.teacherAttendance
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>حضور المعلمين</span>
+                  {dateRangeCategories.teacherAttendance ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Violations */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, violations: !prev.violations }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.violations
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>المخالفات السلوكية</span>
+                  {dateRangeCategories.violations ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Submissions */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, submissions: !prev.submissions }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.submissions
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>تسليمات الاختبارات</span>
+                  {dateRangeCategories.submissions ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Listening Logs */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, listeningLogs: !prev.listeningLogs }))}
+                  className={`p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.listeningLogs
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>سجلات الاستماع</span>
+                  {dateRangeCategories.listeningLogs ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+
+                {/* Recordings */}
+                <button
+                  type="button"
+                  onClick={() => setDateRangeCategories(prev => ({ ...prev, recordings: !prev.recordings }))}
+                  className={`col-span-2 p-2.5 rounded-xl border-2 border-b-4 flex items-center justify-between transition-all cursor-pointer font-bold ${
+                    dateRangeCategories.recordings
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                      : 'bg-[#131f24] border-[#2b4550] text-slate-400'
+                  }`}
+                >
+                  <span>التسجيلات والتلاوات الصوتية للطلاب</span>
+                  {dateRangeCategories.recordings ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirmation Input */}
+            <div className="space-y-1.5 pt-1">
+              <label className="block text-xs font-black text-white">
+                لتأكيد الحذف، اكتب بالأسفل: <span className="text-amber-400 underline">تأكيد حذف الفترة</span>
+              </label>
+              <input
+                type="text"
+                placeholder="تأكيد حذف الفترة"
+                value={dateRangeConfirmationText}
+                onChange={e => setDateRangeConfirmationText(e.target.value)}
+                className="w-full border-2 border-b-4 rounded-2xl px-4 py-2.5 text-xs text-white outline-none font-bold shadow-inner"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#f59e0b',
+                  borderBottomColor: '#d97706'
+                }}
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDateRangePurgeModalOpen(false);
+                  setDateRangeConfirmationText('');
+                }}
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 text-white text-xs font-black cursor-pointer active:translate-y-[2px] transition-all"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handlePurgeDataByDateRange}
+                disabled={
+                  isDateRangePurging ||
+                  dateRangeConfirmationText.trim() !== 'تأكيد حذف الفترة' ||
+                  !Object.values(dateRangeCategories).some(Boolean)
+                }
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 active:translate-y-[2px] active:border-b-2 text-[#064e3b] text-xs font-black shadow-lg cursor-pointer disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
+                style={{
+                  borderColor: '#d97706',
+                  borderBottomColor: '#b45309'
+                }}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>{isDateRangePurging ? 'جاري حذف الفترة...' : 'بدء حذف بيانات الفترة الآن'}</span>
               </button>
             </div>
           </div>

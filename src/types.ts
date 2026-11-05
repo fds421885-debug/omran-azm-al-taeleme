@@ -22,6 +22,13 @@ export interface QuranComplex {
   theme?: ComplexThemeConfig; // ألوان وهوية وثيم المنصة الخاصة بالمجمع
   themeColor?: string; // اللون الرئيسي المميز للمجمع
   customCertificateTemplates?: CustomCertificateTemplate[]; // قوالب الشهادات الخاصة بالمجمع
+  customTheme?: {
+    logoUrl?: string;
+    backgroundImageUrl?: string;
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+  };
   createdAt: string;
   updatedAt?: string;
   databaseConfig?: {
@@ -1259,6 +1266,8 @@ export interface AppSettings {
   complexName?: string;
   themeLogoUrl?: string; // شعار المجمع العام
   themeStampUrl?: string; // ختم المجمع العام
+  logoUrl?: string;
+  stampUrl?: string;
   theme?: ComplexThemeConfig; // هوية وألوان وثيم المنصة
   newPagePoints?: number; // نقاط كل وجه جديد
   reviewPagePoints?: number; // نقاط كل وجه مراجعة
@@ -1320,6 +1329,12 @@ export interface FullBackupData {
   recordingsConfig?: RecordingsConfig;
   listeningLogs?: StudentListeningLog[];
   certificates?: IssuedCertificate[];
+  mosques?: any[];
+  teacherShifts?: any[];
+  teacherAttendance?: any[];
+  registrationApplications?: any[];
+  libraryDocs?: any[];
+  embeddedImages?: Record<string, string>; // Base64 data URLs for 100% self-contained backup
 }
 
 export interface ComplexBackupData {
@@ -1332,7 +1347,45 @@ export interface ComplexBackupData {
   evaluations: StudentEvaluation[];
   violations?: BehaviorViolation[];
   exams?: Exam[];
+  submissions?: ExamSubmission[];
   certificates?: IssuedCertificate[];
+  teachers?: TeacherAccount[];
+  mosques?: any[];
+  teacherShifts?: any[];
+  teacherAttendance?: any[];
+  registrationApplications?: any[];
+  listeningLogs?: StudentListeningLog[];
+  recordings?: SurahRecording[];
+  libraryDocs?: any[];
+  embeddedImages?: Record<string, string>; // Base64 data URLs for 100% self-contained backup
+}
+
+export interface DateRangePurgeParams {
+  scope: 'all' | 'complex';
+  complexId?: string;
+  fromDate: string; // YYYY-MM-DD
+  toDate: string;   // YYYY-MM-DD
+  categories: {
+    attendance?: boolean;
+    evaluations?: boolean;
+    teacherAttendance?: boolean;
+    violations?: boolean;
+    submissions?: boolean;
+    listeningLogs?: boolean;
+    recordings?: boolean;
+  };
+  onProgress?: (progress: number, stageName: string, detailText?: string) => void;
+}
+
+export interface DateRangePurgeResult {
+  deletedAttendance: number;
+  deletedEvaluations: number;
+  deletedTeacherAttendance: number;
+  deletedViolations: number;
+  deletedSubmissions: number;
+  deletedListeningLogs: number;
+  deletedRecordings: number;
+  totalDeleted: number;
 }
 
 export interface ComplexMigrationProgress {
@@ -1455,6 +1508,7 @@ export interface ExamSubmission {
   status: 'completed' | 'needs_grading'; // needs_grading if essay questions are pending
   isPassed?: boolean; // هل اجتاز الاختبار بنجاح
   submittedAt: string;
+  createdAt?: string;
   gradedAt?: string;
   gradedByTeacherName?: string;
   teacherGeneralFeedback?: string;
@@ -1538,6 +1592,8 @@ export interface SurahRecording {
   url?: string;
   notes?: string;
   teacherEvaluation?: string;
+  complexId?: string;
+  date?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1944,6 +2000,7 @@ export interface LibraryDocument {
   halaqahId?: string;
   halaqahName?: string;
   fileUrl?: string; // Data URL or Blob URL or External Link
+  coverUrl?: string;
   googleUrl?: string;
   driveFileId?: string;
   driveFolderId?: string;
