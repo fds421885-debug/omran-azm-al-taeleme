@@ -3455,10 +3455,10 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <Download className="w-6 h-6" />
               </div>
               <h3 className="text-base font-black font-heading text-white">
-                تنزيل نسخة احتياطية (JSON)
+                تنزيل نسخة احتياطية شاملة (JSON)
               </h3>
               <p className="text-xs text-slate-300 font-bold leading-relaxed">
-                تحميل ملف بصيغة JSON على جهاز الكمبيوتر أو الهاتف يحتوي على جميع سجلات الطلاب والمجمعات والتقييمات.
+                تحميل ملف شامل ومتنقل 100% يحفظ كل شيء: الطلاب، الحلقات، التقييمات، إعدادات الذكاء الاصطناعي، وقوالب الشهادات، مع تضمين <strong className="text-amber-300">كافة الصور والشعارات والتواقيع بصيغة Base64 مشفرة</strong>.
               </p>
             </div>
 
@@ -3475,7 +3475,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               }}
             >
               <Download className="w-4 h-4" />
-              <span>{isExporting ? 'جاري تجهيز النسخة...' : 'تنزيل ملف JSON'}</span>
+              <span>{isExporting ? 'جاري تضمين الصور وتجهيز النسخة...' : 'تنزيل ملف النسخة الاحتياطية (مع الصور)'}</span>
             </button>
           </div>
 

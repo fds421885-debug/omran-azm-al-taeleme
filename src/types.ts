@@ -1334,6 +1334,8 @@ export interface FullBackupData {
   teacherAttendance?: any[];
   registrationApplications?: any[];
   libraryDocs?: any[];
+  customCertificateTemplates?: CustomCertificateTemplate[];
+  aiConfig?: PlatformAIConfig;
   embeddedImages?: Record<string, string>; // Base64 data URLs for 100% self-contained backup
 }
 
@@ -1357,6 +1359,7 @@ export interface ComplexBackupData {
   listeningLogs?: StudentListeningLog[];
   recordings?: SurahRecording[];
   libraryDocs?: any[];
+  customCertificateTemplates?: CustomCertificateTemplate[];
   embeddedImages?: Record<string, string>; // Base64 data URLs for 100% self-contained backup
 }
 
