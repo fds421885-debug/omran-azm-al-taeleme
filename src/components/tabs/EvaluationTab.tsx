@@ -2494,15 +2494,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner & Date / Criteria Controls */}
-      <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 shadow-xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold font-heading text-white flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-[#fbbf24]" />
-            <span>تسجيل التسميع وتقييم الطلاب وتحديد مقرر الغد</span>
-          </h2>
-          <p className="text-xs text-[#86efac]/90 mt-1">
-            تسجيل التسميع الفعلي والرجوع للأيام السابقة، وضبط مقرر الغد تلقائياً بالذكاء الاصطناعي مع تحديث موضع الحفظ فوراً
-          </p>
+      <div
+        className="rounded-[32px] p-6 shadow-xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4 border-2 border-b-4"
+        style={{
+          backgroundColor: 'var(--complex-card, #203843)',
+          borderColor: 'var(--complex-border, #2b4550)',
+          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-md"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: themeAccent,
+              borderBottomColor: themeAccentShadow,
+              color: themeAccent
+            }}
+          >
+            <BookOpen className="w-6 h-6" style={{ color: themeAccent }} />
+          </div>
+          <div>
+            <h2 className="text-xl font-black font-heading text-white flex items-center gap-2">
+              <span>تسجيل التسميع وتقييم الطلاب وتحديد مقرر الغد</span>
+            </h2>
+            <p className="text-xs text-slate-300 font-bold mt-1">
+              تسجيل التسميع الفعلي والرجوع للأيام السابقة، وضبط مقرر الغد تلقائياً بالذكاء الاصطناعي مع تحديث موضع الحفظ فوراً
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
@@ -2511,37 +2530,56 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             onClick={() => openMushafReader(todayNewSurah, todayNewFromAyah, 'new_today')}
             className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
             style={{
-              backgroundColor: 'var(--complex-card, #203843)',
-              borderColor: 'var(--complex-accent, #ffc800)',
-              borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
-              color: 'var(--complex-accent, #ffc800)'
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: themeAccent,
+              borderBottomColor: themeAccentShadow,
+              color: themeAccent
             }}
             title="فتح مصحف مجمع الملك فهد كاملاً"
           >
-            <BookOpen className="w-4 h-4" style={{ color: 'var(--complex-accent, #ffc800)' }} />
+            <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
             <span>المصحف الشريف (طبعة الملك فهد)</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setShowHistoryDrawer(!showHistoryDrawer)}
-            className={`px-3.5 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+            style={
               showHistoryDrawer
-                ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] font-black shadow-md'
-                : 'bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-            }`}
+                ? {
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }
+                : {
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                    color: '#ffffff'
+                  }
+            }
           >
-            <History className="w-4 h-4 text-[#fbbf24]" />
+            <History className="w-4 h-4" style={{ color: showHistoryDrawer ? accentTextColor : themeAccent }} />
             <span>أرشيف الأيام السابقة للطالب ({studentEvaluationsHistory.length})</span>
           </button>
 
           {/* Criteria Management: Exclusively for Supervisors */}
           {isSupervisor && (
             <button
+              type="button"
               onClick={() => setIsManageCriteriaListOpen(true)}
-              className="px-3.5 py-2 rounded-2xl bg-[#022c22] hover:bg-[#064e3b] border border-[#fbbf24]/30 hover:border-[#fbbf24]/60 text-[#f0f9f6] text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md"
+              className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                color: '#ffffff'
+              }}
               title="إدارة معايير التقييم للمجمع (خاص بالمشرفين)"
             >
-              <Sliders className="w-4 h-4 text-[#fbbf24]" />
+              <Sliders className="w-4 h-4" style={{ color: themeAccent }} />
               <span>معايير التقييم ({criteria.length})</span>
             </button>
           )}
@@ -2550,22 +2588,37 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       {/* Real-time background AI processing indicator on the top right (الميمن) */}
       {(isSaving || saveSuccessMsg) && (
-        <div className="flex items-center justify-between p-3.5 px-5 rounded-2xl bg-[#064e3b] border-2 border-amber-400 text-white shadow-xl animate-fadeIn" dir="rtl">
+        <div
+          className="flex items-center justify-between p-3.5 px-5 rounded-2xl text-white shadow-xl animate-fadeIn border-2 border-b-4"
+          dir="rtl"
+          style={{
+            backgroundColor: 'var(--complex-primary, #131f24)',
+            borderColor: themeAccent,
+            borderBottomColor: themeAccentShadow
+          }}
+        >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30">
-              <Sparkles className="w-4 h-4 animate-spin text-amber-400" />
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center border-2 border-b-2"
+              style={{
+                backgroundColor: `${themeAccent}25`,
+                borderColor: themeAccent,
+                color: themeAccent
+              }}
+            >
+              <Sparkles className="w-4 h-4 animate-spin" style={{ color: themeAccent }} />
             </div>
             <div>
               <p className="text-xs font-black text-white">
                 {isSaving ? 'جارٍ تسجيل التسميع وتحليل أخطاء الطالب بالذكاء الاصطناعي...' : saveSuccessMsg}
               </p>
-              <p className="text-[11px] text-emerald-300 font-bold">
+              <p className="text-[11px] font-bold" style={{ color: themeAccent }}>
                 يمكنك مواصلة العمل وإجراءاتك، الذكاء الاصطناعي يظبط الخطة ومقرر الغد في الخلفية ⚡
               </p>
             </div>
           </div>
           {isSaving && (
-            <div className="flex items-center gap-2 text-xs text-amber-300 font-mono font-bold">
+            <div className="flex items-center gap-2 text-xs font-mono font-bold" style={{ color: themeAccent }}>
               <span>جارٍ المعالجة...</span>
               <RefreshCw className="w-4 h-4 animate-spin" />
             </div>
@@ -2574,57 +2627,111 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       )}
 
       {/* DATE SELECTOR & NAVIGATION BAR */}
-      <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-[#86efac] flex items-center gap-1.5">
-            <Calendar className="w-4 h-4 text-[#fbbf24]" />
+      <div
+        className="rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-2 border-b-4"
+        style={{
+          backgroundColor: 'var(--complex-card, #203843)',
+          borderColor: 'var(--complex-border, #2b4550)',
+          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+        }}
+      >
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+            <Calendar className="w-4 h-4" style={{ color: themeAccent }} />
             <span>تاريخ التسميع المعروض:</span>
           </span>
 
-          <div className="flex items-center gap-1.5 bg-[#064e3b]/80 p-1 rounded-xl border border-[#065f46]">
+          <div
+            className="flex items-center gap-1.5 p-1 rounded-2xl border-2 border-b-4"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+            }}
+          >
             <button
               type="button"
               onClick={() => setSelectedDate(todayStr)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[1px] active:border-b-2"
+              style={
                 selectedDate === todayStr
-                  ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                  : 'text-[#86efac] hover:text-white'
-              }`}
+                  ? {
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }
+                  : {
+                      backgroundColor: 'transparent',
+                      borderColor: 'transparent',
+                      borderBottomColor: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.75)'
+                    }
+              }
             >
               اليوم ({todayStr})
             </button>
             <button
               type="button"
               onClick={() => setSelectedDate(getYesterdayStr())}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[1px] active:border-b-2"
+              style={
                 selectedDate === getYesterdayStr()
-                  ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                  : 'text-[#86efac] hover:text-white'
-              }`}
+                  ? {
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }
+                  : {
+                      backgroundColor: 'transparent',
+                      borderColor: 'transparent',
+                      borderBottomColor: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.75)'
+                    }
+              }
             >
               الأمس
             </button>
             <button
               type="button"
               onClick={() => setSelectedDate(getDayBeforeYesterdayStr())}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[1px] active:border-b-2"
+              style={
                 selectedDate === getDayBeforeYesterdayStr()
-                  ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-sm'
-                  : 'text-[#86efac] hover:text-white'
-              }`}
+                  ? {
+                      backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }
+                  : {
+                      backgroundColor: 'transparent',
+                      borderColor: 'transparent',
+                      borderBottomColor: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.75)'
+                    }
+              }
             >
               قبل أمس
             </button>
           </div>
 
           {/* Custom Date Input */}
-          <div className="flex items-center gap-1 bg-[#064e3b] px-2.5 py-1 rounded-xl border border-[#065f46]">
-            <span className="text-[11px] text-[#86efac]">تاريخ مخصص:</span>
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 border-b-4"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
+            }}
+          >
+            <span className="text-[11px] font-black" style={{ color: themeAccent }}>تاريخ مخصص:</span>
             <input
               type="date"
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs text-white outline-none font-bold cursor-pointer"
+              className="bg-transparent text-xs text-white outline-none font-black cursor-pointer"
             />
           </div>
         </div>
@@ -2634,38 +2741,64 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           <button
             type="button"
             onClick={() => handleDateShift(-1)}
-            className="px-2.5 py-1.5 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] text-xs font-bold flex items-center gap-1 border border-[#fbbf24]/30 hover:border-[#fbbf24] cursor-pointer transition-colors shadow-sm"
+            className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+              color: '#ffffff'
+            }}
             title="الانتقال لليوم السابق"
           >
-            <ChevronRight className="w-4 h-4 text-[#fbbf24]" />
+            <ChevronRight className="w-4 h-4" style={{ color: themeAccent }} />
             <span>اليوم السابق</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleDateShift(1)}
-            className="px-2.5 py-1.5 rounded-xl bg-[#022c22] hover:bg-[#064e3b] text-[#f0f9f6] text-xs font-bold flex items-center gap-1 border border-[#fbbf24]/30 hover:border-[#fbbf24] cursor-pointer transition-colors shadow-sm"
+            className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+              color: '#ffffff'
+            }}
             title="الانتقال لليوم التالي"
           >
             <span>اليوم التالي</span>
-            <ChevronLeft className="w-4 h-4 text-[#fbbf24]" />
+            <ChevronLeft className="w-4 h-4" style={{ color: themeAccent }} />
           </button>
         </div>
       </div>
 
       {/* Past Date Notice Banner */}
       {selectedDate !== todayStr && (
-        <div className="p-3.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-bold flex items-center justify-between gap-3 animate-fadeIn">
+        <div
+          className="p-4 rounded-2xl border-2 border-b-4 text-xs font-bold flex items-center justify-between gap-3 animate-fadeIn"
+          style={{
+            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+            borderColor: themeAccent,
+            borderBottomColor: themeAccentShadow,
+            color: '#ffffff'
+          }}
+        >
           <div className="flex items-center gap-2">
-            <Info className="w-4 h-4 text-[#fbbf24] shrink-0" />
+            <Info className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
             <span>
-              أنت الآن تستعرض سجل تسميع يوم <span className="text-white underline font-black">{selectedDate}</span> {evaluations.some(e => e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
+              أنت الآن تستعرض سجل تسميع يوم <span className="underline font-black" style={{ color: themeAccent }}>{selectedDate}</span> {evaluations.some(e => e.date === selectedDate && e.studentId === activeStudentId) ? '(سجل تم حفظه مسبقاً)' : '(لم يتم رصد تسميع في هذا اليوم بعد)'}.
             </span>
           </div>
           <button
             type="button"
             onClick={() => setSelectedDate(todayStr)}
-            className="px-3 py-1 rounded-xl bg-[#fbbf24] text-[#064e3b] font-black text-xs shrink-0 cursor-pointer shadow-sm hover:bg-[#f59e0b]"
+            className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 font-black text-xs shrink-0 cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110 transition-all"
+            style={{
+              backgroundColor: themeAccent,
+              borderColor: themeAccent,
+              borderBottomColor: themeAccentShadow,
+              color: accentTextColor
+            }}
           >
             العودة لتسميع اليوم
           </button>
@@ -2674,15 +2807,28 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       {/* Auto-filled from yesterday notice */}
       {autoFilledNotice && selectedDate === todayStr && (
-        <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-center justify-between gap-2 animate-fadeIn">
+        <div
+          className="p-4 rounded-2xl border-2 border-b-4 text-xs font-bold flex items-center justify-between gap-2 animate-fadeIn"
+          style={{
+            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+            borderColor: themeAccent,
+            borderBottomColor: themeAccentShadow,
+            color: '#ffffff'
+          }}
+        >
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#fbbf24] shrink-0" />
+            <Sparkles className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
             <span>{autoFilledNotice}</span>
           </div>
           <button
             type="button"
             onClick={() => setAutoFilledNotice('')}
-            className="text-xs text-emerald-300 hover:text-white p-1"
+            className="w-7 h-7 rounded-xl border-2 border-b-2 flex items-center justify-center cursor-pointer transition-all active:translate-y-[1px]"
+            style={{
+              backgroundColor: 'var(--complex-primary, #131f24)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}
           >
             <X className="w-3.5 h-3.5" />
           </button>

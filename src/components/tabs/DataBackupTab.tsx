@@ -130,10 +130,18 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
   const [importStats, setImportStats] = useState<any>(null);
   const [importTargetTitle, setImportTargetTitle] = useState('');
 
+  // Operation Progress Type: 'import' | 'purge_complex' | 'purge_all'
+  const [operationType, setOperationType] = useState<'import' | 'purge_complex' | 'purge_all'>('import');
+
   // Complex purge dialog
   const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
   const [purgeConfirmationText, setPurgeConfirmationText] = useState('');
   const [isPurging, setIsPurging] = useState(false);
+
+  // Master platform purge dialog (حذف وتصفير جميع بيانات المنصة بالكامل للمبرمج)
+  const [isMasterPurgeModalOpen, setIsMasterPurgeModalOpen] = useState(false);
+  const [masterPurgeConfirmationText, setMasterPurgeConfirmationText] = useState('');
+  const [isMasterPurging, setIsMasterPurging] = useState(false);
 
   // Complex migration / transfer dialog
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -628,6 +636,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setStatusMsg(null);
 
     // Launch Themed Progress Modal
+    setOperationType('import');
     setIsImportModalOpen(true);
     setImportProgress(2);
     setImportStageText('بدء تحليل ملف النسخة الاحتياطية وإعداد الاتصال بقاعدة بيانات فايربيس...');
@@ -736,6 +745,7 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     setStatusMsg(null);
 
     // Launch Themed Progress Modal
+    setOperationType('import');
     setIsImportModalOpen(true);
     setImportProgress(5);
     setImportStageText(`بدء استيراد بيانات مجمع (${compName})...`);
@@ -926,23 +936,92 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
     }
   };
 
-  // 5. Purge Complex Data (إفراغ بيانات المجمع)
+  // 5. Purge Complex Data (إفراغ بيانات المجمع مع شاشة تحميل دولنجو)
   const handlePurgeComplexData = async () => {
     if (!activeComplex || purgeConfirmationText.trim() !== 'تأكيد الإفراغ') return;
+    const compName = activeComplex.name;
+    const compId = activeComplex.id;
+    setIsPurgeModalOpen(false);
+    setPurgeConfirmationText('');
+
+    setOperationType('purge_complex');
+    setIsImportModalOpen(true);
+    setImportProgress(5);
+    setImportStageText(`بدء إفراغ بيانات مجمع (${compName})...`);
+    setImportDetailText('جاري فحص الصلاحيات والاتصال بفايربيس...');
+    setIsImportComplete(false);
+    setImportError(null);
+    setImportStats(null);
+    setImportTargetTitle(`مجمع: ${compName}`);
+
     try {
       setIsPurging(true);
-      const res = await OmranDataService.purgeComplexData(activeComplex.id);
+      const res = await OmranDataService.purgeComplexData(
+        compId,
+        (progress, stageName, detailText) => {
+          setImportProgress(progress);
+          setImportStageText(stageName);
+          if (detailText) setImportDetailText(detailText);
+        }
+      );
+      setImportStats(res);
+      setImportProgress(100);
+      setImportStageText(`اكتمل إفراغ بيانات مجمع (${compName}) بنجاح 100%!`);
+      setImportDetailText(`تم حذف (${res.deletedStudents}) طالب و (${res.deletedAttendance}) سجل حضور بأمان.`);
+      setIsImportComplete(true);
       await onRefreshAllData();
       setStatusMsg({
         type: 'success',
-        text: `تم إفراغ بيانات مجمع (${activeComplex.name}) بنجاح: تم حذف (${res.deletedStudents}) طالب و (${res.deletedAttendance}) سجل حضور بأمان.`
+        text: `تم إفراغ بيانات مجمع (${compName}) بنجاح: تم حذف (${res.deletedStudents}) طالب و (${res.deletedAttendance}) سجل حضور بأمان.`
       });
-      setIsPurgeModalOpen(false);
-      setPurgeConfirmationText('');
     } catch (err: any) {
+      setImportError(err.message || 'فشل إفراغ بيانات المجمع');
       setStatusMsg({ type: 'error', text: 'فشل إفراغ بيانات المجمع: ' + err.message });
     } finally {
       setIsPurging(false);
+    }
+  };
+
+  // 5.2 Purge All Platform Data (حذف وتصفير جميع بيانات المنصة بالكامل للمبرمج مع شاشة تحميل دولنجو)
+  const handlePurgeAllPlatformData = async () => {
+    if (masterPurgeConfirmationText.trim() !== 'حذف جميع البيانات') return;
+    setIsMasterPurgeModalOpen(false);
+    setMasterPurgeConfirmationText('');
+
+    setOperationType('purge_all');
+    setIsImportModalOpen(true);
+    setImportProgress(5);
+    setImportStageText('بدء حذف وتصفير جميع بيانات المنصة بالكامل...');
+    setImportDetailText('جاري الاتصال بقاعدة بيانات فايربيس السحابية وتأمين حساب المبرمج...');
+    setIsImportComplete(false);
+    setImportError(null);
+    setImportStats(null);
+    setImportTargetTitle('كامل المنصة وقاعدة البيانات المركزية');
+
+    try {
+      setIsMasterPurging(true);
+      const res = await OmranDataService.purgeAllPlatformData(
+        (progress, stageName, detailText) => {
+          setImportProgress(progress);
+          setImportStageText(stageName);
+          if (detailText) setImportDetailText(detailText);
+        }
+      );
+      setImportStats(res);
+      setImportProgress(100);
+      setImportStageText('اكتمل حذف جميع البيانات وتصفير المنظومة بالكامل بنجاح 100%!');
+      setImportDetailText(`تم إفراغ (${res.deletedStudents}) طالب، (${res.deletedAttendance}) حضور، و (${res.deletedEvaluations}) تقييم.`);
+      setIsImportComplete(true);
+      await onRefreshAllData();
+      setStatusMsg({
+        type: 'success',
+        text: `تم حذف جميع البيانات وتصفير قاعدة البيانات بنجاح: تم حذف (${res.deletedStudents}) طالب و (${res.deletedAttendance}) سجل حضور.`
+      });
+    } catch (err: any) {
+      setImportError(err.message || 'فشل حذف بيانات المنصة');
+      setStatusMsg({ type: 'error', text: 'فشل حذف بيانات المنصة: ' + err.message });
+    } finally {
+      setIsMasterPurging(false);
     }
   };
 
@@ -2879,41 +2958,86 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               </form>
             )}
 
-            {/* 4 ACTION TILES FOR THIS COMPLEX */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 5 ACTION TILES FOR THIS COMPLEX & PLATFORM (DUOLINGO 3D) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               
               {/* Tile 1: Export Complex Data */}
-              <div className="bg-[#064e3b]/40 border border-[#065f46] hover:border-amber-400/50 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all">
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
                 <div>
-                  <div className="w-10 h-10 rounded-xl bg-[#022c22] border border-amber-400/40 text-amber-400 flex items-center justify-center mb-2.5">
+                  <div
+                    className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center mb-2.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-accent, #ffc800)',
+                      borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                      color: 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
                     <Download className="w-5 h-5" />
                   </div>
-                  <h4 className="text-xs font-bold text-white">تصدير نسخة المجمع</h4>
-                  <p className="text-[11px] text-[#86efac]/80 mt-1 leading-relaxed">
+                  <h4 className="text-xs font-black text-white">تصدير نسخة المجمع</h4>
+                  <p className="text-[11px] text-slate-300 font-bold mt-1 leading-relaxed">
                     تنزيل ملف JSON يحتوي فقط على حلقات وطلاب وسجلات مجمع ({activeComplex.name}).
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={handleExportComplexBackup}
                   disabled={isExportingComplex}
-                  className="w-full py-2 px-3 rounded-xl bg-[#022c22] hover:bg-[#064e3b] border border-amber-400/40 text-amber-300 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer disabled:opacity-50 active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center gap-1.5"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-accent, #ffc800)',
+                    borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                    color: 'var(--complex-accent, #ffc800)'
+                  }}
                 >
-                  {isExportingComplex ? 'جاري التصدير...' : 'تصدير نسخة المجمع'}
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{isExportingComplex ? 'جاري التصدير...' : 'تصدير نسخة المجمع'}</span>
                 </button>
               </div>
 
               {/* Tile 2: Import / Restore Complex Data */}
-              <div className="bg-[#064e3b]/40 border border-[#065f46] hover:border-amber-400/50 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all">
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: '#10b981',
+                  borderBottomColor: '#059669'
+                }}
+              >
                 <div>
-                  <div className="w-10 h-10 rounded-xl bg-[#022c22] border border-emerald-400/40 text-emerald-400 flex items-center justify-center mb-2.5">
+                  <div
+                    className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center mb-2.5 shadow-sm text-emerald-400"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: '#10b981',
+                      borderBottomColor: '#059669'
+                    }}
+                  >
                     <Upload className="w-5 h-5" />
                   </div>
-                  <h4 className="text-xs font-bold text-white">استيراد بيانات لمجمع</h4>
-                  <p className="text-[11px] text-[#86efac]/80 mt-1 leading-relaxed">
-                    تحميل نسخة سابقة خاصة بهذا المجمع ودمجها مباشرة في قاعدة بياناته.
+                  <h4 className="text-xs font-black text-white">استيراد بيانات لمجمع</h4>
+                  <p className="text-[11px] text-slate-300 font-bold mt-1 leading-relaxed">
+                    تحميل نسخة سابقة خاصة بهذا المجمع ودمجها مباشرة في قاعدة بياناته في السحابة.
                   </p>
                 </div>
-                <label className="w-full py-2 px-3 rounded-xl bg-[#022c22] hover:bg-[#064e3b] border border-[#065f46] text-emerald-300 hover:text-white text-xs font-bold transition-all cursor-pointer text-center block">
+                <label
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 text-emerald-300 hover:text-white text-xs font-black transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-md"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: '#10b981',
+                    borderBottomColor: '#059669'
+                  }}
+                >
+                  <Upload className="w-3.5 h-3.5" />
                   <span>{isImportingComplex ? 'جاري الاستيراد...' : 'اختيار ملف (.json)'}</span>
                   <input
                     type="file"
@@ -2926,24 +3050,52 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               </div>
 
               {/* Tile 3: Transfer to Isolated Database (نقل وترحيل المجمع لقاعدة منفصلة) */}
-              <div className="bg-[#064e3b]/50 border-2 border-amber-400/60 hover:border-amber-400 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg">
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: 'var(--complex-accent, #ffc800)',
+                  borderBottomColor: 'var(--complex-accent-shadow, #e5a500)'
+                }}
+              >
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-[#022c22] border border-amber-400/60 text-amber-400 flex items-center justify-center shadow-sm">
+                  <div
+                    className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: 'var(--complex-accent, #ffc800)',
+                      borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                      color: 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
                     <ArrowRightLeft className="w-5 h-5 stroke-[2.5]" />
                   </div>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-400 text-[#064e3b] font-black">
+                  <span
+                    className="text-[9px] px-2.5 py-0.5 rounded-full font-black shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-accent, #ffc800)',
+                      color: '#064e3b'
+                    }}
+                  >
                     ميزة المبرمج المطورة
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-white">نقل لقاعدة بيانات منفصلة (Google)</h4>
-                  <p className="text-[11px] text-[#86efac]/90 mt-1 leading-relaxed">
-                    اختيار حساب Google وإنشاء قاعدة بيانات Firebase منفصلة ونقل كافة الحلقات والطلاب وسجلات المجمع مباشرة سحابياً.
+                  <h4 className="text-xs font-black text-white">نقل لقاعدة منفصلة (Google)</h4>
+                  <p className="text-[11px] text-slate-300 font-bold mt-1 leading-relaxed">
+                    إنشاء قاعدة بيانات Firebase منفصلة ونقل كافة حلقات وطلاب وسجلات المجمع فوراً.
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setIsTransferModalOpen(true)}
-                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-110 text-[#064e3b] text-xs font-black shadow transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 text-xs font-black shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: 'var(--complex-accent, #ffc800)',
+                    borderColor: 'var(--complex-accent, #ffc800)',
+                    borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                    color: '#064e3b'
+                  }}
                 >
                   <ArrowRightLeft className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>بدء نقل البيانات للمجمع...</span>
@@ -2951,21 +3103,90 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
               </div>
 
               {/* Tile 4: Purge Complex Data (إفراغ بيانات المجمع) */}
-              <div className="bg-rose-950/30 border border-rose-600/40 hover:border-rose-500 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all">
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: '#f43f5e',
+                  borderBottomColor: '#be123c'
+                }}
+              >
                 <div>
-                  <div className="w-10 h-10 rounded-xl bg-[#022c22] border border-rose-400/40 text-rose-400 flex items-center justify-center mb-2.5">
-                    <Trash2 className="w-5 h-5" />
+                  <div className="flex items-center justify-between mb-2">
+                    <div
+                      className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center text-rose-400 shadow-sm"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: '#f43f5e',
+                        borderBottomColor: '#be123c'
+                      }}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <span className="text-[9px] px-2.5 py-0.5 rounded-full bg-rose-950/90 text-rose-300 border border-rose-500/50 font-black">
+                      مجمع محدد
+                    </span>
                   </div>
-                  <h4 className="text-xs font-bold text-rose-200">إفراغ بيانات المجمع</h4>
-                  <p className="text-[11px] text-rose-300/80 mt-1 leading-relaxed">
+                  <h4 className="text-xs font-black text-rose-200">إفراغ بيانات مجمع ({activeComplex.name})</h4>
+                  <p className="text-[11px] text-rose-300/80 font-bold mt-1 leading-relaxed">
                     حذف الطلاب وسجلات الحضور والتقييمات التابعة لهذا المجمع حصراً مع حماية باقي المنصة.
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setIsPurgeModalOpen(true)}
-                  className="w-full py-2 px-3 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-600/60 text-rose-200 text-xs font-bold transition-all cursor-pointer"
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 bg-rose-950/80 hover:bg-rose-900 active:translate-y-[2px] active:border-b-2 text-rose-200 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                  style={{
+                    borderColor: '#f43f5e',
+                    borderBottomColor: '#be123c'
+                  }}
                 >
-                  إفراغ السجلات...
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>إفراغ سجلات المجمع...</span>
+                </button>
+              </div>
+
+              {/* Tile 5: Purge All Platform Data (حذف وتصفير جميع بيانات المنصة بالكامل للمبرمج) */}
+              <div
+                className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all relative overflow-hidden shadow-lg"
+                style={{
+                  backgroundColor: 'var(--complex-card, #203843)',
+                  borderColor: '#e11d48',
+                  borderBottomColor: '#9f1239'
+                }}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div
+                      className="w-10 h-10 rounded-xl border-2 border-b-4 flex items-center justify-center text-rose-400 shadow-sm"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: '#e11d48',
+                        borderBottomColor: '#9f1239'
+                      }}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <span className="text-[9px] px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-black shadow-sm">
+                      حذف شامل للمبرمج
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-black text-white">حذف وتصفير جميع البيانات</h4>
+                  <p className="text-[11px] text-rose-200/90 font-bold mt-1 leading-relaxed">
+                    إعادة ضبط المصنع وحذف كافة سجلات الطلاب والحضور والتقييمات والاختبارات لجميع المجمعات مع حماية حساب المبرمج.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMasterPurgeModalOpen(true)}
+                  className="w-full py-2.5 px-3 rounded-xl border-2 border-b-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:brightness-110 active:translate-y-[2px] active:border-b-2 text-white text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                  style={{
+                    borderColor: '#be123c',
+                    borderBottomColor: '#881337'
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>حذف وتصفير جميع البيانات...</span>
                 </button>
               </div>
 
@@ -3086,45 +3307,88 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
           </div>
 
           {/* Card 3: Export Local JSON Card */}
-          <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 space-y-5 shadow-xl backdrop-blur-md flex flex-col justify-between">
+          <div
+            className="border-2 border-b-4 rounded-[32px] p-6 space-y-5 shadow-xl backdrop-blur-md flex flex-col justify-between"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+            }}
+          >
             <div className="space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#022c22] border border-[#fbbf24]/40 text-[#fbbf24] flex items-center justify-center shadow-md">
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-accent, #ffc800)',
+                  borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                  color: 'var(--complex-accent, #ffc800)'
+                }}
+              >
                 <Download className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold font-heading text-white">
+              <h3 className="text-base font-black font-heading text-white">
                 تنزيل نسخة احتياطية (JSON)
               </h3>
-              <p className="text-xs text-[#86efac]/80 leading-relaxed">
+              <p className="text-xs text-slate-300 font-bold leading-relaxed">
                 تحميل ملف بصيغة JSON على جهاز الكمبيوتر أو الهاتف يحتوي على جميع سجلات الطلاب والمجمعات والتقييمات.
               </p>
             </div>
 
             <button
+              type="button"
               onClick={handleExport}
               disabled={isExporting}
-              className="w-full py-3.5 px-4 rounded-2xl bg-[#022c22] hover:bg-[#065f46] border border-[#fbbf24]/50 disabled:opacity-50 text-[#fbbf24] font-bold text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-2xl border-2 border-b-4 disabled:opacity-50 font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-accent, #ffc800)',
+                borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                color: 'var(--complex-accent, #ffc800)'
+              }}
             >
-              <Download className="w-4 h-4 text-[#fbbf24]" />
+              <Download className="w-4 h-4" />
               <span>{isExporting ? 'جاري تجهيز النسخة...' : 'تنزيل ملف JSON'}</span>
             </button>
           </div>
 
           {/* Card 4: Import Card */}
-          <div className="bg-[#064e3b]/60 border border-[#065f46] rounded-[32px] p-6 space-y-5 shadow-xl backdrop-blur-md flex flex-col justify-between">
+          <div
+            className="border-2 border-b-4 rounded-[32px] p-6 space-y-5 shadow-xl backdrop-blur-md flex flex-col justify-between"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: '#10b981',
+              borderBottomColor: '#059669'
+            }}
+          >
             <div className="space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#022c22] border border-[#065f46] text-[#86efac] flex items-center justify-center shadow-md">
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md text-emerald-400"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#10b981',
+                  borderBottomColor: '#059669'
+                }}
+              >
                 <Upload className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold font-heading text-white">
+              <h3 className="text-base font-black font-heading text-white">
                 استعادة / استيراد بيانات
               </h3>
-              <p className="text-xs text-[#86efac]/80 leading-relaxed">
+              <p className="text-xs text-slate-300 font-bold leading-relaxed">
                 اختر ملف نسخة احتياطية بصيغة JSON لاستعادة جميع السجلات في قاعدة بيانات المنصة ومزامنتها فوراً.
               </p>
             </div>
 
-            <label className="w-full py-3.5 px-4 rounded-2xl bg-[#022c22] hover:bg-[#065f46] border border-[#065f46] text-[#86efac] hover:text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer">
-              <Upload className="w-4 h-4 text-[#fbbf24]" />
+            <label
+              className="w-full py-3.5 px-4 rounded-2xl border-2 border-b-4 text-emerald-300 hover:text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: '#10b981',
+                borderBottomColor: '#059669'
+              }}
+            >
+              <Upload className="w-4 h-4 text-emerald-400" />
               <span>{isImporting ? 'جاري الاستيراد...' : 'اختر ملف (.json)'}</span>
               <input
                 type="file"
@@ -3201,27 +3465,48 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       </div>
 
       {/* ---------------------------------------------------- */}
-      {/* MODAL 1: Full Restore Confirmation Modal */}
+      {/* MODAL 1: Full Restore Confirmation Modal (Duolingo 3D) */}
       {/* ---------------------------------------------------- */}
       {pendingRestore && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#064e3b] border border-[#fbbf24]/50 rounded-[32px] p-6 sm:p-7 shadow-2xl space-y-4 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-[#fbbf24]/30">
-              <Upload className="w-7 h-7" />
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-md border-4 border-b-8 rounded-[36px] p-6 sm:p-7 shadow-2xl space-y-5 text-center relative overflow-hidden animate-in fade-in zoom-in-95"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+            }}
+          >
+            <div
+              className="w-16 h-16 rounded-3xl border-2 border-b-4 flex items-center justify-center mx-auto shadow-md"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: 'var(--complex-accent, #ffc800)',
+                borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                color: 'var(--complex-accent, #ffc800)'
+              }}
+            >
+              <Upload className="w-8 h-8" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white font-heading">تأكيد استعادة النسخة الاحتياطية الكاملة</h3>
-              <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
-                هل أنت متأكد من استعادة هذه النسخة؟
+              <h3 className="text-lg font-black text-white font-heading">تأكيد استعادة النسخة الاحتياطية الكاملة</h3>
+              <p className="text-xs text-slate-300 font-bold mt-2 leading-relaxed">
+                هل أنت متأكد من استعادة هذه النسخة في قاعدة البيانات السحابية؟
                 <br />
-                تحتوي على <span className="text-[#fbbf24] font-bold">({pendingRestore.students?.length || 0})</span> طالباً، <span className="text-[#fbbf24] font-bold">({pendingRestore.complexes?.length || 0})</span> مجمعاً، و <span className="text-[#fbbf24] font-bold">({pendingRestore.attendance?.length || 0})</span> سجل حضور.
+                تحتوي على <span className="font-black text-amber-300">({pendingRestore.students?.length || 0})</span> طالباً، <span className="font-black text-amber-300">({pendingRestore.complexes?.length || 0})</span> مجمعاً، و <span className="font-black text-amber-300">({pendingRestore.attendance?.length || 0})</span> سجل حضور.
               </p>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setPendingRestore(null)}
-                className="flex-1 py-2.5 rounded-2xl text-xs font-bold bg-[#022c22] text-[#86efac] hover:text-white border border-[#065f46] cursor-pointer"
+                className="flex-1 py-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all shadow-md"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}
               >
                 إلغاء
               </button>
@@ -3229,9 +3514,16 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 type="button"
                 onClick={handleConfirmRestore}
                 disabled={isImporting}
-                className="flex-1 py-2.5 rounded-2xl text-xs font-black bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] shadow-lg cursor-pointer transition-all"
+                className="flex-1 py-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all shadow-md hover:brightness-110 flex items-center justify-center gap-1.5"
+                style={{
+                  backgroundColor: 'var(--complex-accent, #ffc800)',
+                  borderColor: 'var(--complex-accent, #ffc800)',
+                  borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                  color: '#064e3b'
+                }}
               >
-                {isImporting ? 'جاري الاستعادة...' : 'نعم، استعادة البيانات'}
+                <Upload className="w-4 h-4" />
+                <span>{isImporting ? 'جاري الاستعادة...' : 'نعم، استعادة البيانات'}</span>
               </button>
             </div>
           </div>
@@ -3239,29 +3531,49 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       )}
 
       {/* ---------------------------------------------------- */}
-      {/* MODAL 2: Complex Restore Confirmation Modal */}
+      {/* MODAL 2: Complex Restore Confirmation Modal (Duolingo 3D) */}
       {/* ---------------------------------------------------- */}
       {complexBackupToRestore && activeComplex && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#064e3b] border border-[#fbbf24]/50 rounded-[32px] p-6 sm:p-7 shadow-2xl space-y-4 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#fbbf24]/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-[#fbbf24]/30">
-              <Upload className="w-7 h-7" />
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-md border-4 border-b-8 rounded-[36px] p-6 sm:p-7 shadow-2xl space-y-5 text-center relative overflow-hidden animate-in fade-in zoom-in-95"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: 'var(--complex-border, #2b4550)',
+              borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+            }}
+          >
+            <div
+              className="w-16 h-16 rounded-3xl border-2 border-b-4 flex items-center justify-center mx-auto shadow-md text-emerald-400"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: '#10b981',
+                borderBottomColor: '#059669'
+              }}
+            >
+              <Upload className="w-8 h-8" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white font-heading">
+              <h3 className="text-lg font-black text-white font-heading">
                 استيراد بيانات لمجمع ({activeComplex.name})
               </h3>
-              <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
-                هل تود دمج بيانات هذه النسخة؟
+              <p className="text-xs text-slate-300 font-bold mt-2 leading-relaxed">
+                هل تود دمج بيانات هذه النسخة الاحتياطية في المجمع؟
                 <br />
-                تتضمن <span className="text-amber-300 font-bold">({complexBackupToRestore.students?.length || 0})</span> طالباً و <span className="text-amber-300 font-bold">({complexBackupToRestore.halaqahs?.length || 0})</span> حلقات.
+                تتضمن <span className="font-black text-amber-300">({complexBackupToRestore.students?.length || 0})</span> طالباً و <span className="font-black text-amber-300">({complexBackupToRestore.halaqahs?.length || 0})</span> حلقات.
               </p>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setComplexBackupToRestore(null)}
-                className="flex-1 py-2.5 rounded-2xl text-xs font-bold bg-[#022c22] text-[#86efac] hover:text-white border border-[#065f46] cursor-pointer"
+                className="flex-1 py-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all shadow-md"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}
               >
                 إلغاء
               </button>
@@ -3269,9 +3581,16 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 type="button"
                 onClick={handleConfirmImportComplex}
                 disabled={isImportingComplex}
-                className="flex-1 py-2.5 rounded-2xl text-xs font-black bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] shadow-lg cursor-pointer transition-all"
+                className="flex-1 py-3 rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 cursor-pointer transition-all shadow-md hover:brightness-110 flex items-center justify-center gap-1.5"
+                style={{
+                  backgroundColor: 'var(--complex-accent, #ffc800)',
+                  borderColor: 'var(--complex-accent, #ffc800)',
+                  borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
+                  color: '#064e3b'
+                }}
               >
-                {isImportingComplex ? 'جاري الاستيراد...' : 'تأكيد الاستيراد للمجمع'}
+                <Upload className="w-4 h-4" />
+                <span>{isImportingComplex ? 'جاري الاستيراد...' : 'تأكيد الاستيراد للمجمع'}</span>
               </button>
             </div>
           </div>
@@ -3279,52 +3598,63 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
       )}
 
       {/* ---------------------------------------------------- */}
-      {/* THEMED IMPORT PROGRESS MODAL (شريط تحميل الاستيراد بالثيم حتى 100%) */}
+      {/* THEMED OPERATION PROGRESS MODAL (تحميل ورفع وحذف بثيم دولنجو 100%) */}
       {/* ---------------------------------------------------- */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div
-            className="w-full max-w-xl border-2 rounded-[32px] p-6 sm:p-8 shadow-2xl space-y-6 text-right relative overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="w-full max-w-xl border-4 border-b-8 rounded-[36px] p-6 sm:p-8 shadow-2xl space-y-6 text-right relative overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             style={{
-              background: 'linear-gradient(180deg, #064e3b 0%, #022c22 60%, #011c16 100%)',
-              borderColor: `${accentColor}80`,
-              boxShadow: `0 0 50px ${accentColor}30`
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
+              borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)'
             }}
           >
-            {/* Ambient background glow */}
-            <div
-              className="absolute top-0 right-0 w-72 h-72 rounded-full blur-3xl pointer-events-none opacity-30"
-              style={{ backgroundColor: accentColor }}
-            />
-
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#065f46] pb-4 relative z-10">
+            <div
+              className="flex items-center justify-between border-b pb-4 relative z-10"
+              style={{ borderColor: 'var(--complex-border, #2b4550)' }}
+            >
               <div className="flex items-center gap-3">
                 <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center border shadow-lg shrink-0"
+                  className="w-14 h-14 rounded-3xl border-2 border-b-4 flex items-center justify-center shadow-lg shrink-0"
                   style={{
-                    backgroundColor: `${accentColor}20`,
-                    borderColor: `${accentColor}60`,
-                    color: accentColor
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#e11d48' : 'var(--complex-accent, #ffc800)',
+                    borderBottomColor: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#9f1239' : 'var(--complex-accent-shadow, #e5a500)',
+                    color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
                   }}
                 >
                   {isImportComplete ? (
-                    <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                   ) : importError ? (
-                    <AlertTriangle className="w-7 h-7 text-rose-400" />
+                    <AlertTriangle className="w-8 h-8 text-rose-400" />
+                  ) : (operationType === 'purge_complex' || operationType === 'purge_all') ? (
+                    <Trash2 className="w-8 h-8 animate-bounce text-rose-400" />
                   ) : (
-                    <Cloud className="w-7 h-7 animate-pulse" />
+                    <Cloud className="w-8 h-8 animate-pulse" />
                   )}
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-white font-heading">
                     {isImportComplete
-                      ? 'اكتمل استيراد وتفريغ النسخة الاحتياطية بنجاح 100%!'
+                      ? ((operationType === 'purge_complex' || operationType === 'purge_all')
+                          ? 'اكتمل الحذف وتصفير البيانات بنجاح 100%!'
+                          : 'اكتمل استيراد وتفريغ النسخة الاحتياطية بنجاح 100%!')
                       : importError
-                      ? 'توقف استيراد النسخة الاحتياطية'
-                      : 'جاري استيراد وحفظ النسخة في فايربيس (Firestore)...'}
+                      ? 'توقفت العملية بسبب خطأ'
+                      : (operationType === 'purge_all'
+                          ? 'جاري حذف وتصفير جميع بيانات المنصة بالكامل...'
+                          : operationType === 'purge_complex'
+                          ? 'جاري إفراغ بيانات المجمع من السحابة...'
+                          : 'جاري رفع وحفظ النسخة في فايربيس (Firestore)...')}
                   </h3>
-                  <p className="text-xs text-amber-300 font-bold mt-0.5">
+                  <p
+                    className="text-xs font-bold mt-0.5"
+                    style={{
+                      color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#fb7185' : 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
                     الجهة المستهدفة: {importTargetTitle || 'قاعدة البيانات المركزية العامة'}
                   </p>
                 </div>
@@ -3335,7 +3665,11 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="text-xs text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/10 transition-all cursor-pointer"
+                  className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-xl border-2 border-b-4 transition-all cursor-pointer font-bold active:translate-y-[1px]"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-border, #2b4550)'
+                  }}
                 >
                   إغلاق
                 </button>
@@ -3343,14 +3677,28 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
             </div>
 
             {/* Platform Central Database Guarantee Banner */}
-            <div className="p-3.5 rounded-2xl bg-[#022c22]/90 border border-[#065f46] text-xs text-emerald-200 flex items-start gap-3 relative z-10">
-              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div
+              className="p-3.5 rounded-2xl border-2 border-b-4 text-xs flex items-start gap-3 relative z-10"
+              style={{
+                backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                borderColor: 'var(--complex-border, #2b4550)',
+                borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+              }}
+            >
+              <ShieldCheck
+                className="w-5 h-5 shrink-0 mt-0.5"
+                style={{
+                  color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
+                }}
+              />
               <div className="space-y-1">
-                <p className="font-bold text-white text-[13px]">
-                  مزامنة سحابية مركزية ومباشرة بدون تخزين محلي (No LocalStorage Cache)
+                <p className="font-black text-white text-[13px]">
+                  مزامنة سحابية مركزية ومباشرة بدون تخزين محلي (Firebase Firestore)
                 </p>
-                <p className="text-[11px] text-[#86efac]/90 leading-relaxed">
-                  تم إلغاء التخزين المحلي المؤقت كلياً؛ يتم رفع وقراءة السجلات مباشرة من وإلى قاعدة بيانات فايربيس الموحدة، ليحصل كافة المشرفين والمعلمين والطلاب على نفس البيانات الحية في أي وقت ومن أي جهاز.
+                <p className="text-[11px] text-slate-300 font-bold leading-relaxed">
+                  {(operationType === 'purge_complex' || operationType === 'purge_all')
+                    ? 'تتم عمليات الحذف بأمان عبر سحابة فايربيس المركزية المباشرة مع الحماية المطلقة لحساب المبرمج والمطور الرئيسي.'
+                    : 'يتم رفع وقراءة السجلات مباشرة من وإلى قاعدة بيانات فايربيس الموحدة لضمان وصول كافة المشرفين والمعلمين لنفس البيانات فوراً.'}
                 </p>
               </div>
             </div>
@@ -3362,34 +3710,54 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <div className="space-y-0.5">
                   <span className="text-slate-300 font-bold block text-xs">
                     {isImportComplete
-                      ? 'تمت المزامنة وحفظ السجلات بنسبة:'
+                      ? 'تمت العملية بنجاح كامل بنسبة:'
                       : importError
                       ? 'نسبة الإنجاز عند التوقف:'
-                      : 'نسبة تقدم الاستيراد والحفظ في السحابة:'}
+                      : 'نسبة تقدم المعالجة المباشرة في السحابة:'}
                   </span>
-                  <span className="text-[11px] text-amber-300/80 font-mono">
+                  <span
+                    className="text-[11px] font-mono font-bold"
+                    style={{
+                      color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#fb7185' : 'var(--complex-accent, #ffc800)'
+                    }}
+                  >
                     {isImportComplete ? '100% مكتمل' : 'مباشر إلى فايربيس (Firestore)'}
                   </span>
                 </div>
                 <div className="text-left">
                   <span
-                    className="text-3xl sm:text-4xl font-black font-mono tracking-widest block drop-shadow-md"
-                    style={{ color: isImportComplete ? '#4ade80' : accentColor }}
+                    className="text-4xl sm:text-5xl font-black font-mono tracking-widest block drop-shadow-md"
+                    style={{
+                      color: isImportComplete
+                        ? '#4ade80'
+                        : (operationType === 'purge_complex' || operationType === 'purge_all')
+                        ? '#f43f5e'
+                        : 'var(--complex-accent, #ffc800)'
+                    }}
                   >
                     {importProgress}%
                   </span>
                 </div>
               </div>
 
-              {/* Themed Progress Bar with Glowing Tip */}
-              <div className="w-full h-6 bg-black/70 rounded-full border border-emerald-500/40 p-1 overflow-hidden shadow-inner relative">
+              {/* Themed Duolingo 3D Progress Bar with Glowing Tip */}
+              <div
+                className="w-full h-8 rounded-2xl border-2 border-b-4 p-1 overflow-hidden shadow-inner relative"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
                 <div
-                  className="h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden shadow-lg flex items-center justify-end"
+                  className="h-full rounded-xl transition-all duration-300 ease-out relative overflow-hidden shadow-lg flex items-center justify-end"
                   style={{
-                    width: `${Math.max(4, Math.min(100, importProgress))}%`,
+                    width: `${Math.max(5, Math.min(100, importProgress))}%`,
                     background: isImportComplete
                       ? 'linear-gradient(90deg, #059669 0%, #10b981 50%, #4ade80 100%)'
-                      : `linear-gradient(90deg, #d97706 0%, ${accentColor} 50%, #10b981 100%)`
+                      : (operationType === 'purge_complex' || operationType === 'purge_all')
+                      ? 'linear-gradient(90deg, #881337 0%, #e11d48 50%, #fb7185 100%)'
+                      : 'linear-gradient(90deg, #d97706 0%, var(--complex-accent, #ffc800) 50%, #10b981 100%)'
                   }}
                 >
                   {/* Internal Shimmer Animation */}
@@ -3398,16 +3766,28 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   )}
                   {/* Glowing Leading Dot */}
                   {!isImportComplete && !importError && (
-                    <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#ffffff] shrink-0 mr-1 animate-pulse" />
+                    <div className="w-3 h-3 rounded-full bg-white shadow-[0_0_10px_#ffffff] shrink-0 mr-1 animate-pulse" />
                   )}
                 </div>
               </div>
 
               {/* Dynamic Stage Text & Realtime Detail */}
-              <div className="bg-black/40 rounded-2xl p-3.5 border border-emerald-500/20 space-y-1.5 shadow-sm">
+              <div
+                className="rounded-2xl p-4 border-2 border-b-4 space-y-1.5 shadow-sm"
+                style={{
+                  backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
                 <div className="flex items-center gap-2.5">
                   {!isImportComplete && !importError && (
-                    <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+                    <Loader2
+                      className="w-4 h-4 animate-spin shrink-0"
+                      style={{
+                        color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
+                      }}
+                    />
                   )}
                   {isImportComplete && (
                     <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -3415,12 +3795,17 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                   {importError && (
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                   )}
-                  <p className="text-xs font-bold text-amber-200">
+                  <p className="text-xs font-black text-white">
                     {importStageText || 'جاري معالجة البيانات...'}
                   </p>
                 </div>
                 {importDetailText && (
-                  <p className="text-[11px] text-emerald-300 font-mono pr-6">
+                  <p
+                    className="text-[11px] font-mono pr-6 font-bold"
+                    style={{
+                      color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#fda4af' : '#6ee7b7'
+                    }}
+                  >
                     {importDetailText}
                   </p>
                 )}
@@ -3429,8 +3814,8 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
 
             {/* Error Message Box if occurred */}
             {importError && (
-              <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/50 text-xs text-rose-200 space-y-1 relative z-10">
-                <p className="font-bold text-rose-300">تفاصيل الخطأ:</p>
+              <div className="p-4 rounded-2xl bg-rose-950/70 border-2 border-rose-500/60 text-xs text-rose-200 space-y-1 relative z-10 shadow-lg">
+                <p className="font-black text-rose-300">تفاصيل الخطأ:</p>
                 <p className="font-mono text-[11px]">{importError}</p>
               </div>
             )}
@@ -3438,59 +3823,131 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
             {/* Success Summary Stat Cards when Complete */}
             {isImportComplete && importStats && (
               <div className="space-y-3 relative z-10 animate-in fade-in duration-300">
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>إحصائيات السجلات المفروغة في فايربيس (Firestore):</span>
+                <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                  <Sparkles
+                    className="w-4 h-4"
+                    style={{
+                      color: (operationType === 'purge_complex' || operationType === 'purge_all') ? '#f43f5e' : 'var(--complex-accent, #ffc800)'
+                    }}
+                  />
+                  <span>
+                    {(operationType === 'purge_complex' || operationType === 'purge_all')
+                      ? 'ملخص السجلات المفرغة والمحذوفة بأمان:'
+                      : 'إحصائيات السجلات المفروغة والمحفوظة في فايربيس (Firestore):'}
+                  </span>
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-amber-300 font-mono">
-                      {importStats.studentsCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">طالب</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-emerald-300 font-mono">
-                      {importStats.attendanceCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">سجل حضور</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-amber-300 font-mono">
-                      {importStats.halaqahsCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">حلقة قرآنية</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-emerald-300 font-mono">
-                      {importStats.complexesCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">مجمع</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-amber-300 font-mono">
-                      {importStats.teachersCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">معلم ومستخدم</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-emerald-300 font-mono">
-                      {importStats.evaluationsCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">سجل تقييم</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-amber-300 font-mono">
-                      {importStats.examsCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">اختبار قرآني</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30">
-                    <div className="text-lg font-black text-emerald-300 font-mono">
-                      {importStats.certificatesCount ?? 0}
-                    </div>
-                    <div className="text-[10px] text-slate-300 font-bold">شهادة شكر</div>
-                  </div>
+                  {(operationType === 'purge_complex' || operationType === 'purge_all') ? (
+                    <>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-rose-400 font-mono">
+                          {importStats.deletedStudents ?? importStats.studentsCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">طالب تم حذفه</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-amber-300 font-mono">
+                          {importStats.deletedAttendance ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">سجل حضور مفرغ</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-rose-400 font-mono">
+                          {importStats.deletedEvaluations ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">سجل تقييم مفرغ</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-emerald-400 font-mono">
+                          {importStats.deletedHalaqahs ?? importStats.halaqahsCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">حلقة تم تصفيرها</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-amber-300 font-mono">
+                          {importStats.studentsCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">طالب</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-emerald-300 font-mono">
+                          {importStats.attendanceCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">سجل حضور</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-amber-300 font-mono">
+                          {importStats.halaqahsCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">حلقة قرآنية</div>
+                      </div>
+                      <div
+                        className="p-3 rounded-2xl border-2 border-b-4"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: 'var(--complex-border, #2b4550)',
+                          borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                        }}
+                      >
+                        <div className="text-lg font-black text-emerald-300 font-mono">
+                          {importStats.complexesCount ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-bold">مجمع</div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -3501,62 +3958,109 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="w-full py-3.5 rounded-2xl font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-2xl font-black text-sm shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
                   style={{
-                    backgroundColor: accentColor,
+                    backgroundColor: 'var(--complex-accent, #ffc800)',
+                    borderColor: 'var(--complex-accent, #ffc800)',
+                    borderBottomColor: 'var(--complex-accent-shadow, #e5a500)',
                     color: '#064e3b'
                   }}
                 >
                   <Check className="w-5 h-5" />
-                  <span>تم بنجاح، العودة ومتابعة المنصة بنسخة فايربيس الموحدة ✓</span>
+                  <span>
+                    {(operationType === 'purge_complex' || operationType === 'purge_all')
+                      ? 'تمت عملية الحذف بنجاح، العودة ومتابعة المنصة ✓'
+                      : 'تم بنجاح، العودة ومتابعة المنصة بنسخة فايربيس الموحدة ✓'}
+                  </span>
                 </button>
               ) : importError ? (
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/20 transition-all cursor-pointer"
+                  className="w-full py-3.5 rounded-2xl text-white font-black text-xs border-2 border-b-4 transition-all cursor-pointer active:translate-y-[2px]"
+                  style={{
+                    backgroundColor: 'var(--complex-primary, #131f24)',
+                    borderColor: 'var(--complex-border, #2b4550)',
+                    borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                  }}
                 >
                   إغلاق النافذة
                 </button>
               ) : (
-                <div className="text-center text-[11px] text-slate-400 py-1">
-                  يرجى الانتظار دون إغلاق الصفحة أثناء حفظ السجلات في قاعدة بيانات فايربيس السحابية...
+                <div className="text-center text-[11px] text-slate-300 font-bold py-1">
+                  يرجى الانتظار دون إغلاق الصفحة أثناء المعالجة في قاعدة بيانات فايربيس السحابية...
                 </div>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL 4: Complex Purge Confirmation Modal (Duolingo 3D) */}
+      {/* ---------------------------------------------------- */}
       {isPurgeModalOpen && activeComplex && (
         <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#022c22] border-2 border-rose-600 rounded-[32px] p-6 sm:p-7 shadow-2xl space-y-4 text-right">
+          <div
+            className="w-full max-w-md border-4 border-b-8 rounded-[36px] p-6 sm:p-7 shadow-2xl space-y-5 text-right relative overflow-hidden animate-in fade-in zoom-in-95"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: '#e11d48',
+              borderBottomColor: '#9f1239'
+            }}
+          >
             <div className="flex items-center gap-3 text-rose-400">
-              <AlertTriangle className="w-8 h-8 shrink-0" />
-              <h3 className="text-lg font-black text-white">تأكيد إفراغ بيانات المجمع</h3>
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#e11d48',
+                  borderBottomColor: '#9f1239'
+                }}
+              >
+                <AlertTriangle className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">تأكيد إفراغ بيانات المجمع</h3>
+                <span className="text-[11px] text-rose-300 font-bold">خاص بمجمع ({activeComplex.name})</span>
+              </div>
             </div>
-            <p className="text-xs text-rose-200 leading-relaxed">
-              تحذير أمني: أنت على وشك حذف كافة سجلات الطلاب والحضور والتقييمات التابعة لمجمع <strong className="text-white">({activeComplex.name})</strong> نهائياً. لن يتأثر أي مجمع آخر بهذه العملية.
+
+            <p className="text-xs text-rose-200/90 font-bold leading-relaxed">
+              تحذير أمني: أنت على وشك حذف كافة سجلات الطلاب والحضور والتقييمات التابعة لمجمع <strong className="text-white underline">({activeComplex.name})</strong> نهائياً من السحابة. لن تتأثر باقي المجمعات بهذه العملية.
             </p>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1.5">
-                لتأكيد الإفراغ، اكتب بالأسفل: <span className="text-rose-400">تأكيد الإفراغ</span>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-black text-white">
+                لتأكيد الإفراغ، اكتب بالأسفل: <span className="text-rose-400 underline">تأكيد الإفراغ</span>
               </label>
               <input
                 type="text"
                 placeholder="تأكيد الإفراغ"
                 value={purgeConfirmationText}
                 onChange={e => setPurgeConfirmationText(e.target.value)}
-                className="w-full bg-[#064e3b] border border-rose-500 rounded-xl px-3 py-2 text-xs text-white outline-none font-bold"
+                className="w-full border-2 border-b-4 rounded-2xl px-4 py-2.5 text-xs text-white outline-none font-bold shadow-inner"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#f43f5e',
+                  borderBottomColor: '#be123c'
+                }}
               />
             </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
+
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
                   setIsPurgeModalOpen(false);
                   setPurgeConfirmationText('');
                 }}
-                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold cursor-pointer"
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 text-white text-xs font-black cursor-pointer active:translate-y-[2px] transition-all"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
               >
                 إلغاء
               </button>
@@ -3564,9 +4068,113 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
                 type="button"
                 onClick={handlePurgeComplexData}
                 disabled={isPurging || purgeConfirmationText.trim() !== 'تأكيد الإفراغ'}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg cursor-pointer disabled:opacity-40"
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 bg-rose-600 hover:bg-rose-700 active:translate-y-[2px] active:border-b-2 text-white text-xs font-black shadow-lg cursor-pointer disabled:opacity-40 transition-all"
+                style={{
+                  borderColor: '#be123c',
+                  borderBottomColor: '#881337'
+                }}
               >
                 {isPurging ? 'جاري الإفراغ...' : 'إفراغ بيانات المجمع الآن'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL 5: Master Purge All Platform Data Modal (Duolingo 3D) */}
+      {/* ---------------------------------------------------- */}
+      {isMasterPurgeModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-md border-4 border-b-8 rounded-[36px] p-6 sm:p-7 shadow-2xl space-y-5 text-right relative overflow-hidden animate-in fade-in zoom-in-95"
+            style={{
+              backgroundColor: 'var(--complex-card, #203843)',
+              borderColor: '#e11d48',
+              borderBottomColor: '#9f1239'
+            }}
+          >
+            <div className="flex items-center gap-3 text-rose-400">
+              <div
+                className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#e11d48',
+                  borderBottomColor: '#9f1239'
+                }}
+              >
+                <Trash2 className="w-6 h-6 text-rose-400 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">حذف وتصفير جميع البيانات</h3>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-600 text-white font-black shadow-sm">
+                  خاص بالمبرمج (Master Reset)
+                </span>
+              </div>
+            </div>
+
+            <div
+              className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: '#e11d48',
+                borderBottomColor: '#9f1239'
+              }}
+            >
+              <p className="text-xs text-rose-200 font-bold leading-relaxed">
+                تحذير أمني فائق: أنت على وشك حذف وتصفير جميع سجلات الطلاب، الحضور، تقييمات التسميع، الاختبارات، والشهادات عبر كافة مجمعات المنصة.
+              </p>
+              <p className="text-[11px] text-amber-300 font-black">
+                حساب المبرمج والمطور الرئيسي محمي 100% ولن يتأثر مطلقاً.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-black text-white">
+                لتأكيد الحذف الشامل، اكتب بالأسفل: <span className="text-rose-400 underline">حذف جميع البيانات</span>
+              </label>
+              <input
+                type="text"
+                placeholder="حذف جميع البيانات"
+                value={masterPurgeConfirmationText}
+                onChange={e => setMasterPurgeConfirmationText(e.target.value)}
+                className="w-full border-2 border-b-4 rounded-2xl px-4 py-2.5 text-xs text-white outline-none font-bold shadow-inner"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: '#f43f5e',
+                  borderBottomColor: '#be123c'
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMasterPurgeModalOpen(false);
+                  setMasterPurgeConfirmationText('');
+                }}
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 text-white text-xs font-black cursor-pointer active:translate-y-[2px] transition-all"
+                style={{
+                  backgroundColor: 'var(--complex-primary, #131f24)',
+                  borderColor: 'var(--complex-border, #2b4550)',
+                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handlePurgeAllPlatformData}
+                disabled={isMasterPurging || masterPurgeConfirmationText.trim() !== 'حذف جميع البيانات'}
+                className="flex-1 py-3 rounded-2xl border-2 border-b-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:brightness-110 active:translate-y-[2px] active:border-b-2 text-white text-xs font-black shadow-lg cursor-pointer disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
+                style={{
+                  borderColor: '#be123c',
+                  borderBottomColor: '#881337'
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isMasterPurging ? 'جاري الحذف والتصفير...' : 'حذف وتصفير جميع البيانات'}</span>
               </button>
             </div>
           </div>

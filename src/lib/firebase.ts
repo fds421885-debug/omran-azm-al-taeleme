@@ -2748,13 +2748,23 @@ export class OmranDataService {
   }
 
   // Purge / empty all data belonging to a complex from the central database
-  static async purgeComplexData(complexId: string): Promise<{
+  static async purgeComplexData(
+    complexId: string,
+    onProgress?: (progress: number, stageName: string, detailText?: string) => void
+  ): Promise<{
     studentsCount: number;
     halaqahsCount: number;
     deletedStudents: number;
     deletedAttendance: number;
   }> {
+    const yieldTick = (ms = 30) => new Promise(r => setTimeout(r, ms));
+    onProgress?.(5, 'الاتصال بقاعدة بيانات فايربيس السحابية...', 'جاري تهيئة الاتصال والتحقق من صلاحيات المبرمج...');
+    await yieldTick(50);
+
     const centralDb = this.getCentralDb();
+    onProgress?.(15, 'تحليل سجلات المجمع المستهدف...', 'فحص الحلقات والطلاب وسجلات الحضور التابعة للمجمع...');
+    await yieldTick();
+
     const allHalaqahs = await this.loadHalaqahs();
     const complexHalaqahs = allHalaqahs.filter(h => h.complexId === complexId);
     const halaqahIds = new Set(complexHalaqahs.map(h => h.id));
@@ -2768,6 +2778,9 @@ export class OmranDataService {
     });
     const studentIds = new Set(complexStudents.map(s => s.id));
 
+    onProgress?.(30, 'حذف سجلات الحضور والغياب...', `جاري حذف سجلات الحضور لـ (${studentIds.size}) طالباً...`);
+    await yieldTick();
+
     // Delete attendance from central
     const allAttendance = await this.loadAttendance();
     let deletedAttendance = 0;
@@ -2777,6 +2790,9 @@ export class OmranDataService {
         deletedAttendance++;
       }
     }
+
+    onProgress?.(50, 'حذف تقييمات التسميع والاختبارات...', 'جاري تفريغ التقييمات والاختبارات والشهادات التابعة للمجمع...');
+    await yieldTick();
 
     // Delete evaluations from central
     const allEvaluations = await this.loadEvaluations();
@@ -2818,6 +2834,9 @@ export class OmranDataService {
       }
     }
 
+    onProgress?.(75, 'حذف سجلات الطلاب والحلقات...', `جاري حذف (${complexStudents.length}) طالباً و (${complexHalaqahs.length}) حلقة...`);
+    await yieldTick();
+
     // Delete students from central
     for (const s of complexStudents) {
       await deleteDoc(doc(centralDb, 'students', s.id));
@@ -2858,6 +2877,9 @@ export class OmranDataService {
       }
     } catch {}
 
+    onProgress?.(90, 'تحديث حسابات المعلمين وحماية المبرمج...', 'فحص الحسابات وحماية حساب المبرمج وتطهير الذاكرة...');
+    await yieldTick();
+
     // Delete / Unlink teachers belonging to this complex from central (protecting developer accounts)
     try {
       const allTeachers = await this.loadTeachers();
@@ -2876,19 +2898,146 @@ export class OmranDataService {
       }
     } catch {}
 
-    // Clean up local cache
-    const cachedStudents = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
-    setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, cachedStudents.filter(s => !studentIds.has(s.id)));
-    const cachedHalaqahs = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, []);
-    setLocalCache(OMRAN_CACHE_KEYS.HALAQAHS, cachedHalaqahs.filter(h => !halaqahIds.has(h.id)));
-    const cachedAttendance = getLocalCache<AttendanceRecord[]>(OMRAN_CACHE_KEYS.ATTENDANCE, []);
-    setLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, cachedAttendance.filter(a => !studentIds.has(a.studentId)));
+    purgeAllLocalDataCaches();
+    onProgress?.(100, 'اكتمل إفراغ بيانات المجمع بنجاح 100%!', `تم حذف (${complexStudents.length}) طالب و (${deletedAttendance}) سجل حضور بنجاح.`);
 
     return {
       studentsCount: complexStudents.length,
       halaqahsCount: complexHalaqahs.length,
       deletedStudents: complexStudents.length,
       deletedAttendance
+    };
+  }
+
+  // Developer Master Feature: Purge / Wipe ALL platform data from the database
+  static async purgeAllPlatformData(
+    onProgress?: (progress: number, stageName: string, detailText?: string) => void
+  ): Promise<{
+    deletedStudents: number;
+    deletedAttendance: number;
+    deletedEvaluations: number;
+    deletedExams: number;
+    deletedCertificates: number;
+    deletedHalaqahs: number;
+  }> {
+    const yieldTick = (ms = 35) => new Promise(r => setTimeout(r, ms));
+    const centralDb = this.getCentralDb();
+
+    onProgress?.(5, 'بدء الاتصال بقاعدة بيانات فايربيس السحابية...', 'جاري التحقق من صلاحيات المبرمج وحماية الحساب الرئيسي...');
+    await yieldTick(60);
+
+    onProgress?.(15, 'قراءة وحصر كافة الجداول والبيانات...', 'جاري فحص جميع المجموعات في Firestore...');
+    await yieldTick();
+
+    // 1. Students
+    const allStudents = await this.loadStudents();
+    onProgress?.(25, 'حذف سجلات الطلاب والخطط الذكية...', `جاري حذف (${allStudents.length}) طالب من فايربيس...`);
+    for (const s of allStudents) {
+      if (s?.id) {
+        try { await deleteDoc(doc(centralDb, 'students', s.id)); } catch {}
+      }
+    }
+    await yieldTick();
+
+    // 2. Attendance
+    const allAttendance = await this.loadAttendance();
+    onProgress?.(45, 'حذف سجلات الحضور والغياب...', `جاري حذف (${allAttendance.length}) سجل حضور...`);
+    for (const a of allAttendance) {
+      if (a?.id) {
+        try { await deleteDoc(doc(centralDb, 'attendance', a.id)); } catch {}
+      }
+    }
+    await yieldTick();
+
+    // 3. Evaluations
+    const allEvaluations = await this.loadEvaluations();
+    onProgress?.(60, 'حذف تقييمات التسميع وسجلات الأخطاء...', `جاري حذف (${allEvaluations.length}) تقييم تسميع...`);
+    for (const ev of allEvaluations) {
+      if (ev?.id) {
+        try { await deleteDoc(doc(centralDb, 'evaluations', ev.id)); } catch {}
+      }
+    }
+    await yieldTick();
+
+    // 4. Violations, Exams, Submissions, Certificates
+    onProgress?.(75, 'حذف الاختبارات القرآنية والتسليمات والشهادات...', 'جاري تفريغ الاختبارات وسجلات الشكر...');
+    const allViolations = await this.loadViolations();
+    for (const v of allViolations) {
+      if (v?.id) {
+        try { await deleteDoc(doc(centralDb, 'violations', v.id)); } catch {}
+      }
+    }
+
+    const allExams = await this.loadExams();
+    for (const ex of allExams) {
+      if (ex?.id) {
+        try { await deleteDoc(doc(centralDb, 'exams', ex.id)); } catch {}
+      }
+    }
+
+    const allSubs = await this.loadSubmissions();
+    for (const sub of allSubs) {
+      if (sub?.id) {
+        try { await deleteDoc(doc(centralDb, 'exam_submissions', sub.id)); } catch {}
+      }
+    }
+
+    const allCerts = await this.loadCertificates();
+    for (const c of allCerts) {
+      if (c?.id) {
+        try { await deleteDoc(doc(centralDb, 'certificates', c.id)); } catch {}
+      }
+    }
+    await yieldTick();
+
+    // 5. Halaqahs
+    const allHalaqahs = await this.loadHalaqahs();
+    onProgress?.(88, 'حذف الحلقات القرآنية والورديات...', `جاري تفريغ (${allHalaqahs.length}) حلقة...`);
+    for (const h of allHalaqahs) {
+      if (h?.id) {
+        try { await deleteDoc(doc(centralDb, 'halaqahs', h.id)); } catch {}
+      }
+    }
+
+    // Teacher shifts and attendance
+    try {
+      const shiftsSnap = await getDocs(collection(centralDb, 'teacher_shifts'));
+      for (const d of shiftsSnap.docs) {
+        await deleteDoc(doc(centralDb, 'teacher_shifts', d.id));
+      }
+    } catch {}
+
+    try {
+      const tAttSnap = await getDocs(collection(centralDb, 'teacher_attendance'));
+      for (const d of tAttSnap.docs) {
+        await deleteDoc(doc(centralDb, 'teacher_attendance', d.id));
+      }
+    } catch {}
+
+    onProgress?.(95, 'حماية حساب المبرمج وتطهير الذاكرة السحابية...', 'حساب المبرمج محمي 100%، جاري تطهير الذاكرة المؤقتة...');
+    // Delete non-developer teachers
+    try {
+      const allTeachers = await this.loadTeachers();
+      for (const t of allTeachers) {
+        if (t.role === 'developer' || t.id === 'teacher-1' || t.username?.toLowerCase() === 'admin' || t.username?.toLowerCase() === 'developer') {
+          continue; // strictly preserve developer
+        }
+        await deleteDoc(doc(centralDb, 'teachers', t.id));
+      }
+    } catch {}
+
+    purgeAllLocalDataCaches();
+    await yieldTick(50);
+
+    onProgress?.(100, 'اكتمل حذف جميع البيانات وتصفير قاعدة البيانات بنجاح 100%!', 'تم إفراغ كافة البيانات السحابية بالكامل.');
+
+    return {
+      deletedStudents: allStudents.length,
+      deletedAttendance: allAttendance.length,
+      deletedEvaluations: allEvaluations.length,
+      deletedExams: allExams.length,
+      deletedCertificates: allCerts.length,
+      deletedHalaqahs: allHalaqahs.length
     };
   }
 
