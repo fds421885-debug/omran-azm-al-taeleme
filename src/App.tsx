@@ -3807,24 +3807,6 @@ export function App() {
                       </button>
                     ))}
                   </div>
-
-                  {/* Current Active Halaqah Label */}
-                  <div className="flex items-center gap-1.5 px-2 text-xs font-bold" dir="rtl">
-                    <span className="text-slate-300 font-black">الحلقة الحالية:</span>
-                    <span
-                      className="px-3 py-1 rounded-xl border-2 border-b-4 font-black shadow-sm text-xs"
-                      style={{
-                        backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
-                        color: activeComplex?.theme?.accentColor || '#ffc800',
-                        borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
-                        borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
-                      }}
-                    >
-                      {activeHalaqahId === 'all'
-                        ? 'الكل'
-                        : (scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل')}
-                    </span>
-                  </div>
                 </div>
               ) : (
                 assignedHalaqahs.length > 0 && (
@@ -3873,24 +3855,6 @@ export function App() {
                           {h.name} {h.complexName ? `(${h.complexName})` : ''}
                         </button>
                       ))}
-                    </div>
-
-                    {/* Current Active Halaqah Label */}
-                    <div className="flex items-center gap-1.5 px-2 text-xs font-bold" dir="rtl">
-                      <span className="text-slate-300 font-black">الحلقة الحالية:</span>
-                      <span
-                        className="px-3 py-1 rounded-xl border-2 border-b-4 font-black shadow-sm text-xs"
-                        style={{
-                          backgroundColor: `${activeComplex?.theme?.accentColor || '#ffc800'}25`,
-                          color: activeComplex?.theme?.accentColor || '#ffc800',
-                          borderColor: `${activeComplex?.theme?.accentColor || '#ffc800'}70`,
-                          borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#ffc800', 0.28)
-                        }}
-                      >
-                        {activeHalaqahId === 'all'
-                          ? 'الكل'
-                          : (assignedHalaqahs.find(h => h.id === activeHalaqahId)?.name || scopedHalaqahs.find(h => h.id === activeHalaqahId)?.name || 'الكل')}
-                      </span>
                     </div>
                   </div>
                 )
