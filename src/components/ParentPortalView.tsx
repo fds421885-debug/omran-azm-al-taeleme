@@ -46,6 +46,8 @@ import {
   RefreshCw,
   ShoppingBag,
   Package,
+  PackageX,
+  Ban,
   Coins,
   Lock,
   History,
@@ -55,6 +57,12 @@ import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlaye
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
 import { getAyahTextSync } from '../lib/quranTextService';
 import confetti from 'canvas-confetti';
+import {
+  formatDateTimeArabicWithSeconds,
+  getItemScheduleStatus,
+  parseStoreDateMs
+} from '../lib/storeTimeUtils';
+import { CountdownTimer } from './CountdownTimer';
 import {
   Student,
   AttendanceRecord,
@@ -164,6 +172,18 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const [purchasesTabFilter, setPurchasesTabFilter] = useState<'all' | 'mine'>('all');
   const prevStudentStoreQuantitiesRef = useRef<Map<string, number>>(new Map());
   const [animatedStudentMinusOneIds, setAnimatedStudentMinusOneIds] = useState<Set<string>>(new Set());
+  const [temporarilyHiddenSoldOutIds, setTemporarilyHiddenSoldOutIds] = useState<Set<string>>(new Set());
+
+  // High-precision synchronized clock ticker for store appearance and expiration (updates every 200ms)
+  const [syncedCurrentTime, setSyncedCurrentTime] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSyncedCurrentTime(Date.now());
+    }, 200);
+    return () => clearInterval(timer);
+  }, []);
+
+  const prevStudentExpiredStateRef = useRef<Map<string, boolean>>(new Map());
   const [soldOutModal, setSoldOutModal] = useState<{ title: string; message: string } | null>(null);
   const [refundingConfirmPurchase, setRefundingConfirmPurchase] = useState<StorePurchase | null>(null);
   const [isRefunding, setIsRefunding] = useState(false);
@@ -610,16 +630,22 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   useEffect(() => {
     const complexId = resolvedComplex?.id || student.complexId || '';
     const unsubItems = OmranDataService.subscribeStoreItems((liveItems) => {
-      // Detect stock decrement for the "-1" animation badge
+      // Detect stock decrement for the "-1" animation badge and sold-out vanish/reappear transition
       const prevMap = prevStudentStoreQuantitiesRef.current;
       const decrementedIds: string[] = [];
+      const newlySoldOutIds: string[] = [];
 
       liveItems.forEach(item => {
         const prevQty = prevMap.get(item.id);
-        if (prevQty !== undefined && item.quantity < prevQty) {
+        const currQty = item.quantity || 0;
+        if (prevQty !== undefined && currQty < prevQty) {
           decrementedIds.push(item.id);
         }
-        prevMap.set(item.id, item.quantity);
+        // Detect transition to sold out: item was previously in stock (> 0) and now reaches 0
+        if (prevQty !== undefined && prevQty > 0 && currQty <= 0) {
+          newlySoldOutIds.push(item.id);
+        }
+        prevMap.set(item.id, currQty);
       });
 
       if (decrementedIds.length > 0) {
@@ -638,6 +664,23 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         }, 2500);
       }
 
+      // If an item just ran out of stock, it vanishes briefly from view, then pops back in anew in gray "منتهي" state!
+      if (newlySoldOutIds.length > 0) {
+        setTemporarilyHiddenSoldOutIds(prev => {
+          const next = new Set(prev);
+          newlySoldOutIds.forEach(id => next.add(id));
+          return next;
+        });
+
+        setTimeout(() => {
+          setTemporarilyHiddenSoldOutIds(prev => {
+            const next = new Set(prev);
+            newlySoldOutIds.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 550);
+      }
+
       setStoreItems(liveItems);
     }, complexId);
     const unsubPurchases = OmranDataService.subscribeStorePurchases((livePurchases) => {
@@ -654,42 +697,76 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     };
   }, [resolvedComplex?.id, student.complexId]);
 
-  // Active available store items for the student (hides under edit, sold-out, or scheduled items)
+  // Real-Time Time Expiration Detection for Students:
+  // When an item's scheduled end time arrives, it momentarily vanishes and pops back in with "انتهى وقت المنتج"
+  useEffect(() => {
+    const newlyExpiredIds: string[] = [];
+    storeItems.forEach(item => {
+      if (!item.endsAt) return;
+      const endsMs = parseStoreDateMs(item.endsAt);
+      if (!endsMs) return;
+      const isNowExpired = syncedCurrentTime >= endsMs;
+      const wasExpired = prevStudentExpiredStateRef.current.get(item.id);
+
+      if (wasExpired === false && isNowExpired) {
+        newlyExpiredIds.push(item.id);
+      }
+      prevStudentExpiredStateRef.current.set(item.id, isNowExpired);
+    });
+
+    if (newlyExpiredIds.length > 0) {
+      setTemporarilyHiddenSoldOutIds(prev => {
+        const next = new Set(prev);
+        newlyExpiredIds.forEach(id => next.add(id));
+        return next;
+      });
+
+      setTimeout(() => {
+        setTemporarilyHiddenSoldOutIds(prev => {
+          const next = new Set(prev);
+          newlyExpiredIds.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 550);
+    }
+  }, [storeItems, syncedCurrentTime]);
+
+  // Active store items for the student:
+  // Shows items, keeps sold out and expired items in gray state, and displays upcoming items with live appearance countdown timer
   const studentVisibleStoreItems = useMemo(() => {
-    const now = Date.now();
     return storeItems.filter(item => {
+      // Temporarily hide if currently in the brief vanish-and-reappear exit transition
+      if (temporarilyHiddenSoldOutIds.has(item.id)) return false;
       // Hide if supervisor is currently editing it ("تختفي مؤقتاً")
       if (item.isUnderEdit) return false;
-      // Hide when sold out / quantity reaches 0 ("ولما يخلص يختفي")
-      if ((item.quantity || 0) <= 0) return false;
-      // Scheduled appearance
-      if (item.startsAt && new Date(item.startsAt).getTime() > now) return false;
-      // Scheduled end
-      if (item.endsAt && new Date(item.endsAt).getTime() < now) return false;
       return true;
     });
-  }, [storeItems]);
+  }, [storeItems, temporarilyHiddenSoldOutIds]);
 
-  // Student available store items count
+  // Student available (in-stock and active) store items count
   const availableStoreItemsCount = useMemo(() => {
-    return studentVisibleStoreItems.length;
-  }, [studentVisibleStoreItems]);
+    return studentVisibleStoreItems.filter(i => getItemScheduleStatus(i, syncedCurrentTime).canPurchase).length;
+  }, [studentVisibleStoreItems, syncedCurrentTime]);
 
-  // Live Sold-Out Detection while Confirm Modal is open:
-  // If another student purchases the last remaining stock in real-time, auto-dismiss the modal and pop up the alert!
+  // Live Sold-Out / Time-Expired Detection while Confirm Modal is open:
+  // If another student purchases the last remaining stock or time expires in real-time, auto-dismiss the modal and pop up the alert!
   useEffect(() => {
     if (confirmingPurchaseItem) {
       const live = storeItems.find(i => i.id === confirmingPurchaseItem.id);
-      if (!live || (live.quantity || 0) <= 0 || live.isUnderEdit) {
+      const isExpired = Boolean(live?.endsAt && syncedCurrentTime >= (parseStoreDateMs(live.endsAt) || Infinity));
+      const isSoldOut = (live?.quantity || 0) <= 0;
+      if (!live || isSoldOut || live.isUnderEdit || isExpired) {
         const itemName = confirmingPurchaseItem.name;
         setConfirmingPurchaseItem(null);
         setSoldOutModal({
-          title: 'عذراً، تأخرت بلحظات!',
-          message: `لقد نفد منتج "${itemName}" بالفعل وتنافس عليه زميلك قبلك بلحظات!`
+          title: isExpired ? 'انتهى وقت المنتج!' : 'عذراً، تأخرت بلحظات!',
+          message: isExpired
+            ? `عذراً، لقد انتهى وقت عرض منتج "${itemName}" في المتجر القرآني!`
+            : `لقد نفد منتج "${itemName}" بالفعل وتنافس عليه زميلك قبلك بلحظات!`
         });
       }
     }
-  }, [storeItems, confirmingPurchaseItem]);
+  }, [storeItems, confirmingPurchaseItem, syncedCurrentTime]);
 
   // Execute Purchase Handler with Live Atomic Check
   const handleExecutePurchase = async (item: StoreItem) => {
@@ -2568,10 +2645,14 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                       <AnimatePresence>
                         {studentVisibleStoreItems.map(item => {
+                          const status = getItemScheduleStatus(item, syncedCurrentTime);
+                          const isUpcoming = status.isUpcoming;
+                          const isSoldOut = status.isSoldOut;
+                          const isTimeExpired = status.isTimeExpired;
+                          const isInactive = isSoldOut || isTimeExpired;
                           const studentPts = typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0);
-                          const isSoldOut = (item.quantity || 0) <= 0;
                           const hasEnoughPoints = studentPts >= item.pointsRequired;
-                          const canBuy = !isSoldOut && hasEnoughPoints;
+                          const canBuy = status.canPurchase && hasEnoughPoints;
                           const showMinusOne = animatedStudentMinusOneIds.has(item.id);
 
                           return (
@@ -2580,13 +2661,17 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               layout
                               initial={{ opacity: 0, scale: 0.85, y: 20 }}
                               animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                              exit={{ opacity: 0, scale: 0.75, y: -20, filter: 'blur(3px)' }}
                               transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                              className="rounded-3xl border-2 border-b-[5px] overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl relative"
+                              className={`rounded-3xl border-2 border-b-[5px] overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 relative ${
+                                isInactive
+                                  ? 'bg-slate-900/90 border-slate-700/80 border-b-slate-800 shadow-slate-950/50'
+                                  : 'hover:-translate-y-1 hover:shadow-2xl'
+                              }`}
                               style={{
-                                backgroundColor: themeCardBg,
-                                borderColor: `${themeAccent}40`,
-                                borderBottomColor: canBuy ? themeAccent : '#475569'
+                                backgroundColor: isInactive ? '#141923' : themeCardBg,
+                                borderColor: isInactive ? '#334155' : `${themeAccent}40`,
+                                borderBottomColor: isInactive ? '#1e293b' : (canBuy ? themeAccent : '#475569')
                               }}
                             >
                               {/* Image & Badges */}
@@ -2595,43 +2680,91 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   <img
                                     src={item.imageUrl}
                                     alt={item.name}
-                                    className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                    className={`w-full h-full object-cover transition-transform duration-300 ${
+                                      isInactive ? 'grayscale contrast-90 opacity-60' : 'hover:scale-105'
+                                    }`}
                                   />
                                 ) : (
-                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                  <div className={`w-full h-full flex flex-col items-center justify-center ${isInactive ? 'text-slate-600 bg-slate-950/40' : 'text-slate-500'}`}>
                                     <ShoppingBag className="w-14 h-14 opacity-40 mb-1" />
                                     <span className="text-[11px] font-bold text-slate-400">جائزة قرآنية</span>
                                   </div>
                                 )}
 
+                                {/* Centered Duolingo 3D Overlay Badge for Inactive State */}
+                                {isTimeExpired ? (
+                                  <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                                    <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
+                                      <Clock className="w-5 h-5 text-amber-400 stroke-[2.5]" />
+                                      <span className="font-black text-sm tracking-wide">انتهى وقت المنتج</span>
+                                    </div>
+                                  </div>
+                                ) : isSoldOut ? (
+                                  <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                                    <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
+                                      <PackageX className="w-5 h-5 text-slate-300 stroke-[2.5]" />
+                                      <span className="font-black text-sm tracking-wide">منتهي</span>
+                                    </div>
+                                  </div>
+                                ) : null}
+
                                 {/* Points Badge */}
                                 <div
-                                  className="absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10"
-                                  style={{
-                                    backgroundColor: '#78350f',
-                                    borderColor: themeAccent,
-                                    color: themeAccent
-                                  }}
+                                  className={`absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
+                                    isInactive
+                                      ? 'bg-slate-800/90 border-slate-700 text-slate-400'
+                                      : ''
+                                  }`}
+                                  style={
+                                    !isInactive
+                                      ? {
+                                          backgroundColor: '#78350f',
+                                          borderColor: themeAccent,
+                                          color: themeAccent
+                                        }
+                                      : undefined
+                                  }
                                 >
-                                  <Coins className="w-4 h-4 text-amber-300" />
+                                  <Coins className={`w-4 h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
                                   <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
                                 </div>
 
-                                {/* Quantity Badge with floating "-1" badge */}
+                                {/* Stock Quantity / Status Badge */}
                                 <div className="absolute top-3 left-3 z-10 flex items-center">
                                   <div
                                     className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
-                                      !isSoldOut
-                                        ? (item.quantity || 0) <= 2
-                                          ? 'bg-amber-600/90 text-white border-amber-400'
-                                          : 'bg-emerald-600/90 text-white border-emerald-400'
-                                        : 'bg-rose-600/90 text-white border-rose-400'
+                                      isUpcoming
+                                        ? 'bg-sky-950/95 text-sky-300 border-sky-500/70 border-b-2'
+                                        : isTimeExpired
+                                          ? 'bg-slate-800/95 text-amber-300 border-slate-600 border-b-2'
+                                          : isSoldOut
+                                            ? 'bg-slate-800/95 text-slate-300 border-slate-600 border-b-2'
+                                            : (item.quantity || 0) <= 2
+                                              ? 'bg-amber-600/90 text-white border-amber-400'
+                                              : 'bg-emerald-600/90 text-white border-emerald-400'
                                     }`}
                                   >
-                                    <Package className="w-3.5 h-3.5" />
-                                    <span>
-                                      {!isSoldOut ? `المتبقي: ${toArabicDigits(item.quantity)}` : 'نفدت الكمية'}
-                                    </span>
+                                    {isUpcoming ? (
+                                      <>
+                                        <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+                                        <span>قريباً</span>
+                                      </>
+                                    ) : isTimeExpired ? (
+                                      <>
+                                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                                        <span>انتهى وقت المنتج</span>
+                                      </>
+                                    ) : isSoldOut ? (
+                                      <>
+                                        <PackageX className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>منتهي</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Package className="w-3.5 h-3.5" />
+                                        <span>المتبقي: {toArabicDigits(item.quantity)}</span>
+                                      </>
+                                    )}
                                   </div>
 
                                   {/* Floating -1 badge animation */}
@@ -2649,31 +2782,97 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                     )}
                                   </AnimatePresence>
                                 </div>
+
+                                {/* Floating Live Countdown Badge on Image if upcoming or ending */}
+                                {isUpcoming && item.startsAt ? (
+                                  <div className="absolute bottom-2.5 right-2.5 z-10">
+                                    <CountdownTimer
+                                      targetDate={item.startsAt}
+                                      mode="appearance"
+                                      variant="compact"
+                                      accentColor={themeAccent}
+                                      showSyncBadge={false}
+                                    />
+                                  </div>
+                                ) : item.endsAt && !isInactive ? (
+                                  <div className="absolute bottom-2.5 right-2.5 z-10">
+                                    <CountdownTimer
+                                      targetDate={item.endsAt}
+                                      mode="expiration"
+                                      variant="compact"
+                                      accentColor={themeAccent}
+                                      showSyncBadge={false}
+                                    />
+                                  </div>
+                                ) : null}
                               </div>
 
-                              {/* Item Details & Buy Button */}
+                              {/* Item Details & Action Area */}
                               <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
                                 <div>
-                                  <h4 className="font-black text-white text-base leading-snug line-clamp-2">
+                                  <h4 className={`font-black text-base leading-snug line-clamp-2 ${
+                                    isInactive ? 'text-slate-300' : 'text-white'
+                                  }`}>
                                     {item.name}
                                   </h4>
                                   {item.description && (
-                                    <p className="text-slate-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+                                    <p className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${
+                                      isInactive ? 'text-slate-400' : 'text-slate-400'
+                                    }`}>
                                       {item.description}
                                     </p>
                                   )}
                                 </div>
 
-                                {/* Action Button */}
+                                {/* Live Real-Time Synchronized Countdown Timer (for appearance or expiration) */}
+                                {isUpcoming && item.startsAt ? (
+                                  <div className="pt-0.5">
+                                    <CountdownTimer
+                                      targetDate={item.startsAt}
+                                      mode="appearance"
+                                      variant="card"
+                                      accentColor={themeAccent}
+                                      showSyncBadge={true}
+                                    />
+                                  </div>
+                                ) : item.endsAt && !isInactive ? (
+                                  <div className="pt-0.5">
+                                    <CountdownTimer
+                                      targetDate={item.endsAt}
+                                      mode="expiration"
+                                      variant="card"
+                                      accentColor={themeAccent}
+                                      showSyncBadge={true}
+                                    />
+                                  </div>
+                                ) : null}
+
+                                {/* Action Area: NO buy button for upcoming, sold-out or time-expired items */}
                                 <div className="pt-2">
-                                  {isSoldOut ? (
-                                    <button
-                                      type="button"
-                                      disabled
-                                      className="w-full py-2.5 px-3 rounded-2xl bg-white/5 border border-white/10 text-slate-400 font-bold text-xs cursor-not-allowed text-center"
+                                  {isUpcoming ? (
+                                    <div
+                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-sky-300 bg-sky-950/80 border-2 border-b-4 border-sky-600/70 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      aria-label="قريباً"
                                     >
-                                      نفدت الكمية المتاحة
-                                    </button>
+                                      <Clock className="w-4 h-4 text-sky-400 stroke-[2.5]" />
+                                      <span>يفتح الشراء فور انتهاء العد التنازلي</span>
+                                    </div>
+                                  ) : isTimeExpired ? (
+                                    <div
+                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-amber-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      aria-label="انتهى وقت المنتج"
+                                    >
+                                      <Clock className="w-4 h-4 text-amber-400 stroke-[2.5]" />
+                                      <span>انتهى وقت المنتج</span>
+                                    </div>
+                                  ) : isSoldOut ? (
+                                    <div
+                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      aria-label="منتهي"
+                                    >
+                                      <Ban className="w-4 h-4 text-slate-400 stroke-[2.5]" />
+                                      <span>منتهي</span>
+                                    </div>
                                   ) : !hasEnoughPoints ? (
                                     <div className="space-y-1">
                                       <button
@@ -2928,6 +3127,19 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       </strong>
                       ؟ سيتم خصم النقاط من رصيدك فوراً وتسليمك الجائزة في الحلقة.
                     </p>
+
+                    {/* Live Synchronized Countdown Timer in Confirmation Modal */}
+                    {confirmingPurchaseItem.endsAt && (
+                      <div className="pt-2">
+                        <CountdownTimer
+                          targetDate={confirmingPurchaseItem.endsAt}
+                          mode="expiration"
+                          variant="card"
+                          accentColor={themeAccent}
+                          onZero={() => setConfirmingPurchaseItem(null)}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 pt-2">

@@ -26,7 +26,9 @@ import {
   Gift,
   RotateCcw,
   AlertTriangle,
-  Loader2
+  Loader2,
+  PackageX,
+  Ban
 } from 'lucide-react';
 import {
   StoreItem,
@@ -42,6 +44,13 @@ import {
 import { OmranDataService } from '../../lib/firebase';
 import { compressImageToDataUrl } from '../../lib/imageCompressor';
 import { toArabicDigits } from '../ParentPortalView';
+import {
+  formatDateTimeArabicWithSeconds,
+  toLocalDatetimeInputValue,
+  parseStoreDateMs,
+  getItemScheduleStatus
+} from '../../lib/storeTimeUtils';
+import { CountdownTimer } from '../CountdownTimer';
 
 interface StoreTabProps {
   isSupervisor: boolean;
@@ -80,11 +89,24 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
   // Search & Filter
   const [purchasesSearch, setPurchasesSearch] = useState('');
-  const [itemsFilter, setItemsFilter] = useState<'available' | 'all'>('available');
+  const [itemsFilter, setItemsFilter] = useState<'available' | 'all'>('all');
 
-  // Track previous item quantities to trigger the "-1" Duolingo badge animation
+  // Track previous item quantities to trigger the "-1" Duolingo badge animation & vanish/reappear on sell-out
   const prevQuantitiesRef = useRef<Map<string, number>>(new Map());
   const [animatedMinusOneItemIds, setAnimatedMinusOneItemIds] = useState<Set<string>>(new Set());
+  const [temporarilyHiddenSoldOutIds, setTemporarilyHiddenSoldOutIds] = useState<Set<string>>(new Set());
+
+  // High-precision synchronized clock ticker (updates every 250ms for sub-second synchronization)
+  const [syncedCurrentTime, setSyncedCurrentTime] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSyncedCurrentTime(Date.now());
+    }, 250);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Track previous expired states to trigger vanish-then-reappear animation when scheduled time ends
+  const prevExpiredItemMapRef = useRef<Map<string, boolean>>(new Map());
 
   // Modal State for Add / Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -143,16 +165,22 @@ export const StoreTab: React.FC<StoreTabProps> = ({
     setLoading(true);
 
     const unsubItems = OmranDataService.subscribeStoreItems((liveItems) => {
-      // Detect quantity decreases for the "-1" animation badge
+      // Detect quantity decreases for the "-1" animation badge and sold-out vanish/reappear transition
       const prevMap = prevQuantitiesRef.current;
       const decrementedIds: string[] = [];
+      const newlySoldOutIds: string[] = [];
 
       liveItems.forEach(item => {
         const prevQty = prevMap.get(item.id);
-        if (prevQty !== undefined && item.quantity < prevQty) {
+        const currQty = item.quantity || 0;
+        if (prevQty !== undefined && currQty < prevQty) {
           decrementedIds.push(item.id);
         }
-        prevMap.set(item.id, item.quantity);
+        // Detect transition to sold out: item was previously in stock (> 0) and now reaches 0
+        if (prevQty !== undefined && prevQty > 0 && currQty <= 0) {
+          newlySoldOutIds.push(item.id);
+        }
+        prevMap.set(item.id, currQty);
       });
 
       if (decrementedIds.length > 0) {
@@ -170,6 +198,23 @@ export const StoreTab: React.FC<StoreTabProps> = ({
             return next;
           });
         }, 2500);
+      }
+
+      // If an item just ran out of stock, it vanishes briefly from view, then pops back in anew in gray "منتهي" state!
+      if (newlySoldOutIds.length > 0) {
+        setTemporarilyHiddenSoldOutIds(prev => {
+          const next = new Set(prev);
+          newlySoldOutIds.forEach(id => next.add(id));
+          return next;
+        });
+
+        setTimeout(() => {
+          setTemporarilyHiddenSoldOutIds(prev => {
+            const next = new Set(prev);
+            newlySoldOutIds.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 550);
       }
 
       setItems(liveItems);
@@ -190,6 +235,40 @@ export const StoreTab: React.FC<StoreTabProps> = ({
       try { unsubSettings(); } catch {}
     };
   }, [complexId]);
+
+  // Real-Time Time Expiration Detection:
+  // When an item's scheduled end time arrives, it momentarily vanishes and reappears in the gray "انتهى وقت المنتج" state
+  useEffect(() => {
+    const newlyExpiredIds: string[] = [];
+    items.forEach(item => {
+      if (!item.endsAt) return;
+      const endsMs = parseStoreDateMs(item.endsAt);
+      if (!endsMs) return;
+      const isNowExpired = syncedCurrentTime >= endsMs;
+      const wasExpired = prevExpiredItemMapRef.current.get(item.id);
+
+      if (wasExpired === false && isNowExpired) {
+        newlyExpiredIds.push(item.id);
+      }
+      prevExpiredItemMapRef.current.set(item.id, isNowExpired);
+    });
+
+    if (newlyExpiredIds.length > 0) {
+      setTemporarilyHiddenSoldOutIds(prev => {
+        const next = new Set(prev);
+        newlyExpiredIds.forEach(id => next.add(id));
+        return next;
+      });
+
+      setTimeout(() => {
+        setTemporarilyHiddenSoldOutIds(prev => {
+          const next = new Set(prev);
+          newlyExpiredIds.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 550);
+    }
+  }, [items, syncedCurrentTime]);
 
   const showNotice = (msg: string) => {
     setActionNotice(msg);
@@ -244,9 +323,9 @@ export const StoreTab: React.FC<StoreTabProps> = ({
       quantity: item.quantity || 1,
       description: item.description || '',
       isImmediate: !item.startsAt,
-      startsAt: item.startsAt ? item.startsAt.substring(0, 16) : '',
+      startsAt: item.startsAt ? toLocalDatetimeInputValue(item.startsAt) : '',
       isForever: !item.endsAt,
-      endsAt: item.endsAt ? item.endsAt.substring(0, 16) : ''
+      endsAt: item.endsAt ? toLocalDatetimeInputValue(item.endsAt) : ''
     });
     setIsModalOpen(true);
 
@@ -479,13 +558,17 @@ export const StoreTab: React.FC<StoreTabProps> = ({
     });
   };
 
-  // Filtered displayed items: Available (stock > 0) vs All
+  // Filtered displayed items: Available (in-stock and active) vs All (with momentary vanish on sell-out / expiration)
   const displayedItems = useMemo(() => {
+    let list = items;
     if (itemsFilter === 'available') {
-      return items.filter(i => (i.quantity || 0) > 0);
+      list = list.filter(i => {
+        const status = getItemScheduleStatus(i, syncedCurrentTime);
+        return status.canPurchase;
+      });
     }
-    return items;
-  }, [items, itemsFilter]);
+    return list.filter(i => !temporarilyHiddenSoldOutIds.has(i.id));
+  }, [items, itemsFilter, temporarilyHiddenSoldOutIds, syncedCurrentTime]);
 
   // Filter purchases by search query
   const filteredPurchases = useMemo(() => {
@@ -744,7 +827,12 @@ export const StoreTab: React.FC<StoreTabProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
             <AnimatePresence>
               {displayedItems.map(item => {
-                const isAvailable = (item.quantity || 0) > 0;
+                const status = getItemScheduleStatus(item, syncedCurrentTime);
+                const isAvailable = status.canPurchase;
+                const isSoldOut = status.isSoldOut;
+                const isTimeExpired = status.isTimeExpired;
+                const isUpcoming = status.isUpcoming;
+                const isInactive = isSoldOut || isTimeExpired;
                 const hasStart = Boolean(item.startsAt);
                 const hasEnd = Boolean(item.endsAt);
                 const showMinusOne = animatedMinusOneItemIds.has(item.id);
@@ -755,13 +843,19 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     layout
                     initial={{ opacity: 0, scale: 0.85, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                    exit={{ opacity: 0, scale: 0.75, y: -20, filter: 'blur(3px)' }}
                     transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                    className="rounded-3xl border-2 border-b-[5px] overflow-hidden transition-all duration-200 flex flex-col justify-between shadow-lg hover:shadow-2xl hover:-translate-y-1 group relative"
+                    className={`rounded-3xl border-2 border-b-[5px] overflow-hidden transition-all duration-200 flex flex-col justify-between shadow-lg group relative ${
+                      isInactive
+                        ? 'bg-slate-900/90 border-slate-700/80 border-b-slate-800 shadow-slate-950/50'
+                        : isUpcoming
+                          ? 'bg-sky-950/40 border-sky-500/40 border-b-sky-600'
+                          : 'hover:shadow-2xl hover:-translate-y-1'
+                    }`}
                     style={{
-                      backgroundColor: cardColor,
-                      borderColor: `${accentColor}35`,
-                      borderBottomColor: isAvailable ? accentColor : '#64748b'
+                      backgroundColor: isInactive ? '#141923' : isUpcoming ? '#0c1a2e' : cardColor,
+                      borderColor: isInactive ? '#334155' : isUpcoming ? '#0284c7' : `${accentColor}35`,
+                      borderBottomColor: isInactive ? '#1e293b' : isUpcoming ? '#0369a1' : accentColor
                     }}
                   >
                     {/* Item Image with Badges */}
@@ -770,14 +864,40 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         <img
                           src={item.imageUrl}
                           alt={item.name}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          className={`w-full h-full object-cover transition-transform duration-300 ${
+                            isInactive ? 'grayscale contrast-90 opacity-60' : 'group-hover:scale-105'
+                          }`}
                         />
                       ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-gradient-to-b from-white/5 to-transparent">
+                        <div className={`w-full h-full flex flex-col items-center justify-center ${isInactive ? 'text-slate-600 bg-slate-950/40' : 'text-slate-500 bg-gradient-to-b from-white/5 to-transparent'}`}>
                           <ShoppingBag className="w-16 h-16 opacity-40 mb-2" />
                           <span className="text-xs font-bold text-slate-400">جائزة قرآنية</span>
                         </div>
                       )}
+
+                      {/* Centered Duolingo 3D Overlay Badge for Inactive or Upcoming State */}
+                      {isTimeExpired ? (
+                        <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
+                            <Clock className="w-5 h-5 text-amber-400 stroke-[2.5]" />
+                            <span className="font-black text-sm tracking-wide">انتهى وقت المنتج</span>
+                          </div>
+                        </div>
+                      ) : isSoldOut ? (
+                        <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
+                            <PackageX className="w-5 h-5 text-slate-300 stroke-[2.5]" />
+                            <span className="font-black text-sm tracking-wide">منتهي</span>
+                          </div>
+                        </div>
+                      ) : isUpcoming ? (
+                        <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                          <div className="px-4 py-2 rounded-2xl bg-sky-950/90 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 text-sky-200 select-none">
+                            <Clock className="w-4 h-4 text-sky-400 animate-spin" />
+                            <span className="font-black text-xs">قيد الانتظار حتى موعد الظهور</span>
+                          </div>
+                        </div>
+                      ) : null}
 
                       {/* Under Edit Notice if supervisor is currently modifying it */}
                       {item.isUnderEdit && (
@@ -790,34 +910,59 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
                       {/* Points Badge (Top Right) - Duolingo 3D style */}
                       <div
-                        className="absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs sm:text-sm font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10"
-                        style={{
-                          backgroundColor: '#78350f',
-                          borderColor: accentColor,
-                          color: accentColor
-                        }}
+                        className={`absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs sm:text-sm font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
+                          isInactive ? 'bg-slate-800/90 border-slate-700 text-slate-400' : ''
+                        }`}
+                        style={
+                          !isInactive
+                            ? {
+                                backgroundColor: '#78350f',
+                                borderColor: accentColor,
+                                color: accentColor
+                              }
+                            : undefined
+                        }
                       >
-                        <Coins className="w-4 h-4 text-amber-300" />
+                        <Coins className={`w-4 h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
                         <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
                       </div>
 
-                      {/* Stock Quantity Badge (Top Left) with floating "-1" Duolingo animation */}
+                      {/* Stock Quantity / Status Badge (Top Left) */}
                       <div className="absolute top-3 left-3 z-10 flex items-center">
                         <div
                           className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
-                            isAvailable
-                              ? (item.quantity || 0) <= 2
-                                ? 'bg-amber-600/90 text-white border-amber-400'
-                                : 'bg-emerald-600/90 text-white border-emerald-400'
-                              : 'bg-rose-600/90 text-white border-rose-400'
+                            isTimeExpired
+                              ? 'bg-slate-800/95 text-amber-300 border-slate-600 border-b-2'
+                              : isSoldOut
+                                ? 'bg-slate-800/95 text-slate-300 border-slate-600 border-b-2'
+                                : isUpcoming
+                                  ? 'bg-sky-900/95 text-sky-200 border-sky-600 border-b-2'
+                                  : (item.quantity || 0) <= 2
+                                    ? 'bg-amber-600/90 text-white border-amber-400'
+                                    : 'bg-emerald-600/90 text-white border-emerald-400'
                           }`}
                         >
-                          <Package className="w-3.5 h-3.5" />
-                          <span>
-                            {isAvailable
-                              ? `المتبقي: ${toArabicDigits(item.quantity)}`
-                              : 'نفد من المتجر'}
-                          </span>
+                          {isTimeExpired ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              <span>انتهى وقت المنتج</span>
+                            </>
+                          ) : isSoldOut ? (
+                            <>
+                              <PackageX className="w-3.5 h-3.5 text-slate-400" />
+                              <span>منتهي</span>
+                            </>
+                          ) : isUpcoming ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-sky-400" />
+                              <span>قيد الانتظار</span>
+                            </>
+                          ) : (
+                            <>
+                              <Package className="w-3.5 h-3.5" />
+                              <span>المتبقي: {toArabicDigits(item.quantity)}</span>
+                            </>
+                          )}
                         </div>
 
                         {/* Floating "-1" Duolingo animated badge when a purchase occurs */}
@@ -835,12 +980,37 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           )}
                         </AnimatePresence>
                       </div>
+
+                      {/* Floating Live Countdown Badge on Image */}
+                      {isUpcoming && item.startsAt ? (
+                        <div className="absolute bottom-2.5 right-2.5 z-10">
+                          <CountdownTimer
+                            targetDate={item.startsAt}
+                            mode="appearance"
+                            variant="compact"
+                            accentColor={accentColor}
+                            showSyncBadge={false}
+                          />
+                        </div>
+                      ) : !isInactive && item.endsAt ? (
+                        <div className="absolute bottom-2.5 right-2.5 z-10">
+                          <CountdownTimer
+                            targetDate={item.endsAt}
+                            mode="expiration"
+                            variant="compact"
+                            accentColor={accentColor}
+                            showSyncBadge={false}
+                          />
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Item Content */}
                     <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
                       <div>
-                        <h3 className="font-black text-white text-base sm:text-lg leading-snug line-clamp-2">
+                        <h3 className={`font-black text-base sm:text-lg leading-snug line-clamp-2 ${
+                          isInactive ? 'text-slate-300' : 'text-white'
+                        }`}>
                           {item.name}
                         </h3>
                         {item.description && (
@@ -850,19 +1020,65 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         )}
                       </div>
 
-                      {/* Timing Badges if scheduled */}
+                      {/* Status notice badge */}
+                      {isTimeExpired ? (
+                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-amber-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
+                          <Clock className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                          <span>انتهى وقت المنتج</span>
+                        </div>
+                      ) : isSoldOut ? (
+                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
+                          <Ban className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                          <span>منتهي (نفدت الكمية)</span>
+                        </div>
+                      ) : null}
+
+                      {/* Live Synchronized Countdown Timer (for appearance or expiration) */}
+                      {isUpcoming && item.startsAt ? (
+                        <div className="pt-0.5">
+                          <CountdownTimer
+                            targetDate={item.startsAt}
+                            mode="appearance"
+                            variant="card"
+                            accentColor={accentColor}
+                            showSyncBadge={true}
+                          />
+                        </div>
+                      ) : !isInactive && item.endsAt ? (
+                        <div className="pt-0.5">
+                          <CountdownTimer
+                            targetDate={item.endsAt}
+                            mode="expiration"
+                            variant="card"
+                            accentColor={accentColor}
+                            showSyncBadge={true}
+                          />
+                        </div>
+                      ) : null}
+
+                      {/* Timing Badges with exact Arabic Date AND Time with seconds */}
                       {(hasStart || hasEnd) && (
-                        <div className="text-[11px] text-slate-300 space-y-1 bg-black/25 p-2 rounded-xl border border-white/5">
+                        <div className="text-[11px] text-slate-300 space-y-2 bg-black/40 p-3 rounded-2xl border border-white/10 font-bold">
                           {hasStart && (
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-sky-400" />
-                              <span>الظهور: {toArabicDigits(new Date(item.startsAt!).toLocaleDateString('ar-SA'))}</span>
+                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                              <span className="flex items-center gap-1.5 text-sky-300 font-black">
+                                <Clock className="w-3.5 h-3.5 text-sky-400" />
+                                <span>تاريخ ووقت البداية:</span>
+                              </span>
+                              <span className="text-white font-mono bg-sky-950/80 px-2.5 py-1 rounded-xl border border-sky-500/30 text-[10px] sm:text-[11px] font-black">
+                                {formatDateTimeArabicWithSeconds(item.startsAt).full}
+                              </span>
                             </div>
                           )}
                           {hasEnd && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-amber-400" />
-                              <span>الانتهاء: {toArabicDigits(new Date(item.endsAt!).toLocaleDateString('ar-SA'))}</span>
+                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                              <span className="flex items-center gap-1.5 text-amber-300 font-black">
+                                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                                <span>تاريخ ووقت النهاية:</span>
+                              </span>
+                              <span className="text-white font-mono bg-amber-950/80 px-2.5 py-1 rounded-xl border border-amber-500/30 text-[10px] sm:text-[11px] font-black">
+                                {formatDateTimeArabicWithSeconds(item.endsAt).full}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -1327,12 +1543,26 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     </div>
                   </div>
                   {!formData.isImmediate && (
-                    <input
-                      type="datetime-local"
-                      value={formData.startsAt}
-                      onChange={e => setFormData({ ...formData, startsAt: e.target.value })}
-                      className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
-                    />
+                    <div className="space-y-1.5">
+                      <input
+                        type="datetime-local"
+                        step="1"
+                        value={formData.startsAt}
+                        onChange={e => setFormData({ ...formData, startsAt: e.target.value })}
+                        className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-amber-400 focus:outline-none"
+                      />
+                      {formData.startsAt && (
+                        <div className="text-[11px] text-sky-300 font-bold flex items-center justify-between gap-2 bg-sky-950/60 p-2 rounded-xl border border-sky-500/30">
+                          <span className="flex items-center gap-1 font-black">
+                            <Clock className="w-3.5 h-3.5 text-sky-400" />
+                            توقيت البداية المعتمد (بالثواني):
+                          </span>
+                          <span className="font-mono text-white">
+                            {formatDateTimeArabicWithSeconds(formData.startsAt).full}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* End Date */}
@@ -1362,12 +1592,26 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     </div>
                   </div>
                   {!formData.isForever && (
-                    <input
-                      type="datetime-local"
-                      value={formData.endsAt}
-                      onChange={e => setFormData({ ...formData, endsAt: e.target.value })}
-                      className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
-                    />
+                    <div className="space-y-1.5">
+                      <input
+                        type="datetime-local"
+                        step="1"
+                        value={formData.endsAt}
+                        onChange={e => setFormData({ ...formData, endsAt: e.target.value })}
+                        className="w-full bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-amber-400 focus:outline-none"
+                      />
+                      {formData.endsAt && (
+                        <div className="text-[11px] text-amber-300 font-bold flex items-center justify-between gap-2 bg-amber-950/60 p-2 rounded-xl border border-amber-500/30">
+                          <span className="flex items-center gap-1 font-black">
+                            <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                            توقيت النهاية المعتمد (بالثواني):
+                          </span>
+                          <span className="font-mono text-white">
+                            {formatDateTimeArabicWithSeconds(formData.endsAt).full}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 

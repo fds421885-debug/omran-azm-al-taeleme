@@ -65,6 +65,7 @@ import {
   DEFAULT_STORE_SETTINGS
 } from '../types';
 import { verifyPassword } from '../utils/security';
+import { setFirestoreServerTimeOffset, parseStoreDateMs } from './storeTimeUtils';
 
 // Web app's Firebase configuration from firebase-applet-config.json
 export const firebaseConfig = {
@@ -7910,7 +7911,8 @@ export class OmranDataService {
 
       const payload = {
         items: cleanFirestoreData(mergedList),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        serverTimeMs: Date.now()
       };
 
       await setDoc(doc(targetDb, 'settings', 'store_items_data'), payload, { merge: true });
@@ -8024,7 +8026,16 @@ export class OmranDataService {
     try {
       unsubDoc = onSnapshot(doc(targetDb, 'settings', 'store_items_data'), snap => {
         if (snap.exists()) {
-          const raw = (snap.data()?.items as StoreItem[]) || [];
+          const snapData = snap.data();
+          if (typeof snapData?.serverTimeMs === 'number') {
+            setFirestoreServerTimeOffset(snapData.serverTimeMs - Date.now());
+          } else if (snapData?.updatedAt) {
+            const parsed = new Date(snapData.updatedAt).getTime();
+            if (!isNaN(parsed)) {
+              setFirestoreServerTimeOffset(parsed - Date.now());
+            }
+          }
+          const raw = (snapData?.items as StoreItem[]) || [];
           if (Array.isArray(raw)) {
             const cloudList = raw.map(i => ({
               ...i,
@@ -8814,7 +8825,18 @@ export class OmranDataService {
         const currentQty = typeof targetItem.quantity === 'number' ? targetItem.quantity : 0;
         const pointsRequired = typeof targetItem.pointsRequired === 'number' ? targetItem.pointsRequired : 10;
 
-        // Strict Concurrency & Stock Check: if sold out, fail atomically
+        // Strict Concurrency & Schedule Check
+        const nowMs = Date.now();
+        const startsAtMs = parseStoreDateMs(targetItem.startsAt);
+        const endsAtMs = parseStoreDateMs(targetItem.endsAt);
+        if (startsAtMs !== null && nowMs < startsAtMs) {
+          throw new Error('not_started_yet');
+        }
+        if (endsAtMs !== null && nowMs >= endsAtMs) {
+          throw new Error('time_expired');
+        }
+
+        // Strict Stock Check: if sold out, fail atomically
         if (currentQty <= 0) {
           throw new Error('sold_out');
         }
@@ -8925,6 +8947,20 @@ export class OmranDataService {
       };
     } catch (err: any) {
       const errMsg = err?.message || String(err);
+      if (errMsg.includes('not_started_yet')) {
+        return {
+          success: false,
+          reason: 'error',
+          message: 'عذراً، لم يبدأ وقت هذا المنتج بعد! يرجى الانتظار حتى انتهاء العد التنازلي.'
+        };
+      }
+      if (errMsg.includes('time_expired')) {
+        return {
+          success: false,
+          reason: 'sold_out',
+          message: 'عذراً، لقد انتهى وقت هذا المنتج المخصص للشراء!'
+        };
+      }
       if (errMsg.includes('sold_out')) {
         return {
           success: false,
