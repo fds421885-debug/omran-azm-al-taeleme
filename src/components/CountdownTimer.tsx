@@ -119,7 +119,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   // Header Title
   const headerText = customLabel || (
     resolvedMode === 'appearance'
-      ? (isFinished ? 'بدأ العرض الآن!' : 'الوقت المتبقي لظهور المنتج')
+      ? (isFinished ? 'بدأ العرض الآن!' : 'قيد الانتظار — وقت الظهور التلقائي')
       : (isFinished ? 'انتهى وقت المنتج' : isUrgent ? 'عرض وشيك الانتهاء جداً!' : 'الوقت المتبقي لانتهاء المنتج')
   );
 
@@ -282,14 +282,12 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
           </span>
         </div>
 
-        {/* Real-time Firestore Server Sync Indicator */}
+        {/* Real-time Status Indicator (without text) */}
         {showSyncBadge && (
           <div
-            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/40 border border-white/10 text-[9px] font-bold text-slate-300"
-            title="مؤقت متزامن لحظياً مع سيرفرات Firestore عند كافة الطلاب"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/40 border border-white/10"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
-            <span className="hidden sm:inline">سيرفر متزامن</span>
           </div>
         )}
       </div>

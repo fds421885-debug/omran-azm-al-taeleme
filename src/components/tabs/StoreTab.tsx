@@ -140,6 +140,12 @@ export const StoreTab: React.FC<StoreTabProps> = ({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Quick Time Extension Modal state
+  const [extendingItem, setExtendingItem] = useState<StoreItem | null>(null);
+  const [extensionPreset, setExtensionPreset] = useState<number | 'forever' | 'custom'>(24);
+  const [customExtensionDatetime, setCustomExtensionDatetime] = useState<string>('');
+  const [isExtendingTime, setIsExtendingTime] = useState(false);
+
   // In-App Duolingo 3D Confirmation Modal (replaces browser confirm() which is blocked in iframes)
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -312,8 +318,8 @@ export const StoreTab: React.FC<StoreTabProps> = ({
     setIsModalOpen(true);
   };
 
-  // Open modal for editing existing item - marks isUnderEdit: true so it temporarily vanishes for students!
-  const handleOpenEditModal = async (item: StoreItem) => {
+  // Open modal for editing existing item - smoothly without vanishing or hanging
+  const handleOpenEditModal = (item: StoreItem) => {
     setEditingItem(item);
     setFormData({
       name: item.name || '',
@@ -328,30 +334,63 @@ export const StoreTab: React.FC<StoreTabProps> = ({
       endsAt: item.endsAt ? toLocalDatetimeInputValue(item.endsAt) : ''
     });
     setIsModalOpen(true);
-
-    // Hide temporarily from students during active edit
-    try {
-      await OmranDataService.saveStoreItem({
-        ...item,
-        isUnderEdit: true,
-        updatedAt: new Date().toISOString()
-      });
-    } catch {}
   };
 
-  // Cancel edit modal - restores visibility for students
-  const handleCancelModal = async () => {
-    if (editingItem && editingItem.isUnderEdit) {
-      try {
-        await OmranDataService.saveStoreItem({
-          ...editingItem,
-          isUnderEdit: false,
-          updatedAt: new Date().toISOString()
-        });
-      } catch {}
-    }
+  // Cancel edit modal
+  const handleCancelModal = () => {
     setEditingItem(null);
     setIsModalOpen(false);
+  };
+
+  // Confirm and execute time extension with instant Firestore synchronization
+  const handleConfirmTimeExtension = async () => {
+    if (!extendingItem || !canManage) return;
+    setIsExtendingTime(true);
+    try {
+      const nowMs = Date.now();
+      let newEndsAt: string | undefined = undefined;
+      let isForever = false;
+
+      if (extensionPreset === 'forever') {
+        isForever = true;
+        newEndsAt = undefined;
+      } else if (extensionPreset === 'custom') {
+        if (!customExtensionDatetime) {
+          showNotice('يرجى تحديد تاريخ ووقت الانتهاء الجديد');
+          setIsExtendingTime(false);
+          return;
+        }
+        newEndsAt = new Date(customExtensionDatetime).toISOString();
+        isForever = false;
+      } else {
+        // Base from either current endsAt (if still in the future) or from nowMs (if already expired)
+        const currentEndsMs = parseStoreDateMs(extendingItem.endsAt);
+        const baseMs = (currentEndsMs && currentEndsMs > nowMs) ? currentEndsMs : nowMs;
+        const extendedMs = baseMs + Number(extensionPreset) * 60 * 60 * 1000;
+        newEndsAt = new Date(extendedMs).toISOString();
+        isForever = false;
+      }
+
+      const updatedItem: StoreItem = {
+        ...extendingItem,
+        endsAt: newEndsAt,
+        isForever,
+        isUnderEdit: false,
+        updatedAt: new Date().toISOString()
+      };
+
+      await OmranDataService.saveStoreItem(updatedItem);
+      setExtendingItem(null);
+      showNotice(
+        isForever
+          ? `تم تمديد وقت "${extendingItem.name}" ليصبح دائماً وتحديثه عند الجميع بالتزامن بنجاح ✓`
+          : `تم تمديد وقت "${extendingItem.name}" وتحديثه عند الجميع بالتزامن بنجاح ✓`
+      );
+    } catch {
+      showNotice('حدث خطأ أثناء تمديد وقت المنتج');
+    } finally {
+      setIsExtendingTime(false);
+    }
   };
 
   // Handle image upload with auto-compression
@@ -899,15 +938,6 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         </div>
                       ) : null}
 
-                      {/* Under Edit Notice if supervisor is currently modifying it */}
-                      {item.isUnderEdit && (
-                        <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center p-3 text-center z-20">
-                          <Edit2 className="w-6 h-6 text-amber-300 animate-spin mb-1" />
-                          <span className="text-xs font-black text-amber-300">يتم تعديلها حالياً...</span>
-                          <span className="text-[10px] text-slate-300">مخفية مؤقتاً عن شاشات الطلاب</span>
-                        </div>
-                      )}
-
                       {/* Points Badge (Top Right) - Duolingo 3D style */}
                       <div
                         className={`absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs sm:text-sm font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
@@ -955,7 +985,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           ) : isUpcoming ? (
                             <>
                               <Clock className="w-3.5 h-3.5 text-sky-400" />
-                              <span>قيد الانتظار</span>
+                              <span>قيد الانتظار (Pending)</span>
                             </>
                           ) : (
                             <>
@@ -1020,11 +1050,36 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         )}
                       </div>
 
-                      {/* Status notice badge */}
-                      {isTimeExpired ? (
-                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-amber-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
-                          <Clock className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
-                          <span>انتهى وقت المنتج</span>
+                      {/* Status notice banner */}
+                      {isUpcoming ? (
+                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600 flex items-center justify-between gap-2 select-none shadow-sm">
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
+                            <span>حالة المنتج: قيد الانتظار (Pending)</span>
+                          </div>
+                          <span className="text-[10px] text-sky-300 font-mono">لم يحن وقت الظهور بعد</span>
+                        </div>
+                      ) : isTimeExpired ? (
+                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-amber-200 bg-amber-950/80 border-2 border-b-4 border-amber-600 flex items-center justify-between gap-2 select-none shadow-sm">
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                            <span>المنتج انتهى وقته (Expired)</span>
+                          </div>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExtendingItem(item);
+                                setExtensionPreset(24);
+                                setCustomExtensionDatetime(
+                                  toLocalDatetimeInputValue(item.endsAt || new Date(Date.now() + 86400000).toISOString())
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black transition-all cursor-pointer shadow-xs active:scale-95"
+                            >
+                              تمديد الوقت
+                            </button>
+                          )}
                         </div>
                       ) : isSoldOut ? (
                         <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
@@ -1041,7 +1096,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                             mode="appearance"
                             variant="card"
                             accentColor={accentColor}
-                            showSyncBadge={true}
+                            showSyncBadge={false}
                           />
                         </div>
                       ) : !isInactive && item.endsAt ? (
@@ -1051,19 +1106,19 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                             mode="expiration"
                             variant="card"
                             accentColor={accentColor}
-                            showSyncBadge={true}
+                            showSyncBadge={false}
                           />
                         </div>
                       ) : null}
 
-                      {/* Timing Badges with exact Arabic Date AND Time with seconds */}
+                      {/* Timing Badges: Explicit display of Start Time and Expiration Time for supervisor */}
                       {(hasStart || hasEnd) && (
                         <div className="text-[11px] text-slate-300 space-y-2 bg-black/40 p-3 rounded-2xl border border-white/10 font-bold">
                           {hasStart && (
                             <div className="flex items-center justify-between gap-1.5 flex-wrap">
                               <span className="flex items-center gap-1.5 text-sky-300 font-black">
                                 <Clock className="w-3.5 h-3.5 text-sky-400" />
-                                <span>تاريخ ووقت البداية:</span>
+                                <span>وقت الظهور التلقائي (البداية):</span>
                               </span>
                               <span className="text-white font-mono bg-sky-950/80 px-2.5 py-1 rounded-xl border border-sky-500/30 text-[10px] sm:text-[11px] font-black">
                                 {formatDateTimeArabicWithSeconds(item.startsAt).full}
@@ -1072,13 +1127,24 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           )}
                           {hasEnd && (
                             <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                              <span className="flex items-center gap-1.5 text-amber-300 font-black">
-                                <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                                <span>تاريخ ووقت النهاية:</span>
+                              <span className={`flex items-center gap-1.5 font-black ${isTimeExpired ? 'text-rose-400' : 'text-amber-300'}`}>
+                                <Calendar className={`w-3.5 h-3.5 ${isTimeExpired ? 'text-rose-400' : 'text-amber-400'}`} />
+                                <span>وقت الانتهاء للمشرف:</span>
                               </span>
-                              <span className="text-white font-mono bg-amber-950/80 px-2.5 py-1 rounded-xl border border-amber-500/30 text-[10px] sm:text-[11px] font-black">
-                                {formatDateTimeArabicWithSeconds(item.endsAt).full}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {isTimeExpired && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[9px] font-black">
+                                    انتهى وقته
+                                  </span>
+                                )}
+                                <span className={`font-mono px-2.5 py-1 rounded-xl border text-[10px] sm:text-[11px] font-black ${
+                                  isTimeExpired
+                                    ? 'text-rose-200 bg-rose-950/80 border-rose-500/40'
+                                    : 'text-white bg-amber-950/80 border-amber-500/30'
+                                }`}>
+                                  {formatDateTimeArabicWithSeconds(item.endsAt).full}
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1089,8 +1155,23 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
                           <button
                             type="button"
+                            onClick={() => {
+                              setExtendingItem(item);
+                              setExtensionPreset(24);
+                              setCustomExtensionDatetime(
+                                toLocalDatetimeInputValue(item.endsAt || new Date(Date.now() + 86400000).toISOString())
+                              );
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
+                            title="تمديد وقت انتهاء المنتج فوراً"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>تمديد الوقت</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenEditModal(item)}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer"
+                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer active:scale-95"
                           >
                             <Edit2 className="w-3.5 h-3.5 text-sky-300" />
                             <span>تعديل</span>
@@ -1098,7 +1179,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteItem(item.id, item.name)}
-                            className="flex items-center justify-center p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all cursor-pointer"
+                            className="flex items-center justify-center p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all cursor-pointer active:scale-95"
                             title="حذف الجائزة"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1784,6 +1865,181 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                       {confirmModal.variant === 'warning' && <RotateCcw className="w-4 h-4 stroke-[2.5]" />}
                       {confirmModal.variant === 'danger' && <Trash2 className="w-4 h-4 stroke-[2.5]" />}
                       <span>{confirmModal.confirmText}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================================================================== */}
+      {/* MODAL: تمديد وقت انتهاء المنتج (Supervisor Quick Time Extension) */}
+      {/* ==================================================================== */}
+      <AnimatePresence>
+        {extendingItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-lg rounded-3xl p-6 sm:p-7 border-2 border-b-[6px] shadow-2xl relative space-y-5"
+              style={{
+                backgroundColor: surfaceColor,
+                borderColor: accentColor,
+                borderBottomColor: '#b45309'
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center text-amber-400">
+                    <Clock className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white font-heading">
+                      تمديد وقت المنتج
+                    </h3>
+                    <p className="text-xs text-amber-300 font-bold truncate max-w-xs">
+                      {extendingItem.name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isExtendingTime && setExtendingItem(null)}
+                  disabled={isExtendingTime}
+                  className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Current Status Info */}
+              <div className="bg-black/40 rounded-2xl p-3.5 border border-white/10 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="font-bold">حالة المنتج الحالية:</span>
+                  <span className="font-black text-white">
+                    {extendingItem.endsAt && syncedCurrentTime >= (parseStoreDateMs(extendingItem.endsAt) || 0) ? (
+                      <span className="text-rose-400">انتهى وقته (Expired)</span>
+                    ) : (
+                      <span className="text-emerald-400">نشط ومتاح</span>
+                    )}
+                  </span>
+                </div>
+                {extendingItem.endsAt && (
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span className="font-bold">وقت الانتهاء الحالي:</span>
+                    <span className="font-mono text-amber-300 font-black">
+                      {formatDateTimeArabicWithSeconds(extendingItem.endsAt).full}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Presets Selection */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-200">
+                  اختر مدة التمديد السريعة:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { label: '+12 ساعة', value: 12 },
+                    { label: '+24 ساعة (يوم)', value: 24 },
+                    { label: '+3 أيام', value: 72 },
+                    { label: '+أسبوع (7 أيام)', value: 168 }
+                  ].map(p => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setExtensionPreset(p.value)}
+                      className={`py-2 px-2.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                        extensionPreset === p.value
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md scale-102'
+                          : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setExtensionPreset('forever')}
+                    className={`py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                      extensionPreset === 'forever'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
+                        : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
+                    }`}
+                  >
+                    متاح بلا نهاية (دائم)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExtensionPreset('custom')}
+                    className={`py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                      extensionPreset === 'custom'
+                        ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-md'
+                        : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
+                    }`}
+                  >
+                    تحديد تاريخ ووقت مخصص
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Date/Time input if selected */}
+              {extensionPreset === 'custom' && (
+                <div className="space-y-1.5 pt-1">
+                  <label className="block text-xs font-black text-sky-300">
+                    حدد تاريخ ووقت الانتهاء الجديد بالثانية:
+                  </label>
+                  <input
+                    type="datetime-local"
+                    step="1"
+                    value={customExtensionDatetime}
+                    onChange={e => setCustomExtensionDatetime(e.target.value)}
+                    className="w-full bg-black/50 border border-sky-400/50 rounded-2xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-sky-400 font-mono"
+                  />
+                </div>
+              )}
+
+              {/* Real-time Notice */}
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>
+                  يتم حفظ التمديد مباشرة في السيرفر ويحدث عند جميع الطلاب فوراً بالتزامن دون أي تعليق.
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  disabled={isExtendingTime}
+                  onClick={() => setExtendingItem(null)}
+                  className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 cursor-pointer disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={isExtendingTime}
+                  onClick={handleConfirmTimeExtension}
+                  className="px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs border-2 border-b-4 border-amber-700 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isExtendingTime ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>جاري التمديد والمزامنة...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4" />
+                      <span>حفظ وتمديد الوقت فوراً</span>
                     </>
                   )}
                 </button>

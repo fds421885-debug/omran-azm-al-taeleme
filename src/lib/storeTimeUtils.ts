@@ -107,7 +107,7 @@ export function getItemScheduleStatus(
   const isTimeExpired = Boolean(endsAtMs !== null && nowMs >= endsAtMs);
   const isSoldOut = (item.quantity || 0) <= 0;
 
-  const canPurchase = !item.isUnderEdit && !isUpcoming && !isTimeExpired && !isSoldOut;
+  const canPurchase = !isUpcoming && !isTimeExpired && !isSoldOut;
 
   let badgeLabel = 'متاح';
   if (isUpcoming) badgeLabel = 'قيد الانتظار';

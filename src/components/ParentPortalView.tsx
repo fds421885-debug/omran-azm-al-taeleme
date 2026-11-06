@@ -737,8 +737,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     return storeItems.filter(item => {
       // Temporarily hide if currently in the brief vanish-and-reappear exit transition
       if (temporarilyHiddenSoldOutIds.has(item.id)) return false;
-      // Hide if supervisor is currently editing it ("تختفي مؤقتاً")
-      if (item.isUnderEdit) return false;
+      // Items stay visible even during edits or time extensions, updating seamlessly in real-time
       return true;
     });
   }, [storeItems, temporarilyHiddenSoldOutIds]);
@@ -755,7 +754,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       const live = storeItems.find(i => i.id === confirmingPurchaseItem.id);
       const isExpired = Boolean(live?.endsAt && syncedCurrentTime >= (parseStoreDateMs(live.endsAt) || Infinity));
       const isSoldOut = (live?.quantity || 0) <= 0;
-      if (!live || isSoldOut || live.isUnderEdit || isExpired) {
+      if (!live || isSoldOut || isExpired) {
         const itemName = confirmingPurchaseItem.name;
         setConfirmingPurchaseItem(null);
         setSoldOutModal({
@@ -2691,8 +2690,15 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   </div>
                                 )}
 
-                                {/* Centered Duolingo 3D Overlay Badge for Inactive State */}
-                                {isTimeExpired ? (
+                                {/* Centered Duolingo 3D Overlay Badge for Inactive / Pending State */}
+                                {isUpcoming ? (
+                                  <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
+                                    <div className="px-5 py-2.5 rounded-2xl bg-sky-950/95 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-sky-200 select-none">
+                                      <Clock className="w-5 h-5 text-sky-400 stroke-[2.5]" />
+                                      <span className="font-black text-sm tracking-wide">قيد الانتظار</span>
+                                    </div>
+                                  </div>
+                                ) : isTimeExpired ? (
                                   <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
                                     <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
                                       <Clock className="w-5 h-5 text-amber-400 stroke-[2.5]" />
@@ -2746,8 +2752,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   >
                                     {isUpcoming ? (
                                       <>
-                                        <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                                        <span>قريباً</span>
+                                        <Clock className="w-3.5 h-3.5 text-sky-400" />
+                                        <span>قيد الانتظار</span>
                                       </>
                                     ) : isTimeExpired ? (
                                       <>
@@ -2832,7 +2838,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                       mode="appearance"
                                       variant="card"
                                       accentColor={themeAccent}
-                                      showSyncBadge={true}
+                                      showSyncBadge={false}
                                     />
                                   </div>
                                 ) : item.endsAt && !isInactive ? (
@@ -2842,7 +2848,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                       mode="expiration"
                                       variant="card"
                                       accentColor={themeAccent}
-                                      showSyncBadge={true}
+                                      showSyncBadge={false}
                                     />
                                   </div>
                                 ) : null}
@@ -2851,11 +2857,11 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 <div className="pt-2">
                                   {isUpcoming ? (
                                     <div
-                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-sky-300 bg-sky-950/80 border-2 border-b-4 border-sky-600/70 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
-                                      aria-label="قريباً"
+                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600/70 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      aria-label="قيد الانتظار"
                                     >
                                       <Clock className="w-4 h-4 text-sky-400 stroke-[2.5]" />
-                                      <span>يفتح الشراء فور انتهاء العد التنازلي</span>
+                                      <span>قيد الانتظار — يفتح الشراء فور انتهاء العد التنازلي</span>
                                     </div>
                                   ) : isTimeExpired ? (
                                     <div
