@@ -12,7 +12,9 @@ import {
   BookOpen,
   Sparkles,
   Award,
-  UserCheck
+  UserCheck,
+  X,
+  Clock
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Student, AttendanceRecord, StudentEvaluation, AppSettings, QuranComplex } from '../../types';
@@ -458,33 +460,58 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
         </motion.div>
       )}
 
-      {/* Search Filter (Selector 1) */}
-      <div className="relative">
+      {/* 3D Duolingo Search Bar */}
+      <div
+        className="relative flex items-center gap-3 p-2 sm:p-2.5 rounded-[26px] border-2 border-b-[5px] transition-all shadow-xl"
+        style={{
+          backgroundColor: darkenHex(themeCard, 0.2),
+          borderColor: themeBorder,
+          borderBottomColor: themeCardShadow
+        }}
+      >
+        <div
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-md"
+          style={{
+            backgroundColor: themeAccent,
+            borderColor: themeAccent,
+            borderBottomColor: themeAccentShadow,
+            color: themeContrastText
+          }}
+        >
+          <Search className="w-5 h-5 stroke-[2.5]" />
+        </div>
         <input
           type="text"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          placeholder="بحث باسم الطالب أو ولي الأمر..."
-          className="w-full rounded-2xl border-2 border-b-4 py-3.5 px-4 pr-12 text-xs sm:text-sm font-bold shadow-md outline-none transition-all active:translate-y-[1px] placeholder:opacity-60"
-          style={{
-            backgroundColor: themeCard,
-            borderColor: themeBorder,
-            borderBottomColor: themeBorderBottom,
-            color: themeText
-          }}
+          placeholder="بحث سريع باسم الطالب، المعلم، أو ولي الأمر..."
+          className="flex-1 bg-transparent py-2.5 px-2 text-xs sm:text-sm md:text-base font-black outline-none placeholder:opacity-50"
+          style={{ color: themeText }}
           dir="rtl"
         />
-        <Search
-          className="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"
-          style={{ color: themeAccent }}
-        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => setSearchTerm('')}
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border-2 border-b-3 flex items-center justify-center font-black cursor-pointer active:translate-y-[2px] active:border-b transition-all shadow-md ml-1"
+            style={{
+              backgroundColor: themeCard,
+              borderColor: themeBorder,
+              borderBottomColor: themeCardShadow,
+              color: themeText
+            }}
+            title="مسح البحث"
+          >
+            <X className="w-4 h-4 stroke-[2.5]" />
+          </button>
+        )}
       </div>
 
       {/* Student Cards List */}
       <div className="space-y-4">
         {filteredStudents.length === 0 ? (
           <div
-            className="rounded-[32px] border-2 border-b-4 p-12 text-center text-xs font-bold shadow-xl"
+            className="rounded-[30px] border-2 border-b-[6px] p-12 text-center text-xs font-bold shadow-xl"
             style={{
               backgroundColor: themeCard,
               borderColor: themeBorder,
@@ -492,7 +519,7 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
               color: themeSubtext
             }}
           >
-            لا يوجد طلاب مطابقون.
+            لا يوجد طلاب مطابقون للبحث.
           </div>
         ) : (
           filteredStudents.map((student, sIdx) => {
@@ -512,7 +539,7 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: Math.min(sIdx * 0.04, 0.4) }}
-                className="rounded-[32px] border-2 border-b-4 p-6 transition-all shadow-xl hover:translate-y-[-2px]"
+                className="rounded-[30px] border-2 border-b-[6px] p-5 sm:p-6 transition-all shadow-xl hover:translate-y-[-2px]"
                 style={{
                   backgroundColor: themeCard,
                   borderColor: themeBorder,
@@ -523,9 +550,9 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                   {/* Left Info: Student Profile & Numbers */}
                   <div className="lg:w-1/3 space-y-3.5">
                     <div className="flex items-center gap-3">
-                      {/* Student Badge (Selector 2) */}
+                      {/* 3D Student Badge */}
                       <div
-                        className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-bold text-sm shrink-0 shadow-md"
+                        className="w-12 h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center font-bold text-sm shrink-0 shadow-md"
                         style={{
                           backgroundColor: themeAccent,
                           borderColor: themeAccent,
@@ -533,76 +560,91 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           color: themeContrastText
                         }}
                       >
-                        <UserCheck className="w-5 h-5 stroke-[2.4]" />
+                        <UserCheck className="w-6 h-6 stroke-[2.4]" />
                       </div>
-                      <div>
-                        {/* Student Name (Selector 3) */}
+                      <div className="min-w-0">
                         <h4
-                          className="text-base font-black leading-snug break-words"
+                          className="text-base sm:text-lg font-black leading-snug break-words"
                           title={student.name}
                           style={{ color: themeText }}
                         >
                           {student.name}
                         </h4>
-                        {/* Parent Name (Selector 4) */}
-                        <div className="flex items-center gap-2 mt-1 text-xs font-bold" style={{ color: themeSubtext }}>
-                          <span>ولي الأمر: {student.parentName || 'غير مسجل'}</span>
+                        <div className="flex items-center gap-1.5 mt-1 text-xs font-bold" style={{ color: themeSubtext }}>
+                          <span>ولي الأمر:</span>
+                          <span className="font-black" style={{ color: themeText }}>{student.parentName || 'غير مسجل'}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Quick Stats Box (Selectors 5, 6, 7, 8) */}
+                    {/* Quick Stats Box (3D Duolingo) */}
                     <div
-                      className="rounded-2xl border-2 border-b-4 p-3.5 space-y-2.5 text-xs shadow-inner"
+                      className="rounded-[22px] border-2 border-b-[5px] p-4 space-y-3 shadow-inner"
                       style={{
-                        backgroundColor: themePrimary,
+                        backgroundColor: darkenHex(themeCard, 0.28),
                         borderColor: themeBorder,
-                        borderBottomColor: themeBorderBottom
+                        borderBottomColor: themeCardShadow
                       }}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold" style={{ color: themeSubtext }}>حضور اليوم:</span>
-                        <span
-                          className={`font-black px-3 py-1 rounded-xl border-2 border-b-2 text-xs shadow-sm ${
+                      {/* حضور اليوم */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-xs" style={{ color: themeSubtext }}>حضور اليوم:</span>
+                        <div
+                          className={`font-black px-3.5 py-1.5 rounded-xl border-2 border-b-4 text-xs shadow-md inline-flex items-center gap-1.5 ${
                             status === 'حاضر'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 border-b-emerald-600'
+                              ? 'bg-[#22c55e] text-white border-[#16a34a] border-b-[#15803d]'
                               : status === 'غائب'
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 border-b-rose-600'
+                              ? 'bg-[#ef4444] text-white border-[#dc2626] border-b-[#b91c1c]'
                               : status === 'معتذر'
-                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 border-b-amber-600'
-                              : 'bg-slate-700/30 text-slate-300 border-slate-600/40 border-b-slate-700'
+                              ? 'bg-[#f59e0b] text-white border-[#d97706] border-b-[#b45309]'
+                              : 'bg-slate-700 text-slate-100 border-slate-600 border-b-slate-800'
                           }`}
                         >
-                          {status}
-                        </span>
+                          {status === 'حاضر' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          {status === 'غائب' && <X className="w-3.5 h-3.5 stroke-[3]" />}
+                          {status === 'معتذر' && <Clock className="w-3.5 h-3.5 stroke-[3]" />}
+                          <span>{status}</span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold" style={{ color: themeSubtext }}>تسميع اليوم:</span>
-                        <span
-                          className="font-black px-2.5 py-1 rounded-xl border-2 border-b-2 text-xs"
-                          style={{
-                            backgroundColor: evalData ? `${themeAccent}20` : 'rgba(255,255,255,0.05)',
-                            borderColor: evalData ? `${themeAccent}50` : 'rgba(255,255,255,0.1)',
-                            borderBottomColor: evalData ? themeAccentShadow : 'rgba(255,255,255,0.15)',
-                            color: evalData ? themeAccent : themeSubtext
-                          }}
-                        >
-                          {evalData ? 'تم تسجيل التسميع' : 'لم يسجل بعد'}
-                        </span>
+                      {/* هل تم التسجيل له أم لا (تسميع اليوم) */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-xs" style={{ color: themeSubtext }}>تسميع اليوم:</span>
+                        {evalData ? (
+                          <div
+                            className="font-black px-3 py-1.5 rounded-xl border-2 border-b-4 text-xs shadow-md inline-flex items-center gap-1.5 bg-[#10b981] text-white border-[#059669] border-b-[#047857]"
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>تم تسجيل التسميع</span>
+                          </div>
+                        ) : (
+                          <div
+                            className="font-black px-3 py-1.5 rounded-xl border-2 border-b-4 text-xs shadow-md inline-flex items-center gap-1.5"
+                            style={{
+                              backgroundColor: darkenHex(themeCard, 0.45),
+                              borderColor: themeBorder,
+                              borderBottomColor: darkenHex(themeCard, 0.6),
+                              color: themeSubtext
+                            }}
+                          >
+                            <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>لم يسجل بعد</span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold" style={{ color: themeSubtext }}>مقرر الغد:</span>
-                        <span className="font-bold truncate max-w-[150px]" style={{ color: themeText }}>
+                      {/* مقرر الغد */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                        <span className="font-black text-xs" style={{ color: themeSubtext }}>مقرر الغد:</span>
+                        <span className="font-bold text-xs truncate max-w-[150px]" style={{ color: themeAccent }}>
                           {student.aiPlan?.currentDailyAssignment?.newMemorization || 'مقرر الغد محدد'}
                         </span>
                       </div>
                     </div>
 
-                    {/* Parent Phone Numbers List with Direct Send (Selector 9) */}
-                    <div>
-                      <div className="text-[11px] font-bold mb-2 flex items-center gap-1.5" style={{ color: themeSubtext }}>
+                    {/* Parent Phone Numbers List with 3D Direct Send */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-black flex items-center gap-1.5" style={{ color: themeSubtext }}>
                         <Phone className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                         <span>أرقام هواتف أولياء الأمور للإرسال:</span>
                       </div>
@@ -611,27 +653,21 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           student.parentPhones.map((phone, pIdx) => (
                             <div
                               key={pIdx}
-                              className="flex items-center justify-between gap-2 p-2.5 rounded-2xl border-2 border-b-4 text-xs shadow-sm transition-all"
+                              className="flex items-center justify-between gap-2 p-3 rounded-2xl border-2 border-b-4 text-xs shadow-md transition-all"
                               style={{
-                                backgroundColor: themePrimary,
+                                backgroundColor: darkenHex(themeCard, 0.28),
                                 borderColor: themeBorder,
-                                borderBottomColor: themeBorderBottom
+                                borderBottomColor: themeCardShadow
                               }}
                             >
-                              <div className="flex items-center gap-2 font-mono font-bold" dir="ltr" style={{ color: themeText }}>
+                              <div className="flex items-center gap-2 font-mono font-bold text-xs" dir="ltr" style={{ color: themeText }}>
                                 <Phone className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                                 <span>{phone}</span>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => handleSendWhatsApp(phone, msg)}
-                                className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
-                                style={{
-                                  backgroundColor: themeAccent,
-                                  borderColor: themeAccent,
-                                  borderBottomColor: themeAccentShadow,
-                                  color: themeContrastText
-                                }}
+                                className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 bg-[#22c55e] border-[#16a34a] border-b-[#15803d] text-white"
                               >
                                 <Send className="w-3.5 h-3.5" />
                                 <span>إرسال واتساب</span>
@@ -640,29 +676,23 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           ))
                         ) : (
                           <div
-                            className="flex items-center justify-between gap-2 p-2.5 rounded-2xl border-2 border-b-4 text-xs shadow-sm"
+                            className="flex items-center justify-between gap-2 p-3 rounded-2xl border-2 border-b-4 text-xs shadow-md"
                             style={{
-                              backgroundColor: themePrimary,
+                              backgroundColor: darkenHex(themeCard, 0.28),
                               borderColor: themeBorder,
-                              borderBottomColor: themeBorderBottom
+                              borderBottomColor: themeCardShadow
                             }}
                           >
-                            <span className="font-mono font-bold" dir="ltr" style={{ color: themeText }}>
+                            <span className="font-mono font-bold text-xs" dir="ltr" style={{ color: themeText }}>
                               {student.phone}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleSendWhatsApp(student.phone, msg)}
-                              className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
-                              style={{
-                                backgroundColor: themeAccent,
-                                borderColor: themeAccent,
-                                borderBottomColor: themeAccentShadow,
-                                color: themeContrastText
-                              }}
+                              className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 bg-[#22c55e] border-[#16a34a] border-b-[#15803d] text-white"
                             >
                               <Send className="w-3.5 h-3.5" />
-                              <span>إرسال</span>
+                              <span>إرسال واتساب</span>
                             </button>
                           </div>
                         )}
@@ -670,29 +700,41 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Right Box: Formatted Message Box (Selectors 10, 12, 13) */}
+                  {/* Right Box: Formatted Message Box */}
                   <div
-                    className="lg:w-2/3 flex flex-col justify-between rounded-2xl border-2 border-b-4 p-4 sm:p-5 space-y-3.5 shadow-md"
+                    className="lg:w-2/3 flex flex-col justify-between rounded-[26px] border-2 border-b-[6px] p-5 sm:p-6 space-y-4 shadow-xl"
                     style={{
-                      backgroundColor: themePrimary,
+                      backgroundColor: darkenHex(themeCard, 0.2),
                       borderColor: themeBorder,
-                      borderBottomColor: themeBorderBottom
+                      borderBottomColor: themeCardShadow
                     }}
                   >
                     <div
-                      className="flex items-center justify-between pb-3 border-b"
+                      className="flex items-center justify-between pb-3.5 border-b"
                       style={{ borderColor: `${themeBorder}80` }}
                     >
-                      <span className="text-xs font-black flex items-center gap-2" style={{ color: themeAccent }}>
-                        <MessageCircle className="w-4 h-4" />
-                        <span>نص الرسالة المعتمدة</span>
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-8 h-8 rounded-xl border-2 border-b-3 flex items-center justify-center shadow-sm"
+                          style={{
+                            backgroundColor: `${themeAccent}25`,
+                            borderColor: `${themeAccent}60`,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs sm:text-sm font-black" style={{ color: themeAccent }}>
+                          نص الرسالة المعتمدة لولي الأمر
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleRefreshStudentMessage(student)}
                           title="تحديث الرسالة من بيانات المعلم"
-                          className="p-2 rounded-xl border-2 border-b-2 font-bold cursor-pointer transition-all active:translate-y-[1px] hover:brightness-110 shadow-sm"
+                          className="p-2 sm:px-3 sm:py-2 rounded-xl border-2 border-b-4 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md"
                           style={{
                             backgroundColor: themeCard,
                             borderColor: themeBorder,
@@ -701,12 +743,13 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           }}
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">تحديث</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(student.id)}
                           title="تعديل نص الرسالة يدوياً"
-                          className="p-2 rounded-xl border-2 border-b-2 font-bold cursor-pointer transition-all active:translate-y-[1px] hover:brightness-110 shadow-sm"
+                          className="p-2 sm:px-3 sm:py-2 rounded-xl border-2 border-b-4 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md"
                           style={{
                             backgroundColor: themeCard,
                             borderColor: themeBorder,
@@ -715,11 +758,12 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           }}
                         >
                           <Edit className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">تعديل</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCopy(student.id, msg)}
-                          className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                          className="px-3.5 py-2 rounded-xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
                           style={
                             isCopied
                               ? {
@@ -729,10 +773,10 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                                   color: '#ffffff'
                                 }
                               : {
-                                  backgroundColor: themeCard,
-                                  borderColor: themeBorder,
-                                  borderBottomColor: themeCardShadow,
-                                  color: themeAccent
+                                  backgroundColor: themeAccent,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow,
+                                  color: themeContrastText
                                 }
                           }
                         >
@@ -744,34 +788,61 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                           ) : (
                             <>
                               <Copy className="w-3.5 h-3.5" />
-                              <span>نسخ</span>
+                              <span>نسخ النص</span>
                             </>
                           )}
                         </button>
                       </div>
                     </div>
 
-                    {/* Message Preview */}
+                    {/* 3D Duolingo Message Text Frame (الإطار اللي في نص الرسالة) */}
                     <div
-                      className="rounded-2xl border-2 border-b-4 p-4 text-xs font-sans whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto shadow-inner"
+                      className="rounded-[22px] border-2 border-b-[5px] p-4 sm:p-5 text-xs sm:text-sm font-sans whitespace-pre-line leading-relaxed max-h-72 overflow-y-auto shadow-inner relative transition-all"
                       style={{
-                        backgroundColor: darkenHex(themePrimary, 0.25),
+                        backgroundColor: darkenHex(themeCard, 0.42),
                         borderColor: themeBorder,
-                        borderBottomColor: themeBorderBottom,
+                        borderBottomColor: themeCardShadow,
                         color: themeText
                       }}
                     >
-                      {msg}
+                      {/* Top Header Tag inside the frame */}
+                      <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10 text-[11px] font-bold">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <span style={{ color: themeAccent }}>معاينة رسالة الواتساب اليومية:</span>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-lg border-2 border-b-2 text-[10px] font-black bg-emerald-500/20 text-emerald-300 border-emerald-500/40 border-b-emerald-600">
+                          نص معتمد
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="font-semibold select-text" dir="rtl">
+                        {msg}
+                      </div>
                     </div>
 
-                    <div className="text-[11px] font-bold flex items-center justify-between pt-1" style={{ color: themeSubtext }}>
-                      <span>الرابط المرفق: بوابة المتابعة الحية للطالب</span>
+                    {/* Portal link footer in 3D */}
+                    <div
+                      className="p-3 rounded-2xl border-2 border-b-4 flex items-center justify-between text-xs font-bold shadow-md"
+                      style={{
+                        backgroundColor: darkenHex(themeCard, 0.3),
+                        borderColor: themeBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
+                    >
+                      <span style={{ color: themeSubtext }}>الرابط المرفق: بوابة المتابعة الحية للطالب</span>
                       <a
                         href={`/?portal=${student.id}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1.5 font-black hover:underline"
-                        style={{ color: themeAccent }}
+                        className="px-3 py-1.5 rounded-xl border-2 border-b-3 font-black text-xs flex items-center gap-1.5 transition-all active:translate-y-[1px] hover:brightness-110 shadow-sm"
+                        style={{
+                          backgroundColor: `${themeAccent}25`,
+                          borderColor: `${themeAccent}60`,
+                          borderBottomColor: themeAccentShadow,
+                          color: themeAccent
+                        }}
                       >
                         <span>معاينة صفحة الطالب</span>
                         <ExternalLink className="w-3.5 h-3.5" />
