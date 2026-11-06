@@ -2163,11 +2163,14 @@ export interface StoreItem {
   endsAt?: string; // ISO date string or undefined for forever
   isForever?: boolean;
   isImmediate?: boolean;
+  isUnderEdit?: boolean; // مؤشر لتحديد هل المشرف يعدل المنتج حالياً ليختفي مؤقتاً عند الطلاب
   description?: string;
   createdAt: string;
   updatedAt?: string;
   createdBy?: string;
 }
+
+export type StorePurchaseStatus = 'pending' | 'delivered' | 'refunded';
 
 export interface StorePurchase {
   id: string;
@@ -2183,6 +2186,12 @@ export interface StorePurchase {
   purchasedAt: string; // ISO string
   preciseTimestampText: string; // e.g. "تاريخ: 2026/11/06 | الوقت: 10:24:18.915 مساءً (جزء دقيق: .184920fs)"
   preciseSubsecond: string;
+  status?: StorePurchaseStatus; // 'pending' | 'delivered' | 'refunded'
+  deliveredAt?: string;
+  deliveredBy?: string;
+  refundedAt?: string;
+  refundedBy?: string;
+  refundRole?: 'supervisor' | 'student';
 }
 
 export interface StoreSettings {

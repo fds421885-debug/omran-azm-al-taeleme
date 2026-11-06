@@ -7813,55 +7813,63 @@ export class OmranDataService {
   // =========================================================================
 
   /**
-   * Loads all store items for the complex (local-first with cloud sync).
+   * Loads all store items for the complex (cloud-synced with settings doc and collection fallbacks).
    */
   static async loadStoreItems(complexId?: string): Promise<StoreItem[]> {
     const targetComplexId = complexId || this.activeComplexId || '';
     const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
-    const filteredLocal = targetComplexId
-      ? local.filter(i => !i.complexId || i.complexId === targetComplexId)
-      : local;
+    const isMatch = (item: StoreItem) => {
+      if (!targetComplexId || targetComplexId === 'all') return true;
+      if (!item.complexId || item.complexId === 'default' || item.complexId === 'all') return true;
+      return item.complexId === targetComplexId;
+    };
 
+    const targetDb = this.getActiveDb();
+    let cloudItems: StoreItem[] = [];
+
+    // 1. Try settings/store_items_data (most reliable cloud endpoint)
     try {
-      const targetDb = this.getActiveDb();
-      const snap = await safeGetDocs(collection(targetDb, 'store_items'));
-      if (!snap.empty) {
-        const cloudList: StoreItem[] = [];
-        snap.forEach(d => {
-          const raw = d.data() as StoreItem;
-          const item: StoreItem = {
-            ...raw,
-            id: d.id || raw.id,
-            quantity: typeof raw.quantity === 'number' ? raw.quantity : 1,
-            pointsRequired: typeof raw.pointsRequired === 'number' ? raw.pointsRequired : 10
-          };
-          if (!targetComplexId || !item.complexId || item.complexId === targetComplexId) {
-            cloudList.push(item);
-          }
-        });
-
-        // Merge cloud with local
-        const map = new Map<string, StoreItem>();
-        for (const item of filteredLocal) map.set(item.id, item);
-        for (const item of cloudList) map.set(item.id, item);
-        const merged = Array.from(map.values()).sort(
-          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-        );
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, merged);
-        return merged;
+      const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_items_data'));
+      if (snap.exists()) {
+        const rawItems = (snap.data()?.items as StoreItem[]) || [];
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          cloudItems = rawItems;
+        }
       }
-    } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'store_items');
+    } catch {}
+
+    // 2. Also try store_items collection if empty
+    if (cloudItems.length === 0) {
+      try {
+        const colSnap = await safeGetDocs(collection(targetDb, 'store_items'));
+        if (!colSnap.empty) {
+          colSnap.forEach(d => {
+            const raw = d.data() as StoreItem;
+            cloudItems.push({ ...raw, id: d.id || raw.id });
+          });
+        }
+      } catch {}
     }
 
-    return filteredLocal;
+    if (cloudItems.length > 0) {
+      const map = new Map<string, StoreItem>();
+      for (const item of local) map.set(item.id, item);
+      for (const item of cloudItems) map.set(item.id, item);
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, merged);
+      return merged.filter(isMatch);
+    }
+
+    return local.filter(isMatch);
   }
 
   /**
-   * Saves or updates a store item with immediate local update and Firestore cloud write.
+   * Saves or updates a store item with immediate local update, cloud settings doc sync, and Firestore write.
    */
   static async saveStoreItem(item: StoreItem): Promise<void> {
-    const clean = cleanFirestoreData({
+    const clean: StoreItem = cleanFirestoreData({
       ...item,
       quantity: Math.max(0, typeof item.quantity === 'number' ? item.quantity : 1),
       pointsRequired: Math.max(1, typeof item.pointsRequired === 'number' ? item.pointsRequired : 10),
@@ -7880,18 +7888,50 @@ export class OmranDataService {
       }
     } catch {}
 
-    // 2. Cloud Firestore Write
+    const targetDb = this.getActiveDb();
+    const centralDb = this.getCentralDb();
+
+    // 2. Synchronize to settings/store_items_data in Firestore (unrestricted realtime pub/sub)
     try {
-      const targetDb = this.getActiveDb();
-      await setDoc(doc(targetDb, 'store_items', clean.id), clean, { merge: true });
-    } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `store_items/${clean.id}`);
-      console.warn('[OmranDataService] Store item saved locally, cloud sync notice:', e);
+      let currentItems: StoreItem[] = [];
+      try {
+        const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_items_data'));
+        if (snap.exists()) {
+          const raw = (snap.data()?.items as StoreItem[]) || [];
+          if (Array.isArray(raw)) currentItems = raw;
+        }
+      } catch {}
+
+      // Upsert item
+      const itemMap = new Map<string, StoreItem>();
+      for (const it of currentItems) itemMap.set(it.id, it);
+      itemMap.set(clean.id, clean);
+      const mergedList = Array.from(itemMap.values());
+
+      const payload = {
+        items: cleanFirestoreData(mergedList),
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(targetDb, 'settings', 'store_items_data'), payload, { merge: true });
+      if (centralDb !== targetDb) {
+        await setDoc(doc(centralDb, 'settings', 'store_items_data'), payload, { merge: true }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[OmranDataService] settings/store_items_data sync warning:', err);
     }
+
+    // 3. Also try writing to store_items collection
+    try {
+      await setDoc(doc(targetDb, 'store_items', clean.id), clean, { merge: true });
+      if (centralDb !== targetDb) {
+        await setDoc(doc(centralDb, 'store_items', clean.id), clean, { merge: true }).catch(() => {});
+      }
+    } catch {}
   }
 
   /**
-   * Deletes a store item from both local cache and Firestore.
+   * Deletes a store item from local cache, cloud settings doc, and Firestore collection.
    */
   static async deleteStoreItem(itemId: string): Promise<void> {
     const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
@@ -7905,25 +7945,59 @@ export class OmranDataService {
       }
     } catch {}
 
+    const targetDb = this.getActiveDb();
+    const centralDb = this.getCentralDb();
+
+    // 1. Remove from settings/store_items_data in Firestore
     try {
-      const targetDb = this.getActiveDb();
-      await deleteDoc(doc(targetDb, 'store_items', itemId));
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `store_items/${itemId}`);
-      console.warn('[OmranDataService] Store item deleted locally, cloud deletion notice:', e);
+      let currentItems: StoreItem[] = [];
+      try {
+        const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_items_data'));
+        if (snap.exists()) {
+          const raw = (snap.data()?.items as StoreItem[]) || [];
+          if (Array.isArray(raw)) currentItems = raw;
+        }
+      } catch {}
+
+      const remaining = currentItems.filter(i => i.id !== itemId);
+      const payload = {
+        items: cleanFirestoreData(remaining),
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(targetDb, 'settings', 'store_items_data'), payload, { merge: true });
+      if (centralDb !== targetDb) {
+        await setDoc(doc(centralDb, 'settings', 'store_items_data'), payload, { merge: true }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[OmranDataService] settings/store_items_data delete sync warning:', err);
     }
+
+    // 2. Also try deleting from store_items collection
+    try {
+      await deleteDoc(doc(targetDb, 'store_items', itemId));
+      if (centralDb !== targetDb) {
+        await deleteDoc(doc(centralDb, 'store_items', itemId)).catch(() => {});
+      }
+    } catch {}
   }
 
   /**
    * Real-time subscription to store items.
+   * Listens to cloud settings/store_items_data document (and store_items collection)
+   * as well as window events for instantaneous reactivity without page reload.
    */
   static subscribeStoreItems(callback: (items: StoreItem[]) => void, complexId?: string): () => void {
     const targetComplexId = complexId || this.activeComplexId || '';
+    const isMatch = (item: StoreItem) => {
+      if (!targetComplexId || targetComplexId === 'all') return true;
+      if (!item.complexId || item.complexId === 'default' || item.complexId === 'all') return true;
+      return item.complexId === targetComplexId;
+    };
+
     const emit = () => {
       const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
-      const filtered = targetComplexId
-        ? local.filter(i => !i.complexId || i.complexId === targetComplexId)
-        : local;
+      const filtered = local.filter(isMatch);
       callback(filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     };
 
@@ -7942,47 +8016,68 @@ export class OmranDataService {
       window.addEventListener('omran:store-item-deleted', emit);
     }
 
+    const targetDb = this.getActiveDb();
+    let unsubDoc: (() => void) | null = null;
+    let unsubCol: (() => void) | null = null;
+
+    // 1. Primary real-time listener: settings/store_items_data (fully authorized & real-time)
     try {
-      const targetDb = this.getActiveDb();
-      const unsub = onSnapshot(collection(targetDb, 'store_items'), snap => {
-        const cloudList: StoreItem[] = [];
-        snap.forEach(d => {
-          const raw = d.data() as StoreItem;
-          const item: StoreItem = {
-            ...raw,
-            id: d.id || raw.id,
-            quantity: typeof raw.quantity === 'number' ? raw.quantity : 1,
-            pointsRequired: typeof raw.pointsRequired === 'number' ? raw.pointsRequired : 10
-          };
-          if (!targetComplexId || !item.complexId || item.complexId === targetComplexId) {
-            cloudList.push(item);
+      unsubDoc = onSnapshot(doc(targetDb, 'settings', 'store_items_data'), snap => {
+        if (snap.exists()) {
+          const raw = (snap.data()?.items as StoreItem[]) || [];
+          if (Array.isArray(raw)) {
+            const cloudList = raw.map(i => ({
+              ...i,
+              quantity: typeof i.quantity === 'number' ? i.quantity : 1,
+              pointsRequired: typeof i.pointsRequired === 'number' ? i.pointsRequired : 10
+            }));
+            cloudList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+            setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, cloudList);
+            callback(cloudList.filter(isMatch));
           }
-        });
-        cloudList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, cloudList);
-        callback(cloudList);
+        }
       }, err => {
-        handleFirestoreError(err, OperationType.LIST, 'store_items');
+        console.warn('[OmranDataService] onSnapshot store_items_data notice:', err);
         emit();
       });
+    } catch {}
 
-      return () => {
-        try { unsub(); } catch {}
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('omran:data-updated', handleLocalUpdate);
-          window.removeEventListener('omran:store-items-updated', emit);
-          window.removeEventListener('omran:store-item-deleted', emit);
+    // 2. Secondary real-time listener: collection store_items (if permitted)
+    try {
+      unsubCol = onSnapshot(collection(targetDb, 'store_items'), snap => {
+        if (!snap.empty) {
+          const colList: StoreItem[] = [];
+          snap.forEach(d => {
+            const raw = d.data() as StoreItem;
+            colList.push({
+              ...raw,
+              id: d.id || raw.id,
+              quantity: typeof raw.quantity === 'number' ? raw.quantity : 1,
+              pointsRequired: typeof raw.pointsRequired === 'number' ? raw.pointsRequired : 10
+            });
+          });
+          const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
+          const map = new Map<string, StoreItem>();
+          for (const i of local) map.set(i.id, i);
+          for (const i of colList) map.set(i.id, i);
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+          setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, merged);
+          callback(merged.filter(isMatch));
         }
-      };
-    } catch {
-      return () => {
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('omran:data-updated', handleLocalUpdate);
-          window.removeEventListener('omran:store-items-updated', emit);
-          window.removeEventListener('omran:store-item-deleted', emit);
-        }
-      };
-    }
+      }, () => {});
+    } catch {}
+
+    return () => {
+      try { if (unsubDoc) unsubDoc(); } catch {}
+      try { if (unsubCol) unsubCol(); } catch {}
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('omran:data-updated', handleLocalUpdate);
+        window.removeEventListener('omran:store-items-updated', emit);
+        window.removeEventListener('omran:store-item-deleted', emit);
+      }
+    };
   }
 
   /**
@@ -7991,39 +8086,51 @@ export class OmranDataService {
   static async loadStorePurchases(complexId?: string): Promise<StorePurchase[]> {
     const targetComplexId = complexId || this.activeComplexId || '';
     const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
-    const filteredLocal = targetComplexId
-      ? local.filter(p => !p.complexId || p.complexId === targetComplexId)
-      : local;
+    const isMatch = (p: StorePurchase) => {
+      if (!targetComplexId || targetComplexId === 'all') return true;
+      if (!p.complexId || p.complexId === 'default' || p.complexId === 'all') return true;
+      return p.complexId === targetComplexId;
+    };
 
+    const targetDb = this.getActiveDb();
+    let cloudPurchases: StorePurchase[] = [];
+
+    // 1. Try settings/store_purchases_data
     try {
-      const targetDb = this.getActiveDb();
-      const snap = await safeGetDocs(collection(targetDb, 'store_purchases'));
-      if (!snap.empty) {
-        const cloudList: StorePurchase[] = [];
-        snap.forEach(d => {
-          const raw = d.data() as StorePurchase;
-          const purchase: StorePurchase = {
-            ...raw,
-            id: d.id || raw.id
-          };
-          if (!targetComplexId || !purchase.complexId || purchase.complexId === targetComplexId) {
-            cloudList.push(purchase);
-          }
-        });
-        const map = new Map<string, StorePurchase>();
-        for (const p of filteredLocal) map.set(p.id, p);
-        for (const p of cloudList) map.set(p.id, p);
-        const merged = Array.from(map.values()).sort(
-          (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
-        );
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, merged);
-        return merged;
+      const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_purchases_data'));
+      if (snap.exists()) {
+        const raw = (snap.data()?.purchases as StorePurchase[]) || [];
+        if (Array.isArray(raw) && raw.length > 0) {
+          cloudPurchases = raw;
+        }
       }
-    } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'store_purchases');
+    } catch {}
+
+    // 2. Also try store_purchases collection if empty
+    if (cloudPurchases.length === 0) {
+      try {
+        const colSnap = await safeGetDocs(collection(targetDb, 'store_purchases'));
+        if (!colSnap.empty) {
+          colSnap.forEach(d => {
+            const raw = d.data() as StorePurchase;
+            cloudPurchases.push({ ...raw, id: d.id || raw.id });
+          });
+        }
+      } catch {}
     }
 
-    return filteredLocal;
+    if (cloudPurchases.length > 0) {
+      const map = new Map<string, StorePurchase>();
+      for (const p of local) map.set(p.id, p);
+      for (const p of cloudPurchases) map.set(p.id, p);
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
+      );
+      setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, merged);
+      return merged.filter(isMatch);
+    }
+
+    return local.filter(isMatch);
   }
 
   /**
@@ -8031,11 +8138,15 @@ export class OmranDataService {
    */
   static subscribeStorePurchases(callback: (purchases: StorePurchase[]) => void, complexId?: string): () => void {
     const targetComplexId = complexId || this.activeComplexId || '';
+    const isMatch = (p: StorePurchase) => {
+      if (!targetComplexId || targetComplexId === 'all') return true;
+      if (!p.complexId || p.complexId === 'default' || p.complexId === 'all') return true;
+      return p.complexId === targetComplexId;
+    };
+
     const emit = () => {
       const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
-      const filtered = targetComplexId
-        ? local.filter(p => !p.complexId || p.complexId === targetComplexId)
-        : local;
+      const filtered = local.filter(isMatch);
       callback(filtered.sort((a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()));
     };
 
@@ -8047,42 +8158,454 @@ export class OmranDataService {
         emit();
       }
     };
+    const handlePurchaseChange = () => {
+      emit();
+    };
     if (typeof window !== 'undefined') {
       window.addEventListener('omran:data-updated', handleLocalUpdate);
+      window.addEventListener('omran:store-purchases-updated', handlePurchaseChange);
+      window.addEventListener('omran:store-purchase-deleted', handlePurchaseChange);
     }
 
+    const targetDb = this.getActiveDb();
+    let unsubDoc: (() => void) | null = null;
+    let unsubCol: (() => void) | null = null;
+
+    // 1. Primary real-time listener: settings/store_purchases_data
     try {
-      const targetDb = this.getActiveDb();
-      const unsub = onSnapshot(collection(targetDb, 'store_purchases'), snap => {
-        const cloudList: StorePurchase[] = [];
-        snap.forEach(d => {
-          const raw = d.data() as StorePurchase;
-          const purchase: StorePurchase = { ...raw, id: d.id || raw.id };
-          if (!targetComplexId || !purchase.complexId || purchase.complexId === targetComplexId) {
-            cloudList.push(purchase);
+      unsubDoc = onSnapshot(doc(targetDb, 'settings', 'store_purchases_data'), snap => {
+        if (snap.exists()) {
+          const raw = (snap.data()?.purchases as StorePurchase[]) || [];
+          if (Array.isArray(raw)) {
+            const list = raw.map(p => ({ ...p, id: p.id }));
+            list.sort((a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime());
+            setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, list);
+            callback(list.filter(isMatch));
           }
-        });
-        cloudList.sort((a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime());
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, cloudList);
-        callback(cloudList);
-      }, err => {
-        handleFirestoreError(err, OperationType.LIST, 'store_purchases');
+        }
+      }, () => {
         emit();
       });
+    } catch {}
 
-      return () => {
-        try { unsub(); } catch {}
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('omran:data-updated', handleLocalUpdate);
+    // 2. Secondary real-time listener: collection store_purchases
+    try {
+      unsubCol = onSnapshot(collection(targetDb, 'store_purchases'), snap => {
+        if (!snap.empty) {
+          const colList: StorePurchase[] = [];
+          snap.forEach(d => {
+            const raw = d.data() as StorePurchase;
+            colList.push({ ...raw, id: d.id || raw.id });
+          });
+          const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
+          const map = new Map<string, StorePurchase>();
+          for (const p of local) map.set(p.id, p);
+          for (const p of colList) map.set(p.id, p);
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
+          );
+          setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, merged);
+          callback(merged.filter(isMatch));
         }
+      }, () => {});
+    } catch {}
+
+    return () => {
+      try { if (unsubDoc) unsubDoc(); } catch {}
+      try { if (unsubCol) unsubCol(); } catch {}
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('omran:data-updated', handleLocalUpdate);
+        window.removeEventListener('omran:store-purchases-updated', handlePurchaseChange);
+        window.removeEventListener('omran:store-purchase-deleted', handlePurchaseChange);
+      }
+    };
+  }
+
+  /**
+   * Marks a purchased prize as delivered ("تم التسليم").
+   * Real-time synchronized across all supervisor, teacher, and student dashboards.
+   */
+  static async markStorePurchaseDelivered(purchaseId: string, deliveredBy?: string): Promise<boolean> {
+    const targetDb = this.getActiveDb();
+    const centralDb = this.getCentralDb();
+    const nowIso = new Date().toISOString();
+    const deliverer = deliveredBy || 'المشرف';
+
+    // 1. Update local cache immediately
+    const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
+    const updatedLocal = local.map(p =>
+      p.id === purchaseId
+        ? { ...p, status: 'delivered' as const, deliveredAt: nowIso, deliveredBy: deliverer }
+        : p
+    );
+    setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, updatedLocal);
+    broadcastDataUpdate('store_purchases', updatedLocal);
+
+    const deliveredPurchase = updatedLocal.find(p => p.id === purchaseId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('omran:store-purchases-updated', { detail: deliveredPurchase || { purchaseId, status: 'delivered' } }));
+    }
+
+    // 2. Cloud Firestore update to settings/store_purchases_data
+    try {
+      let currentPurchases: StorePurchase[] = [];
+      try {
+        const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_purchases_data'));
+        if (snap.exists()) {
+          const raw = (snap.data()?.purchases as StorePurchase[]) || [];
+          if (Array.isArray(raw)) currentPurchases = raw;
+        }
+      } catch {}
+
+      const map = new Map<string, StorePurchase>();
+      for (const p of currentPurchases) map.set(p.id, p);
+      for (const p of local) if (!map.has(p.id)) map.set(p.id, p);
+
+      const targetP = map.get(purchaseId);
+      if (targetP) {
+        map.set(purchaseId, {
+          ...targetP,
+          status: 'delivered',
+          deliveredAt: nowIso,
+          deliveredBy: deliverer
+        });
+      }
+
+      const mergedPurchases = Array.from(map.values()).sort(
+        (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
+      );
+
+      const payload = {
+        purchases: cleanFirestoreData(mergedPurchases),
+        updatedAt: nowIso
       };
-    } catch {
-      return () => {
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('omran:data-updated', handleLocalUpdate);
+
+      await setDoc(doc(targetDb, 'settings', 'store_purchases_data'), payload, { merge: true });
+      if (centralDb !== targetDb) {
+        await setDoc(doc(centralDb, 'settings', 'store_purchases_data'), payload, { merge: true }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[OmranDataService] markStorePurchaseDelivered cloud warning:', err);
+    }
+
+    // 3. Also try individual doc update in store_purchases
+    try {
+      await updateDoc(doc(targetDb, 'store_purchases', purchaseId), {
+        status: 'delivered',
+        deliveredAt: nowIso,
+        deliveredBy: deliverer
+      });
+    } catch {}
+
+    return true;
+  }
+
+  /**
+   * Concurrency-safe atomic store purchase refund ("استرجاع المشترى").
+   * Guarantees:
+   * 1. Validates that the purchase has not already been refunded.
+   * 2. Atomically refunds points to the student (points += pointsCost).
+   * 3. Atomically restores the item stock (quantity += 1). If quantity was 0, it comes back to the store immediately!
+   * 4. Updates purchase status to 'refunded' with timestamp and actor (supervisor or student).
+   * 5. Real-time synchronized across all devices and dashboards.
+   */
+  static async refundStorePurchase(params: {
+    purchaseId: string;
+    refundedBy?: string;
+    role?: 'supervisor' | 'student';
+  }): Promise<{
+    success: boolean;
+    message: string;
+    refundedPurchase?: StorePurchase;
+    restoredPoints?: number;
+    newStudentPoints?: number;
+    restoredItemQuantity?: number;
+  }> {
+    const targetDb = this.getActiveDb();
+    const centralDb = this.getCentralDb();
+    const nowIso = new Date().toISOString();
+    const actorRole = params.role || 'supervisor';
+    const actorName = params.refundedBy || (actorRole === 'student' ? 'الطالب' : 'المشرف');
+
+    try {
+      const result = await runTransaction(targetDb, async transaction => {
+        const purchasesDocRef = doc(targetDb, 'settings', 'store_purchases_data');
+        const itemsDocRef = doc(targetDb, 'settings', 'store_items_data');
+
+        // 1. ALL READS FIRST (Strict Firestore rule)
+        const purchasesSnap = await transaction.get(purchasesDocRef);
+        const itemsSnap = await transaction.get(itemsDocRef);
+
+        const purchasesList = purchasesSnap.exists()
+          ? ((purchasesSnap.data()?.purchases as StorePurchase[]) || [])
+          : getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
+
+        const targetPurchaseIndex = purchasesList.findIndex(p => p.id === params.purchaseId);
+        if (targetPurchaseIndex < 0) {
+          throw new Error('purchase_not_found');
         }
+
+        const targetPurchase = purchasesList[targetPurchaseIndex];
+        if (targetPurchase.status === 'refunded') {
+          throw new Error('already_refunded');
+        }
+
+        const studentRef = doc(targetDb, 'students', targetPurchase.studentId);
+        let studentCurrentPoints = 0;
+        let studentExists = false;
+        try {
+          const studentSnap = await transaction.get(studentRef);
+          if (studentSnap.exists()) {
+            studentExists = true;
+            const sData = studentSnap.data() as Student;
+            if (typeof sData.points === 'number') {
+              studentCurrentPoints = sData.points;
+            }
+          }
+        } catch {}
+
+        // Calculate restored points
+        const pointsToRefund = Math.max(0, targetPurchase.pointsCost || 0);
+        const newStudentPoints = studentCurrentPoints + pointsToRefund;
+
+        // Restore item stock
+        const itemsList = itemsSnap.exists()
+          ? ((itemsSnap.data()?.items as StoreItem[]) || [])
+          : getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
+
+        const itemIndex = itemsList.findIndex(i => i.id === targetPurchase.itemId);
+        let newStockQuantity = 1;
+        let updatedItemsList = [...itemsList];
+
+        if (itemIndex >= 0) {
+          const existingItem = itemsList[itemIndex];
+          newStockQuantity = (existingItem.quantity || 0) + 1;
+          updatedItemsList[itemIndex] = {
+            ...existingItem,
+            quantity: newStockQuantity,
+            updatedAt: nowIso
+          };
+        } else {
+          // Re-create item placeholder if missing
+          const recreatedItem: StoreItem = {
+            id: targetPurchase.itemId,
+            name: targetPurchase.itemName,
+            imageUrl: targetPurchase.itemImage,
+            pointsRequired: targetPurchase.pointsCost,
+            quantity: 1,
+            complexId: targetPurchase.complexId,
+            createdAt: nowIso,
+            updatedAt: nowIso
+          };
+          updatedItemsList.push(recreatedItem);
+        }
+
+        // Updated purchase record
+        const updatedPurchase: StorePurchase = {
+          ...targetPurchase,
+          status: 'refunded',
+          refundedAt: nowIso,
+          refundedBy: actorName,
+          refundRole: actorRole
+        };
+
+        const updatedPurchasesList = [...purchasesList];
+        updatedPurchasesList[targetPurchaseIndex] = updatedPurchase;
+
+        // 2. ALL WRITES AFTER READS (Strict Firestore rule)
+        transaction.set(purchasesDocRef, {
+          purchases: cleanFirestoreData(updatedPurchasesList),
+          updatedAt: nowIso
+        }, { merge: true });
+
+        transaction.set(itemsDocRef, {
+          items: cleanFirestoreData(updatedItemsList),
+          updatedAt: nowIso
+        }, { merge: true });
+
+        if (studentExists) {
+          transaction.update(studentRef, {
+            points: newStudentPoints,
+            updatedAt: nowIso
+          });
+        }
+
+        return {
+          updatedPurchase,
+          updatedPurchasesList,
+          updatedItemsList,
+          newStudentPoints,
+          pointsToRefund,
+          newStockQuantity,
+          studentId: targetPurchase.studentId
+        };
+      });
+
+      // Update Local Caches
+      setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, result.updatedPurchasesList);
+      setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, result.updatedItemsList);
+
+      const localStudents = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
+      const updatedStudents = localStudents.map(st =>
+        st.id === result.studentId ? { ...st, points: result.newStudentPoints, updatedAt: nowIso } : st
+      );
+      setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, updatedStudents);
+
+      const affectedStudent = updatedStudents.find(st => st.id === result.studentId);
+      if (affectedStudent && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('omran:students-updated', { detail: affectedStudent }));
+      }
+
+      broadcastDataUpdate('store_purchases', result.updatedPurchasesList);
+      broadcastDataUpdate('store_item', result.updatedItemsList.find(i => i.id === result.updatedPurchase.itemId));
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('omran:store-items-updated', {
+          detail: result.updatedItemsList.find(i => i.id === result.updatedPurchase.itemId)
+        }));
+        window.dispatchEvent(new CustomEvent('omran:store-purchases-updated', { detail: result.updatedPurchase }));
+      }
+
+      // Also sync to centralDb if distinct
+      if (centralDb !== targetDb) {
+        try {
+          await setDoc(doc(centralDb, 'settings', 'store_purchases_data'), {
+            purchases: cleanFirestoreData(result.updatedPurchasesList),
+            updatedAt: nowIso
+          }, { merge: true });
+          await setDoc(doc(centralDb, 'settings', 'store_items_data'), {
+            items: cleanFirestoreData(result.updatedItemsList),
+            updatedAt: nowIso
+          }, { merge: true });
+        } catch {}
+      }
+
+      return {
+        success: true,
+        message: actorRole === 'student'
+          ? `تم استرجاع الجائزة بنجاح وإعادة ${result.pointsToRefund} نقطة إلى رصيدك`
+          : `تم استرجاع المشترى بنجاح وإعادة ${result.pointsToRefund} نقطة للطالب وإرجاع المنتج للمتجر بنجاح`,
+        refundedPurchase: result.updatedPurchase,
+        restoredPoints: result.pointsToRefund,
+        newStudentPoints: result.newStudentPoints,
+        restoredItemQuantity: result.newStockQuantity
+      };
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('already_refunded')) {
+        return { success: false, message: 'عذراً، هذه الجائزة تم استرجاعها بالفعل مسبقاً!' };
+      }
+      if (errMsg.includes('purchase_not_found')) {
+        return { success: false, message: 'عذراً، لم يتم العثور على سجل الشراء المطلوب!' };
+      }
+
+      // Offline / fallback implementation
+      console.warn('[OmranDataService] Cloud refund fallback to local cache:', err);
+      const localPurchases = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
+      const pIdx = localPurchases.findIndex(p => p.id === params.purchaseId);
+      if (pIdx < 0) return { success: false, message: 'لم يتم العثور على سجل الشراء!' };
+
+      const targetP = localPurchases[pIdx];
+      if (targetP.status === 'refunded') {
+        return { success: false, message: 'هذه الجائزة مسترجعة بالفعل!' };
+      }
+
+      const pointsRefunded = targetP.pointsCost || 0;
+      const updatedP: StorePurchase = {
+        ...targetP,
+        status: 'refunded',
+        refundedAt: nowIso,
+        refundedBy: actorName,
+        refundRole: actorRole
+      };
+      localPurchases[pIdx] = updatedP;
+      setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, localPurchases);
+
+      // Restore item
+      const localItems = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
+      const itemIdx = localItems.findIndex(i => i.id === targetP.itemId);
+      if (itemIdx >= 0) {
+        localItems[itemIdx] = { ...localItems[itemIdx], quantity: (localItems[itemIdx].quantity || 0) + 1, updatedAt: nowIso };
+        setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, localItems);
+      }
+
+      // Restore student points
+      const localStudents = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
+      let finalStudentPoints = 0;
+      const updatedStudents = localStudents.map(st => {
+        if (st.id === targetP.studentId) {
+          finalStudentPoints = (st.points || 0) + pointsRefunded;
+          return { ...st, points: finalStudentPoints, updatedAt: nowIso };
+        }
+        return st;
+      });
+      setLocalCache(OMRAN_CACHE_KEYS.STUDENTS, updatedStudents);
+
+      broadcastDataUpdate('store_purchases', localPurchases);
+      return {
+        success: true,
+        message: `تم استرجاع الجائزة وإعادة ${pointsRefunded} نقطة بنجاح ✓`,
+        refundedPurchase: updatedP,
+        restoredPoints: pointsRefunded,
+        newStudentPoints: finalStudentPoints
       };
     }
+  }
+
+  /**
+   * Deletes a store purchase audit log record completely ("حذف سجل الشراء نهائياً").
+   * Permanently removes the record so it disappears entirely from "تم شراؤه" across all devices.
+   */
+  static async deleteStorePurchase(purchaseId: string): Promise<boolean> {
+    const targetDb = this.getActiveDb();
+    const centralDb = this.getCentralDb();
+    const nowIso = new Date().toISOString();
+
+    // 1. Remove from local cache immediately
+    const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
+    const filtered = local.filter(p => p.id !== purchaseId);
+    setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, filtered);
+    broadcastDataUpdate('store_purchases', filtered);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('omran:store-purchase-deleted', { detail: purchaseId }));
+    }
+
+    // 2. Remove from settings/store_purchases_data in Firestore
+    try {
+      let currentPurchases: StorePurchase[] = [];
+      try {
+        const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_purchases_data'));
+        if (snap.exists()) {
+          const raw = (snap.data()?.purchases as StorePurchase[]) || [];
+          if (Array.isArray(raw)) currentPurchases = raw;
+        }
+      } catch {}
+
+      const sourcePurchases = currentPurchases.length > 0 ? currentPurchases : local;
+      const remaining = sourcePurchases.filter(p => p.id !== purchaseId);
+      const payload = {
+        purchases: cleanFirestoreData(remaining),
+        updatedAt: nowIso
+      };
+
+      await setDoc(doc(targetDb, 'settings', 'store_purchases_data'), payload, { merge: true });
+      if (centralDb !== targetDb) {
+        await setDoc(doc(centralDb, 'settings', 'store_purchases_data'), payload, { merge: true }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[OmranDataService] deleteStorePurchase cloud sync warning:', err);
+    }
+
+    // 3. Also try deleting from store_purchases collection
+    try {
+      await deleteDoc(doc(targetDb, 'store_purchases', purchaseId));
+      if (centralDb !== targetDb) {
+        await deleteDoc(doc(centralDb, 'store_purchases', purchaseId)).catch(() => {});
+      }
+    } catch {}
+
+    return true;
   }
 
   /**
@@ -8095,14 +8618,19 @@ export class OmranDataService {
 
     try {
       const targetDb = this.getActiveDb();
-      const snap = await safeGetDocs(collection(targetDb, 'settings'));
-      let found: StoreSettings | null = null;
-      snap.forEach(d => {
-        if (d.id === `store_${targetComplexId}` || (targetComplexId === 'default' && d.id === 'store_settings')) {
-          found = { ...DEFAULT_STORE_SETTINGS, ...(d.data() as StoreSettings) };
-        }
-      });
-      if (found) {
+      // Try settings/store_{complexId}
+      const docName = `store_${targetComplexId}`;
+      const snap = await safeGetDoc(doc(targetDb, 'settings', docName));
+      if (snap.exists()) {
+        const found = { ...DEFAULT_STORE_SETTINGS, ...(snap.data() as StoreSettings) };
+        local[targetComplexId] = found;
+        setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
+        return found;
+      }
+      // Fallback to store_settings
+      const fallbackSnap = await safeGetDoc(doc(targetDb, 'settings', 'store_settings'));
+      if (fallbackSnap.exists()) {
+        const found = { ...DEFAULT_STORE_SETTINGS, ...(fallbackSnap.data() as StoreSettings) };
         local[targetComplexId] = found;
         setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
         return found;
@@ -8134,9 +8662,7 @@ export class OmranDataService {
       const targetDb = this.getActiveDb();
       const docName = `store_${targetComplexId}`;
       await setDoc(doc(targetDb, 'settings', docName), clean, { merge: true });
-      if (targetComplexId === 'default') {
-        await setDoc(doc(targetDb, 'settings', 'store_settings'), clean, { merge: true }).catch(() => {});
-      }
+      await setDoc(doc(targetDb, 'settings', 'store_settings'), clean, { merge: true }).catch(() => {});
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `settings/store_${targetComplexId}`);
     }
@@ -8149,7 +8675,7 @@ export class OmranDataService {
     const targetComplexId = complexId || this.activeComplexId || 'default';
     const emit = () => {
       const local = getLocalCache<Record<string, StoreSettings>>(OMRAN_CACHE_KEYS.STORE_SETTINGS, {});
-      callback(local[targetComplexId] || DEFAULT_STORE_SETTINGS);
+      callback(local[targetComplexId] || local['default'] || DEFAULT_STORE_SETTINGS);
     };
 
     emit();
@@ -8175,10 +8701,17 @@ export class OmranDataService {
           setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
           callback(remote);
         } else {
-          emit();
+          // Check general store_settings
+          safeGetDoc(doc(targetDb, 'settings', 'store_settings')).then(genSnap => {
+            if (genSnap.exists()) {
+              const remote = { ...DEFAULT_STORE_SETTINGS, ...(genSnap.data() as StoreSettings) };
+              callback(remote);
+            } else {
+              emit();
+            }
+          }).catch(() => emit());
         }
-      }, err => {
-        handleFirestoreError(err, OperationType.GET, `settings/${docName}`);
+      }, () => {
         emit();
       });
 
@@ -8240,27 +8773,16 @@ export class OmranDataService {
 
     try {
       const result = await runTransaction(targetDb, async transaction => {
-        const itemRef = doc(targetDb, 'store_items', params.itemId);
-        const itemSnap = await transaction.get(itemRef);
-
-        if (!itemSnap.exists()) {
-          throw new Error('item_not_found');
-        }
-
-        const itemData = itemSnap.data() as StoreItem;
-        const currentQty = typeof itemData.quantity === 'number' ? itemData.quantity : 0;
-        const pointsRequired = typeof itemData.pointsRequired === 'number' ? itemData.pointsRequired : 10;
-
-        // Strict Stock Check: if sold out, fail atomically
-        if (currentQty <= 0) {
-          throw new Error('sold_out');
-        }
-
-        // Student points check
+        const itemsDocRef = doc(targetDb, 'settings', 'store_items_data');
+        const purchasesDocRef = doc(targetDb, 'settings', 'store_purchases_data');
         const studentRef = doc(targetDb, 'students', params.studentId);
+
+        // 1. ALL READS FIRST (Strict Firestore rule: all reads before all writes)
+        const itemsSnap = await transaction.get(itemsDocRef);
+        const purchasesSnap = await transaction.get(purchasesDocRef);
+
         let studentCurrentPoints = params.currentStudentPoints;
         let studentExists = false;
-
         try {
           const studentSnap = await transaction.get(studentRef);
           if (studentSnap.exists()) {
@@ -8270,10 +8792,34 @@ export class OmranDataService {
               studentCurrentPoints = sData.points;
             }
           }
-        } catch {
-          // In case student document query is protected or offline, use params.currentStudentPoints
+        } catch {}
+
+        // Evaluate item stock from store_items_data
+        const itemsData = itemsSnap.exists() ? (itemsSnap.data()?.items as StoreItem[]) || [] : [];
+        const itemIndex = itemsData.findIndex(i => i.id === params.itemId);
+
+        let targetItem: StoreItem | null = null;
+        if (itemIndex >= 0) {
+          targetItem = itemsData[itemIndex];
+        } else {
+          // Fallback to local cache if item not in cloud doc yet
+          const localItems = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
+          targetItem = localItems.find(i => i.id === params.itemId) || null;
         }
 
+        if (!targetItem) {
+          throw new Error('item_not_found');
+        }
+
+        const currentQty = typeof targetItem.quantity === 'number' ? targetItem.quantity : 0;
+        const pointsRequired = typeof targetItem.pointsRequired === 'number' ? targetItem.pointsRequired : 10;
+
+        // Strict Concurrency & Stock Check: if sold out, fail atomically
+        if (currentQty <= 0) {
+          throw new Error('sold_out');
+        }
+
+        // Student points check
         if (studentCurrentPoints < pointsRequired) {
           throw new Error('insufficient_points');
         }
@@ -8281,24 +8827,27 @@ export class OmranDataService {
         const remainingQuantity = Math.max(0, currentQty - 1);
         const newStudentPoints = Math.max(0, studentCurrentPoints - pointsRequired);
 
-        // Transaction Writes
-        transaction.update(itemRef, {
+        // Update item in list
+        const updatedItem = {
+          ...targetItem,
           quantity: remainingQuantity,
           updatedAt: ts.iso
-        });
+        };
 
-        if (studentExists) {
-          transaction.update(studentRef, {
-            points: newStudentPoints,
-            updatedAt: ts.iso
-          });
+        let updatedItemsList: StoreItem[] = [];
+        if (itemIndex >= 0) {
+          updatedItemsList = [...itemsData];
+          updatedItemsList[itemIndex] = updatedItem;
+        } else {
+          updatedItemsList = [updatedItem, ...itemsData];
         }
 
+        // Build Purchase Audit Log with ultra-precise timestamp
         const purchaseRecord: StorePurchase = {
           id: purchaseId,
-          itemId: itemData.id || params.itemId,
-          itemName: itemData.name || 'جائزة قرآنية',
-          itemImage: itemData.imageUrl || '',
+          itemId: targetItem.id || params.itemId,
+          itemName: targetItem.name || 'جائزة قرآنية',
+          itemImage: targetItem.imageUrl || '',
           pointsCost: pointsRequired,
           studentId: params.studentId,
           studentName: params.studentName,
@@ -8307,11 +8856,30 @@ export class OmranDataService {
           complexId: params.complexId,
           purchasedAt: ts.iso,
           preciseTimestampText: ts.preciseTimestampText,
-          preciseSubsecond: ts.preciseSubsecond
+          preciseSubsecond: ts.preciseSubsecond,
+          status: 'pending'
         };
 
-        const purchaseRef = doc(targetDb, 'store_purchases', purchaseRecord.id);
-        transaction.set(purchaseRef, cleanFirestoreData(purchaseRecord));
+        const existingPurchases = purchasesSnap.exists() ? (purchasesSnap.data()?.purchases as StorePurchase[]) || [] : [];
+        const updatedPurchasesList = [purchaseRecord, ...existingPurchases];
+
+        // 2. ALL WRITES AFTER READS (Strict Firestore rule)
+        transaction.set(itemsDocRef, {
+          items: cleanFirestoreData(updatedItemsList),
+          updatedAt: ts.iso
+        }, { merge: true });
+
+        transaction.set(purchasesDocRef, {
+          purchases: cleanFirestoreData(updatedPurchasesList),
+          updatedAt: ts.iso
+        }, { merge: true });
+
+        if (studentExists) {
+          transaction.update(studentRef, {
+            points: newStudentPoints,
+            updatedAt: ts.iso
+          });
+        }
 
         return {
           purchase: purchaseRecord,
@@ -8350,7 +8918,7 @@ export class OmranDataService {
 
       return {
         success: true,
-        message: 'تهانينا! تم شراء المنتج بنجاح وتم خصم النقاط 🎉',
+        message: 'تهانينا! تم استبدال وشراء المنتج بنجاح وتم خصم النقاط من رصيدك',
         purchase: result.purchase,
         remainingQuantity: result.remainingQuantity,
         newStudentPoints: result.newStudentPoints
@@ -8424,7 +8992,8 @@ export class OmranDataService {
         complexId: params.complexId,
         purchasedAt: ts.iso,
         preciseTimestampText: ts.preciseTimestampText,
-        preciseSubsecond: ts.preciseSubsecond
+        preciseSubsecond: ts.preciseSubsecond,
+        status: 'pending'
       };
 
       // Update local storage
@@ -8450,7 +9019,7 @@ export class OmranDataService {
 
       return {
         success: true,
-        message: 'تهانينا! تم شراء المنتج بنجاح وتم خصم النقاط 🎉',
+        message: 'تهانينا! تم استبدال وشراء المنتج بنجاح وتم خصم النقاط من رصيدك',
         purchase: purchaseRecord,
         remainingQuantity,
         newStudentPoints

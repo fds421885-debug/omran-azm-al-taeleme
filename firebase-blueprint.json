@@ -148,6 +148,56 @@
         "appliedAt": { "type": "string" }
       },
       "required": ["studentName", "complexId", "status"]
+    },
+    "StoreItem": {
+      "title": "StoreItem",
+      "description": "Store reward item available for students to redeem using memorization and exam points",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "imageUrl": { "type": "string" },
+        "pointsRequired": { "type": "number" },
+        "quantity": { "type": "number" },
+        "initialQuantity": { "type": "number" },
+        "description": { "type": "string", "maxLength": 1000 },
+        "startsAt": { "type": "string" },
+        "endsAt": { "type": "string" },
+        "isImmediate": { "type": "boolean" },
+        "isForever": { "type": "boolean" },
+        "isUnderEdit": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "pointsRequired"]
+    },
+    "StorePurchase": {
+      "title": "StorePurchase",
+      "description": "Logged store purchase transaction timestamped with ultra-precise femtoseconds",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "itemName": { "type": "string", "maxLength": 200 },
+        "itemImage": { "type": "string" },
+        "pointsCost": { "type": "number" },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 200 },
+        "halaqahId": { "type": "string", "maxLength": 128 },
+        "halaqahName": { "type": "string", "maxLength": 200 },
+        "complexId": { "type": "string", "maxLength": 128 },
+        "purchasedAt": { "type": "string" },
+        "preciseTimestampText": { "type": "string", "maxLength": 250 },
+        "preciseSubsecond": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "delivered", "refunded"] },
+        "deliveredAt": { "type": "string" },
+        "deliveredBy": { "type": "string", "maxLength": 128 },
+        "refundedAt": { "type": "string" },
+        "refundedBy": { "type": "string", "maxLength": 128 },
+        "refundRole": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["itemId", "itemName", "pointsCost", "studentId", "studentName"]
     }
   },
   "firestore": {
@@ -186,6 +236,14 @@
     "/registration_applications/{appId}": {
       "schema": "RegistrationApplication",
       "description": "Student registration applications for complex portals"
+    },
+    "/store_items/{itemId}": {
+      "schema": "StoreItem",
+      "description": "Store items and rewards"
+    },
+    "/store_purchases/{purchaseId}": {
+      "schema": "StorePurchase",
+      "description": "Store purchase audit logs"
     }
   }
 }

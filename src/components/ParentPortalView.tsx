@@ -48,7 +48,8 @@ import {
   Package,
   Coins,
   Lock,
-  History
+  History,
+  Gift
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
@@ -161,6 +162,11 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [purchaseFeedback, setPurchaseFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [purchasesTabFilter, setPurchasesTabFilter] = useState<'all' | 'mine'>('all');
+  const prevStudentStoreQuantitiesRef = useRef<Map<string, number>>(new Map());
+  const [animatedStudentMinusOneIds, setAnimatedStudentMinusOneIds] = useState<Set<string>>(new Set());
+  const [soldOutModal, setSoldOutModal] = useState<{ title: string; message: string } | null>(null);
+  const [refundingConfirmPurchase, setRefundingConfirmPurchase] = useState<StorePurchase | null>(null);
+  const [isRefunding, setIsRefunding] = useState(false);
 
   // Student Google Authentication & Linking State
   const [currentStudent, setCurrentStudent] = useState<Student>(student);
@@ -604,6 +610,34 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   useEffect(() => {
     const complexId = resolvedComplex?.id || student.complexId || '';
     const unsubItems = OmranDataService.subscribeStoreItems((liveItems) => {
+      // Detect stock decrement for the "-1" animation badge
+      const prevMap = prevStudentStoreQuantitiesRef.current;
+      const decrementedIds: string[] = [];
+
+      liveItems.forEach(item => {
+        const prevQty = prevMap.get(item.id);
+        if (prevQty !== undefined && item.quantity < prevQty) {
+          decrementedIds.push(item.id);
+        }
+        prevMap.set(item.id, item.quantity);
+      });
+
+      if (decrementedIds.length > 0) {
+        setAnimatedStudentMinusOneIds(prev => {
+          const next = new Set(prev);
+          decrementedIds.forEach(id => next.add(id));
+          return next;
+        });
+
+        setTimeout(() => {
+          setAnimatedStudentMinusOneIds(prev => {
+            const next = new Set(prev);
+            decrementedIds.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 2500);
+      }
+
       setStoreItems(liveItems);
     }, complexId);
     const unsubPurchases = OmranDataService.subscribeStorePurchases((livePurchases) => {
@@ -620,10 +654,42 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     };
   }, [resolvedComplex?.id, student.complexId]);
 
+  // Active available store items for the student (hides under edit, sold-out, or scheduled items)
+  const studentVisibleStoreItems = useMemo(() => {
+    const now = Date.now();
+    return storeItems.filter(item => {
+      // Hide if supervisor is currently editing it ("تختفي مؤقتاً")
+      if (item.isUnderEdit) return false;
+      // Hide when sold out / quantity reaches 0 ("ولما يخلص يختفي")
+      if ((item.quantity || 0) <= 0) return false;
+      // Scheduled appearance
+      if (item.startsAt && new Date(item.startsAt).getTime() > now) return false;
+      // Scheduled end
+      if (item.endsAt && new Date(item.endsAt).getTime() < now) return false;
+      return true;
+    });
+  }, [storeItems]);
+
   // Student available store items count
   const availableStoreItemsCount = useMemo(() => {
-    return storeItems.filter(i => (i.quantity || 0) > 0).length;
-  }, [storeItems]);
+    return studentVisibleStoreItems.length;
+  }, [studentVisibleStoreItems]);
+
+  // Live Sold-Out Detection while Confirm Modal is open:
+  // If another student purchases the last remaining stock in real-time, auto-dismiss the modal and pop up the alert!
+  useEffect(() => {
+    if (confirmingPurchaseItem) {
+      const live = storeItems.find(i => i.id === confirmingPurchaseItem.id);
+      if (!live || (live.quantity || 0) <= 0 || live.isUnderEdit) {
+        const itemName = confirmingPurchaseItem.name;
+        setConfirmingPurchaseItem(null);
+        setSoldOutModal({
+          title: 'عذراً، تأخرت بلحظات!',
+          message: `لقد نفد منتج "${itemName}" بالفعل وتنافس عليه زميلك قبلك بلحظات!`
+        });
+      }
+    }
+  }, [storeItems, confirmingPurchaseItem]);
 
   // Execute Purchase Handler with Live Atomic Check
   const handleExecutePurchase = async (item: StoreItem) => {
@@ -647,6 +713,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         currentStudentPoints: studentPoints
       });
 
+      // Always close confirmation modal so it never stays open in front
+      setConfirmingPurchaseItem(null);
+
       if (res.success) {
         try {
           confetti({
@@ -661,17 +730,63 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           onUpdateStudent?.(updated);
         }
         setPurchaseFeedback({ success: true, message: res.message });
-        setConfirmingPurchaseItem(null);
       } else {
-        setPurchaseFeedback({ success: false, message: res.message });
+        // Pop up the dedicated modal with big "حسناً" button as requested
+        if (res.reason === 'sold_out') {
+          setSoldOutModal({
+            title: 'عذراً، تأخرت بلحظات!',
+            message: 'لقد نفد هذا المنتج للتو وتنافس عليه زميلك قبلك بلحظات!'
+          });
+        } else {
+          setSoldOutModal({
+            title: 'تنبيه من المتجر',
+            message: res.message
+          });
+        }
       }
     } catch {
-      setPurchaseFeedback({
-        success: false,
+      setConfirmingPurchaseItem(null);
+      setSoldOutModal({
+        title: 'خطأ في المعالجة',
         message: 'حدث خطأ أثناء معالجة الشراء، يرجى المحاولة مرة أخرى.'
       });
     } finally {
       setIsPurchasing(false);
+    }
+  };
+
+  // Student Return / Refund Handler
+  const handleStudentRefund = async (purchase: StorePurchase) => {
+    if (isRefunding) return;
+    try {
+      setIsRefunding(true);
+      const res = await OmranDataService.refundStorePurchase({
+        purchaseId: purchase.id,
+        refundedBy: currentStudent.name,
+        role: 'student'
+      });
+      if (res.success) {
+        try {
+          confetti({
+            particleCount: 60,
+            spread: 50,
+            origin: { y: 0.6 }
+          });
+        } catch {}
+        if (typeof res.newStudentPoints === 'number') {
+          const updated = { ...currentStudent, points: res.newStudentPoints };
+          setCurrentStudent(updated);
+          onUpdateStudent?.(updated);
+        }
+        setPurchaseFeedback({ success: true, message: res.message });
+      } else {
+        setPurchaseFeedback({ success: false, message: res.message });
+      }
+    } catch {
+      setPurchaseFeedback({ success: false, message: 'حدث خطأ أثناء استرجاع الجائزة.' });
+    } finally {
+      setIsRefunding(false);
+      setRefundingConfirmPurchase(null);
     }
   };
 
@@ -2440,7 +2555,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     </div>
                   </div>
 
-                  {storeItems.length === 0 ? (
+                  {studentVisibleStoreItems.length === 0 ? (
                     <div
                       className="p-10 rounded-3xl border-2 border-dashed border-white/15 text-center text-slate-400"
                       style={{ backgroundColor: `${themeCardBg}60` }}
@@ -2451,120 +2566,145 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-                      {storeItems.map(item => {
-                        const studentPts = typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0);
-                        const isSoldOut = (item.quantity || 0) <= 0;
-                        const hasEnoughPoints = studentPts >= item.pointsRequired;
-                        const canBuy = !isSoldOut && hasEnoughPoints;
+                      <AnimatePresence>
+                        {studentVisibleStoreItems.map(item => {
+                          const studentPts = typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0);
+                          const isSoldOut = (item.quantity || 0) <= 0;
+                          const hasEnoughPoints = studentPts >= item.pointsRequired;
+                          const canBuy = !isSoldOut && hasEnoughPoints;
+                          const showMinusOne = animatedStudentMinusOneIds.has(item.id);
 
-                        return (
-                          <div
-                            key={item.id}
-                            className="rounded-3xl border-2 border-b-4 overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl"
-                            style={{
-                              backgroundColor: themeCardBg,
-                              borderColor: `${themeAccent}40`,
-                              borderBottomColor: canBuy ? themeAccent : '#475569'
-                            }}
-                          >
-                            {/* Image & Badges */}
-                            <div className="relative aspect-video sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name}
-                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-                                  <ShoppingBag className="w-14 h-14 opacity-40 mb-1" />
-                                  <span className="text-[11px] font-bold text-slate-400">جائزة قرآنية</span>
-                                </div>
-                              )}
-
-                              {/* Points Badge */}
-                              <div
-                                className="absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2"
-                                style={{
-                                  backgroundColor: '#78350f',
-                                  borderColor: themeAccent,
-                                  color: themeAccent
-                                }}
-                              >
-                                <Coins className="w-4 h-4 text-amber-300" />
-                                <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
-                              </div>
-
-                              {/* Quantity Badge */}
-                              <div
-                                className={`absolute top-3 left-3 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
-                                  !isSoldOut
-                                    ? (item.quantity || 0) <= 2
-                                      ? 'bg-amber-600/90 text-white border-amber-400'
-                                      : 'bg-emerald-600/90 text-white border-emerald-400'
-                                    : 'bg-rose-600/90 text-white border-rose-400'
-                                }`}
-                              >
-                                <Package className="w-3.5 h-3.5" />
-                                <span>
-                                  {!isSoldOut ? `المتبقي: ${toArabicDigits(item.quantity)}` : 'نفدت الكمية'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Item Details & Buy Button */}
-                            <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
-                              <div>
-                                <h4 className="font-black text-white text-base leading-snug line-clamp-2">
-                                  {item.name}
-                                </h4>
-                                {item.description && (
-                                  <p className="text-slate-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
-                                    {item.description}
-                                  </p>
+                          return (
+                            <motion.div
+                              key={item.id}
+                              layout
+                              initial={{ opacity: 0, scale: 0.85, y: 20 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                              className="rounded-3xl border-2 border-b-[5px] overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl relative"
+                              style={{
+                                backgroundColor: themeCardBg,
+                                borderColor: `${themeAccent}40`,
+                                borderBottomColor: canBuy ? themeAccent : '#475569'
+                              }}
+                            >
+                              {/* Image & Badges */}
+                              <div className="relative aspect-video sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
+                                {item.imageUrl ? (
+                                  <img
+                                    src={item.imageUrl}
+                                    alt={item.name}
+                                    className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                    <ShoppingBag className="w-14 h-14 opacity-40 mb-1" />
+                                    <span className="text-[11px] font-bold text-slate-400">جائزة قرآنية</span>
+                                  </div>
                                 )}
+
+                                {/* Points Badge */}
+                                <div
+                                  className="absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10"
+                                  style={{
+                                    backgroundColor: '#78350f',
+                                    borderColor: themeAccent,
+                                    color: themeAccent
+                                  }}
+                                >
+                                  <Coins className="w-4 h-4 text-amber-300" />
+                                  <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
+                                </div>
+
+                                {/* Quantity Badge with floating "-1" badge */}
+                                <div className="absolute top-3 left-3 z-10 flex items-center">
+                                  <div
+                                    className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
+                                      !isSoldOut
+                                        ? (item.quantity || 0) <= 2
+                                          ? 'bg-amber-600/90 text-white border-amber-400'
+                                          : 'bg-emerald-600/90 text-white border-emerald-400'
+                                        : 'bg-rose-600/90 text-white border-rose-400'
+                                    }`}
+                                  >
+                                    <Package className="w-3.5 h-3.5" />
+                                    <span>
+                                      {!isSoldOut ? `المتبقي: ${toArabicDigits(item.quantity)}` : 'نفدت الكمية'}
+                                    </span>
+                                  </div>
+
+                                  {/* Floating -1 badge animation */}
+                                  <AnimatePresence>
+                                    {showMinusOne && (
+                                      <motion.span
+                                        initial={{ opacity: 0, scale: 0.5, y: 0 }}
+                                        animate={{ opacity: 1, scale: 1.25, y: -26 }}
+                                        exit={{ opacity: 0, scale: 0.8, y: -40 }}
+                                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                                        className="absolute -top-3 left-0 bg-emerald-400 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full border-2 border-white shadow-xl pointer-events-none"
+                                      >
+                                        -١
+                                      </motion.span>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
                               </div>
 
-                              {/* Action Button */}
-                              <div className="pt-2">
-                                {isSoldOut ? (
-                                  <button
-                                    type="button"
-                                    disabled
-                                    className="w-full py-2.5 px-3 rounded-2xl bg-white/5 border border-white/10 text-slate-400 font-bold text-xs cursor-not-allowed text-center"
-                                  >
-                                    نفدت الكمية المتاحة
-                                  </button>
-                                ) : !hasEnoughPoints ? (
-                                  <div className="space-y-1">
+                              {/* Item Details & Buy Button */}
+                              <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                                <div>
+                                  <h4 className="font-black text-white text-base leading-snug line-clamp-2">
+                                    {item.name}
+                                  </h4>
+                                  {item.description && (
+                                    <p className="text-slate-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+                                      {item.description}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Action Button */}
+                                <div className="pt-2">
+                                  {isSoldOut ? (
                                     <button
                                       type="button"
                                       disabled
-                                      className="w-full py-2.5 px-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs cursor-not-allowed text-center"
+                                      className="w-full py-2.5 px-3 rounded-2xl bg-white/5 border border-white/10 text-slate-400 font-bold text-xs cursor-not-allowed text-center"
                                     >
-                                      تحتاج {toArabicDigits(item.pointsRequired - studentPts)} نقطة إضافية
+                                      نفدت الكمية المتاحة
                                     </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmingPurchaseItem(item)}
-                                    className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 hover:brightness-105 flex items-center justify-center gap-1.5"
-                                    style={{
-                                      backgroundColor: themeAccent,
-                                      borderColor: '#b45309',
-                                      borderBottomColor: '#78350f'
-                                    }}
-                                  >
-                                    <ShoppingBag className="w-4 h-4 stroke-[2.5]" />
-                                    <span>شراء الآن 🎁</span>
-                                  </button>
-                                )}
+                                  ) : !hasEnoughPoints ? (
+                                    <div className="space-y-1">
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="w-full py-2.5 px-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs cursor-not-allowed text-center"
+                                      >
+                                        تحتاج {toArabicDigits(item.pointsRequired - studentPts)} نقطة إضافية
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmingPurchaseItem(item)}
+                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 hover:brightness-105 flex items-center justify-center gap-2 cursor-pointer"
+                                      style={{
+                                        backgroundColor: themeAccent,
+                                        borderColor: '#b45309',
+                                        borderBottomColor: '#78350f'
+                                      }}
+                                    >
+                                      <ShoppingBag className="w-4 h-4 stroke-[2.5]" />
+                                      <span>استبدال وشراء الجائزة</span>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
                     </div>
                   )}
                 </div>
@@ -2632,7 +2772,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
                     return (
                       <div className="space-y-3">
-                        {displayedPurchases.map(purchase => {
+                        {displayedPurchases.map((purchase, idx) => {
                           const isMine = purchase.studentId === currentStudent.id;
                           return (
                             <div
@@ -2664,8 +2804,15 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                       {purchase.itemName}
                                     </span>
                                     {isMine && (
-                                      <span className="bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/40">
-                                        مشتراي الشخصي ★
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-amber-400/20 text-amber-300 border-2 border-b-2 border-amber-400/50 shadow-xs">
+                                        <Sparkles className="w-3 h-3 text-amber-300" />
+                                        <span>مشتراي الشخصي</span>
+                                      </span>
+                                    )}
+                                    {idx === 0 && (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-400/50 shadow-xs">
+                                        <Award className="w-3 h-3 text-emerald-400" />
+                                        <span>الأول في السبق والفوز</span>
                                       </span>
                                     )}
                                   </div>
@@ -2685,19 +2832,55 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 </div>
                               </div>
 
-                              {/* Exact Timestamp with femtoseconds */}
-                              <div className="bg-black/30 px-3 py-2 rounded-xl border border-white/10 text-right md:text-left shrink-0">
-                                <div className="text-[10px] text-amber-300 font-black">
-                                  توقيت الشراء الموثق:
+                              {/* Right Side: Status, Refund Action for student, and Exact Timestamp */}
+                              <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-start sm:items-center md:items-end lg:items-center gap-2.5 shrink-0">
+                                {/* Delivery Status Badge (Duolingo 3D without standard emojis) */}
+                                <div>
+                                  {purchase.status === 'delivered' ? (
+                                    <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-3 border-emerald-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+                                      <span>{isMine ? 'تم تسليم الجائزة لك بنجاح' : 'تم تسليم الجائزة للطالب'}</span>
+                                    </span>
+                                  ) : purchase.status === 'refunded' ? (
+                                    <span className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-3 border-amber-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                      <RotateCcw className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                                      <span>{isMine ? 'تم استرجاع جائزتك وإعادة النقاط' : 'تم استرجاع المشترى للطالب'}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="px-3 py-1 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-3 border-sky-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                      <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
+                                      <span>{isMine ? 'بانتظار استلامك للجائزة في الحلقة' : 'بانتظار تسليمها للطالب'}</span>
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="text-[11px] font-mono text-slate-200 mt-0.5 dir-ltr text-left">
-                                  {purchase.preciseTimestampText || purchase.purchasedAt}
-                                </div>
-                                {purchase.preciseSubsecond && (
-                                  <div className="text-[9px] font-mono text-emerald-400 mt-0.5 dir-ltr text-left">
-                                    فيمتو ثانية: {purchase.preciseSubsecond}
-                                  </div>
+
+                                {/* Student Refund Button (Duolingo 3D Button) */}
+                                {isMine && purchase.status !== 'delivered' && purchase.status !== 'refunded' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRefundingConfirmPurchase(purchase)}
+                                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-xs border-2 border-b-3 border-amber-700 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
+                                    title="استرجاع هذه الجائزة واستعادة نقاطك إلى رصيدك"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>استرجاع النقاط</span>
+                                  </button>
                                 )}
+
+                                {/* Exact Timestamp with femtoseconds */}
+                                <div className="bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 text-right md:text-left">
+                                  <div className="text-[10px] text-amber-300 font-black">
+                                    توقيت الشراء الموثق:
+                                  </div>
+                                  <div className="text-[10px] sm:text-[11px] font-mono text-slate-200 mt-0.5 dir-ltr text-left">
+                                    {purchase.preciseTimestampText || purchase.purchasedAt}
+                                  </div>
+                                  {purchase.preciseSubsecond && (
+                                    <div className="text-[9px] font-mono text-emerald-400 mt-0.5 dir-ltr text-left">
+                                      فيمتو ثانية: {purchase.preciseSubsecond}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -2752,7 +2935,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       type="button"
                       disabled={isPurchasing}
                       onClick={() => setConfirmingPurchaseItem(null)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all"
+                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
                     >
                       تراجع
                     </button>
@@ -2760,7 +2943,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       type="button"
                       disabled={isPurchasing}
                       onClick={() => handleExecutePurchase(confirmingPurchaseItem)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
                       style={{
                         backgroundColor: themeAccent,
                         borderColor: '#b45309',
@@ -2778,6 +2961,121 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Student Refund Confirmation Modal */}
+            {refundingConfirmPurchase && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+                <div
+                  className="w-full max-w-md rounded-3xl p-6 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: themeAccent,
+                    borderBottomColor: '#b45309'
+                  }}
+                >
+                  <div className="text-center space-y-3">
+                    <div
+                      className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeAccent,
+                        borderBottomColor: '#b45309'
+                      }}
+                    >
+                      <RotateCcw className="w-8 h-8 text-amber-300 animate-spin" />
+                    </div>
+                    <h3 className="text-xl font-black text-white font-heading">
+                      استرجاع الجائزة وإعادة النقاط
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                      هل تود استرجاع جائزة{' '}
+                      <strong className="text-white font-black">
+                        "{refundingConfirmPurchase.itemName}"
+                      </strong>
+                      ؟
+                      <br className="my-1" />
+                      سيتم فوراً إعادة{' '}
+                      <strong className="text-amber-300 font-mono font-black">
+                        {toArabicDigits(refundingConfirmPurchase.pointsCost)} نقطة
+                      </strong>{' '}
+                      إلى رصيدك، وسيعود المنتج للمتجر ليتمكن زملاؤك في الحلقة من التنافس عليه.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={isRefunding}
+                      onClick={() => setRefundingConfirmPurchase(null)}
+                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isRefunding}
+                      onClick={() => handleStudentRefund(refundingConfirmPurchase)}
+                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                      style={{
+                        backgroundColor: themeAccent,
+                        borderColor: '#b45309',
+                        borderBottomColor: '#78350f'
+                      }}
+                    >
+                      {isRefunding ? (
+                        <span>جاري الاسترجاع...</span>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                          <span>تأكيد الاسترجاع الآن</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sold Out / Late Miss Alert Modal (Prominent Popup Dialog as requested) */}
+            {soldOutModal && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                  className="w-full max-w-sm rounded-[32px] p-6 sm:p-7 border-2 border-b-6 shadow-2xl relative text-center space-y-4"
+                  style={{
+                    backgroundColor: themeCardBg || '#1e293b',
+                    borderColor: '#f59e0b',
+                    borderBottomColor: '#b45309'
+                  }}
+                >
+                  <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center border-2 border-b-4 bg-amber-500/20 border-amber-500/50 shadow-inner text-amber-300">
+                    <Clock className="w-10 h-10 animate-pulse text-amber-400" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black text-white font-heading">
+                      {soldOutModal.title}
+                    </h3>
+                    <p className="text-sm text-slate-300 leading-relaxed font-bold">
+                      {soldOutModal.message}
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setSoldOutModal(null)}
+                      className="w-full py-3 px-6 rounded-2xl bg-amber-400 hover:bg-amber-300 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-base border-2 border-b-4 border-amber-600 transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>حسناً</span>
+                    </button>
+                  </div>
+                </motion.div>
               </div>
             )}
           </div>

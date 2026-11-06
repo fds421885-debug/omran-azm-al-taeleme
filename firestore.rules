@@ -193,5 +193,22 @@ service cloud.firestore {
         && incoming().studentName is string;
       allow delete: if isValidId(appId);
     }
+
+    // Store Items (معروضات وجوائز المتجر القرآني)
+    match /store_items/{itemId} {
+      allow read: if true;
+      allow create, update: if isValidId(itemId)
+        && (incoming().name is string || (resource != null && resource.data.name is string));
+      allow delete: if isValidId(itemId);
+    }
+
+    // Store Purchases (سجل المشتريات الموثق بدقة الفيمتو ثانية)
+    match /store_purchases/{purchaseId} {
+      allow read: if true;
+      allow create: if isValidId(purchaseId)
+        && incoming().itemId is string
+        && incoming().studentId is string;
+      allow update, delete: if isValidId(purchaseId);
+    }
   }
 }
