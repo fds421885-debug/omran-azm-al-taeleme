@@ -643,56 +643,56 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
       {/* Top Banner (Duolingo 3D Styling with complex theme colors) */}
       <div
-        className="rounded-3xl p-6 sm:p-8 border-2 border-b-[6px] shadow-2xl transition-all relative overflow-hidden"
+        className="rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 border-2 border-b-[6px] shadow-2xl transition-all relative overflow-hidden"
         style={{
           backgroundColor: surfaceColor,
           borderColor: `${accentColor}40`,
           borderBottomColor: accentColor
         }}
       >
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-start gap-4">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
+          <div className="flex items-start gap-3 sm:gap-4">
             <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 border-2 border-b-4 shadow-lg text-white"
+              className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 border-2 border-b-4 shadow-lg text-white"
               style={{
                 backgroundColor: primaryColor,
                 borderColor: accentColor,
                 borderBottomColor: accentColor
               }}
             >
-              <ShoppingBag className="w-8 h-8 text-amber-300 animate-pulse" />
+              <ShoppingBag className="w-6 h-6 sm:w-8 sm:h-8 text-amber-300 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-black text-white font-heading tracking-tight">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-white font-heading tracking-tight">
                   المتجر القرآني وجوائز النقاط
                 </h1>
                 <span
-                  className="px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1.5 shadow-sm"
+                  className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-black border flex items-center gap-1.5 shadow-sm"
                   style={{
                     backgroundColor: `${accentColor}25`,
                     borderColor: `${accentColor}80`,
                     color: accentColor
                   }}
                 >
-                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" />
                   مزامنة لحظية مباشرة
                 </span>
               </div>
-              <p className="text-slate-300 text-sm sm:text-base mt-1.5 leading-relaxed font-bold">
+              <p className="text-slate-300 text-xs sm:text-sm md:text-base leading-relaxed font-bold">
                 تحفيز طلاب الحلقات واستبدال نقاط التسميع والاختبارات بجوائز وهدايا عينية قيمة ومباشرة
               </p>
             </div>
           </div>
 
-          {/* Right Controls: Store Switch & Add Item Button */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Right Controls: Store Switch & Add Item Button (Fluid on Mobile, compact on Desktop) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
             {/* Store Status Toggle */}
             {canManage ? (
               <button
                 type="button"
                 onClick={handleToggleStoreStatus}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl font-black text-xs sm:text-sm border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 cursor-pointer ${
+                className={`w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 sm:gap-2.5 px-4 py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 cursor-pointer touch-manipulation ${
                   settings.isOpen
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-800'
                     : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-800'
@@ -714,7 +714,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               </button>
             ) : (
               <div
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black border ${
+                className={`w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black border ${
                   settings.isOpen
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
@@ -730,7 +730,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               <button
                 type="button"
                 onClick={handleOpenAddModal}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-2xl font-black text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 cursor-pointer"
+                className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 cursor-pointer touch-manipulation"
                 style={{
                   backgroundColor: accentColor,
                   borderColor: '#b45309',
@@ -745,28 +745,28 @@ export const StoreTab: React.FC<StoreTabProps> = ({
         </div>
 
         {/* Quick Stats Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/10">
-          <div className="bg-black/20 rounded-2xl p-3 border border-white/5">
-            <span className="text-xs text-slate-400 block font-bold">الجوائز المعروضة</span>
-            <span className="text-xl sm:text-2xl font-black text-white font-mono">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/10">
+          <div className="bg-black/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-white/5">
+            <span className="text-[11px] sm:text-xs text-slate-400 block font-bold">الجوائز المعروضة</span>
+            <span className="text-lg sm:text-xl md:text-2xl font-black text-white font-mono">
               {toArabicDigits(items.filter(i => (i.quantity || 0) > 0).length)}
             </span>
           </div>
-          <div className="bg-black/20 rounded-2xl p-3 border border-white/5">
-            <span className="text-xs text-slate-400 block font-bold">القطع المتوفرة</span>
-            <span className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
+          <div className="bg-black/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-white/5">
+            <span className="text-[11px] sm:text-xs text-slate-400 block font-bold">القطع المتوفرة</span>
+            <span className="text-lg sm:text-xl md:text-2xl font-black text-emerald-400 font-mono">
               {toArabicDigits(items.reduce((acc, i) => acc + (i.quantity || 0), 0))}
             </span>
           </div>
-          <div className="bg-black/20 rounded-2xl p-3 border border-white/5">
-            <span className="text-xs text-slate-400 block font-bold">إجمالي المشتريات</span>
-            <span className="text-xl sm:text-2xl font-black text-amber-400 font-mono">
+          <div className="bg-black/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-white/5">
+            <span className="text-[11px] sm:text-xs text-slate-400 block font-bold">إجمالي المشتريات</span>
+            <span className="text-lg sm:text-xl md:text-2xl font-black text-amber-400 font-mono">
               {toArabicDigits(purchases.length)}
             </span>
           </div>
-          <div className="bg-black/20 rounded-2xl p-3 border border-white/5">
-            <span className="text-xs text-slate-400 block font-bold">النقاط المستبدلة</span>
-            <span className="text-xl sm:text-2xl font-black text-sky-400 font-mono">
+          <div className="bg-black/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-white/5">
+            <span className="text-[11px] sm:text-xs text-slate-400 block font-bold">النقاط المستبدلة</span>
+            <span className="text-lg sm:text-xl md:text-2xl font-black text-sky-400 font-mono">
               {toArabicDigits(totalPointsRedeemed)}
             </span>
           </div>
@@ -863,7 +863,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
           </motion.div>
         ) : (
           /* Items Grid with Duolingo animations */
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
             <AnimatePresence>
               {displayedItems.map(item => {
                 const status = getItemScheduleStatus(item, syncedCurrentTime);
@@ -884,7 +884,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.75, y: -20, filter: 'blur(3px)' }}
                     transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                    className={`rounded-3xl border-2 border-b-[5px] overflow-hidden transition-all duration-200 flex flex-col justify-between shadow-lg group relative ${
+                    className={`rounded-2xl sm:rounded-3xl border-2 border-b-[5px] overflow-hidden transition-all duration-200 flex flex-col justify-between shadow-lg group relative ${
                       isInactive
                         ? 'bg-slate-900/90 border-slate-700/80 border-b-slate-800 shadow-slate-950/50'
                         : isUpcoming
@@ -898,7 +898,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     }}
                   >
                     {/* Item Image with Badges */}
-                    <div className="relative aspect-video sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
+                    <div className="relative aspect-[16/10] sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
                       {item.imageUrl ? (
                         <img
                           src={item.imageUrl}
@@ -909,7 +909,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         />
                       ) : (
                         <div className={`w-full h-full flex flex-col items-center justify-center ${isInactive ? 'text-slate-600 bg-slate-950/40' : 'text-slate-500 bg-gradient-to-b from-white/5 to-transparent'}`}>
-                          <ShoppingBag className="w-16 h-16 opacity-40 mb-2" />
+                          <ShoppingBag className="w-14 h-14 sm:w-16 sm:h-16 opacity-40 mb-2" />
                           <span className="text-xs font-bold text-slate-400">جائزة قرآنية</span>
                         </div>
                       )}
@@ -917,30 +917,30 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                       {/* Centered Duolingo 3D Overlay Badge for Inactive or Upcoming State */}
                       {isTimeExpired ? (
                         <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
-                            <Clock className="w-5 h-5 text-amber-400 stroke-[2.5]" />
-                            <span className="font-black text-sm tracking-wide">انتهى وقت المنتج</span>
+                          <div className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
+                            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 stroke-[2.5]" />
+                            <span className="font-black text-xs sm:text-sm tracking-wide">انتهى وقت المنتج</span>
                           </div>
                         </div>
                       ) : isSoldOut ? (
                         <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                          <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
-                            <PackageX className="w-5 h-5 text-slate-300 stroke-[2.5]" />
-                            <span className="font-black text-sm tracking-wide">منتهي</span>
+                          <div className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
+                            <PackageX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300 stroke-[2.5]" />
+                            <span className="font-black text-xs sm:text-sm tracking-wide">منتهي</span>
                           </div>
                         </div>
                       ) : isUpcoming ? (
                         <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                          <div className="px-4 py-2 rounded-2xl bg-sky-950/90 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 text-sky-200 select-none">
-                            <Clock className="w-4 h-4 text-sky-400 animate-spin" />
-                            <span className="font-black text-xs">قيد الانتظار حتى موعد الظهور</span>
+                          <div className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-sky-950/90 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 text-sky-200 select-none">
+                            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 animate-spin" />
+                            <span className="font-black text-[11px] sm:text-xs">قيد الانتظار حتى موعد الظهور</span>
                           </div>
                         </div>
                       ) : null}
 
                       {/* Points Badge (Top Right) - Duolingo 3D style */}
                       <div
-                        className={`absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs sm:text-sm font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
+                        className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl font-black text-xs sm:text-sm font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
                           isInactive ? 'bg-slate-800/90 border-slate-700 text-slate-400' : ''
                         }`}
                         style={
@@ -953,14 +953,14 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                             : undefined
                         }
                       >
-                        <Coins className={`w-4 h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
+                        <Coins className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
                         <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
                       </div>
 
                       {/* Stock Quantity / Status Badge (Top Left) */}
-                      <div className="absolute top-3 left-3 z-10 flex items-center">
+                      <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-10 flex items-center">
                         <div
-                          className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
+                          className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-black flex items-center gap-1 shadow-md border ${
                             isTimeExpired
                               ? 'bg-slate-800/95 text-amber-300 border-slate-600 border-b-2'
                               : isSoldOut
@@ -985,7 +985,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           ) : isUpcoming ? (
                             <>
                               <Clock className="w-3.5 h-3.5 text-sky-400" />
-                              <span>قيد الانتظار (Pending)</span>
+                              <span>قيد الانتظار</span>
                             </>
                           ) : (
                             <>
@@ -1013,7 +1013,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
                       {/* Floating Live Countdown Badge on Image */}
                       {isUpcoming && item.startsAt ? (
-                        <div className="absolute bottom-2.5 right-2.5 z-10">
+                        <div className="absolute bottom-2 right-2 sm:bottom-2.5 sm:right-2.5 z-10 max-w-[85%]">
                           <CountdownTimer
                             targetDate={item.startsAt}
                             mode="appearance"
@@ -1023,7 +1023,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           />
                         </div>
                       ) : !isInactive && item.endsAt ? (
-                        <div className="absolute bottom-2.5 right-2.5 z-10">
+                        <div className="absolute bottom-2 right-2 sm:bottom-2.5 sm:right-2.5 z-10 max-w-[85%]">
                           <CountdownTimer
                             targetDate={item.endsAt}
                             mode="expiration"
@@ -1036,15 +1036,15 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     </div>
 
                     {/* Item Content */}
-                    <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                    <div className="p-3.5 sm:p-4 md:p-5 flex-1 flex flex-col justify-between space-y-3">
                       <div>
-                        <h3 className={`font-black text-base sm:text-lg leading-snug line-clamp-2 ${
+                        <h3 className={`font-black text-sm sm:text-base md:text-lg leading-snug line-clamp-2 ${
                           isInactive ? 'text-slate-300' : 'text-white'
                         }`}>
                           {item.name}
                         </h3>
                         {item.description && (
-                          <p className="text-slate-400 text-xs mt-1.5 line-clamp-2 leading-relaxed font-normal">
+                          <p className="text-slate-400 text-xs mt-1 sm:mt-1.5 line-clamp-2 leading-relaxed font-normal">
                             {item.description}
                           </p>
                         )}
@@ -1052,18 +1052,18 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
                       {/* Status notice banner */}
                       {isUpcoming ? (
-                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600 flex items-center justify-between gap-2 select-none shadow-sm">
+                        <div className="w-full py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl sm:rounded-2xl font-black text-xs text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600 flex items-center justify-between gap-2 select-none shadow-sm">
                           <div className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
-                            <span>حالة المنتج: قيد الانتظار (Pending)</span>
+                            <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5] shrink-0" />
+                            <span className="text-[11px] sm:text-xs">قيد الانتظار (Pending)</span>
                           </div>
-                          <span className="text-[10px] text-sky-300 font-mono">لم يحن وقت الظهور بعد</span>
+                          <span className="text-[9px] sm:text-[10px] text-sky-300 font-mono">لم يبدأ بعد</span>
                         </div>
                       ) : isTimeExpired ? (
-                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-amber-200 bg-amber-950/80 border-2 border-b-4 border-amber-600 flex items-center justify-between gap-2 select-none shadow-sm">
+                        <div className="w-full py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl sm:rounded-2xl font-black text-xs text-amber-200 bg-amber-950/80 border-2 border-b-4 border-amber-600 flex items-center justify-between gap-2 select-none shadow-sm">
                           <div className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
-                            <span>المنتج انتهى وقته (Expired)</span>
+                            <Clock className="w-3.5 h-3.5 text-amber-400 stroke-[2.5] shrink-0" />
+                            <span className="text-[11px] sm:text-xs">المنتج انتهى وقته</span>
                           </div>
                           {canManage && (
                             <button
@@ -1075,16 +1075,16 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                                   toLocalDatetimeInputValue(item.endsAt || new Date(Date.now() + 86400000).toISOString())
                                 );
                               }}
-                              className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black transition-all cursor-pointer shadow-xs active:scale-95"
+                              className="px-2 sm:px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] sm:text-[11px] font-black transition-all cursor-pointer shadow-xs active:scale-95"
                             >
-                              تمديد الوقت
+                              تمديد
                             </button>
                           )}
                         </div>
                       ) : isSoldOut ? (
-                        <div className="w-full py-2 px-3 rounded-2xl font-black text-xs text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
-                          <Ban className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
-                          <span>منتهي (نفدت الكمية)</span>
+                        <div className="w-full py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl sm:rounded-2xl font-black text-xs text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 select-none">
+                          <Ban className="w-3.5 h-3.5 text-slate-400 stroke-[2.5] shrink-0" />
+                          <span className="text-[11px] sm:text-xs">منتهي (نفدت الكمية)</span>
                         </div>
                       ) : null}
 
@@ -1113,31 +1113,31 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
                       {/* Timing Badges: Explicit display of Start Time and Expiration Time for supervisor */}
                       {(hasStart || hasEnd) && (
-                        <div className="text-[11px] text-slate-300 space-y-2 bg-black/40 p-3 rounded-2xl border border-white/10 font-bold">
+                        <div className="text-[10px] sm:text-[11px] text-slate-300 space-y-1.5 sm:space-y-2 bg-black/40 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-white/10 font-bold">
                           {hasStart && (
-                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                              <span className="flex items-center gap-1.5 text-sky-300 font-black">
-                                <Clock className="w-3.5 h-3.5 text-sky-400" />
-                                <span>وقت الظهور التلقائي (البداية):</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                              <span className="flex items-center gap-1 text-sky-300 font-black">
+                                <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                <span>وقت الظهور التلقائي:</span>
                               </span>
-                              <span className="text-white font-mono bg-sky-950/80 px-2.5 py-1 rounded-xl border border-sky-500/30 text-[10px] sm:text-[11px] font-black">
+                              <span className="text-white font-mono bg-sky-950/80 px-2 py-0.5 rounded-lg border border-sky-500/30 text-[9px] sm:text-[10px] md:text-[11px] font-black self-start sm:self-auto">
                                 {formatDateTimeArabicWithSeconds(item.startsAt).full}
                               </span>
                             </div>
                           )}
                           {hasEnd && (
-                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                              <span className={`flex items-center gap-1.5 font-black ${isTimeExpired ? 'text-rose-400' : 'text-amber-300'}`}>
-                                <Calendar className={`w-3.5 h-3.5 ${isTimeExpired ? 'text-rose-400' : 'text-amber-400'}`} />
-                                <span>وقت الانتهاء للمشرف:</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                              <span className={`flex items-center gap-1 font-black ${isTimeExpired ? 'text-rose-400' : 'text-amber-300'}`}>
+                                <Calendar className={`w-3.5 h-3.5 shrink-0 ${isTimeExpired ? 'text-rose-400' : 'text-amber-400'}`} />
+                                <span>وقت الانتهاء:</span>
                               </span>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1 self-start sm:self-auto flex-wrap">
                                 {isTimeExpired && (
                                   <span className="px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[9px] font-black">
                                     انتهى وقته
                                   </span>
                                 )}
-                                <span className={`font-mono px-2.5 py-1 rounded-xl border text-[10px] sm:text-[11px] font-black ${
+                                <span className={`font-mono px-2 py-0.5 rounded-lg border text-[9px] sm:text-[10px] md:text-[11px] font-black ${
                                   isTimeExpired
                                     ? 'text-rose-200 bg-rose-950/80 border-rose-500/40'
                                     : 'text-white bg-amber-950/80 border-amber-500/30'
@@ -1152,7 +1152,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
                       {/* Supervisor Actions */}
                       {canManage && (
-                        <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                        <div className="pt-2.5 sm:pt-3 border-t border-white/10 flex items-center justify-between gap-1.5 sm:gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -1162,24 +1162,24 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                                 toLocalDatetimeInputValue(item.endsAt || new Date(Date.now() + 86400000).toISOString())
                               );
                             }}
-                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
+                            className="flex-1 min-h-[40px] flex items-center justify-center gap-1 px-2 sm:px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[11px] sm:text-xs border border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95 touch-manipulation"
                             title="تمديد وقت انتهاء المنتج فوراً"
                           >
-                            <Clock className="w-3.5 h-3.5 text-amber-400" />
-                            <span>تمديد الوقت</span>
+                            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="truncate">تمديد الوقت</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(item)}
-                            className="flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer active:scale-95"
+                            className="flex-1 min-h-[40px] flex items-center justify-center gap-1 px-2 sm:px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] sm:text-xs border border-white/15 transition-all cursor-pointer active:scale-95 touch-manipulation"
                           >
-                            <Edit2 className="w-3.5 h-3.5 text-sky-300" />
+                            <Edit2 className="w-3.5 h-3.5 text-sky-300 shrink-0" />
                             <span>تعديل</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteItem(item.id, item.name)}
-                            className="flex items-center justify-center p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all cursor-pointer active:scale-95"
+                            className="min-h-[40px] min-w-[40px] flex items-center justify-center p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all cursor-pointer active:scale-95 shrink-0 touch-manipulation"
                             title="حذف الجائزة"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1254,7 +1254,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ duration: 0.3 }}
-                  className="rounded-2xl p-4 sm:p-5 border-2 border-b-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:bg-white/[0.03] shadow-md relative"
+                  className="rounded-2xl p-3.5 sm:p-5 border-2 border-b-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4 transition-all hover:bg-white/[0.03] shadow-md relative"
                   style={{
                     backgroundColor: surfaceColor,
                     borderColor: `${accentColor}25`,
@@ -1262,9 +1262,9 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   }}
                 >
                   {/* Left/Main Info: Item and Student */}
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4">
                     {/* Item Image Thumbnail */}
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
                       {purchase.itemImage ? (
                         <img
                           src={purchase.itemImage}
@@ -1272,18 +1272,18 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <ShoppingBag className="w-7 h-7 text-amber-400 opacity-70" />
+                        <ShoppingBag className="w-6 h-6 sm:w-7 sm:h-7 text-amber-400 opacity-70" />
                       )}
                     </div>
 
                     {/* Details */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-black text-white text-base sm:text-lg">
+                        <span className="font-black text-white text-sm sm:text-base md:text-lg">
                           {purchase.itemName}
                         </span>
                         <span
-                          className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-black border flex items-center gap-1 shadow-sm"
+                          className="px-2 sm:px-2.5 py-0.5 rounded-lg text-xs font-mono font-black border flex items-center gap-1 shadow-sm"
                           style={{
                             backgroundColor: '#78350f',
                             borderColor: accentColor,
@@ -1302,7 +1302,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-slate-300 flex-wrap">
+                      <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-300 flex-wrap">
                         <span className="flex items-center gap-1 text-emerald-300 font-bold">
                           <User className="w-3.5 h-3.5" />
                           الطالب: {purchase.studentName}
@@ -1318,21 +1318,21 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   </div>
 
                   {/* Right Info: Status, Ultra-Precise Timestamp, and Actions */}
-                  <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-start sm:items-center md:items-end lg:items-center gap-3 shrink-0">
+                  <div className="w-full lg:w-auto flex flex-col sm:flex-row lg:flex-row items-stretch sm:items-center justify-between lg:justify-end gap-2.5 sm:gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-white/10 shrink-0">
                     {/* Status Badge (Duolingo 3D styling with theme colors) */}
                     <div className="flex items-center gap-2">
                       {purchase.status === 'delivered' ? (
-                        <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-3 border-emerald-500/60 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                        <span className="px-2.5 sm:px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-3 border-emerald-500/60 text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-sm">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
                           <span>تم تسليم الجائزة للطالب</span>
                         </span>
                       ) : purchase.status === 'refunded' ? (
-                        <span className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-3 border-amber-500/60 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                        <span className="px-2.5 sm:px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-3 border-amber-500/60 text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-sm">
                           <RotateCcw className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
                           <span>تم استرجاع المشترى</span>
                         </span>
                       ) : (
-                        <span className="px-3 py-1 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-3 border-sky-500/60 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                        <span className="px-2.5 sm:px-3 py-1 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-3 border-sky-500/60 text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-sm">
                           <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
                           <span>بانتظار التسليم للطالب</span>
                         </span>
@@ -1340,10 +1340,10 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     </div>
 
                     {/* Ultra-Precise Timestamp with femtoseconds */}
-                    <div className="bg-black/30 px-3.5 py-2 rounded-xl border border-white/10 text-right md:text-left">
-                      <div className="flex items-center gap-1.5 text-amber-400 text-[11px] font-black justify-end md:justify-start">
+                    <div className="bg-black/30 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border border-white/10 text-right md:text-left">
+                      <div className="flex items-center gap-1.5 text-amber-400 text-[10px] sm:text-[11px] font-black justify-start">
                         <Clock className="w-3 h-3 text-amber-300" />
-                        <span>التوقيت الموثق فائق الدقة:</span>
+                        <span>التوقيت الموثق:</span>
                       </div>
                       <div className="text-[10px] sm:text-[11px] font-mono font-bold text-slate-200 mt-0.5 dir-ltr text-left">
                         {purchase.preciseTimestampText || purchase.purchasedAt}
@@ -1355,15 +1355,15 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                       )}
                     </div>
 
-                    {/* Supervisor Actions (Duolingo 3D Buttons) */}
+                    {/* Supervisor Actions (Duolingo 3D Buttons with minimum touch targets) */}
                     {canManage && (
-                      <div className="flex items-center gap-2 flex-wrap pt-1 sm:pt-0">
+                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
                         {/* Mark Delivered Button */}
                         {purchase.status !== 'delivered' && purchase.status !== 'refunded' && (
                           <button
                             type="button"
                             onClick={() => handleMarkDelivered(purchase.id, purchase.itemName, purchase.studentName)}
-                            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:translate-y-1 active:border-b-0 text-white font-black text-xs border-2 border-b-4 border-emerald-800 transition-all flex items-center gap-1.5 shadow-md cursor-pointer hover:brightness-105"
+                            className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:translate-y-1 active:border-b-0 text-white font-black text-xs border-2 border-b-4 border-emerald-800 transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer hover:brightness-105 touch-manipulation"
                             title="تأكيد تسليم الجائزة للطالب"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1376,7 +1376,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                           <button
                             type="button"
                             onClick={() => handleRefundPurchase(purchase)}
-                            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-xs border-2 border-b-4 border-amber-700 transition-all flex items-center gap-1.5 shadow-md cursor-pointer hover:brightness-105"
+                            className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-xs border-2 border-b-4 border-amber-700 transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer hover:brightness-105 touch-manipulation"
                             title="استرجاع المشترى وإعادة النقاط للطالب وإرجاع المنتج للمتجر"
                           >
                             <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1388,7 +1388,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeletePurchase(purchase.id, purchase.itemName, purchase.studentName)}
-                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:translate-y-1 active:border-b-0 text-white font-black text-xs border-2 border-b-4 border-rose-800 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+                          className="min-h-[40px] px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:translate-y-1 active:border-b-0 text-white font-black text-xs border-2 border-b-4 border-rose-800 transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer touch-manipulation"
                           title="حذف هذا السجل نهائياً من المشتريات"
                         >
                           <Trash2 className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1414,7 +1414,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-xl rounded-3xl p-6 sm:p-8 border-2 border-b-[6px] shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-6"
+              className="w-full max-w-xl rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 border-2 border-b-[6px] shadow-2xl relative max-h-[92vh] overflow-y-auto space-y-5 sm:space-y-6 mx-2 sm:mx-auto"
               style={{
                 backgroundColor: surfaceColor,
                 borderColor: accentColor,
@@ -1710,19 +1710,19 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   />
                 </div>
 
-                {/* Modal Buttons - Duolingo 3D Button "أضف" */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                {/* Modal Buttons - Responsive Duolingo 3D Buttons */}
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-white/10">
                   <button
                     type="button"
                     onClick={handleCancelModal}
-                    className="px-5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
+                    className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl sm:rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center touch-manipulation"
                   >
                     إلغاء
                   </button>
                   <button
                     type="submit"
                     disabled={isSaving}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 cursor-pointer"
+                    className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 cursor-pointer touch-manipulation"
                     style={{
                       backgroundColor: accentColor,
                       borderColor: '#b45309',
@@ -1755,7 +1755,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-lg rounded-3xl p-6 sm:p-7 border-2 border-b-[6px] shadow-2xl relative space-y-5"
+              className="w-full max-w-lg rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-7 border-2 border-b-[6px] shadow-2xl relative space-y-4 sm:space-y-5 max-h-[92vh] overflow-y-auto mx-2 sm:mx-auto"
               style={{
                 backgroundColor: surfaceColor,
                 borderColor: confirmModal.variant === 'warning'
@@ -1773,7 +1773,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               {/* Header */}
               <div className="flex items-start gap-4">
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 border-2 border-b-4 shadow-lg text-white"
+                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 border-2 border-b-4 shadow-lg text-white"
                   style={{
                     backgroundColor: confirmModal.variant === 'warning'
                       ? '#b45309'
@@ -1789,19 +1789,19 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   }}
                 >
                   {confirmModal.variant === 'warning' ? (
-                    <RotateCcw className="w-7 h-7 text-amber-300 animate-spin-slow" />
+                    <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7 text-amber-300 animate-spin-slow" />
                   ) : confirmModal.variant === 'danger' ? (
-                    <Trash2 className="w-7 h-7 text-rose-200" />
+                    <Trash2 className="w-6 h-6 sm:w-7 sm:h-7 text-rose-200" />
                   ) : (
-                    <AlertTriangle className="w-7 h-7 text-amber-300" />
+                    <AlertTriangle className="w-6 h-6 sm:w-7 sm:h-7 text-amber-300" />
                   )}
                 </div>
 
                 <div className="space-y-1 flex-1">
-                  <h3 className="text-xl font-black text-white font-heading">
+                  <h3 className="text-lg sm:text-xl font-black text-white font-heading">
                     {confirmModal.title}
                   </h3>
-                  <p className="text-sm text-slate-200 font-bold leading-relaxed">
+                  <p className="text-xs sm:text-sm text-slate-200 font-bold leading-relaxed">
                     {confirmModal.message}
                   </p>
                 </div>
@@ -1818,7 +1818,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
 
               {/* Bullet Details */}
               {confirmModal.details && confirmModal.details.length > 0 && (
-                <div className="bg-black/35 rounded-2xl p-4 border border-white/10 space-y-2">
+                <div className="bg-black/35 rounded-2xl p-3 sm:p-4 border border-white/10 space-y-2">
                   <div className="text-xs font-black text-amber-300 mb-1 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                     <span>ماذا سيحدث بعد التأكيد؟</span>
@@ -1833,12 +1833,12 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               )}
 
               {/* Action Buttons with 3D Duolingo bounce */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-white/10">
                 <button
                   type="button"
                   disabled={isExecutingAction}
                   onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                  className="px-5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border-2 border-b-4 border-white/20 active:border-b-0 active:translate-y-1 transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl sm:rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border-2 border-b-4 border-white/20 active:border-b-0 active:translate-y-1 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center touch-manipulation"
                 >
                   {confirmModal.cancelText || 'تراجع'}
                 </button>
@@ -1847,7 +1847,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   type="button"
                   disabled={isExecutingAction}
                   onClick={() => confirmModal.onConfirm()}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-sm text-white border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 cursor-pointer ${
+                  className={`w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-white border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 cursor-pointer touch-manipulation ${
                     confirmModal.variant === 'warning'
                       ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-700'
                       : confirmModal.variant === 'danger'
@@ -1884,7 +1884,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="w-full max-w-lg rounded-3xl p-6 sm:p-7 border-2 border-b-[6px] shadow-2xl relative space-y-5"
+              className="w-full max-w-lg rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-7 border-2 border-b-[6px] shadow-2xl relative space-y-4 sm:space-y-5 max-h-[92vh] overflow-y-auto mx-2 sm:mx-auto"
               style={{
                 backgroundColor: surfaceColor,
                 borderColor: accentColor,
@@ -1898,10 +1898,10 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     <Clock className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-white font-heading">
+                    <h3 className="text-base sm:text-lg font-black text-white font-heading">
                       تمديد وقت المنتج
                     </h3>
-                    <p className="text-xs text-amber-300 font-bold truncate max-w-xs">
+                    <p className="text-xs text-amber-300 font-bold truncate max-w-[200px] sm:max-w-xs">
                       {extendingItem.name}
                     </p>
                   </div>
@@ -1917,8 +1917,8 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               </div>
 
               {/* Current Status Info */}
-              <div className="bg-black/40 rounded-2xl p-3.5 border border-white/10 space-y-1.5 text-xs">
-                <div className="flex items-center justify-between text-slate-300">
+              <div className="bg-black/40 rounded-2xl p-3 sm:p-3.5 border border-white/10 space-y-2 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-300">
                   <span className="font-bold">حالة المنتج الحالية:</span>
                   <span className="font-black text-white">
                     {extendingItem.endsAt && syncedCurrentTime >= (parseStoreDateMs(extendingItem.endsAt) || 0) ? (
@@ -1929,9 +1929,9 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   </span>
                 </div>
                 {extendingItem.endsAt && (
-                  <div className="flex items-center justify-between text-slate-300">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-300">
                     <span className="font-bold">وقت الانتهاء الحالي:</span>
-                    <span className="font-mono text-amber-300 font-black">
+                    <span className="font-mono text-amber-300 font-black text-[11px] sm:text-xs">
                       {formatDateTimeArabicWithSeconds(extendingItem.endsAt).full}
                     </span>
                   </div>
@@ -1954,7 +1954,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                       key={p.value}
                       type="button"
                       onClick={() => setExtensionPreset(p.value)}
-                      className={`py-2 px-2.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                      className={`min-h-[42px] py-2 px-2.5 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
                         extensionPreset === p.value
                           ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md scale-102'
                           : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
@@ -1965,11 +1965,11 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setExtensionPreset('forever')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                    className={`min-h-[42px] py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
                       extensionPreset === 'forever'
                         ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
                         : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
@@ -1980,7 +1980,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setExtensionPreset('custom')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
+                    className={`min-h-[42px] py-2 px-3 rounded-xl text-xs font-black border-2 transition-all cursor-pointer text-center ${
                       extensionPreset === 'custom'
                         ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-md'
                         : 'bg-black/30 hover:bg-black/50 text-slate-200 border-white/15'
@@ -2002,7 +2002,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                     step="1"
                     value={customExtensionDatetime}
                     onChange={e => setCustomExtensionDatetime(e.target.value)}
-                    className="w-full bg-black/50 border border-sky-400/50 rounded-2xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-sky-400 font-mono"
+                    className="w-full bg-black/50 border border-sky-400/50 rounded-2xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-sky-400 font-mono min-h-[44px]"
                   />
                 </div>
               )}
@@ -2016,12 +2016,12 @@ export const StoreTab: React.FC<StoreTabProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-2.5 pt-3 border-t border-white/10">
                 <button
                   type="button"
                   disabled={isExtendingTime}
                   onClick={() => setExtendingItem(null)}
-                  className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 cursor-pointer disabled:opacity-50"
+                  className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/15 cursor-pointer disabled:opacity-50 flex items-center justify-center"
                 >
                   إلغاء
                 </button>
@@ -2029,7 +2029,7 @@ export const StoreTab: React.FC<StoreTabProps> = ({
                   type="button"
                   disabled={isExtendingTime}
                   onClick={handleConfirmTimeExtension}
-                  className="px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs border-2 border-b-4 border-amber-700 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center gap-2"
+                  className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm border-2 border-b-4 border-amber-700 active:border-b-0 active:translate-y-1 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isExtendingTime ? (
                     <>

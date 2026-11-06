@@ -2511,7 +2511,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           <div className="space-y-6">
             {/* Store Top Summary Card (Duolingo 3D Styling with complex theme) */}
             <div
-              className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-4 backdrop-blur-md relative overflow-hidden transition-all"
+              className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-4 backdrop-blur-md relative overflow-hidden transition-all"
               style={{
                 backgroundColor: themeCardBg,
                 borderColor: `${themeAccent}70`,
@@ -2519,9 +2519,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               }}
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3.5 sm:gap-4">
                   <div
-                    className="w-14 h-14 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
                     style={{
                       backgroundColor: themeAccent,
                       borderColor: lightenHex(themeAccent, 0.2),
@@ -2529,16 +2529,16 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       color: accentTextColor
                     }}
                   >
-                    <ShoppingBag className="w-7 h-7" />
+                    <ShoppingBag className="w-6 h-6 sm:w-7 sm:h-7" />
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl font-black font-heading text-white flex items-center gap-2">
+                    <h2 className="text-lg sm:text-xl md:text-2xl font-black font-heading text-white flex items-center gap-2 flex-wrap">
                       <span>المتجر القرآني وجوائز النقاط</span>
                       <span className="text-xs px-2.5 py-0.5 rounded-full font-mono bg-white/10 text-amber-300 border border-white/10">
                         {toArabicDigits(storeItems.length)} جوائز
                       </span>
                     </h2>
-                    <p className="text-xs sm:text-sm text-slate-300 font-bold mt-1">
+                    <p className="text-xs sm:text-sm text-slate-300 font-bold mt-1 leading-relaxed">
                       استبدل نقاطك المكتسبة من التسميع المتقن والاختبارات بهدايا وجوائز عينية فورية!
                     </p>
                   </div>
@@ -2546,19 +2546,21 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
                 {/* Student's Balance Badge */}
                 <div
-                  className="px-5 py-3 rounded-2xl border-2 border-b-4 flex items-center gap-3 shadow-lg self-start sm:self-auto shrink-0"
+                  className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl border-2 border-b-4 flex items-center justify-between sm:justify-start gap-3 shadow-lg shrink-0"
                   style={{
                     backgroundColor: themeSecondary,
                     borderColor: themeAccent,
                     borderBottomColor: themeAccentShadow
                   }}
                 >
-                  <Coins className="w-6 h-6 text-amber-400 animate-bounce" />
-                  <div>
-                    <span className="text-[11px] text-slate-300 font-bold block">رصيد نقاطك الحالي:</span>
-                    <span className="text-lg sm:text-xl font-mono font-black" style={{ color: themeAccent }}>
-                      {toArabicDigits(typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0))} نقطة
-                    </span>
+                  <div className="flex items-center gap-2.5">
+                    <Coins className="w-6 h-6 text-amber-400 animate-bounce shrink-0" />
+                    <div>
+                      <span className="text-[10px] sm:text-[11px] text-slate-300 font-bold block">رصيد نقاطك الحالي:</span>
+                      <span className="text-base sm:text-xl font-mono font-black" style={{ color: themeAccent }}>
+                        {toArabicDigits(typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0))} نقطة
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2567,7 +2569,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             {/* Notification / Feedback Banner */}
             {purchaseFeedback && (
               <div
-                className={`p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 text-sm font-bold shadow-lg ${
+                className={`p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 text-xs sm:text-sm font-bold shadow-lg ${
                   purchaseFeedback.success
                     ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-200'
                     : 'bg-rose-950/80 border-rose-500/80 text-rose-200'
@@ -2584,7 +2586,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPurchaseFeedback(null)}
-                  className="text-white/60 hover:text-white"
+                  className="text-white/60 hover:text-white p-1"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2594,25 +2596,25 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             {/* Store Closed State */}
             {storeSettings.isOpen === false ? (
               <div
-                className="p-10 sm:p-14 rounded-[32px] border-2 border-b-[6px] text-center space-y-4 backdrop-blur-md shadow-2xl"
+                className="p-6 sm:p-10 md:p-14 rounded-2xl sm:rounded-[32px] border-2 border-b-[6px] text-center space-y-4 backdrop-blur-md shadow-2xl"
                 style={{
                   backgroundColor: themeCardBg,
                   borderColor: '#f43f5e70',
                   borderBottomColor: '#9f1239'
                 }}
               >
-                <div className="w-20 h-20 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border-2 border-rose-500/40 shadow-inner">
-                  <Lock className="w-10 h-10" />
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border-2 border-rose-500/40 shadow-inner">
+                  <Lock className="w-8 h-8 sm:w-10 sm:h-10" />
                 </div>
-                <h3 className="text-2xl font-black text-white font-heading">
+                <h3 className="text-xl sm:text-2xl font-black text-white font-heading">
                   المتجر مغلق حالياً بأمر المشرف
                 </h3>
-                <p className="text-slate-300 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
+                <p className="text-slate-300 text-xs sm:text-base max-w-lg mx-auto leading-relaxed">
                   {storeSettings.closedMessage ||
                     'المتجر مغلق حالياً بأمر المشرف - واصل الحفظ والاجتهاد لجمع المزيد من النقاط حتى يفتح المتجر من جديد!'}
                 </p>
                 <div className="pt-2">
-                  <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-amber-300 text-xs font-bold border border-white/10">
+                  <span className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-white/10 text-amber-300 text-xs font-bold border border-white/10">
                     <Sparkles className="w-4 h-4" />
                     استمر في التسميع اليومي والمواظبة لجمع أكبر رصيد من النقاط!
                   </span>
@@ -2625,7 +2627,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Package className="w-5 h-5 text-amber-400" />
-                      <h3 className="text-lg sm:text-xl font-black text-white font-heading">
+                      <h3 className="text-base sm:text-xl font-black text-white font-heading">
                         الجوائز المتاحة للاستبدال
                       </h3>
                     </div>
@@ -2633,7 +2635,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
                   {studentVisibleStoreItems.length === 0 ? (
                     <div
-                      className="p-10 rounded-3xl border-2 border-dashed border-white/15 text-center text-slate-400"
+                      className="p-8 sm:p-10 rounded-2xl sm:rounded-3xl border-2 border-dashed border-white/15 text-center text-slate-400"
                       style={{ backgroundColor: `${themeCardBg}60` }}
                     >
                       <ShoppingBag className="w-12 h-12 text-slate-500 mx-auto mb-2 opacity-50" />
@@ -2641,7 +2643,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       <p className="text-xs text-slate-400 mt-1">ترقب إضافة جوائز وهدايا جديدة قريباً من قبل المشرف!</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-5">
                       <AnimatePresence>
                         {studentVisibleStoreItems.map(item => {
                           const status = getItemScheduleStatus(item, syncedCurrentTime);
@@ -2662,7 +2664,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               animate={{ opacity: 1, scale: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.75, y: -20, filter: 'blur(3px)' }}
                               transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                              className={`rounded-3xl border-2 border-b-[5px] overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 relative ${
+                              className={`rounded-2xl sm:rounded-3xl border-2 border-b-[5px] overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 relative ${
                                 isInactive
                                   ? 'bg-slate-900/90 border-slate-700/80 border-b-slate-800 shadow-slate-950/50'
                                   : 'hover:-translate-y-1 hover:shadow-2xl'
@@ -2673,8 +2675,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 borderBottomColor: isInactive ? '#1e293b' : (canBuy ? themeAccent : '#475569')
                               }}
                             >
-                              {/* Image & Badges */}
-                              <div className="relative aspect-video sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
+                              {/* Image & Badges: aspect-[16/10] sm:aspect-square for phone ergonomics */}
+                              <div className="relative aspect-[16/10] sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
                                 {item.imageUrl ? (
                                   <img
                                     src={item.imageUrl}
@@ -2685,7 +2687,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   />
                                 ) : (
                                   <div className={`w-full h-full flex flex-col items-center justify-center ${isInactive ? 'text-slate-600 bg-slate-950/40' : 'text-slate-500'}`}>
-                                    <ShoppingBag className="w-14 h-14 opacity-40 mb-1" />
+                                    <ShoppingBag className="w-12 h-12 sm:w-14 sm:h-14 opacity-40 mb-1" />
                                     <span className="text-[11px] font-bold text-slate-400">جائزة قرآنية</span>
                                   </div>
                                 )}
@@ -2693,30 +2695,30 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 {/* Centered Duolingo 3D Overlay Badge for Inactive / Pending State */}
                                 {isUpcoming ? (
                                   <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                                    <div className="px-5 py-2.5 rounded-2xl bg-sky-950/95 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-sky-200 select-none">
-                                      <Clock className="w-5 h-5 text-sky-400 stroke-[2.5]" />
-                                      <span className="font-black text-sm tracking-wide">قيد الانتظار</span>
+                                    <div className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-2xl bg-sky-950/95 border-2 border-b-4 border-sky-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-sky-200 select-none">
+                                      <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-sky-400 stroke-[2.5]" />
+                                      <span className="font-black text-xs sm:text-sm tracking-wide">قيد الانتظار</span>
                                     </div>
                                   </div>
                                 ) : isTimeExpired ? (
                                   <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                                    <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
-                                      <Clock className="w-5 h-5 text-amber-400 stroke-[2.5]" />
-                                      <span className="font-black text-sm tracking-wide">انتهى وقت المنتج</span>
+                                    <div className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-amber-300 select-none">
+                                      <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 stroke-[2.5]" />
+                                      <span className="font-black text-xs sm:text-sm tracking-wide">انتهى وقت المنتج</span>
                                     </div>
                                   </div>
                                 ) : isSoldOut ? (
                                   <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center p-3 z-20 pointer-events-none">
-                                    <div className="px-5 py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
-                                      <PackageX className="w-5 h-5 text-slate-300 stroke-[2.5]" />
-                                      <span className="font-black text-sm tracking-wide">منتهي</span>
+                                    <div className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-2xl bg-slate-800/95 border-2 border-b-4 border-slate-600 shadow-2xl flex items-center gap-2 transform -rotate-2 text-slate-200 select-none">
+                                      <PackageX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300 stroke-[2.5]" />
+                                      <span className="font-black text-xs sm:text-sm tracking-wide">منتهي</span>
                                     </div>
                                   </div>
                                 ) : null}
 
                                 {/* Points Badge */}
                                 <div
-                                  className={`absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
+                                  className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl font-black text-[11px] sm:text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2 z-10 ${
                                     isInactive
                                       ? 'bg-slate-800/90 border-slate-700 text-slate-400'
                                       : ''
@@ -2731,14 +2733,14 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                       : undefined
                                   }
                                 >
-                                  <Coins className={`w-4 h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
+                                  <Coins className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isInactive ? 'text-slate-500' : 'text-amber-300'}`} />
                                   <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
                                 </div>
 
                                 {/* Stock Quantity / Status Badge */}
-                                <div className="absolute top-3 left-3 z-10 flex items-center">
+                                <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-10 flex items-center">
                                   <div
-                                    className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
+                                    className={`px-2 sm:px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-black flex items-center gap-1 shadow-md border ${
                                       isUpcoming
                                         ? 'bg-sky-950/95 text-sky-300 border-sky-500/70 border-b-2'
                                         : isTimeExpired
@@ -2758,7 +2760,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                     ) : isTimeExpired ? (
                                       <>
                                         <Clock className="w-3.5 h-3.5 text-amber-400" />
-                                        <span>انتهى وقت المنتج</span>
+                                        <span>انتهى وقته</span>
                                       </>
                                     ) : isSoldOut ? (
                                       <>
@@ -2814,17 +2816,15 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               </div>
 
                               {/* Item Details & Action Area */}
-                              <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                              <div className="p-3.5 sm:p-4 md:p-5 flex-1 flex flex-col justify-between space-y-3">
                                 <div>
-                                  <h4 className={`font-black text-base leading-snug line-clamp-2 ${
+                                  <h4 className={`font-black text-sm sm:text-base leading-snug line-clamp-2 ${
                                     isInactive ? 'text-slate-300' : 'text-white'
                                   }`}>
                                     {item.name}
                                   </h4>
                                   {item.description && (
-                                    <p className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${
-                                      isInactive ? 'text-slate-400' : 'text-slate-400'
-                                    }`}>
+                                    <p className="text-xs mt-1.5 line-clamp-2 leading-relaxed text-slate-400">
                                       {item.description}
                                     </p>
                                   )}
@@ -2857,26 +2857,26 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 <div className="pt-2">
                                   {isUpcoming ? (
                                     <div
-                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600/70 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      className="min-h-[44px] w-full py-2.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-sky-200 bg-sky-950/80 border-2 border-b-4 border-sky-600/70 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed text-center"
                                       aria-label="قيد الانتظار"
                                     >
-                                      <Clock className="w-4 h-4 text-sky-400 stroke-[2.5]" />
-                                      <span>قيد الانتظار — يفتح الشراء فور انتهاء العد التنازلي</span>
+                                      <Clock className="w-4 h-4 text-sky-400 stroke-[2.5] shrink-0" />
+                                      <span className="truncate">قيد الانتظار — يفتح قريباً</span>
                                     </div>
                                   ) : isTimeExpired ? (
                                     <div
-                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-amber-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      className="min-h-[44px] w-full py-2.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-amber-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed text-center"
                                       aria-label="انتهى وقت المنتج"
                                     >
-                                      <Clock className="w-4 h-4 text-amber-400 stroke-[2.5]" />
+                                      <Clock className="w-4 h-4 text-amber-400 stroke-[2.5] shrink-0" />
                                       <span>انتهى وقت المنتج</span>
                                     </div>
                                   ) : isSoldOut ? (
                                     <div
-                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed"
+                                      className="min-h-[44px] w-full py-2.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-slate-300 bg-slate-800/90 border-2 border-b-4 border-slate-700 flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed text-center"
                                       aria-label="منتهي"
                                     >
-                                      <Ban className="w-4 h-4 text-slate-400 stroke-[2.5]" />
+                                      <Ban className="w-4 h-4 text-slate-400 stroke-[2.5] shrink-0" />
                                       <span>منتهي</span>
                                     </div>
                                   ) : !hasEnoughPoints ? (
@@ -2884,7 +2884,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                       <button
                                         type="button"
                                         disabled
-                                        className="w-full py-2.5 px-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs cursor-not-allowed text-center"
+                                        className="min-h-[44px] w-full py-2.5 px-3 rounded-xl sm:rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs cursor-not-allowed flex items-center justify-center text-center"
                                       >
                                         تحتاج {toArabicDigits(item.pointsRequired - studentPts)} نقطة إضافية
                                       </button>
@@ -2893,14 +2893,14 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => setConfirmingPurchaseItem(item)}
-                                      className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 hover:brightness-105 flex items-center justify-center gap-2 cursor-pointer"
+                                      className="min-h-[44px] w-full py-2.5 px-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 hover:brightness-105 flex items-center justify-center gap-2 cursor-pointer"
                                       style={{
                                         backgroundColor: themeAccent,
                                         borderColor: '#b45309',
                                         borderBottomColor: '#78350f'
                                       }}
                                     >
-                                      <ShoppingBag className="w-4 h-4 stroke-[2.5]" />
+                                      <ShoppingBag className="w-4 h-4 stroke-[2.5] shrink-0" />
                                       <span>استبدال وشراء الجائزة</span>
                                     </button>
                                   )}
@@ -2917,9 +2917,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 {/* SECTION 2: قسم تم شراؤه (سجل عمليات الشراء) */}
                 <div className="space-y-4 pt-6 border-t-2 border-white/10">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <History className="w-5 h-5 text-emerald-400" />
-                      <h3 className="text-lg sm:text-xl font-black text-white font-heading">
+                      <h3 className="text-base sm:text-xl font-black text-white font-heading">
                         قسم تم شراؤه (سجل المشتريات والجوائز)
                       </h3>
                       <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border border-emerald-500/30">
@@ -2928,11 +2928,11 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     </div>
 
                     {/* Filter Tabs: All vs Mine */}
-                    <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-2xl border border-white/10 self-start sm:self-auto text-xs">
+                    <div className="w-full sm:w-auto grid grid-cols-2 sm:flex items-center gap-1.5 bg-black/40 p-1 rounded-2xl border border-white/10 text-xs">
                       <button
                         type="button"
                         onClick={() => setPurchasesTabFilter('all')}
-                        className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                        className={`min-h-[38px] px-3 py-1.5 rounded-xl font-bold transition-all flex items-center justify-center text-center cursor-pointer ${
                           purchasesTabFilter === 'all'
                             ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
                             : 'text-slate-300 hover:text-white'
@@ -2943,7 +2943,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setPurchasesTabFilter('mine')}
-                        className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                        className={`min-h-[38px] px-3 py-1.5 rounded-xl font-bold transition-all flex items-center justify-center text-center cursor-pointer ${
                           purchasesTabFilter === 'mine'
                             ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
                             : 'text-slate-300 hover:text-white'
@@ -2962,11 +2962,11 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     if (displayedPurchases.length === 0) {
                       return (
                         <div
-                          className="p-8 rounded-3xl border-2 border-dashed border-white/10 text-center text-slate-400"
+                          className="p-8 sm:p-10 rounded-2xl sm:rounded-3xl border-2 border-dashed border-white/10 text-center text-slate-400"
                           style={{ backgroundColor: `${themeCardBg}40` }}
                         >
                           <History className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-50" />
-                          <p className="font-bold text-white text-sm">
+                          <p className="font-bold text-white text-xs sm:text-sm">
                             {purchasesTabFilter === 'mine'
                               ? 'لم تقم بشراء أي جائزة بعد، استبدل نقاطك الآن!'
                               : 'لم يقم أي طالب بالشراء بعد، سجل الشراء فارغ حالياً.'}
@@ -2982,7 +2982,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           return (
                             <div
                               key={purchase.id}
-                              className={`rounded-2xl p-4 border-2 border-b-4 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
+                              className={`rounded-2xl p-3.5 sm:p-4 border-2 border-b-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 transition-all ${
                                 isMine ? 'ring-2 ring-amber-400/50' : ''
                               }`}
                               style={{
@@ -2991,8 +2991,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 borderBottomColor: isMine ? themeAccentShadow : `${themeAccent}50`
                               }}
                             >
-                              <div className="flex items-center gap-3.5">
-                                <div className="w-12 h-12 rounded-xl bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+                              <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
                                   {purchase.itemImage ? (
                                     <img
                                       src={purchase.itemImage}
@@ -3003,25 +3003,25 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                     <ShoppingBag className="w-6 h-6 text-amber-400" />
                                   )}
                                 </div>
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-black text-white text-sm sm:text-base">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                    <span className="font-black text-white text-xs sm:text-base break-words">
                                       {purchase.itemName}
                                     </span>
                                     {isMine && (
-                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-amber-400/20 text-amber-300 border-2 border-b-2 border-amber-400/50 shadow-xs">
+                                      <span className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/50 shadow-xs">
                                         <Sparkles className="w-3 h-3 text-amber-300" />
                                         <span>مشتراي الشخصي</span>
                                       </span>
                                     )}
                                     {idx === 0 && (
-                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-400/50 shadow-xs">
+                                      <span className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-xl text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-xs">
                                         <Award className="w-3 h-3 text-emerald-400" />
                                         <span>الأول في السبق والفوز</span>
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 flex-wrap">
+                                  <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-300 mt-1 flex-wrap">
                                     <span className="text-emerald-300 font-bold">
                                       الطالب: {purchase.studentName}
                                     </span>
@@ -3038,21 +3038,21 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                               </div>
 
                               {/* Right Side: Status, Refund Action for student, and Exact Timestamp */}
-                              <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-start sm:items-center md:items-end lg:items-center gap-2.5 shrink-0">
+                              <div className="flex flex-col sm:flex-row lg:flex-row items-stretch sm:items-center justify-between lg:justify-end gap-2 sm:gap-2.5 shrink-0 pt-2 lg:pt-0 border-t border-white/5 lg:border-t-0">
                                 {/* Delivery Status Badge (Duolingo 3D without standard emojis) */}
-                                <div>
+                                <div className="self-start sm:self-auto">
                                   {purchase.status === 'delivered' ? (
-                                    <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-3 border-emerald-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                    <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border-2 border-b-3 border-emerald-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
                                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
                                       <span>{isMine ? 'تم تسليم الجائزة لك بنجاح' : 'تم تسليم الجائزة للطالب'}</span>
                                     </span>
                                   ) : purchase.status === 'refunded' ? (
-                                    <span className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-3 border-amber-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                    <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border-2 border-b-3 border-amber-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
                                       <RotateCcw className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
                                       <span>{isMine ? 'تم استرجاع جائزتك وإعادة النقاط' : 'تم استرجاع المشترى للطالب'}</span>
                                     </span>
                                   ) : (
-                                    <span className="px-3 py-1 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-3 border-sky-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                                    <span className="px-3 py-1.5 rounded-xl bg-sky-500/20 text-sky-300 border-2 border-b-3 border-sky-500/60 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
                                       <Clock className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
                                       <span>{isMine ? 'بانتظار استلامك للجائزة في الحلقة' : 'بانتظار تسليمها للطالب'}</span>
                                     </span>
@@ -3064,7 +3064,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => setRefundingConfirmPurchase(purchase)}
-                                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-xs border-2 border-b-3 border-amber-700 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
+                                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-xs border-2 border-b-3 border-amber-700 transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer hover:brightness-105"
                                     title="استرجاع هذه الجائزة واستعادة نقاطك إلى رصيدك"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -3073,7 +3073,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                                 )}
 
                                 {/* Exact Timestamp with femtoseconds */}
-                                <div className="bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 text-right md:text-left">
+                                <div className="bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 text-right sm:text-left">
                                   <div className="text-[10px] text-amber-300 font-black">
                                     توقيت الشراء الموثق:
                                   </div>
@@ -3099,9 +3099,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
             {/* Confirmation Modal Before Buying */}
             {confirmingPurchaseItem && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
                 <div
-                  className="w-full max-w-md rounded-3xl p-6 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-5"
+                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] overflow-y-auto"
                   style={{
                     backgroundColor: themeCardBg,
                     borderColor: themeAccent,
@@ -3110,16 +3110,16 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 >
                   <div className="text-center space-y-3">
                     <div
-                      className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
                       style={{
                         backgroundColor: themeSecondary,
                         borderColor: themeAccent,
                         borderBottomColor: '#b45309'
                       }}
                     >
-                      <ShoppingBag className="w-8 h-8 text-amber-300 animate-bounce" />
+                      <ShoppingBag className="w-7 h-7 sm:w-8 sm:h-8 text-amber-300 animate-bounce" />
                     </div>
-                    <h3 className="text-xl font-black text-white font-heading">
+                    <h3 className="text-lg sm:text-xl font-black text-white font-heading">
                       تأكيد شراء الجائزة
                     </h3>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
@@ -3148,12 +3148,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 pt-2">
                     <button
                       type="button"
                       disabled={isPurchasing}
                       onClick={() => setConfirmingPurchaseItem(null)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
+                      className="w-full sm:flex-1 min-h-[44px] py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center"
                     >
                       تراجع
                     </button>
@@ -3161,7 +3161,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       type="button"
                       disabled={isPurchasing}
                       onClick={() => handleExecutePurchase(confirmingPurchaseItem)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full sm:flex-1 min-h-[44px] py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
                       style={{
                         backgroundColor: themeAccent,
                         borderColor: '#b45309',
@@ -3184,9 +3184,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
             {/* Student Refund Confirmation Modal */}
             {refundingConfirmPurchase && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
                 <div
-                  className="w-full max-w-md rounded-3xl p-6 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-5"
+                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] overflow-y-auto"
                   style={{
                     backgroundColor: themeCardBg,
                     borderColor: themeAccent,
@@ -3195,16 +3195,16 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 >
                   <div className="text-center space-y-3">
                     <div
-                      className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
                       style={{
                         backgroundColor: themeSecondary,
                         borderColor: themeAccent,
                         borderBottomColor: '#b45309'
                       }}
                     >
-                      <RotateCcw className="w-8 h-8 text-amber-300 animate-spin" />
+                      <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8 text-amber-300 animate-spin" />
                     </div>
-                    <h3 className="text-xl font-black text-white font-heading">
+                    <h3 className="text-lg sm:text-xl font-black text-white font-heading">
                       استرجاع الجائزة وإعادة النقاط
                     </h3>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
@@ -3222,12 +3222,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 pt-2">
                     <button
                       type="button"
                       disabled={isRefunding}
                       onClick={() => setRefundingConfirmPurchase(null)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
+                      className="w-full sm:flex-1 min-h-[44px] py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center"
                     >
                       إلغاء
                     </button>
@@ -3235,7 +3235,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       type="button"
                       disabled={isRefunding}
                       onClick={() => handleStudentRefund(refundingConfirmPurchase)}
-                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full sm:flex-1 min-h-[44px] py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
                       style={{
                         backgroundColor: themeAccent,
                         borderColor: '#b45309',
@@ -3258,28 +3258,28 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
             {/* Sold Out / Late Miss Alert Modal (Prominent Popup Dialog as requested) */}
             {soldOutModal && (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 20 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                  className="w-full max-w-sm rounded-[32px] p-6 sm:p-7 border-2 border-b-6 shadow-2xl relative text-center space-y-4"
+                  className="w-full max-w-sm rounded-2xl sm:rounded-[32px] p-5 sm:p-7 border-2 border-b-6 shadow-2xl relative text-center space-y-4 mx-2 sm:mx-auto"
                   style={{
                     backgroundColor: themeCardBg || '#1e293b',
                     borderColor: '#f59e0b',
                     borderBottomColor: '#b45309'
                   }}
                 >
-                  <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center border-2 border-b-4 bg-amber-500/20 border-amber-500/50 shadow-inner text-amber-300">
-                    <Clock className="w-10 h-10 animate-pulse text-amber-400" />
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl mx-auto flex items-center justify-center border-2 border-b-4 bg-amber-500/20 border-amber-500/50 shadow-inner text-amber-300">
+                    <Clock className="w-8 h-8 sm:w-10 sm:h-10 animate-pulse text-amber-400" />
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-xl font-black text-white font-heading">
+                    <h3 className="text-lg sm:text-xl font-black text-white font-heading">
                       {soldOutModal.title}
                     </h3>
-                    <p className="text-sm text-slate-300 leading-relaxed font-bold">
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-bold">
                       {soldOutModal.message}
                     </p>
                   </div>
@@ -3288,7 +3288,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setSoldOutModal(null)}
-                      className="w-full py-3 px-6 rounded-2xl bg-amber-400 hover:bg-amber-300 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-base border-2 border-b-4 border-amber-600 transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                      className="min-h-[46px] w-full py-2.5 sm:py-3 px-6 rounded-2xl bg-amber-400 hover:bg-amber-300 active:translate-y-1 active:border-b-0 text-slate-950 font-black text-sm sm:text-base border-2 border-b-4 border-amber-600 transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <span>حسناً</span>
                     </button>

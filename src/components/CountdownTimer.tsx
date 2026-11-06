@@ -293,47 +293,47 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
       </div>
 
       {/* Duolingo 3D Number Blocks */}
-      <div className="grid grid-cols-4 gap-1.5 text-center" dir="ltr">
+      <div className="grid grid-cols-4 gap-1 sm:gap-1.5 text-center min-w-0" dir="ltr">
         {/* Days Block */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center min-w-0">
           <div
-            className={`w-full py-1.5 sm:py-2 rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-sm sm:text-base shadow-inner ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
+            className={`w-full py-1 sm:py-1.5 md:py-2 rounded-lg sm:rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-base shadow-inner min-w-0 ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
           >
             {timeUnits.daysStr}
           </div>
-          <span className="text-[10px] text-slate-300 mt-0.5 font-bold">يوم</span>
+          <span className="text-[9px] sm:text-[10px] text-slate-300 mt-0.5 font-bold truncate">يوم</span>
         </div>
 
         {/* Hours Block */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center min-w-0">
           <div
-            className={`w-full py-1.5 sm:py-2 rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-sm sm:text-base shadow-inner ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
+            className={`w-full py-1 sm:py-1.5 md:py-2 rounded-lg sm:rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-base shadow-inner min-w-0 ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
           >
             {timeUnits.hoursStr}
           </div>
-          <span className="text-[10px] text-slate-300 mt-0.5 font-bold">ساعة</span>
+          <span className="text-[9px] sm:text-[10px] text-slate-300 mt-0.5 font-bold truncate">ساعة</span>
         </div>
 
         {/* Minutes Block */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center min-w-0">
           <div
-            className={`w-full py-1.5 sm:py-2 rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-sm sm:text-base shadow-inner ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
+            className={`w-full py-1 sm:py-1.5 md:py-2 rounded-lg sm:rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-base shadow-inner min-w-0 ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${theme.blockText}`}
           >
             {timeUnits.minutesStr}
           </div>
-          <span className="text-[10px] text-slate-300 mt-0.5 font-bold">دقيقة</span>
+          <span className="text-[9px] sm:text-[10px] text-slate-300 mt-0.5 font-bold truncate">دقيقة</span>
         </div>
 
         {/* Seconds Block */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center min-w-0">
           <div
-            className={`w-full py-1.5 sm:py-2 rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-sm sm:text-base shadow-inner ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${
+            className={`w-full py-1 sm:py-1.5 md:py-2 rounded-lg sm:rounded-xl border-2 border-b-3 flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-base shadow-inner min-w-0 ${theme.blockBg} ${theme.blockBorder} ${theme.blockBorderB} ${
               isUrgent ? 'text-rose-300 animate-pulse font-black' : theme.blockText
             }`}
           >
             {timeUnits.secondsStr}
           </div>
-          <span className={`text-[10px] mt-0.5 font-bold ${isUrgent ? 'text-rose-400 font-black' : 'text-slate-300'}`}>
+          <span className={`text-[9px] sm:text-[10px] mt-0.5 font-bold truncate ${isUrgent ? 'text-rose-400 font-black' : 'text-slate-300'}`}>
             ثانية
           </span>
         </div>
