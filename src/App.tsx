@@ -171,6 +171,44 @@ export function App() {
     complexId?: string;
     displayName?: string;
   } | null>(() => {
+    // If a direct student portal link is opened (?portal=... or ?student=...),
+    // check if an old student account was previously logged in. If it does not match
+    // the requested student, log it out completely so the new profile opens 100% reliably!
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      let p =
+        urlParams.get('portal') ||
+        urlParams.get('id') ||
+        urlParams.get('student') ||
+        urlParams.get('studentId');
+      if (!p && window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        p =
+          hashParams.get('portal') ||
+          hashParams.get('id') ||
+          hashParams.get('student') ||
+          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
+          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+      }
+      if (p) {
+        const cleanPortal = decodeURIComponent(p).trim();
+        const saved = localStorage.getItem('omran_session');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed && (parsed.role === 'student' || parsed.studentId)) {
+              if (parsed.studentId !== cleanPortal && parsed.username !== cleanPortal) {
+                console.log('🔄 Old student account logged out for new portal link:', cleanPortal);
+                localStorage.removeItem('omran_session');
+                sessionStorage.removeItem('omran_session');
+                return null;
+              }
+            }
+          } catch {}
+        }
+      }
+    }
     const saved = localStorage.getItem('omran_session');
     if (saved) {
       try {
@@ -227,8 +265,29 @@ export function App() {
     }
   };
 
-  // Check URL portal query param for direct parent portal link (?portal=std-1 or ?id=std-1)
-  const [portalStudentId, setPortalStudentId] = useState<string | null>(null);
+  // Check URL portal query param for direct parent portal link (?portal=std-1 or ?id=std-1 or ?student=std-1)
+  const [portalStudentId, setPortalStudentId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      let p =
+        urlParams.get('portal') ||
+        urlParams.get('id') ||
+        urlParams.get('student') ||
+        urlParams.get('studentId');
+      if (!p && window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        p =
+          hashParams.get('portal') ||
+          hashParams.get('id') ||
+          hashParams.get('student') ||
+          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
+          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+      }
+      return p ? decodeURIComponent(p).trim() : null;
+    }
+    return null;
+  });
   const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(null);
 
   // Active Tab for Admin
@@ -473,7 +532,24 @@ export function App() {
       }
 
       if (portalId) {
-        setPortalStudentId(decodeURIComponent(portalId));
+        const decoded = decodeURIComponent(portalId).trim();
+        setPortalStudentId(decoded);
+
+        // Check if an old student session is stored or active that doesn't match the new link
+        try {
+          const rawSession = localStorage.getItem('omran_session');
+          if (rawSession) {
+            const parsed = JSON.parse(rawSession);
+            if (parsed && (parsed.role === 'student' || parsed.studentId)) {
+              if (parsed.studentId !== decoded && parsed.username !== decoded) {
+                console.log('🔄 Logging out old student session for link:', decoded);
+                localStorage.removeItem('omran_session');
+                sessionStorage.removeItem('omran_session');
+                setCurrentUser(null);
+              }
+            }
+          }
+        } catch {}
       }
       if (complexParam) {
         setPortalComplexId(decodeURIComponent(complexParam));
@@ -523,12 +599,36 @@ export function App() {
       const match = students.find(
         s =>
           s.id === clean ||
-          s.id.toLowerCase() === clean.toLowerCase()
+          s.id.toLowerCase() === clean.toLowerCase() ||
+          s.name.trim() === clean ||
+          s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+          s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+          (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
       );
       if (match) {
         setDirectPortalStudent(match);
         return;
       }
+
+      // Check synchronous cache for instant loading without wait
+      try {
+        const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
+        if (Array.isArray(cached) && cached.length > 0) {
+          const cMatch = cached.find(
+            s =>
+              s.id === clean ||
+              s.id.toLowerCase() === clean.toLowerCase() ||
+              s.name.trim() === clean ||
+              s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+              s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '')
+          );
+          if (cMatch) {
+            setDirectPortalStudent(cMatch);
+            setStudents(prev => (prev.some(s => s.id === cMatch.id) ? prev : [...prev, cMatch]));
+            return;
+          }
+        }
+      } catch {}
 
       const fetched = await OmranDataService.findStudentByIdOrQuery(portalStudentId);
       if (fetched) {
@@ -3091,6 +3191,133 @@ export function App() {
     };
   }, [settings, scopedSettings, activePortalStudent, halaqahs, complexes]);
 
+  // Priority 0: Direct Portal URL link view (e.g. via parent WhatsApp link ?portal=std-1 or ?student=std-1)
+  // When a direct student portal link is opened, it ALWAYS displays the requested student's portal 100% reliably,
+  // overriding and bypassing any old account that may have been previously logged in!
+  if (portalStudentId) {
+    if (isLoadingData && !activePortalStudent) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="max-w-4xl mx-auto px-4 py-12 relative z-10">
+            <GenericTabSkeleton title="جارٍ استرجاع سجل الطالب وبوابة ولي الأمر سحابياً..." />
+          </div>
+        </div>
+      );
+    }
+
+    if (activePortalStudent) {
+      if (!isStudentAssigned(activePortalStudent)) {
+        return (
+          <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+            <AnimatedBackground />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <UnassignedStudentView
+                studentName={activePortalStudent.name}
+                studentPhone={activePortalStudent.phone}
+                onRefresh={loadAllData}
+                onLogout={handleLogout}
+                settings={portalSettings}
+              />
+            </motion.div>
+          </div>
+        );
+      }
+
+      return (
+        <div
+          data-complex-themed={activeComplex?.theme ? "true" : undefined}
+          className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] transition-colors duration-300"
+          style={activeComplex?.theme ? {
+            backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
+            color: activeComplex.theme.textColor || '#f0f9f6'
+          } : undefined}
+          dir="rtl"
+        >
+          <AnimatedBackground />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <ParentPortalView
+              student={activePortalStudent}
+              attendance={attendance}
+              evaluations={evaluations}
+              settings={portalSettings}
+              violations={violations}
+              exams={exams}
+              submissions={submissions}
+              students={students}
+              halaqahs={halaqahs}
+              leaderboardSettings={leaderboardSettings || undefined}
+              recordings={recordings}
+              recordingsConfig={recordingsConfig}
+              certificates={certificates}
+              listeningLogs={listeningLogs}
+              activeComplex={activeComplex}
+              complexes={complexes}
+              isLoggedInStudent={Boolean(
+                currentUser &&
+                currentUser.role === 'student' &&
+                (currentUser.studentId === activePortalStudent.id || currentUser.username === activePortalStudent.name)
+              )}
+              onLogout={handleLogout}
+              onSaveSubmission={handleSaveSubmission}
+              onUpdateStudent={handleUpdateStudent}
+              onRefresh={loadAllData}
+              isCloudSyncing={isCloudSyncing}
+              cloudSyncText={cloudSyncText}
+            />
+          </motion.div>
+        </div>
+      );
+    }
+
+    if (!isLoadingData && !activePortalStudent) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
+          <AnimatedBackground />
+          <div className="relative z-10 text-center space-y-5 max-w-md bg-[#064e3b]/90 border border-amber-500/40 p-8 rounded-[32px] backdrop-blur-md shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-amber-500/30">
+              <BookOpen className="w-8 h-8" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold font-heading text-white">لم يتم العثور على ملف الطالب</h2>
+              <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
+                تعذر العثور على سجل الطالب بالمعرّف المرفق. قد يكون تم تحديث السجل أو تعديل بيانات الحلقة.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setPortalStudentId(null);
+                  if (typeof window !== 'undefined') {
+                    window.history.replaceState({}, '', window.location.pathname);
+                  }
+                }}
+                className="flex-1 py-3 px-4 rounded-2xl bg-[#fbbf24] text-[#064e3b] font-black text-xs hover:bg-[#f59e0b] shadow-lg cursor-pointer transition-all"
+              >
+                الذهاب إلى البوابة الرئيسية
+              </button>
+              <button
+                onClick={() => loadAllData()}
+                className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
+
   // 1. Strict Student Portal Handling: If user is authenticated as STUDENT, MUST NEVER leak to admin dashboard
   if (currentUser?.role === 'student') {
     if (isLoadingData && !activePortalStudent) {
@@ -3198,124 +3425,7 @@ export function App() {
     );
   }
 
-  // 3. Direct Portal URL link view (when not logged in as student, e.g. via parent WhatsApp link ?portal=std-1)
-  if (activePortalStudent) {
-    if (!isStudentAssigned(activePortalStudent)) {
-      return (
-        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
-          <AnimatedBackground />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.97, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <UnassignedStudentView
-              studentName={activePortalStudent.name}
-              studentPhone={activePortalStudent.phone}
-              onRefresh={loadAllData}
-              onLogout={handleLogout}
-              settings={portalSettings}
-            />
-          </motion.div>
-        </div>
-      );
-    }
 
-    return (
-      <div
-        data-complex-themed={activeComplex?.theme ? "true" : undefined}
-        className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] transition-colors duration-300"
-        style={activeComplex?.theme ? {
-          backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
-          color: activeComplex.theme.textColor || '#f0f9f6'
-        } : undefined}
-        dir="rtl"
-      >
-        <AnimatedBackground />
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <ParentPortalView
-            student={activePortalStudent}
-            attendance={attendance}
-            evaluations={evaluations}
-            settings={portalSettings}
-            violations={violations}
-            exams={exams}
-            submissions={submissions}
-            students={students}
-            halaqahs={halaqahs}
-            leaderboardSettings={leaderboardSettings || undefined}
-            recordings={recordings}
-            recordingsConfig={recordingsConfig}
-            certificates={certificates}
-            listeningLogs={listeningLogs}
-            activeComplex={activeComplex}
-            complexes={complexes}
-            isLoggedInStudent={!!currentUser}
-            onLogout={handleLogout}
-            onSaveSubmission={handleSaveSubmission}
-            onUpdateStudent={handleUpdateStudent}
-            onRefresh={loadAllData}
-            isCloudSyncing={isCloudSyncing}
-            cloudSyncText={cloudSyncText}
-          />
-        </motion.div>
-      </div>
-    );
-  }
-
-  // 2. Direct Portal URL link view (when not logged in as student, e.g. via parent WhatsApp link ?portal=std-1)
-  if (portalStudentId && isLoadingData && !activePortalStudent) {
-    return (
-      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
-        <TopProgressBar isLoading={true} />
-        <AnimatedBackground />
-        <div className="max-w-4xl mx-auto px-4 py-12 relative z-10">
-          <GenericTabSkeleton title="جارٍ استرجاع سجل الطالب وبوابة ولي الأمر سحابياً..." />
-        </div>
-      </div>
-    );
-  }
-
-  // 3. If Portal Link was invalid / not found after data loaded
-  if (portalStudentId && !isLoadingData && !activePortalStudent) {
-    return (
-      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
-        <AnimatedBackground />
-        <div className="relative z-10 text-center space-y-5 max-w-md bg-[#064e3b]/90 border border-amber-500/40 p-8 rounded-[32px] backdrop-blur-md shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border border-amber-500/30">
-            <BookOpen className="w-8 h-8" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold font-heading text-white">لم يتم العثور على ملف الطالب</h2>
-            <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
-              تعذر العثور على سجل الطالب بالمعرّف المرفق. قد يكون تم تحديث السجل أو تعديل بيانات الحلقة.
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <button
-              onClick={() => {
-                setPortalStudentId(null);
-                window.history.replaceState({}, '', window.location.pathname);
-              }}
-              className="flex-1 py-3 px-4 rounded-2xl bg-[#fbbf24] text-[#064e3b] font-black text-xs hover:bg-[#f59e0b] shadow-lg cursor-pointer transition-all"
-            >
-              الذهاب إلى البوابة الرئيسية
-            </button>
-            <button
-              onClick={() => loadAllData()}
-              className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
-            >
-              إعادة المحاولة
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Priority 1: If user navigated to /privacy or clicked Privacy Policy link
   if (publicRoute === 'privacy') {
