@@ -2146,3 +2146,54 @@ export const DEFAULT_AI_CONFIG: PlatformAIConfig = {
   },
   usageMetrics: DEFAULT_AI_USAGE_METRICS
 };
+
+// =========================================================================
+// Store & Rewards System (المتجر القرآني وجوائز النقاط)
+// =========================================================================
+
+export interface StoreItem {
+  id: string;
+  complexId: string; // scoped to Quran complex
+  name: string; // e.g. "مصحف المدينة المنورة فاخر"
+  imageUrl?: string;
+  pointsRequired: number; // e.g. 50
+  quantity: number; // available stock count
+  initialQuantity?: number;
+  startsAt?: string; // ISO date string or undefined for immediate
+  endsAt?: string; // ISO date string or undefined for forever
+  isForever?: boolean;
+  isImmediate?: boolean;
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface StorePurchase {
+  id: string;
+  itemId: string;
+  itemName: string;
+  itemImage?: string;
+  pointsCost: number;
+  studentId: string;
+  studentName: string;
+  halaqahId?: string;
+  halaqahName?: string;
+  complexId: string;
+  purchasedAt: string; // ISO string
+  preciseTimestampText: string; // e.g. "تاريخ: 2026/11/06 | الوقت: 10:24:18.915 مساءً (جزء دقيق: .184920fs)"
+  preciseSubsecond: string;
+}
+
+export interface StoreSettings {
+  isOpen: boolean; // true = store open, false = closed by supervisor
+  closedMessage?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export const DEFAULT_STORE_SETTINGS: StoreSettings = {
+  isOpen: true,
+  closedMessage: 'المتجر مغلق حالياً بأمر المشرف - تابع الحفظ والاجتهاد لجمع النقاط حتى يفتح المتجر من جديد!',
+  updatedAt: new Date().toISOString()
+};

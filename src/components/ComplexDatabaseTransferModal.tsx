@@ -427,7 +427,7 @@ service cloud.firestore {
       return;
     }
     try {
-      await OmranDataService.purgeComplexData(targetComplex.id);
+      await OmranDataService.purgeComplexData(targetComplex.id, undefined, { centralOnly: true });
       if (migrationResult) {
         setMigrationResult({ ...migrationResult, purgedFromCentral: true });
       }

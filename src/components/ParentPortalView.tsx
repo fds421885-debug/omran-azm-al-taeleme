@@ -43,7 +43,12 @@ import {
   Zap,
   ArrowUpRight,
   ArrowDownRight,
-  RefreshCw
+  RefreshCw,
+  ShoppingBag,
+  Package,
+  Coins,
+  Lock,
+  History
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
@@ -65,7 +70,11 @@ import {
   IssuedCertificate,
   StudentListeningLog,
   QuranRecitationItem,
-  QuranComplex
+  QuranComplex,
+  StoreItem,
+  StorePurchase,
+  StoreSettings,
+  DEFAULT_STORE_SETTINGS
 } from '../types';
 import { StudentExamTaker } from './StudentExamTaker';
 import { QuranAyahAudioPlayer } from './quran/QuranAyahAudioPlayer';
@@ -139,10 +148,19 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   isCloudSyncing = false,
   cloudSyncText = 'مزامنة سحابية مباشرة...'
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'exams' | 'leaderboard' | 'certificates'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'store' | 'exams' | 'leaderboard' | 'certificates'>('home');
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
   const [activeTakingAttemptNum, setActiveTakingAttemptNum] = useState<number>(1);
   const [viewingReviewSubmission, setViewingReviewSubmission] = useState<ExamSubmission | null>(null);
+
+  // Store & Rewards State (المتجر القرآني وجوائز النقاط)
+  const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
+  const [storePurchases, setStorePurchases] = useState<StorePurchase[]>([]);
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
+  const [confirmingPurchaseItem, setConfirmingPurchaseItem] = useState<StoreItem | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [purchaseFeedback, setPurchaseFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [purchasesTabFilter, setPurchasesTabFilter] = useState<'all' | 'mine'>('all');
 
   // Student Google Authentication & Linking State
   const [currentStudent, setCurrentStudent] = useState<Student>(student);
@@ -581,6 +599,81 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     const timer = setInterval(() => setOnlineClockTick(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  // Real-Time Store Subscriptions for the Student
+  useEffect(() => {
+    const complexId = resolvedComplex?.id || student.complexId || '';
+    const unsubItems = OmranDataService.subscribeStoreItems((liveItems) => {
+      setStoreItems(liveItems);
+    }, complexId);
+    const unsubPurchases = OmranDataService.subscribeStorePurchases((livePurchases) => {
+      setStorePurchases(livePurchases);
+    }, complexId);
+    const unsubSettings = OmranDataService.subscribeStoreSettings((liveSettings) => {
+      setStoreSettings(liveSettings);
+    }, complexId);
+
+    return () => {
+      try { unsubItems(); } catch {}
+      try { unsubPurchases(); } catch {}
+      try { unsubSettings(); } catch {}
+    };
+  }, [resolvedComplex?.id, student.complexId]);
+
+  // Student available store items count
+  const availableStoreItemsCount = useMemo(() => {
+    return storeItems.filter(i => (i.quantity || 0) > 0).length;
+  }, [storeItems]);
+
+  // Execute Purchase Handler with Live Atomic Check
+  const handleExecutePurchase = async (item: StoreItem) => {
+    if (!item || isPurchasing) return;
+    setIsPurchasing(true);
+    setPurchaseFeedback(null);
+
+    const complexId = resolvedComplex?.id || student.complexId || '';
+    const studentPoints = typeof currentStudent.points === 'number'
+      ? currentStudent.points
+      : (myRankingData?.totalPoints || 0);
+
+    try {
+      const res = await OmranDataService.executeAtomicStorePurchase({
+        itemId: item.id,
+        studentId: currentStudent.id,
+        studentName: currentStudent.name,
+        halaqahId: currentStudent.halaqahId,
+        halaqahName: studentHalaqahObj?.name || currentStudent.halaqahName,
+        complexId,
+        currentStudentPoints: studentPoints
+      });
+
+      if (res.success) {
+        try {
+          confetti({
+            particleCount: 90,
+            spread: 70,
+            origin: { y: 0.6 }
+          });
+        } catch {}
+        if (typeof res.newStudentPoints === 'number') {
+          const updated = { ...currentStudent, points: res.newStudentPoints };
+          setCurrentStudent(updated);
+          onUpdateStudent?.(updated);
+        }
+        setPurchaseFeedback({ success: true, message: res.message });
+        setConfirmingPurchaseItem(null);
+      } else {
+        setPurchaseFeedback({ success: false, message: res.message });
+      }
+    } catch {
+      setPurchaseFeedback({
+        success: false,
+        message: 'حدث خطأ أثناء معالجة الشراء، يرجى المحاولة مرة أخرى.'
+      });
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
 
   const currentHalaqahTitle = student.halaqahName || studentHalaqahObj?.name || 'حلقتك القرآنية';
 
@@ -1146,6 +1239,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           {[
             { id: 'home', label: 'الرئيسية', icon: Home },
             { id: 'recitation', label: 'مقرر التسميع', icon: Headphones },
+            { id: 'store', label: 'المتجر', icon: ShoppingBag, badge: availableStoreItemsCount > 0 ? toArabicDigits(availableStoreItemsCount) : undefined },
             { id: 'exams', label: 'الاختبارات', icon: FileText, badge: studentExams.length > 0 ? toArabicDigits(studentExams.length) : undefined },
             { id: 'leaderboard', label: 'لوحة الشرف', icon: Trophy, badge: myRank ? `#${toArabicDigits(myRank)}` : undefined },
             { id: 'certificates', label: 'شهاداتي', icon: Award, badge: studentCertificates.length > 0 ? toArabicDigits(studentCertificates.length) : undefined }
@@ -2220,7 +2314,477 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 3: EXAMS & QUIZZES (الاختبارات والنتائج والمحاولات) */}
+        {/* TAB 3: THE STORE & REWARDS (المتجر القرآني وجوائز النقاط) */}
+        {/* ============================================================== */}
+        {activeTab === 'store' && (
+          <div className="space-y-6">
+            {/* Store Top Summary Card (Duolingo 3D Styling with complex theme) */}
+            <div
+              className="p-6 sm:p-8 rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-4 backdrop-blur-md relative overflow-hidden transition-all"
+              style={{
+                backgroundColor: themeCardBg,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-14 h-14 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
+                    style={{
+                      backgroundColor: themeAccent,
+                      borderColor: lightenHex(themeAccent, 0.2),
+                      borderBottomColor: themeAccentShadow,
+                      color: accentTextColor
+                    }}
+                  >
+                    <ShoppingBag className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black font-heading text-white flex items-center gap-2">
+                      <span>المتجر القرآني وجوائز النقاط</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-mono bg-white/10 text-amber-300 border border-white/10">
+                        {toArabicDigits(storeItems.length)} جوائز
+                      </span>
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 font-bold mt-1">
+                      استبدل نقاطك المكتسبة من التسميع المتقن والاختبارات بهدايا وجوائز عينية فورية!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Student's Balance Badge */}
+                <div
+                  className="px-5 py-3 rounded-2xl border-2 border-b-4 flex items-center gap-3 shadow-lg self-start sm:self-auto shrink-0"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <Coins className="w-6 h-6 text-amber-400 animate-bounce" />
+                  <div>
+                    <span className="text-[11px] text-slate-300 font-bold block">رصيد نقاطك الحالي:</span>
+                    <span className="text-lg sm:text-xl font-mono font-black" style={{ color: themeAccent }}>
+                      {toArabicDigits(typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0))} نقطة
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Notification / Feedback Banner */}
+            {purchaseFeedback && (
+              <div
+                className={`p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 text-sm font-bold shadow-lg ${
+                  purchaseFeedback.success
+                    ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-200'
+                    : 'bg-rose-950/80 border-rose-500/80 text-rose-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  {purchaseFeedback.success ? (
+                    <Sparkles className="w-5 h-5 text-amber-300 shrink-0" />
+                  ) : (
+                    <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
+                  )}
+                  <span>{purchaseFeedback.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPurchaseFeedback(null)}
+                  className="text-white/60 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Store Closed State */}
+            {storeSettings.isOpen === false ? (
+              <div
+                className="p-10 sm:p-14 rounded-[32px] border-2 border-b-[6px] text-center space-y-4 backdrop-blur-md shadow-2xl"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: '#f43f5e70',
+                  borderBottomColor: '#9f1239'
+                }}
+              >
+                <div className="w-20 h-20 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border-2 border-rose-500/40 shadow-inner">
+                  <Lock className="w-10 h-10" />
+                </div>
+                <h3 className="text-2xl font-black text-white font-heading">
+                  المتجر مغلق حالياً بأمر المشرف
+                </h3>
+                <p className="text-slate-300 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
+                  {storeSettings.closedMessage ||
+                    'المتجر مغلق حالياً بأمر المشرف - واصل الحفظ والاجتهاد لجمع المزيد من النقاط حتى يفتح المتجر من جديد!'}
+                </p>
+                <div className="pt-2">
+                  <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-amber-300 text-xs font-bold border border-white/10">
+                    <Sparkles className="w-4 h-4" />
+                    استمر في التسميع اليومي والمواظبة لجمع أكبر رصيد من النقاط!
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* SECTION 1: الجوائز والمشتريات المعروضة (Available Items) */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-5 h-5 text-amber-400" />
+                      <h3 className="text-lg sm:text-xl font-black text-white font-heading">
+                        الجوائز المتاحة للاستبدال
+                      </h3>
+                    </div>
+                  </div>
+
+                  {storeItems.length === 0 ? (
+                    <div
+                      className="p-10 rounded-3xl border-2 border-dashed border-white/15 text-center text-slate-400"
+                      style={{ backgroundColor: `${themeCardBg}60` }}
+                    >
+                      <ShoppingBag className="w-12 h-12 text-slate-500 mx-auto mb-2 opacity-50" />
+                      <p className="font-bold text-white text-base">لا توجد جوائز معروضة حالياً في المتجر</p>
+                      <p className="text-xs text-slate-400 mt-1">ترقب إضافة جوائز وهدايا جديدة قريباً من قبل المشرف!</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                      {storeItems.map(item => {
+                        const studentPts = typeof currentStudent.points === 'number' ? currentStudent.points : (myRankingData?.totalPoints || 0);
+                        const isSoldOut = (item.quantity || 0) <= 0;
+                        const hasEnoughPoints = studentPts >= item.pointsRequired;
+                        const canBuy = !isSoldOut && hasEnoughPoints;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="rounded-3xl border-2 border-b-4 overflow-hidden flex flex-col justify-between shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl"
+                            style={{
+                              backgroundColor: themeCardBg,
+                              borderColor: `${themeAccent}40`,
+                              borderBottomColor: canBuy ? themeAccent : '#475569'
+                            }}
+                          >
+                            {/* Image & Badges */}
+                            <div className="relative aspect-video sm:aspect-square w-full bg-black/40 overflow-hidden flex items-center justify-center">
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                  <ShoppingBag className="w-14 h-14 opacity-40 mb-1" />
+                                  <span className="text-[11px] font-bold text-slate-400">جائزة قرآنية</span>
+                                </div>
+                              )}
+
+                              {/* Points Badge */}
+                              <div
+                                className="absolute top-3 right-3 px-3 py-1.5 rounded-xl font-black text-xs font-mono flex items-center gap-1.5 shadow-md border-2 border-b-2"
+                                style={{
+                                  backgroundColor: '#78350f',
+                                  borderColor: themeAccent,
+                                  color: themeAccent
+                                }}
+                              >
+                                <Coins className="w-4 h-4 text-amber-300" />
+                                <span>{toArabicDigits(item.pointsRequired)} نقطة</span>
+                              </div>
+
+                              {/* Quantity Badge */}
+                              <div
+                                className={`absolute top-3 left-3 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md border ${
+                                  !isSoldOut
+                                    ? (item.quantity || 0) <= 2
+                                      ? 'bg-amber-600/90 text-white border-amber-400'
+                                      : 'bg-emerald-600/90 text-white border-emerald-400'
+                                    : 'bg-rose-600/90 text-white border-rose-400'
+                                }`}
+                              >
+                                <Package className="w-3.5 h-3.5" />
+                                <span>
+                                  {!isSoldOut ? `المتبقي: ${toArabicDigits(item.quantity)}` : 'نفدت الكمية'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Item Details & Buy Button */}
+                            <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                              <div>
+                                <h4 className="font-black text-white text-base leading-snug line-clamp-2">
+                                  {item.name}
+                                </h4>
+                                {item.description && (
+                                  <p className="text-slate-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+                                    {item.description}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Action Button */}
+                              <div className="pt-2">
+                                {isSoldOut ? (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="w-full py-2.5 px-3 rounded-2xl bg-white/5 border border-white/10 text-slate-400 font-bold text-xs cursor-not-allowed text-center"
+                                  >
+                                    نفدت الكمية المتاحة
+                                  </button>
+                                ) : !hasEnoughPoints ? (
+                                  <div className="space-y-1">
+                                    <button
+                                      type="button"
+                                      disabled
+                                      className="w-full py-2.5 px-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs cursor-not-allowed text-center"
+                                    >
+                                      تحتاج {toArabicDigits(item.pointsRequired - studentPts)} نقطة إضافية
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmingPurchaseItem(item)}
+                                    className="w-full py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-md active:translate-y-1 active:border-b-0 hover:brightness-105 flex items-center justify-center gap-1.5"
+                                    style={{
+                                      backgroundColor: themeAccent,
+                                      borderColor: '#b45309',
+                                      borderBottomColor: '#78350f'
+                                    }}
+                                  >
+                                    <ShoppingBag className="w-4 h-4 stroke-[2.5]" />
+                                    <span>شراء الآن 🎁</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* SECTION 2: قسم تم شراؤه (سجل عمليات الشراء) */}
+                <div className="space-y-4 pt-6 border-t-2 border-white/10">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <History className="w-5 h-5 text-emerald-400" />
+                      <h3 className="text-lg sm:text-xl font-black text-white font-heading">
+                        قسم تم شراؤه (سجل المشتريات والجوائز)
+                      </h3>
+                      <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border border-emerald-500/30">
+                        {toArabicDigits(storePurchases.length)}
+                      </span>
+                    </div>
+
+                    {/* Filter Tabs: All vs Mine */}
+                    <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-2xl border border-white/10 self-start sm:self-auto text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setPurchasesTabFilter('all')}
+                        className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                          purchasesTabFilter === 'all'
+                            ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        سجل المركز كاملاً
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPurchasesTabFilter('mine')}
+                        className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                          purchasesTabFilter === 'mine'
+                            ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        مشترياتي الخاصة
+                      </button>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const displayedPurchases = purchasesTabFilter === 'mine'
+                      ? storePurchases.filter(p => p.studentId === currentStudent.id)
+                      : storePurchases;
+
+                    if (displayedPurchases.length === 0) {
+                      return (
+                        <div
+                          className="p-8 rounded-3xl border-2 border-dashed border-white/10 text-center text-slate-400"
+                          style={{ backgroundColor: `${themeCardBg}40` }}
+                        >
+                          <History className="w-10 h-10 text-slate-500 mx-auto mb-2 opacity-50" />
+                          <p className="font-bold text-white text-sm">
+                            {purchasesTabFilter === 'mine'
+                              ? 'لم تقم بشراء أي جائزة بعد، استبدل نقاطك الآن!'
+                              : 'لم يقم أي طالب بالشراء بعد، سجل الشراء فارغ حالياً.'}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        {displayedPurchases.map(purchase => {
+                          const isMine = purchase.studentId === currentStudent.id;
+                          return (
+                            <div
+                              key={purchase.id}
+                              className={`rounded-2xl p-4 border-2 border-b-4 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
+                                isMine ? 'ring-2 ring-amber-400/50' : ''
+                              }`}
+                              style={{
+                                backgroundColor: themeCardBg,
+                                borderColor: isMine ? themeAccent : `${themeAccent}25`,
+                                borderBottomColor: isMine ? themeAccentShadow : `${themeAccent}50`
+                              }}
+                            >
+                              <div className="flex items-center gap-3.5">
+                                <div className="w-12 h-12 rounded-xl bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+                                  {purchase.itemImage ? (
+                                    <img
+                                      src={purchase.itemImage}
+                                      alt={purchase.itemName}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <ShoppingBag className="w-6 h-6 text-amber-400" />
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-black text-white text-sm sm:text-base">
+                                      {purchase.itemName}
+                                    </span>
+                                    {isMine && (
+                                      <span className="bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-400/40">
+                                        مشتراي الشخصي ★
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs text-slate-300 mt-1 flex-wrap">
+                                    <span className="text-emerald-300 font-bold">
+                                      الطالب: {purchase.studentName}
+                                    </span>
+                                    {purchase.halaqahName && (
+                                      <span className="text-slate-400">
+                                        • {purchase.halaqahName}
+                                      </span>
+                                    )}
+                                    <span className="text-amber-300 font-mono font-black">
+                                      ({toArabicDigits(purchase.pointsCost)} نقطة)
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Exact Timestamp with femtoseconds */}
+                              <div className="bg-black/30 px-3 py-2 rounded-xl border border-white/10 text-right md:text-left shrink-0">
+                                <div className="text-[10px] text-amber-300 font-black">
+                                  توقيت الشراء الموثق:
+                                </div>
+                                <div className="text-[11px] font-mono text-slate-200 mt-0.5 dir-ltr text-left">
+                                  {purchase.preciseTimestampText || purchase.purchasedAt}
+                                </div>
+                                {purchase.preciseSubsecond && (
+                                  <div className="text-[9px] font-mono text-emerald-400 mt-0.5 dir-ltr text-left">
+                                    فيمتو ثانية: {purchase.preciseSubsecond}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            )}
+
+            {/* Confirmation Modal Before Buying */}
+            {confirmingPurchaseItem && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+                <div
+                  className="w-full max-w-md rounded-3xl p-6 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-5"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: themeAccent,
+                    borderBottomColor: '#b45309'
+                  }}
+                >
+                  <div className="text-center space-y-3">
+                    <div
+                      className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border-2 border-b-4 shadow-lg text-white"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeAccent,
+                        borderBottomColor: '#b45309'
+                      }}
+                    >
+                      <ShoppingBag className="w-8 h-8 text-amber-300 animate-bounce" />
+                    </div>
+                    <h3 className="text-xl font-black text-white font-heading">
+                      تأكيد شراء الجائزة
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                      هل أنت متأكد من رغبتك في شراء{' '}
+                      <strong className="text-white font-black">
+                        "{confirmingPurchaseItem.name}"
+                      </strong>{' '}
+                      مقابل{' '}
+                      <strong className="text-amber-300 font-mono font-black">
+                        {toArabicDigits(confirmingPurchaseItem.pointsRequired)} نقطة
+                      </strong>
+                      ؟ سيتم خصم النقاط من رصيدك فوراً وتسليمك الجائزة في الحلقة.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={isPurchasing}
+                      onClick={() => setConfirmingPurchaseItem(null)}
+                      className="flex-1 py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all"
+                    >
+                      تراجع
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPurchasing}
+                      onClick={() => handleExecutePurchase(confirmingPurchaseItem)}
+                      className="flex-1 py-2.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-slate-950 border-2 border-b-4 transition-all shadow-lg active:translate-y-1 active:border-b-0 hover:brightness-105 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      style={{
+                        backgroundColor: themeAccent,
+                        borderColor: '#b45309',
+                        borderBottomColor: '#78350f'
+                      }}
+                    >
+                      {isPurchasing ? (
+                        <span>جاري الشراء والتحقق...</span>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                          <span>تأكيد الشراء الآن</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 4: EXAMS & QUIZZES (الاختبارات والنتائج والمحاولات) */}
         {/* ============================================================== */}
         {activeTab === 'exams' && (
           <div

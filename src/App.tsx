@@ -29,6 +29,7 @@ import {
   Bell,
   BrainCircuit,
   RefreshCw,
+  ShoppingBag,
   X
 } from 'lucide-react';
 import { darkenHex, lightenHex } from './lib/themeUtils';
@@ -119,6 +120,7 @@ import { ExamsTab } from './components/tabs/ExamsTab';
 import { AccountsTab } from './components/tabs/AccountsTab';
 import { CertificatesTab } from './components/tabs/CertificatesTab';
 import { LeaderboardTab } from './components/tabs/LeaderboardTab';
+import { StoreTab } from './components/tabs/StoreTab';
 import { TeacherAttendanceTab } from './components/tabs/TeacherAttendanceTab';
 import { LibraryTab } from './components/tabs/LibraryTab';
 import { EditAccountModal } from './components/EditAccountModal';
@@ -2021,6 +2023,10 @@ export function App() {
       try {
         localStorage.setItem('omran_selected_complex_id', user.complexId);
       } catch {}
+      const targetComplex = complexes.find(c => c.id === user.complexId);
+      if (targetComplex) {
+        OmranDataService.setActiveComplex(targetComplex);
+      }
     }
     localStorage.setItem('omran_session', JSON.stringify(user));
 
@@ -3506,6 +3512,7 @@ export function App() {
             onRegisterStudent={handleAddStudent}
             students={students}
             teachers={teachers}
+            complexes={complexes}
             settings={settings}
             onBackToLanding={() => navigatePublic('landing')}
             onOpenPrivacyPolicy={() => navigatePublic('privacy')}
@@ -3549,6 +3556,7 @@ export function App() {
     { id: 'exams', label: 'قسم الاختبارات', icon: FileText, badge: scopedExams.length > 0 ? scopedExams.length : undefined },
     { id: 'certificates', label: 'قسم الشهادات', icon: Award },
     { id: 'leaderboard', label: 'لوحة الشرف', icon: Trophy },
+    { id: 'store', label: 'المتجر', icon: ShoppingBag },
     ...(isDeveloper ? [
       { id: 'accounts', label: 'إدارة الحسابات والرتب', icon: UserCog, badge: teachers.length }
     ] : []),
@@ -4130,6 +4138,18 @@ export function App() {
                 currentUserName={currentTeacher?.name || currentUser?.username || scopedSettings.teacherName}
                 onSaveLeaderboardSettings={handleSaveLeaderboardSettings}
                 onAwardBonusPoints={handleAwardBonusPoints}
+              />
+            )}
+
+            {activeTab === 'store' && (
+              <StoreTab
+                isSupervisor={isSupervisor}
+                isDeveloper={isDeveloper}
+                currentTeacher={currentTeacher}
+                activeComplex={activeComplex}
+                complexTheme={activeComplex?.theme || scopedSettings?.theme || null}
+                students={scopedStudents}
+                halaqahs={scopedHalaqahs}
               />
             )}
 

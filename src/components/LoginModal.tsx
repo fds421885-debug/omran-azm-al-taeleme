@@ -214,7 +214,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       );
     });
 
+    let hasCandidateInPrimary = false;
+
     if (candidateTeacher) {
+      hasCandidateInPrimary = true;
       const isTeacherPassValid = await verifyPassword(cleanPass, candidateTeacher.password);
       if (isTeacherPassValid) {
         FirebaseAuthService.upgradeAndSignIn({
@@ -233,13 +236,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           complexId: candidateTeacher.complexId
         });
         return;
-      } else {
-        setLoginError('كلمة المرور غير صحيحة، يرجى التأكد من كلمة المرور الخاصة بحسابك.');
-        return;
       }
     }
 
-    // 3. Check Student Accounts
+    // 3. Check Student Accounts in Primary Database
     const candidateStudent = students.find(s => {
       const sNormName = normalizeArabicText(s.name || '');
       const sId = (s.id || '').trim().toLowerCase();
@@ -256,6 +256,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     });
 
     if (candidateStudent) {
+      hasCandidateInPrimary = true;
       const isStudentPassValid = await verifyPassword(cleanPass, candidateStudent.password);
       if (isStudentPassValid) {
         FirebaseAuthService.upgradeAndSignIn({
@@ -274,35 +275,49 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           complexId: candidateStudent.complexId
         });
         return;
-      } else {
-        setLoginError('كلمة المرور غير صحيحة، يرجى التأكد من كلمة المرور الخاصة بحسابك.');
-        return;
       }
     }
 
-    // 4. Check dedicated/isolated databases for migrated complexes
-    const customComplexes = complexes.filter(c => c.databaseConfig?.isCustom && c.databaseConfig?.projectId);
+    // 4. Check secondary/dedicated databases for migrated complexes
+    let customComplexes = complexes.filter(c => c.databaseConfig?.isCustom && c.databaseConfig?.projectId);
+    if (customComplexes.length === 0) {
+      try {
+        const cloudComplexes = await OmranDataService.loadComplexes();
+        customComplexes = cloudComplexes.filter(c => c.databaseConfig?.isCustom && c.databaseConfig?.projectId);
+      } catch {}
+    }
+
     if (customComplexes.length > 0) {
       try {
         const result = await OmranDataService.authenticateUserAcrossDatabases(cleanUser, cleanPass, customComplexes);
         if (result) {
+          FirebaseAuthService.upgradeAndSignIn({
+            username: result.user.username,
+            plainPassword: cleanPass,
+            role: result.user.role,
+            displayName: result.user.username,
+            studentId: result.user.studentId,
+            teacherId: result.user.teacherId,
+            complexId: result.targetComplex.id,
+          }).catch(() => {});
+
           onLoginSuccess({
             ...result.user,
             complexId: result.targetComplex.id
           });
           return;
-        } else {
-          setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-          return;
         }
-      } catch {
-        setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
-        return;
+      } catch (crossAuthErr) {
+        console.warn('[LoginModal] Cross-database login check notice:', crossAuthErr);
       }
     }
 
-    // 5. Default clear error message when user doesn't have an account
-    setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
+    // 5. Clear error message based on whether username matched
+    if (hasCandidateInPrimary) {
+      setLoginError('كلمة المرور غير صحيحة، يرجى التأكد من كلمة المرور الخاصة بحسابك.');
+    } else {
+      setLoginError('أنت لا تمتلك حساباً مسجلاً في المنظومة! يرجى إنشاء حساب جديد أو التواصل مع المعلم/المشرف العام.');
+    }
   } catch {
     setLoginError('حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
   } finally {
