@@ -19,7 +19,8 @@ import {
   Check,
   X,
   UserCog,
-  UserPlus
+  UserPlus,
+  Menu
 } from 'lucide-react';
 import { UserRole, AppSettings, Halaqah, QuranComplex, TeacherAccount } from '../types';
 import { darkenHex, lightenHex } from '../lib/themeUtils';
@@ -98,6 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const [isComplexMenuOpen, setIsComplexMenuOpen] = React.useState(false);
   const [isHalaqahMenuOpen, setIsHalaqahMenuOpen] = React.useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const complexMenuRef = React.useRef<HTMLDivElement>(null);
   const halaqahMenuRef = React.useRef<HTMLDivElement>(null);
 
@@ -248,13 +250,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Live Registration Applications Button for Supervisor / Developer */}
+            {/* Live Registration Applications Button for Supervisor / Developer (Visible on mobile only if there are pending applications) */}
             {currentUser?.role === 'admin' && (isSupervisor || isDeveloper) && onOpenApplications && (
               <button
                 type="button"
                 onClick={onOpenApplications}
                 title="طلبات الانضمام والتسجيل الواردة إلى المجمع"
-                className="relative flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
+                className={`relative ${pendingApplicationsCount > 0 ? 'flex' : 'hidden md:flex'} items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110`}
                 style={{
                   backgroundColor: pendingApplicationsCount > 0 ? themeAccent : themeCard,
                   color: pendingApplicationsCount > 0 ? themePrimary : '#ffffff',
@@ -272,13 +274,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Top Settings Button */}
+            {/* Top Settings Button (Desktop only, mobile accesses via Mobile Menu Drawer) */}
             {currentUser?.role === 'admin' && isSupervisor && onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
                 title="إعدادات الحلقات والمعلمين ونقل الطلاب وتخصيص هوية وثيم المجمع"
-                className="flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
+                className="hidden md:flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
                 style={{
                   backgroundColor: themeCard,
                   color: '#ffffff',
@@ -291,13 +293,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Complex Management Button for Developer & Supervisor */}
+            {/* Complex Management Button for Developer & Supervisor (Desktop only) */}
             {currentUser?.role === 'admin' && (isDeveloper || isSupervisor) && onOpenComplexManagement && (
               <button
                 type="button"
                 onClick={onOpenComplexManagement}
                 title="إدارة المجمعات القرآنية وإضافة مجمع جديد"
-                className="flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
+                className="hidden md:flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl text-xs font-black border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all cursor-pointer hover:brightness-110"
                 style={{
                   backgroundColor: themeCard,
                   color: themeAccent,
@@ -310,13 +312,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Privacy Policy Quick In-App Button */}
+            {/* Privacy Policy Quick In-App Button (Desktop only) */}
             {onOpenPrivacyPolicy && (
               <button
                 type="button"
                 onClick={onOpenPrivacyPolicy}
                 title="سياسة الخصوصية وحماية البيانات (Privacy Policy)"
-                className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border-2 border-b-4 transition-all cursor-pointer shadow-sm flex items-center gap-1 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                className="hidden md:flex p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border-2 border-b-4 transition-all cursor-pointer shadow-sm items-center gap-1 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
                 style={{
                   backgroundColor: themeCard,
                   borderColor: themeBorder,
@@ -329,18 +331,139 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             {currentUser && (
-              <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2">
-                {/* Profile Pill with natural platform theme & Duolingo 3D styling */}
-                <div
-                  className="flex items-center gap-1.5 sm:gap-2 border-2 border-b-4 rounded-xl sm:rounded-2xl px-2 sm:px-2.5 py-1 sm:py-1.5 shadow-sm shrink-0 transition-all"
+              <>
+                {/* Desktop User Section */}
+                <div className="hidden md:flex items-center gap-1.5 md:gap-2">
+                  {/* Profile Pill with natural platform theme & Duolingo 3D styling */}
+                  <div
+                    className="flex items-center gap-1.5 sm:gap-2 border-2 border-b-4 rounded-xl sm:rounded-2xl px-2 sm:px-2.5 py-1 sm:py-1.5 shadow-sm shrink-0 transition-all"
+                    style={{
+                      backgroundColor: themeCard,
+                      borderColor: `${themeAccent}40`,
+                      borderBottomColor: themeBorderBottom,
+                    }}
+                  >
+                    <div
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shrink-0 shadow-sm transition-colors border border-black/20"
+                      style={{
+                        backgroundColor: themeAccent,
+                        color: themePrimary
+                      }}
+                    >
+                      {currentUser.username.charAt(0)}
+                    </div>
+                    <div className="text-right max-w-[90px] lg:max-w-[130px] xl:max-w-[160px]">
+                      <div className="text-xs font-bold text-white truncate" title={currentUser.username}>
+                        {currentUser.username}
+                      </div>
+                      <div
+                        className="text-[9px] font-bold truncate"
+                        style={{ color: themeAccent }}
+                      >
+                        {currentUser.role === 'admin' ? (isDeveloper ? 'معلم ومشرف ومبرمج' : isSupervisor ? 'المعلم المشرف' : 'معلم') : 'طالب'}
+                      </div>
+                    </div>
+
+                    {/* Edit Account Button */}
+                    {currentUser.role === 'admin' && onOpenEditAccount && (
+                      <button
+                        type="button"
+                        onClick={onOpenEditAccount}
+                        title="تعديل بيانات الحساب (اسم المستخدم، كلمة المرور، والاسم الرباعي)"
+                        className="p-1 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-lg sm:rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-bold mr-0.5"
+                        style={{ color: themeAccent }}
+                      >
+                        <UserCog className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        <span className="hidden 2xl:inline">الحساب</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Google Account Link Button: Sleek Theme-Matching Duolingo 3D Tactile Button */}
+                  {currentUser?.role === 'admin' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (currentTeacher?.isGoogleLinked) {
+                          if (confirm(`هل تريد بالتأكيد فصل حساب Google (${currentTeacher.googleEmail || 'المربوط'})؟`)) {
+                            if (onUnlinkGoogleTeacher) await onUnlinkGoogleTeacher();
+                          }
+                        } else {
+                          if (onLinkGoogleTeacher) await onLinkGoogleTeacher();
+                        }
+                      }}
+                      disabled={isLinkingGoogleTeacher}
+                      className={`flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 font-heading ${
+                        currentTeacher?.isGoogleLinked
+                          ? 'bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-200 border-emerald-500/70 border-b-emerald-700'
+                          : 'hover:brightness-110 text-white'
+                      }`}
+                      style={!currentTeacher?.isGoogleLinked ? {
+                        backgroundColor: themeCard,
+                        borderColor: `${themeAccent}50`,
+                        borderBottomColor: themeBorderBottom
+                      } : undefined}
+                      title={
+                        currentTeacher?.isGoogleLinked
+                          ? `مربوط بحساب Google: ${currentTeacher.googleEmail} (انقر للفصل)`
+                          : 'ربط حساب Google للحصول على تكامل Meet و Gmail والتقويم'
+                      }
+                    >
+                      {/* Official Multi-Colored Google G Icon */}
+                      <div className="relative shrink-0 flex items-center justify-center">
+                        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                        </svg>
+                        {currentTeacher?.isGoogleLinked && (
+                          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 border border-black/40 shadow-xs" />
+                        )}
+                      </div>
+                      <span className="whitespace-nowrap font-bold text-xs">
+                        {isLinkingGoogleTeacher
+                          ? 'جاري الربط...'
+                          : currentTeacher?.isGoogleLinked
+                          ? <span className="hidden sm:inline text-emerald-300">متصل ✓</span>
+                          : <span className="hidden xl:inline text-slate-200">ربط Google</span>}
+                      </span>
+                    </button>
+                  )}
+
+                  {/* Duolingo 3D Themed Logout Button */}
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    title="تسجيل الخروج الآمن"
+                    className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:bg-red-500/20 shrink-0"
+                    style={{
+                      backgroundColor: themeCard,
+                      borderColor: 'rgba(239, 68, 68, 0.45)',
+                      borderBottomColor: '#dc2626',
+                      color: '#fca5a5'
+                    }}
+                  >
+                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-400 shrink-0" />
+                    <span className="hidden md:inline">خروج</span>
+                  </button>
+                </div>
+
+                {/* Mobile Admin Menu Drawer Trigger (md:hidden) */}
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  title="القائمة والخيارات الإدارية للمشرف والمعلم"
+                  className="md:hidden flex items-center gap-1.5 py-1.5 px-2 rounded-xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
                   style={{
                     backgroundColor: themeCard,
-                    borderColor: `${themeAccent}40`,
-                    borderBottomColor: themeBorderBottom,
+                    borderColor: `${themeAccent}70`,
+                    borderBottomColor: themeAccentShadow,
+                    color: '#ffffff'
                   }}
                 >
                   <div
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shrink-0 shadow-sm transition-colors border border-black/20"
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black shrink-0 border border-black/20"
                     style={{
                       backgroundColor: themeAccent,
                       color: themePrimary
@@ -348,102 +471,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     {currentUser.username.charAt(0)}
                   </div>
-                  <div className="text-right hidden md:block max-w-[90px] lg:max-w-[130px] xl:max-w-[160px]">
-                    <div className="text-xs font-bold text-white truncate" title={currentUser.username}>
-                      {currentUser.username}
-                    </div>
-                    <div
-                      className="text-[9px] font-bold truncate"
-                      style={{ color: themeAccent }}
-                    >
-                      {currentUser.role === 'admin' ? (isDeveloper ? 'معلم ومشرف ومبرمج' : isSupervisor ? 'المعلم المشرف' : 'معلم') : 'طالب'}
-                    </div>
-                  </div>
-
-                  {/* Edit Account Button */}
-                  {currentUser.role === 'admin' && onOpenEditAccount && (
-                    <button
-                      type="button"
-                      onClick={onOpenEditAccount}
-                      title="تعديل بيانات الحساب (اسم المستخدم، كلمة المرور، والاسم الرباعي)"
-                      className="p-1 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-lg sm:rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-bold mr-0.5"
-                      style={{ color: themeAccent }}
-                    >
-                      <UserCog className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                      <span className="hidden 2xl:inline">الحساب</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Google Account Link Button: Sleek Theme-Matching Duolingo 3D Tactile Button */}
-                {currentUser?.role === 'admin' && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (currentTeacher?.isGoogleLinked) {
-                        if (confirm(`هل تريد بالتأكيد فصل حساب Google (${currentTeacher.googleEmail || 'المربوط'})؟`)) {
-                          if (onUnlinkGoogleTeacher) await onUnlinkGoogleTeacher();
-                        }
-                      } else {
-                        if (onLinkGoogleTeacher) await onLinkGoogleTeacher();
-                      }
-                    }}
-                    disabled={isLinkingGoogleTeacher}
-                    className={`flex items-center gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 font-heading ${
-                      currentTeacher?.isGoogleLinked
-                        ? 'bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-200 border-emerald-500/70 border-b-emerald-700'
-                        : 'hover:brightness-110 text-white'
-                    }`}
-                    style={!currentTeacher?.isGoogleLinked ? {
-                      backgroundColor: themeCard,
-                      borderColor: `${themeAccent}50`,
-                      borderBottomColor: themeBorderBottom
-                    } : undefined}
-                    title={
-                      currentTeacher?.isGoogleLinked
-                        ? `مربوط بحساب Google: ${currentTeacher.googleEmail} (انقر للفصل)`
-                        : 'ربط حساب Google للحصول على تكامل Meet و Gmail والتقويم'
-                    }
-                  >
-                    {/* Official Multi-Colored Google G Icon */}
-                    <div className="relative shrink-0 flex items-center justify-center">
-                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                      </svg>
-                      {currentTeacher?.isGoogleLinked && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 border border-black/40 shadow-xs" />
-                      )}
-                    </div>
-                    <span className="whitespace-nowrap font-bold text-xs">
-                      {isLinkingGoogleTeacher
-                        ? 'جاري الربط...'
-                        : currentTeacher?.isGoogleLinked
-                        ? <span className="hidden sm:inline text-emerald-300">متصل ✓</span>
-                        : <span className="hidden xl:inline text-slate-200">ربط Google</span>}
-                    </span>
-                  </button>
-                )}
-
-                {/* Duolingo 3D Themed Logout Button */}
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="تسجيل الخروج الآمن"
-                  className="flex items-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-2 sm:px-2.5 rounded-xl sm:rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:bg-red-500/20 shrink-0"
-                  style={{
-                    backgroundColor: themeCard,
-                    borderColor: 'rgba(239, 68, 68, 0.45)',
-                    borderBottomColor: '#dc2626',
-                    color: '#fca5a5'
-                  }}
-                >
-                  <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-400 shrink-0" />
-                  <span className="hidden md:inline">خروج</span>
+                  <Menu className="w-4 h-4" style={{ color: themeAccent }} />
                 </button>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -1202,6 +1232,298 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Mobile Navigation Drawer / Sheet */}
+      {isMobileMenuOpen && currentUser && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+
+          {/* Modal / Sheet Container */}
+          <div
+            className="relative z-10 w-full max-w-md rounded-t-3xl sm:rounded-3xl border-2 border-b-[6px] shadow-2xl p-4 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+            style={{
+              backgroundColor: themeCard,
+              borderColor: `${themeAccent}70`,
+              borderBottomColor: themeAccentShadow
+            }}
+            dir="rtl"
+          >
+            {/* Sheet Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center text-base font-black shadow-md border-2 border-b-4 shrink-0"
+                  style={{
+                    backgroundColor: themeAccent,
+                    color: themePrimary,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  {currentUser.username.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-white truncate font-heading">{currentUser.username}</h3>
+                  <span
+                    className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border border-b-2 mt-0.5"
+                    style={{
+                      backgroundColor: `${themeAccent}20`,
+                      borderColor: `${themeAccent}50`,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
+                    {currentUser.role === 'admin' ? (isDeveloper ? 'معلم ومشرف ومبرمج' : isSupervisor ? 'المعلم المشرف' : 'معلم') : 'طالب'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors border-2 border-b-4 cursor-pointer"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+                title="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Complex Info Strip */}
+            <div
+              className="p-2.5 rounded-xl border-2 border-b-4 flex items-center gap-2.5 text-xs font-bold"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder,
+                borderBottomColor: themeBorderBottom,
+                color: '#ffffff'
+              }}
+            >
+              <Building2 className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+              <span className="text-[11px] text-slate-300">المجمع:</span>
+              <span className="font-black truncate" style={{ color: themeAccent }}>{displayComplexName}</span>
+            </div>
+
+            {/* Action Buttons List */}
+            <div className="space-y-2">
+              {/* Quranic AI Assistant */}
+              {currentUser?.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    window.dispatchEvent(new CustomEvent('omran:open_ai_assistant'));
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: `${themeAccent}80`,
+                    borderBottomColor: themeAccentShadow,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-4 h-4 animate-pulse" style={{ color: themeAccent }} />
+                    <span>المساعد القرآني الذكي (AI)</span>
+                  </div>
+                  <span className="text-[10px] font-bold" style={{ color: themeAccent }}>فتح المحادثة والتقارير ›</span>
+                </button>
+              )}
+
+              {/* Edit Account */}
+              {currentUser.role === 'admin' && onOpenEditAccount && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenEditAccount();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <UserCog className="w-4 h-4" style={{ color: themeAccent }} />
+                    <span>تعديل بيانات الحساب وكلمة المرور</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">تعديل ›</span>
+                </button>
+              )}
+
+              {/* Live Registration Applications */}
+              {currentUser?.role === 'admin' && (isSupervisor || isDeveloper) && onOpenApplications && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenApplications();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: pendingApplicationsCount > 0 ? `${themeAccent}20` : themeSecondary,
+                    borderColor: pendingApplicationsCount > 0 ? themeAccent : themeBorder,
+                    borderBottomColor: pendingApplicationsCount > 0 ? themeAccentShadow : themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <UserPlus className="w-4 h-4" style={{ color: pendingApplicationsCount > 0 ? themeAccent : themeAccent }} />
+                    <span>طلبات الانضمام والتسجيل الواردة</span>
+                  </div>
+                  {pendingApplicationsCount > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white animate-bounce">
+                      {pendingApplicationsCount} جديد
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">فتح ›</span>
+                  )}
+                </button>
+              )}
+
+              {/* Settings */}
+              {currentUser?.role === 'admin' && isSupervisor && onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenSettings();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Settings className="w-4 h-4" style={{ color: themeAccent }} />
+                    <span>إعدادات المجمع والحلقات والمظهر</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">فتح ›</span>
+                </button>
+              )}
+
+              {/* Complex Management */}
+              {currentUser?.role === 'admin' && (isDeveloper || isSupervisor) && onOpenComplexManagement && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenComplexManagement();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4" style={{ color: themeAccent }} />
+                    <span>إدارة المجمعات القرآنية</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">فتح ›</span>
+                </button>
+              )}
+
+              {/* Google Link / Unlink */}
+              {currentUser?.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsMobileMenuOpen(false);
+                    if (currentTeacher?.isGoogleLinked) {
+                      if (confirm(`هل تريد بالتأكيد فصل حساب Google (${currentTeacher.googleEmail || 'المربوط'})؟`)) {
+                        if (onUnlinkGoogleTeacher) await onUnlinkGoogleTeacher();
+                      }
+                    } else {
+                      if (onLinkGoogleTeacher) await onLinkGoogleTeacher();
+                    }
+                  }}
+                  disabled={isLinkingGoogleTeacher}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: currentTeacher?.isGoogleLinked ? 'rgba(6, 78, 59, 0.4)' : themeSecondary,
+                    borderColor: currentTeacher?.isGoogleLinked ? '#10b981' : themeBorder,
+                    borderBottomColor: currentTeacher?.isGoogleLinked ? '#047857' : themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                    </svg>
+                    <span>{currentTeacher?.isGoogleLinked ? `حساب Google: ${currentTeacher.googleEmail || 'متصل'}` : 'ربط حساب Google'}</span>
+                  </div>
+                  <span className={`text-[10px] font-bold ${currentTeacher?.isGoogleLinked ? 'text-emerald-300' : 'text-slate-400'}`}>
+                    {currentTeacher?.isGoogleLinked ? 'متصل (انقر للفصل)' : 'ربط الآن ›'}
+                  </span>
+                </button>
+              )}
+
+              {/* Privacy Policy */}
+              {onOpenPrivacyPolicy && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenPrivacyPolicy();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom,
+                    color: '#ffffff'
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4" style={{ color: themeAccent }} />
+                    <span>سياسة الخصوصية وحماية البيانات</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">عرض ›</span>
+                </button>
+              )}
+            </div>
+
+            {/* Logout Button */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onLogout();
+                }}
+                className="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl border-2 border-b-4 text-sm font-black text-white bg-red-600 hover:bg-red-700 active:translate-y-[2px] active:border-b-2 transition-all cursor-pointer shadow-lg"
+                style={{
+                  borderColor: '#ef4444',
+                  borderBottomColor: '#991b1b'
+                }}
+              >
+                <LogOut className="w-5 h-5" />
+                <span>تسجيل الخروج الآمن</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

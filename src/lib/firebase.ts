@@ -5381,34 +5381,41 @@ export class OmranDataService {
     const clean = decodeURIComponent(lookup).trim();
     const cleanNoSpaces = clean.replace(/\s+/g, '');
 
-    // 1. Direct document fetch by ID
-    try {
-      const docSnap = await safeGetDoc(doc(this.getActiveDb(), 'students', clean));
-      if (docSnap.exists()) {
-        return docSnap.data() as Student;
-      }
-    } catch (e) {
-      // Continue to query
+    const dbs = [this.getActiveDb()];
+    if (this.getCentralDb() !== this.getActiveDb()) {
+      dbs.push(this.getCentralDb());
     }
 
-    // 2. Query Firestore entire collection
-    try {
-      const snap = await safeGetDocs(collection(this.getActiveDb(), 'students'));
-      for (const d of snap.docs) {
-        const s = d.data() as Student;
-        if (
-          s.id === clean ||
-          s.id.toLowerCase() === clean.toLowerCase() ||
-          s.name.trim() === clean ||
-          s.name.replace(/\s+/g, '') === cleanNoSpaces ||
-          s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-          (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
-        ) {
-          return s;
+    for (const currentDb of dbs) {
+      // 1. Direct document fetch by ID
+      try {
+        const docSnap = await safeGetDoc(doc(currentDb, 'students', clean));
+        if (docSnap.exists()) {
+          return docSnap.data() as Student;
         }
+      } catch (e) {
+        // Continue to query
       }
-    } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'students');
+
+      // 2. Query Firestore entire collection
+      try {
+        const snap = await safeGetDocs(collection(currentDb, 'students'));
+        for (const d of snap.docs) {
+          const s = d.data() as Student;
+          if (
+            s.id === clean ||
+            s.id.toLowerCase() === clean.toLowerCase() ||
+            s.name.trim() === clean ||
+            s.name.replace(/\s+/g, '') === cleanNoSpaces ||
+            s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+            (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
+          ) {
+            return s;
+          }
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.LIST, 'students');
+      }
     }
 
     return null;

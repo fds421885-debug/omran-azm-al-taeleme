@@ -290,7 +290,62 @@ export function App() {
     }
     return null;
   });
-  const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(null);
+
+  const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      let p =
+        urlParams.get('portal') ||
+        urlParams.get('id') ||
+        urlParams.get('student') ||
+        urlParams.get('studentId');
+      if (!p && window.location.hash) {
+        const hash = window.location.hash.replace(/^#\/?/, '');
+        const hashParams = new URLSearchParams(hash);
+        p =
+          hashParams.get('portal') ||
+          hashParams.get('id') ||
+          hashParams.get('student') ||
+          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
+          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
+      }
+      if (p) {
+        const clean = decodeURIComponent(p).trim();
+        try {
+          const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
+          if (Array.isArray(cached) && cached.length > 0) {
+            const cMatch = cached.find(
+              s =>
+                s.id === clean ||
+                s.id.toLowerCase() === clean.toLowerCase() ||
+                s.name.trim() === clean ||
+                s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+                s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+                (s.parentPhones && s.parentPhones.some(ph => ph.replace(/\D/g, '') === clean.replace(/\D/g, '')))
+            );
+            if (cMatch) return cMatch;
+          }
+        } catch {}
+      }
+    }
+    return null;
+  });
+
+  // Track active portal student resolution to prevent any premature "not found" screen flashes
+  const [isResolvingPortalStudent, setIsResolvingPortalStudent] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const p =
+        urlParams.get('portal') ||
+        urlParams.get('id') ||
+        urlParams.get('student') ||
+        urlParams.get('studentId') ||
+        (window.location.hash && (window.location.hash.includes('portal=') || window.location.hash.includes('id=')));
+      return Boolean(p);
+    }
+    return false;
+  });
+  const [portalResolveAttempted, setPortalResolveAttempted] = useState<boolean>(false);
 
   // Active Tab for Admin
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -454,7 +509,22 @@ export function App() {
   } | null>(null);
   const [isLinkingLibraryModal, setIsLinkingLibraryModal] = useState(false);
   const [libraryLinkModalError, setLibraryLinkModalError] = useState<string | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const hasPortal = Boolean(
+        params.get('portal') ||
+        params.get('id') ||
+        params.get('student') ||
+        params.get('studentId') ||
+        (window.location.hash && (window.location.hash.includes('portal=') || window.location.hash.includes('id=')))
+      );
+      if (hasPortal) return true;
+      const hasSession = Boolean(localStorage.getItem('omran_session'));
+      if (hasSession) return true;
+    }
+    return false;
+  });
   const [isInitialAppBoot, setIsInitialAppBoot] = useState(() => {
     if (typeof window === 'undefined') return false;
     if (sessionStorage.getItem('omran_splash_shown') === 'true') {
@@ -593,8 +663,12 @@ export function App() {
   useEffect(() => {
     if (!portalStudentId) {
       setDirectPortalStudent(null);
+      setIsResolvingPortalStudent(false);
+      setPortalResolveAttempted(true);
       return;
     }
+
+    let isCancelled = false;
 
     const resolvePortalStudent = async () => {
       const clean = decodeURIComponent(portalStudentId).trim();
@@ -608,7 +682,11 @@ export function App() {
           (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
       );
       if (match) {
-        setDirectPortalStudent(match);
+        if (!isCancelled) {
+          setDirectPortalStudent(match);
+          setIsResolvingPortalStudent(false);
+          setPortalResolveAttempted(true);
+        }
         return;
       }
 
@@ -622,24 +700,58 @@ export function App() {
               s.id.toLowerCase() === clean.toLowerCase() ||
               s.name.trim() === clean ||
               s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-              s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '')
+              s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+              (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
           );
           if (cMatch) {
-            setDirectPortalStudent(cMatch);
-            setStudents(prev => (prev.some(s => s.id === cMatch.id) ? prev : [...prev, cMatch]));
+            if (!isCancelled) {
+              setDirectPortalStudent(cMatch);
+              setStudents(prev => (prev.some(s => s.id === cMatch.id) ? prev : [...prev, cMatch]));
+              setIsResolvingPortalStudent(false);
+              setPortalResolveAttempted(true);
+            }
             return;
           }
         }
       } catch {}
 
-      const fetched = await OmranDataService.findStudentByIdOrQuery(portalStudentId);
-      if (fetched) {
-        setDirectPortalStudent(fetched);
-        setStudents(prev => (prev.some(s => s.id === fetched.id) ? prev : [...prev, fetched]));
+      if (!isCancelled) {
+        setIsResolvingPortalStudent(true);
+      }
+
+      try {
+        const fetched = await OmranDataService.findStudentByIdOrQuery(portalStudentId);
+        if (!isCancelled) {
+          if (fetched) {
+            setDirectPortalStudent(fetched);
+            setStudents(prev => (prev.some(s => s.id === fetched.id) ? prev : [...prev, fetched]));
+          }
+          setIsResolvingPortalStudent(false);
+          setPortalResolveAttempted(true);
+        }
+      } catch (err) {
+        console.error('Portal student fetch notice:', err);
+        if (!isCancelled) {
+          setIsResolvingPortalStudent(false);
+          setPortalResolveAttempted(true);
+        }
       }
     };
 
     resolvePortalStudent();
+
+    // Safety timeout: ensure loading state never hangs indefinitely
+    const timeoutId = setTimeout(() => {
+      if (!isCancelled) {
+        setIsResolvingPortalStudent(false);
+        setPortalResolveAttempted(true);
+      }
+    }, 4500);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [portalStudentId, students]);
 
   // Load all data from Firestore directly (central real-time database)
@@ -3201,13 +3313,27 @@ export function App() {
   // When a direct student portal link is opened, it ALWAYS displays the requested student's portal 100% reliably,
   // overriding and bypassing any old account that may have been previously logged in!
   if (portalStudentId) {
-    if (isLoadingData && !activePortalStudent) {
+    // 1. Loading State: If student is not yet resolved AND resolution or data load is in progress
+    // Show high-quality loading screen - NEVER prematurely show "not found"!
+    if (!activePortalStudent && (isResolvingPortalStudent || isLoadingData || !portalResolveAttempted)) {
       return (
-        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] flex items-center justify-center p-4" dir="rtl">
           <TopProgressBar isLoading={true} />
           <AnimatedBackground />
-          <div className="max-w-4xl mx-auto px-4 py-12 relative z-10">
-            <GenericTabSkeleton title="جارٍ استرجاع سجل الطالب وبوابة ولي الأمر سحابياً..." />
+          <div className="w-full max-w-md bg-[#064e3b]/90 border-2 border-b-4 border-amber-500/50 p-8 rounded-[32px] backdrop-blur-md shadow-2xl text-center space-y-5 relative z-10 animate-pulse">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border-2 border-b-4 border-amber-500/40 shadow-inner">
+              <BookOpen className="w-8 h-8 animate-bounce" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black font-heading text-white">جارٍ تحميل وتجهيز ملف الطالب...</h2>
+              <p className="text-xs text-[#86efac] mt-2 font-bold leading-relaxed">
+                يتم استرجاع السجل القرآني وجداول الحفظ والمتابعة مباشرة من السحابة
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs text-amber-300 font-bold pt-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>جاري الفحص والمزامنة...</span>
+            </div>
           </div>
         </div>
       );
@@ -3285,7 +3411,8 @@ export function App() {
       );
     }
 
-    if (!isLoadingData && !activePortalStudent) {
+    // Only show "Not Found" when resolution and data loading have fully finished and student is truly missing
+    if (!isResolvingPortalStudent && portalResolveAttempted && !isLoadingData && !activePortalStudent) {
       return (
         <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
           <AnimatedBackground />
@@ -3312,7 +3439,11 @@ export function App() {
                 الذهاب إلى البوابة الرئيسية
               </button>
               <button
-                onClick={() => loadAllData()}
+                onClick={() => {
+                  setIsResolvingPortalStudent(true);
+                  setPortalResolveAttempted(false);
+                  loadAllData();
+                }}
                 className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
               >
                 إعادة المحاولة
@@ -3326,7 +3457,7 @@ export function App() {
 
   // 1. Strict Student Portal Handling: If user is authenticated as STUDENT, MUST NEVER leak to admin dashboard
   if (currentUser?.role === 'student') {
-    if (isLoadingData && !activePortalStudent) {
+    if (!activePortalStudent && (isLoadingData || !portalResolveAttempted)) {
       return (
         <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b]" dir="rtl">
           <TopProgressBar isLoading={true} />
@@ -3762,9 +3893,9 @@ export function App() {
               )}
 
               {isSupervisor ? (
-                <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-full">
+                <div className="flex flex-col items-stretch sm:items-end gap-1.5 shrink-0 w-full sm:w-auto max-w-full">
                   <div
-                    className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                    className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm touch-pan-x"
                     style={{
                       backgroundColor: activeComplex?.theme?.cardColor || '#203843',
                       borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
@@ -3773,7 +3904,7 @@ export function App() {
                   >
                     <button
                       onClick={() => handleSwitchHalaqah('all')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 min-h-[36px] flex items-center justify-center ${
                         activeHalaqahId === 'all'
                           ? 'border-b-4 shadow-md'
                           : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
@@ -3791,7 +3922,7 @@ export function App() {
                       <button
                         key={h.id}
                         onClick={() => handleSwitchHalaqah(h.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 min-h-[36px] flex items-center justify-center ${
                           activeHalaqahId === h.id
                             ? 'border-b-4 shadow-md'
                             : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
@@ -3810,9 +3941,9 @@ export function App() {
                 </div>
               ) : (
                 assignedHalaqahs.length > 0 && (
-                  <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-full">
+                  <div className="flex flex-col items-stretch sm:items-end gap-1.5 shrink-0 w-full sm:w-auto max-w-full">
                     <div
-                      className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm"
+                      className="flex items-center gap-1.5 p-1 sm:p-1.5 rounded-2xl border-2 border-b-4 overflow-x-auto scrollbar-none slider-horizontal shrink-0 max-w-full shadow-sm touch-pan-x"
                       style={{
                         backgroundColor: activeComplex?.theme?.cardColor || '#203843',
                         borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
@@ -3821,7 +3952,7 @@ export function App() {
                     >
                       <button
                         onClick={() => handleSwitchHalaqah('all')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 min-h-[36px] flex items-center justify-center ${
                           activeHalaqahId === 'all'
                             ? 'border-b-4 shadow-md'
                             : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
@@ -3839,7 +3970,7 @@ export function App() {
                         <button
                           key={h.id}
                           onClick={() => handleSwitchHalaqah(h.id)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border-2 active:translate-y-0.5 min-h-[36px] flex items-center justify-center ${
                             activeHalaqahId === h.id
                               ? 'border-b-4 shadow-md'
                               : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
@@ -3885,7 +4016,7 @@ export function App() {
               <button
                 key={item.id}
                 onClick={() => handleNavigateTab(item.id)}
-                className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer select-none ${
+                className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-colors cursor-pointer select-none min-h-[44px] ${
                   isActive
                     ? 'font-black'
                     : 'text-slate-300 hover:text-white hover:bg-white/10'
