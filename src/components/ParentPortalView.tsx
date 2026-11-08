@@ -53,6 +53,7 @@ import {
   History,
   Gift,
   AlertCircle,
+  AlertTriangle,
   BookmarkCheck,
   Eye,
   BookMarked
@@ -110,6 +111,31 @@ import {
 export const toArabicDigits = (val: string | number | undefined | null): string => {
   if (val === undefined || val === null) return '';
   return String(val).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[parseInt(d, 10)]);
+};
+
+export const formatCleanArabicDate = (dateVal?: string | null): string => {
+  if (!dateVal) return '';
+  const str = String(dateVal).trim();
+  if (!str) return '';
+
+  // If already standard YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split('-');
+    return toArabicDigits(`${y}/${m}/${d}`);
+  }
+
+  // Parse Date
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return toArabicDigits(`${y}/${m}/${d}`);
+  }
+
+  // Fallback: strip T and any timezone/timestamp suffixes
+  const base = str.split('T')[0] || str;
+  return toArabicDigits(base.replace(/-/g, '/'));
 };
 
 interface ParentPortalViewProps {
@@ -2715,7 +2741,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     }}
                   >
                     <BookOpen className="w-4 h-4 shrink-0" />
-                    <span>تصفح المصحف كاملاً 📖</span>
+                    <span>تصفح المصحف كاملاً</span>
                   </button>
                 </div>
               </div>
@@ -2824,7 +2850,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setErrorsSortMode('mushaf')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
                       errorsSortMode === 'mushaf'
                         ? 'border-b-4 shadow-sm'
                         : 'border-transparent text-slate-400 hover:text-white bg-black/20'
@@ -2836,12 +2862,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       borderBottomColor: themeAccentShadow
                     } : undefined}
                   >
-                    ترتيب المصحف
+                    <ListOrdered className="w-3.5 h-3.5" />
+                    <span>ترتيب المصحف</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setErrorsSortMode('errorsCount')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
                       errorsSortMode === 'errorsCount'
                         ? 'border-b-4 shadow-sm'
                         : 'border-transparent text-slate-400 hover:text-white bg-black/20'
@@ -2853,7 +2880,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       borderBottomColor: themeAccentShadow
                     } : undefined}
                   >
-                    الأكثر أخطاءً
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>الأكثر أخطاءً</span>
                   </button>
                 </div>
               </div>
@@ -2882,7 +2910,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 </div>
                 <div className="space-y-2 max-w-md mx-auto">
                   <h3 className="text-xl sm:text-2xl font-black font-heading text-white">
-                    ما شاء الله تبارك الله! سجل ناصع البياض ✨
+                    ما شاء الله تبارك الله! سجل ناصع البياض
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
                     لا توجد أي أخطاء مسجلة لك حالياً في التسميع. حفظك متقن ومثبت، استمر على هذا الأداء العالي واحرص على دوام المراجعة اليومية!
@@ -2901,7 +2929,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     }}
                   >
                     <BookOpen className="w-5 h-5" />
-                    <span>تصفح المصحف الشريف كاملاً 📖</span>
+                    <span>تصفح المصحف الشريف كاملاً</span>
                   </button>
                 </div>
               </div>
@@ -2969,8 +2997,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-slate-200 border border-white/10">
                           {toArabicDigits(group.ayahs.length)} آية
                         </span>
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                          {toArabicDigits(group.totalErrorsInSurah)} تكرار خطأ
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-300 shrink-0" />
+                          <span>{toArabicDigits(group.totalErrorsInSurah)} تكرار خطأ</span>
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-300 mt-0.5">
@@ -2992,7 +3021,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                       }}
                     >
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>فتح السورة في المصحف 📖</span>
+                      <span>فتح السورة في المصحف</span>
                     </button>
                   </div>
                 </div>
@@ -3035,8 +3064,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                            تكرر الخطأ: {toArabicDigits(ayah.errorCount)} {ayah.errorCount === 1 ? 'مرة' : 'مرات'}
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 text-rose-300 shrink-0" />
+                            <span>تكرر الخطأ: {toArabicDigits(ayah.errorCount)} {ayah.errorCount === 1 ? 'مرة' : 'مرات'}</span>
                           </span>
                         </div>
                       </div>
@@ -3068,9 +3098,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                             </div>
                           )}
                           {ayah.lastDate && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-slate-400 border border-white/10">
-                              <Clock className="w-3 h-3" />
-                              <span>آخر رصد: {toArabicDigits(ayah.lastDate)}</span>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>آخر رصد: {formatCleanArabicDate(ayah.lastDate)}</span>
                             </div>
                           )}
                         </div>
@@ -3094,7 +3124,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                           }}
                         >
                           <BookOpen className="w-4 h-4 shrink-0" />
-                          <span>فتح في المصحف ومراجعة الآية 📖</span>
+                          <span>فتح في المصحف ومراجعة الآية</span>
                           <span className="text-[11px] opacity-80 font-bold">
                             (صفحة {toArabicDigits(ayah.pageNumber)})
                           </span>
