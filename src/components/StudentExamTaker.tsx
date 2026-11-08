@@ -548,7 +548,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
           {/* A. MULTIPLE CHOICE */}
           {currentQuestion.type === 'multiple_choice' && (
             <div className="space-y-3">
-              <span className="text-xs font-bold text-emerald-300 block">
+              <span className="text-xs sm:text-sm font-black text-emerald-300 block">
                 اختر إجابة واحدة صحيحة مما يلي:
               </span>
               <div className="grid grid-cols-1 gap-2.5">
@@ -561,23 +561,23 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
                       key={idx}
                       type="button"
                       onClick={() => handleSelectAnswer(currentQuestion.id, option)}
-                      className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                      className={`w-full p-4 rounded-2xl border-2 border-b-4 text-right transition-all flex items-center justify-between gap-3 cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm ${
                         isSelected
-                          ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] shadow-lg shadow-amber-500/20 font-bold scale-[1.01]'
-                          : 'bg-[#064e3b]/30 hover:bg-[#064e3b]/70 border-emerald-800/80 text-emerald-100 hover:border-emerald-600'
+                          ? 'bg-[#fbbf24] text-[#064e3b] border-[#d97706] border-b-[#b45309] shadow-lg shadow-amber-500/20 font-black scale-[1.01]'
+                          : 'bg-[#064e3b]/40 hover:bg-[#064e3b]/70 border-emerald-800 border-b-emerald-950 text-emerald-100 hover:border-emerald-600'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <span
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 border-2 border-b-4 ${
                             isSelected
-                              ? 'bg-[#064e3b] text-[#fbbf24]'
-                              : 'bg-[#022c22] text-emerald-300 border border-emerald-700'
+                              ? 'bg-[#064e3b] text-[#fbbf24] border-[#022c22] border-b-[#01140e]'
+                              : 'bg-[#022c22] text-emerald-300 border-emerald-700 border-b-emerald-900'
                           }`}
                         >
                           {letter}
                         </span>
-                        <span className="text-xs sm:text-sm font-semibold">{option}</span>
+                        <span className="text-xs sm:text-base font-bold">{option}</span>
                       </div>
 
                       <div
@@ -597,7 +597,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
           {/* B. TRUE / FALSE */}
           {currentQuestion.type === 'true_false' && (
             <div className="space-y-3">
-              <span className="text-xs font-bold text-emerald-300 block">
+              <span className="text-xs sm:text-sm font-black text-emerald-300 block">
                 حدد صحة العبارة التالية:
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -610,12 +610,12 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
                       key={val}
                       type="button"
                       onClick={() => handleSelectAnswer(currentQuestion.id, val)}
-                      className={`p-5 rounded-2xl border-2 text-center transition-all flex items-center justify-center gap-3 cursor-pointer ${
+                      className={`p-5 rounded-2xl border-2 border-b-4 text-center transition-all flex items-center justify-center gap-3 cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm ${
                         isSelected
                           ? isTrue
-                            ? 'bg-emerald-500 text-[#022c22] border-emerald-400 font-black shadow-lg shadow-emerald-500/20'
-                            : 'bg-rose-500 text-white border-rose-400 font-black shadow-lg shadow-rose-500/20'
-                          : 'bg-[#064e3b]/40 hover:bg-[#064e3b]/80 border-emerald-800 text-emerald-100'
+                            ? 'bg-emerald-500 text-[#022c22] border-emerald-400 border-b-emerald-700 font-black shadow-lg shadow-emerald-500/20'
+                            : 'bg-rose-500 text-white border-rose-400 border-b-rose-700 font-black shadow-lg shadow-rose-500/20'
+                          : 'bg-[#064e3b]/40 hover:bg-[#064e3b]/80 border-emerald-800 border-b-emerald-950 text-emerald-100'
                       }`}
                     >
                       {isTrue ? (
@@ -623,7 +623,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
                       ) : (
                         <XCircle className={`w-5 h-5 ${isSelected ? 'text-white' : 'text-rose-400'}`} />
                       )}
-                      <span className="text-base font-bold">{val}</span>
+                      <span className="text-base sm:text-lg font-black">{val}</span>
                     </button>
                   );
                 })}
@@ -631,31 +631,31 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
             </div>
           )}
 
-          {/* C. ESSAY / SHORT ANSWER */}
+          {/* C. ESSAY / SHORT ANSWER (DUOLINGO 3D WRITING AREA) */}
           {(currentQuestion.type === 'essay' || currentQuestion.type === 'short_answer') && (
             <div className="space-y-2">
-              <label className="text-xs font-bold text-emerald-300 block">
+              <label className="text-xs sm:text-sm font-black text-emerald-300 block">
                 اكتب إجابتك الواضحة هنا:
               </label>
               <textarea
-                rows={currentQuestion.type === 'essay' ? 4 : 2}
-                placeholder="اكتب إجابتك هنا بدقة وتأنٍ..."
+                rows={currentQuestion.type === 'essay' ? 5 : 3}
+                placeholder="اكتب إجابتك هنا بوضوح وتأنٍ..."
                 value={answersMap[currentQuestion.id] || ''}
                 onChange={e => handleSelectAnswer(currentQuestion.id, e.target.value)}
-                className="w-full p-4 rounded-2xl bg-[#064e3b]/50 border border-[#065f46] text-white text-xs sm:text-sm focus:border-[#fbbf24] focus:outline-none transition-all placeholder:text-emerald-300/40"
+                className="w-full p-4 rounded-2xl bg-[#022c22]/90 border-2 border-b-4 border-emerald-700 border-b-emerald-950 text-white text-xs sm:text-base font-bold focus:border-[#fbbf24] focus:border-b-[#b45309] focus:outline-none transition-all placeholder:text-emerald-300/40 shadow-inner resize-y leading-relaxed"
               />
-              <div className="flex items-center justify-between text-[11px] text-emerald-300/70 px-1">
-                <span className="flex items-center gap-1">
+              <div className="flex items-center justify-between text-xs text-emerald-300/80 px-1 pt-0.5">
+                <span className="flex items-center gap-1.5 font-bold">
                   {answersMap[currentQuestion.id]?.trim() ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-[#fbbf24] shrink-0" />
-                      <span className="text-[#fbbf24] font-semibold">تم حفظ المسودة</span>
+                      <Check className="w-4 h-4 text-[#fbbf24] shrink-0" />
+                      <span className="text-[#fbbf24] font-black">تم حفظ المسودة سحابياً</span>
                     </>
                   ) : (
                     <span>في انتظار الإجابة</span>
                   )}
                 </span>
-                <span>{answersMap[currentQuestion.id]?.length || 0} حرف</span>
+                <span className="font-mono font-bold">{answersMap[currentQuestion.id]?.length || 0} حرف</span>
               </div>
             </div>
           )}
@@ -701,7 +701,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
           <button
             onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
             disabled={currentQuestionIndex === 0}
-            className="px-4 py-2.5 rounded-xl bg-[#064e3b] hover:bg-[#064e3b]/80 text-emerald-200 hover:text-white disabled:opacity-40 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer border border-emerald-700/50"
+            className="px-4 py-2.5 rounded-2xl bg-[#064e3b] hover:bg-[#064e3b]/80 text-emerald-200 hover:text-white disabled:opacity-40 text-xs sm:text-sm font-black flex items-center gap-1.5 transition-all cursor-pointer border-2 border-b-4 border-emerald-700 border-b-emerald-950 active:translate-y-[2px] active:border-b-2"
           >
             <ChevronRight className="w-4 h-4" />
             <span>السؤال السابق</span>
@@ -711,7 +711,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
             {currentQuestionIndex < totalQuestions - 1 ? (
               <button
                 onClick={() => setCurrentQuestionIndex(prev => Math.min(totalQuestions - 1, prev + 1))}
-                className="px-6 py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-amber-950/30"
+                className="px-6 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-amber-950/30 border-2 border-b-4 border-[#d97706] border-b-[#b45309] active:translate-y-[2px] active:border-b-2"
               >
                 <span>السؤال التالي</span>
                 <ChevronLeft className="w-4 h-4" />
@@ -722,10 +722,10 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
             <button
               onClick={handleOpenSubmitConfirm}
               disabled={isSubmitting}
-              className={`px-6 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-lg ${
+              className={`px-6 py-2.5 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer shadow-lg border-2 border-b-4 active:translate-y-[2px] active:border-b-2 ${
                 currentQuestionIndex === totalQuestions - 1 || answeredCount === totalQuestions
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-[#022c22] shadow-emerald-500/20 animate-pulse'
-                  : 'bg-emerald-800/80 hover:bg-emerald-700 text-white border border-emerald-600'
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-[#022c22] border-emerald-400 border-b-emerald-700 shadow-emerald-500/20 animate-pulse'
+                  : 'bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600 border-b-emerald-950'
               }`}
             >
               <Send className="w-4 h-4" />

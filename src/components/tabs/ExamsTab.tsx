@@ -65,6 +65,7 @@ import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
 import { OmranDataService } from '../../lib/firebase';
 import { StudentExamTaker } from '../StudentExamTaker';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
+import { DuolingoDatePicker } from '../portal/DuolingoDatePicker';
 
 interface ExamsTabProps {
 
@@ -1800,197 +1801,384 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
         </div>
       )}
 
-      {/* CREATE / EDIT EXAM MODAL */}
+      {/* CREATE / EDIT EXAM MODAL (DUOLINGO 3D THEME) */}
       {isCreatingExam && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#022c22] border border-[#065f46] rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between border-b border-emerald-800 pb-4">
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-[#fbbf24]" />
-                  <span>{editingExamId ? 'تعديل بيانات الاختبار' : 'إنشاء وتجهيز اختبار إلكتروني جديد'}</span>
-                </h3>
-                <p className="text-xs text-emerald-300/80 mt-1">
-                  إعداد أسئلة الاختبار، التوقيت، الحلقات المستهدفة والمحاولات سحابياً
-                </p>
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div
+            className="rounded-[28px] w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5 sm:p-7 shadow-2xl space-y-6 text-right border-2 border-b-4 my-auto animate-fadeIn"
+            style={{
+              backgroundColor: themePrimary,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              className="flex items-center justify-between pb-4 border-b-2"
+              style={{ borderColor: themeBorder }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md shrink-0"
+                  style={{
+                    backgroundColor: themeSecondary,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
+                  <FileText className="w-5 h-5" style={{ color: themeAccent }} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white font-heading">
+                    {editingExamId ? 'تعديل بيانات الاختبار' : 'إنشاء وتجهيز اختبار إلكتروني جديد'}
+                  </h3>
+                  <p className="text-xs text-slate-300 font-bold mt-0.5">
+                    إعداد أسئلة الاختبار، التوقيت، الحلقات المستهدفة والمحاولات سحابياً
+                  </p>
+                </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setIsCreatingExam(false)}
-                className="p-2 rounded-xl text-emerald-300 hover:text-white"
+                className="p-2 rounded-2xl text-slate-300 hover:text-white transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+                title="إغلاق"
               >
-                <XCircle className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveExamSubmit} className="space-y-6">
-              {/* Basic Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    اسم / عنوان الاختبار <span className="text-rose-400">* (إلزامي)</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: الاختبار الفصلي في جزء عم - أحكام التجويد"
-                    value={formTitle}
-                    onChange={e => setFormTitle(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none font-bold"
-                  />
+              {/* Basic Details 3D Duolingo Card */}
+              <div
+                className="p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-sm"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center gap-2 border-b-2 pb-2.5" style={{ borderColor: `${themeBorder}80` }}>
+                  <Sparkles className="w-4 h-4" style={{ color: themeAccent }} />
+                  <span className="text-xs sm:text-sm font-black text-white font-heading">
+                    البيانات الأساسية للاختبار
+                  </span>
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    وصف أو تعليمات الاختبار
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="تعليمات الاختبار، المنهج المحدد، أو تنبيهات هامة للطلاب..."
-                    value={formDescription}
-                    onChange={e => setFormDescription(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs placeholder:text-emerald-300/50 focus:border-[#fbbf24] focus:outline-none"
-                  />
-                </div>
-
-                {formGoogleSpreadsheetUrl && (
-                  <div className="sm:col-span-2 p-3.5 rounded-2xl bg-[#064e3b]/50 border border-emerald-700/60">
-                    <label className="block text-[11px] font-bold text-emerald-300 mb-1.5">
-                      جدول Google Sheets المرتبط لنتائج هذا الاختبار:
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Title */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-black text-slate-200">
+                      اسم / عنوان الاختبار <span className="text-rose-400">* (إلزامي)</span>
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="url"
-                        readOnly
-                        value={formGoogleSpreadsheetUrl}
-                        className="w-full px-3 py-1.5 rounded-xl bg-[#064e3b]/80 border border-emerald-600/40 text-emerald-200 text-xs focus:outline-none"
-                      />
-                      <a
-                        href={formGoogleSpreadsheetUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shrink-0"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>فتح الجدول</span>
-                      </a>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: الاختبار الفصلي في جزء عم - أحكام التجويد"
+                      value={formTitle}
+                      onChange={e => setFormTitle(e.target.value)}
+                      className="w-full px-4 py-3 sm:py-3.5 rounded-2xl border-2 border-b-4 text-white text-xs sm:text-sm placeholder:text-slate-400 focus:outline-none font-black transition-all shadow-inner"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-black text-slate-200">
+                      وصف أو تعليمات الاختبار
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="تعليمات الاختبار، المنهج المحدد، أو تنبيهات هامة للطلاب..."
+                      value={formDescription}
+                      onChange={e => setFormDescription(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl border-2 border-b-4 text-white text-xs sm:text-sm placeholder:text-slate-400 focus:outline-none font-bold transition-all shadow-inner resize-y leading-relaxed"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    />
+                  </div>
+
+                  {formGoogleSpreadsheetUrl && (
+                    <div
+                      className="sm:col-span-2 p-3.5 rounded-2xl border-2 border-b-4 space-y-2"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <label className="block text-[11px] font-black text-slate-200">
+                        جدول Google Sheets المرتبط لنتائج هذا الاختبار:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="url"
+                          readOnly
+                          value={formGoogleSpreadsheetUrl}
+                          className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-white text-xs focus:outline-none font-mono"
+                        />
+                        <a
+                          href={formGoogleSpreadsheetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-4 py-2 rounded-xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 shrink-0 transition-all active:translate-y-[2px]"
+                          style={{
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: accentTextColor
+                          }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>فتح الجدول</span>
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Scheduling */}
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    موعد ظهور الاختبار للطلاب
-                  </label>
-                  <select
-                    value={formScheduleType}
-                    onChange={e => setFormScheduleType(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none cursor-pointer"
-                  >
-                    <option value="now">يظهر الآن مباشرة للطلاب</option>
-                    <option value="scheduled">مجدول (تاريخ ووقت محدد للظهور)</option>
-                  </select>
-                </div>
-
-                {formScheduleType === 'scheduled' && (
-                  <div>
-                    <label className="block text-xs font-bold text-[#fbbf24] mb-1">
-                      تاريخ ووقت ظهور الاختبار:
+                  {/* Scheduling (Appearance) */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black text-slate-200">
+                      موعد ظهور الاختبار للطلاب
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={formStartDate}
-                      onChange={e => setFormStartDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#fbbf24]/50 text-white text-xs focus:border-[#fbbf24] focus:outline-none"
-                    />
+                    <select
+                      value={formScheduleType}
+                      onChange={e => setFormScheduleType(e.target.value as any)}
+                      className="w-full px-3 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black focus:outline-none cursor-pointer transition-all"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <option value="now" className="bg-slate-900 text-white">يظهر الآن مباشرة للطلاب</option>
+                      <option value="scheduled" className="bg-slate-900 text-white">مجدول (تاريخ ووقت محدد للظهور)</option>
+                    </select>
                   </div>
-                )}
 
-                {/* Deadline */}
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    موعد انتهاء الاختبار
-                  </label>
-                  <select
-                    value={formHasDeadline ? 'deadline' : 'forever'}
-                    onChange={e => setFormHasDeadline(e.target.value === 'deadline')}
-                    className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none cursor-pointer"
-                  >
-                    <option value="forever">متاح للأبد (بدون موعد انتهاء)</option>
-                    <option value="deadline">له موعد انتهاء محدد وبعدها يقفل</option>
-                  </select>
-                </div>
+                  {/* Schedule Date & Time */}
+                  {formScheduleType === 'scheduled' && (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>تاريخ وتوقيت ظهور الاختبار:</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <DuolingoDatePicker
+                            value={formStartDate ? formStartDate.split('T')[0] : ''}
+                            onChange={newDate => {
+                              if (!newDate) {
+                                setFormStartDate('');
+                                return;
+                              }
+                              const timePart = formStartDate && formStartDate.includes('T')
+                                ? formStartDate.split('T')[1].substring(0, 5)
+                                : '08:00';
+                              setFormStartDate(`${newDate}T${timePart}`);
+                            }}
+                            placeholder="حدد تاريخ الظهور"
+                            themeBg={themeSecondary}
+                            themeCard={themeCardBg}
+                            themeCardBorder={themeBorder}
+                            themeAccent={themeAccent}
+                            themeAccentShadow={themeAccentShadow}
+                          />
+                        </div>
+                        <div
+                          className="flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-2xl border-2 border-b-4"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom
+                          }}
+                        >
+                          <Clock className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                          <input
+                            type="time"
+                            value={formStartDate && formStartDate.includes('T') ? formStartDate.split('T')[1].substring(0, 5) : '08:00'}
+                            onChange={e => {
+                              const newTime = e.target.value || '08:00';
+                              const datePart = formStartDate && formStartDate.includes('T')
+                                ? formStartDate.split('T')[0]
+                                : new Date().toISOString().split('T')[0];
+                              setFormStartDate(`${datePart}T${newTime}`);
+                            }}
+                            className="bg-transparent text-xs font-mono font-black text-white outline-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-                {formHasDeadline && (
-                  <div>
-                    <label className="block text-xs font-bold text-[#fbbf24] mb-1">
-                      تاريخ ووقت انتهاء الاختبار:
+                  {/* Deadline Dropdown */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black text-slate-200">
+                      موعد انتهاء الاختبار
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={formDeadlineDate}
-                      onChange={e => setFormDeadlineDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#fbbf24]/50 text-white text-xs focus:border-[#fbbf24] focus:outline-none"
-                    />
+                    <select
+                      value={formHasDeadline ? 'deadline' : 'forever'}
+                      onChange={e => setFormHasDeadline(e.target.value === 'deadline')}
+                      className="w-full px-3 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black focus:outline-none cursor-pointer transition-all"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <option value="forever" className="bg-slate-900 text-white">متاح للأبد (بدون موعد انتهاء)</option>
+                      <option value="deadline" className="bg-slate-900 text-white">له موعد انتهاء محدد وبعدها يقفل</option>
+                    </select>
                   </div>
-                )}
 
-                {/* Attempts */}
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    عدد المحاولات المسموحة لكل طالب
-                  </label>
-                  <select
-                    value={formAttemptType}
-                    onChange={e => setFormAttemptType(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none cursor-pointer"
-                  >
-                    <option value="unlimited">محاولات غير محدودة</option>
-                    <option value="limited">عدد محاولات محدد فقط</option>
-                  </select>
-                </div>
+                  {/* Deadline Date & Time */}
+                  {formHasDeadline && (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black flex items-center gap-1.5" style={{ color: themeAccent }}>
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>تاريخ وتوقيت انتهاء الاختبار:</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <DuolingoDatePicker
+                            value={formDeadlineDate ? formDeadlineDate.split('T')[0] : ''}
+                            onChange={newDate => {
+                              if (!newDate) {
+                                setFormDeadlineDate('');
+                                return;
+                              }
+                              const timePart = formDeadlineDate && formDeadlineDate.includes('T')
+                                ? formDeadlineDate.split('T')[1].substring(0, 5)
+                                : '23:59';
+                              setFormDeadlineDate(`${newDate}T${timePart}`);
+                            }}
+                            placeholder="حدد تاريخ الانتهاء"
+                            themeBg={themeSecondary}
+                            themeCard={themeCardBg}
+                            themeCardBorder={themeBorder}
+                            themeAccent={themeAccent}
+                            themeAccentShadow={themeAccentShadow}
+                          />
+                        </div>
+                        <div
+                          className="flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-2xl border-2 border-b-4"
+                          style={{
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom
+                          }}
+                        >
+                          <Clock className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                          <input
+                            type="time"
+                            value={formDeadlineDate && formDeadlineDate.includes('T') ? formDeadlineDate.split('T')[1].substring(0, 5) : '23:59'}
+                            onChange={e => {
+                              const newTime = e.target.value || '23:59';
+                              const datePart = formDeadlineDate && formDeadlineDate.includes('T')
+                                ? formDeadlineDate.split('T')[0]
+                                : new Date().toISOString().split('T')[0];
+                              setFormDeadlineDate(`${datePart}T${newTime}`);
+                            }}
+                            className="bg-transparent text-xs font-mono font-black text-white outline-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-                {formAttemptType === 'limited' && (
-                  <div>
-                    <label className="block text-xs font-bold text-[#fbbf24] mb-1">
-                      أقصى عدد محاولات مسموح بها:
+                  {/* Attempts Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black text-slate-200">
+                      عدد المحاولات المسموحة لكل طالب
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={formMaxAttempts}
-                      onChange={e => setFormMaxAttempts(Math.max(1, Number(e.target.value)))}
-                      className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none font-bold"
-                    />
+                    <select
+                      value={formAttemptType}
+                      onChange={e => setFormAttemptType(e.target.value as any)}
+                      className="w-full px-3 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black focus:outline-none cursor-pointer transition-all"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <option value="unlimited" className="bg-slate-900 text-white">محاولات غير محدودة</option>
+                      <option value="limited" className="bg-slate-900 text-white">عدد محاولات محدد فقط</option>
+                    </select>
                   </div>
-                )}
 
-                {/* Grade Visibility */}
-                <div>
-                  <label className="block text-xs font-bold text-emerald-200 mb-1">
-                    ظهور النتيجة للطالب بعد الحل
-                  </label>
-                  <select
-                    value={formGradeVisibility}
-                    onChange={e => setFormGradeVisibility(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#064e3b] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none cursor-pointer"
-                  >
-                    <option value="immediate">مباشرة وفوري بعد التسليم</option>
-                    <option value="after_deadline">بعد نهاية موعد الاختبار</option>
-                    <option value="manual">بعد تصحيح واعتماد المعلم للمقالي</option>
-                  </select>
+                  {formAttemptType === 'limited' && (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black" style={{ color: themeAccent }}>
+                        أقصى عدد محاولات مسموح بها:
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={formMaxAttempts}
+                        onChange={e => setFormMaxAttempts(Math.max(1, Number(e.target.value)))}
+                        className="w-full px-4 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black focus:outline-none font-mono"
+                        style={{
+                          backgroundColor: themeSecondary,
+                          borderColor: themeBorder,
+                          borderBottomColor: themeBorderBottom
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Grade Visibility */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="block text-xs font-black text-slate-200">
+                      ظهور النتيجة للطالب بعد الحل
+                    </label>
+                    <select
+                      value={formGradeVisibility}
+                      onChange={e => setFormGradeVisibility(e.target.value as any)}
+                      className="w-full px-3 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black focus:outline-none cursor-pointer transition-all"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      <option value="immediate" className="bg-slate-900 text-white">مباشرة وفوري بعد التسليم</option>
+                      <option value="after_deadline" className="bg-slate-900 text-white">بعد نهاية موعد الاختبار</option>
+                      <option value="manual" className="bg-slate-900 text-white">بعد تصحيح واعتماد المعلم للمقالي</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* Exam Timing & Duration Settings */}
-              <div className="p-5 rounded-2xl bg-[#064e3b]/60 border border-[#065f46] space-y-4">
-                <div className="flex items-center gap-2">
-                  <Timer className="w-5 h-5 text-[#fbbf24]" />
+              {/* Exam Timing & Duration Settings (Duolingo 3D Card) */}
+              <div
+                className="p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-sm"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center gap-2 border-b-2 pb-2.5" style={{ borderColor: `${themeBorder}80` }}>
+                  <Timer className="w-5 h-5" style={{ color: themeAccent }} />
                   <div>
-                    <h4 className="text-xs font-bold text-white">خيارات توقيت ومدة الاختبار (Timer)</h4>
-                    <p className="text-[11px] text-emerald-300/80">
+                    <h4 className="text-xs sm:text-sm font-black text-white font-heading">
+                      خيارات توقيت ومدة الاختبار (Timer)
+                    </h4>
+                    <p className="text-[11px] text-slate-300 font-bold">
                       يمكنك جعل الاختبار مفتوحاً بدون وقت، أو تحديد وقت كلي للاختبار، أو وقت محدد لكل سؤال
                     </p>
                   </div>
@@ -2000,14 +2188,27 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setFormTimeLimitMode('none')}
-                    className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer ${
-                      formTimeLimitMode === 'none'
-                        ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] shadow-md font-bold'
-                        : 'bg-[#022c22] border-[#fbbf24]/30 text-[#f0f9f6]/80 hover:bg-[#064e3b] hover:border-[#fbbf24]/60'
+                    className={`p-3.5 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 ${
+                      formTimeLimitMode === 'none' ? 'scale-[1.01]' : 'hover:brightness-110 opacity-90'
                     }`}
+                    style={
+                      formTimeLimitMode === 'none'
+                        ? {
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: accentTextColor
+                          }
+                        : {
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom,
+                            color: '#ffffff'
+                          }
+                    }
                   >
                     <div className="text-xs font-black mb-1">بدون مؤقت زمني</div>
-                    <div className={`text-[10px] ${formTimeLimitMode === 'none' ? 'text-emerald-950 font-semibold' : 'text-[#86efac]/80'}`}>
+                    <div className="text-[10px] font-bold opacity-90">
                       يحل الطالب الاختبار بأريحية تامة دون عد تنازلي.
                     </div>
                   </button>
@@ -2015,14 +2216,27 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setFormTimeLimitMode('total')}
-                    className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer ${
-                      formTimeLimitMode === 'total'
-                        ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] shadow-md font-bold'
-                        : 'bg-[#022c22] border-[#fbbf24]/30 text-[#f0f9f6]/80 hover:bg-[#064e3b] hover:border-[#fbbf24]/60'
+                    className={`p-3.5 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 ${
+                      formTimeLimitMode === 'total' ? 'scale-[1.01]' : 'hover:brightness-110 opacity-90'
                     }`}
+                    style={
+                      formTimeLimitMode === 'total'
+                        ? {
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: accentTextColor
+                          }
+                        : {
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom,
+                            color: '#ffffff'
+                          }
+                    }
                   >
                     <div className="text-xs font-black mb-1">وقت كلي لكامل الاختبار</div>
-                    <div className={`text-[10px] ${formTimeLimitMode === 'total' ? 'text-emerald-950 font-semibold' : 'text-[#86efac]/80'}`}>
+                    <div className="text-[10px] font-bold opacity-90">
                       مؤقت عام ينتهي عنده الاختبار ويُسلم تلقائياً.
                     </div>
                   </button>
@@ -2030,36 +2244,67 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setFormTimeLimitMode('per_question')}
-                    className={`p-3.5 rounded-xl border text-right transition-all cursor-pointer ${
-                      formTimeLimitMode === 'per_question'
-                        ? 'bg-[#fbbf24] text-[#064e3b] border-[#fbbf24] shadow-md font-bold'
-                        : 'bg-[#022c22] border-[#fbbf24]/30 text-[#f0f9f6]/80 hover:bg-[#064e3b] hover:border-[#fbbf24]/60'
+                    className={`p-3.5 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 ${
+                      formTimeLimitMode === 'per_question' ? 'scale-[1.01]' : 'hover:brightness-110 opacity-90'
                     }`}
+                    style={
+                      formTimeLimitMode === 'per_question'
+                        ? {
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: accentTextColor
+                          }
+                        : {
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom,
+                            color: '#ffffff'
+                          }
+                    }
                   >
                     <div className="text-xs font-black mb-1">وقت مخصص لكل سؤال</div>
-                    <div className={`text-[10px] ${formTimeLimitMode === 'per_question' ? 'text-emerald-950 font-semibold' : 'text-[#86efac]/80'}`}>
+                    <div className="text-[10px] font-bold opacity-90">
                       عداد ثوانٍ لكل سؤال، ينتقل تلقائياً للسؤال التالي.
                     </div>
                   </button>
                 </div>
 
                 {formTimeLimitMode === 'total' && (
-                  <div className="p-3.5 rounded-xl bg-[#022c22] border border-emerald-700/60 space-y-2">
+                  <div
+                    className="p-4 rounded-2xl border-2 border-b-4 space-y-3"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: themeBorder,
+                      borderBottomColor: themeBorderBottom
+                    }}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="text-xs font-bold text-[#fbbf24]">
+                      <label className="text-xs font-black" style={{ color: themeAccent }}>
                         إجمالي وقت الاختبار (بالدقائق):
                       </label>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {[5, 10, 15, 20, 30, 45, 60].map(mins => (
                           <button
                             key={mins}
                             type="button"
                             onClick={() => setFormTotalTimeMinutes(mins)}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                            className="px-2.5 py-1 rounded-xl text-[11px] font-black border-2 border-b-4 active:translate-y-[1px] transition-all cursor-pointer"
+                            style={
                               formTotalTimeMinutes === mins
-                                ? 'bg-[#fbbf24] text-[#064e3b]'
-                                : 'bg-emerald-900/70 text-emerald-300 hover:bg-emerald-800'
-                            }`}
+                                ? {
+                                    backgroundColor: themeAccent,
+                                    borderColor: themeAccent,
+                                    borderBottomColor: themeAccentShadow,
+                                    color: accentTextColor
+                                  }
+                                : {
+                                    backgroundColor: themeCardBg,
+                                    borderColor: themeBorder,
+                                    borderBottomColor: themeBorderBottom,
+                                    color: '#ffffff'
+                                  }
+                            }
                           >
                             {mins}د
                           </button>
@@ -2073,30 +2318,55 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                         max={300}
                         value={formTotalTimeMinutes}
                         onChange={e => setFormTotalTimeMinutes(Math.max(1, Number(e.target.value)))}
-                        className="w-28 px-3 py-1.5 rounded-lg bg-[#064e3b] border border-[#065f46] text-white text-xs text-center font-bold focus:border-[#fbbf24] focus:outline-none"
+                        className="w-28 px-3 py-2 rounded-xl border-2 border-b-4 text-white text-xs text-center font-black outline-none font-mono"
+                        style={{
+                          backgroundColor: themeCardBg,
+                          borderColor: themeBorder,
+                          borderBottomColor: themeBorderBottom
+                        }}
                       />
-                      <span className="text-xs text-emerald-300">دقيقة (سيتم تسليم الاختبار تلقائياً بعد انتهاء هذه المدة)</span>
+                      <span className="text-xs text-slate-300 font-bold">
+                        دقيقة (سيتم تسليم الاختبار تلقائياً بعد انتهاء هذه المدة)
+                      </span>
                     </div>
                   </div>
                 )}
 
                 {formTimeLimitMode === 'per_question' && (
-                  <div className="p-3.5 rounded-xl bg-[#022c22] border border-emerald-700/60 space-y-2">
+                  <div
+                    className="p-4 rounded-2xl border-2 border-b-4 space-y-3"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: themeBorder,
+                      borderBottomColor: themeBorderBottom
+                    }}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="text-xs font-bold text-[#fbbf24]">
+                      <label className="text-xs font-black" style={{ color: themeAccent }}>
                         الوقت الافتراضي لكل سؤال (بالثواني):
                       </label>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {[15, 20, 30, 45, 60, 90, 120].map(secs => (
                           <button
                             key={secs}
                             type="button"
                             onClick={() => setFormQuestionTimeSeconds(secs)}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                            className="px-2.5 py-1 rounded-xl text-[11px] font-black border-2 border-b-4 active:translate-y-[1px] transition-all cursor-pointer"
+                            style={
                               formQuestionTimeSeconds === secs
-                                ? 'bg-[#fbbf24] text-[#064e3b]'
-                                : 'bg-emerald-900/70 text-emerald-300 hover:bg-emerald-800'
-                            }`}
+                                ? {
+                                    backgroundColor: themeAccent,
+                                    borderColor: themeAccent,
+                                    borderBottomColor: themeAccentShadow,
+                                    color: accentTextColor
+                                  }
+                                : {
+                                    backgroundColor: themeCardBg,
+                                    borderColor: themeBorder,
+                                    borderBottomColor: themeBorderBottom,
+                                    color: '#ffffff'
+                                  }
+                            }
                           >
                             {secs}ث
                           </button>
@@ -2110,28 +2380,56 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                         max={600}
                         value={formQuestionTimeSeconds}
                         onChange={e => setFormQuestionTimeSeconds(Math.max(5, Number(e.target.value)))}
-                        className="w-28 px-3 py-1.5 rounded-lg bg-[#064e3b] border border-[#065f46] text-white text-xs text-center font-bold focus:border-[#fbbf24] focus:outline-none"
+                        className="w-28 px-3 py-2 rounded-xl border-2 border-b-4 text-white text-xs text-center font-black outline-none font-mono"
+                        style={{
+                          backgroundColor: themeCardBg,
+                          borderColor: themeBorder,
+                          borderBottomColor: themeBorderBottom
+                        }}
                       />
-                      <span className="text-xs text-emerald-300">ثانية لكل سؤال (يمكنك تخصيص وقت استثنائي لأي سؤال أدناه)</span>
+                      <span className="text-xs text-slate-300 font-bold">
+                        ثانية لكل سؤال (يمكنك تخصيص وقت استثنائي لأي سؤال أدناه)
+                      </span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Target Halaqat Selection */}
-              <div className="p-4 rounded-2xl bg-[#064e3b]/50 border border-[#fbbf24]/30 space-y-2">
-                <label className="block text-xs font-bold text-[#fbbf24]">
-                  تحديد الحلقات المستهدفة للاختبار
-                </label>
-                <div className="flex flex-wrap gap-2">
+              {/* Target Halaqat Selection (Duolingo 3D Card) */}
+              <div
+                className="p-5 rounded-2xl border-2 border-b-4 space-y-3 shadow-sm"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center gap-2 border-b-2 pb-2" style={{ borderColor: `${themeBorder}80` }}>
+                  <Users className="w-4 h-4" style={{ color: themeAccent }} />
+                  <label className="block text-xs sm:text-sm font-black text-white font-heading">
+                    تحديد الحلقات المستهدفة للاختبار
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setFormTargetHalaqat(['all'])}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className="px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm"
+                    style={
                       formTargetHalaqat.includes('all')
-                        ? 'bg-[#fbbf24] text-[#064e3b] border border-[#fbbf24] shadow-sm font-black'
-                        : 'bg-[#022c22] text-[#f0f9f6]/80 border border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-                    }`}
+                        ? {
+                            backgroundColor: themeAccent,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: accentTextColor
+                          }
+                        : {
+                            backgroundColor: themeSecondary,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom,
+                            color: '#ffffff'
+                          }
+                    }
                   >
                     جميع الحلقات
                   </button>
@@ -2152,11 +2450,22 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                           }
                           setFormTargetHalaqat(next);
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        className="px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        style={
                           isSelected && !formTargetHalaqat.includes('all')
-                            ? 'bg-[#fbbf24] text-[#064e3b] border border-[#fbbf24] shadow-sm font-black'
-                            : 'bg-[#022c22] text-[#f0f9f6]/80 border border-[#fbbf24]/30 hover:border-[#fbbf24]/60'
-                        }`}
+                            ? {
+                                backgroundColor: themeAccent,
+                                borderColor: themeAccent,
+                                borderBottomColor: themeAccentShadow,
+                                color: accentTextColor
+                              }
+                            : {
+                                backgroundColor: themeSecondary,
+                                borderColor: themeBorder,
+                                borderBottomColor: themeBorderBottom,
+                                color: '#ffffff'
+                              }
+                        }
                       >
                         {h.name}
                       </button>
@@ -2165,36 +2474,61 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                 </div>
               </div>
 
-              {/* Questions Section */}
-              <div className="space-y-4 pt-4 border-t border-emerald-800">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+              {/* Questions Section (Duolingo 3D Card) */}
+              <div
+                className="p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-sm"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 pb-3" style={{ borderColor: `${themeBorder}80` }}>
+                  <h4 className="text-xs sm:text-sm font-black text-white flex items-center gap-2 font-heading">
+                    <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
                     <span>أسئلة الاختبار ({questions.length})</span>
                   </h4>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('multiple_choice')}
-                      className="px-2.5 py-1.5 rounded-xl bg-emerald-800 text-emerald-100 text-xs font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom,
+                        color: '#ffffff'
+                      }}
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                       <span>اختيار من متعدد</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('true_false')}
-                      className="px-2.5 py-1.5 rounded-xl bg-emerald-800 text-emerald-100 text-xs font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom,
+                        color: '#ffffff'
+                      }}
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                       <span>صح وخطأ</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('essay')}
-                      className="px-2.5 py-1.5 rounded-xl bg-emerald-800 text-emerald-100 text-xs font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom,
+                        color: '#ffffff'
+                      }}
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                       <span>سؤال مقالي</span>
                     </button>
                   </div>
@@ -2204,28 +2538,57 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   {questions.map((q, idx) => (
                     <div
                       key={q.id}
-                      className="p-4 rounded-2xl bg-[#064e3b]/40 border border-emerald-700/80 space-y-3"
+                      className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-3.5 transition-all shadow-sm"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#fbbf24]">
-                          السؤال {idx + 1}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <span className="text-xs sm:text-sm font-black flex items-center gap-2" style={{ color: themeAccent }}>
+                          <span
+                            className="w-7 h-7 rounded-xl flex items-center justify-center font-mono text-xs font-black border-2 border-b-4 shadow-sm"
+                            style={{
+                              backgroundColor: themeCardBg,
+                              borderColor: themeAccent,
+                              borderBottomColor: themeAccentShadow,
+                              color: themeAccent
+                            }}
+                          >
+                            {idx + 1}
+                          </span>
+                          <span>السؤال {idx + 1}</span>
                         </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-emerald-300">الدرجات:</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={q.points}
-                            onChange={e =>
-                              handleUpdateQuestion(q.id, { points: Math.max(1, Number(e.target.value)) })
-                            }
-                            className="w-16 px-2 py-1 rounded bg-[#022c22] border border-[#065f46] text-white text-xs text-center font-bold"
-                          />
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <span className="text-xs text-slate-300 font-black">الدرجات:</span>
+                          <div
+                            className="flex items-center border-2 border-b-4 rounded-xl px-2 py-1 shadow-inner"
+                            style={{
+                              backgroundColor: themeCardBg,
+                              borderColor: themeBorder,
+                              borderBottomColor: themeBorderBottom
+                            }}
+                          >
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={q.points}
+                              onChange={e =>
+                                handleUpdateQuestion(q.id, { points: Math.max(1, Number(e.target.value)) })
+                              }
+                              className="w-14 bg-transparent text-white text-xs sm:text-sm text-center font-black font-mono outline-none"
+                            />
+                            <span className="text-[11px] font-black mr-1" style={{ color: themeAccent }}>
+                              درجة
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleRemoveQuestion(q.id)}
-                            className="p-1.5 rounded-lg text-rose-300 hover:bg-rose-950/60"
+                            className="p-2 rounded-xl text-rose-300 hover:text-white bg-rose-950/40 hover:bg-rose-900/80 border-2 border-b-4 border-rose-800/60 active:translate-y-[1px] transition-all cursor-pointer"
                             title="حذف السؤال"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2233,115 +2596,210 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                         </div>
                       </div>
 
-                      <input
-                        type="text"
-                        placeholder="اكتب نص السؤال هنا..."
-                        value={q.title}
-                        onChange={e => handleUpdateQuestion(q.id, { title: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-[#022c22] border border-[#065f46] text-white text-xs focus:border-[#fbbf24] focus:outline-none"
-                      />
+                      {/* Question Text Writing Area */}
+                      <div className="space-y-1.5">
+                        <label className="block text-xs sm:text-sm font-black text-slate-200">
+                          نص السؤال:
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="اكتب نص السؤال هنا بوضوح تام للطلاب..."
+                          value={q.title}
+                          onChange={e => handleUpdateQuestion(q.id, { title: e.target.value })}
+                          className="w-full px-4 py-3 rounded-2xl border-2 border-b-4 text-white text-xs sm:text-sm font-bold outline-none transition-all shadow-inner resize-y leading-relaxed"
+                          style={{
+                            backgroundColor: themeCardBg,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom
+                          }}
+                        />
+                      </div>
 
                       {/* Multiple Choice Options */}
                       {q.type === 'multiple_choice' && (
-                        <div className="space-y-2 pt-1">
-                          <span className="text-[11px] text-emerald-300 font-bold block">
-                            الخيارات (حدد الإجابة الصحيحة):
+                        <div className="space-y-2.5 pt-1">
+                          <span className="text-xs sm:text-sm text-slate-200 font-black block">
+                            الخيارات (اختر الإجابة الصحيحة بالضغط على الدائرة واكتب نص كل خيار):
                           </span>
-                          {(q.options || []).map((opt, oIdx) => (
-                            <div key={oIdx} className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name={`correct-${q.id}`}
-                                checked={q.correctAnswer === opt}
-                                onChange={() => handleUpdateQuestion(q.id, { correctAnswer: opt })}
-                                className="accent-amber-400 w-4 h-4 cursor-pointer"
-                              />
-                              <input
-                                type="text"
-                                value={opt}
-                                onChange={e => {
-                                  const nextOptions = [...(q.options || [])];
-                                  const oldVal = nextOptions[oIdx];
-                                  nextOptions[oIdx] = e.target.value;
-                                  const updates: Partial<ExamQuestion> = { options: nextOptions };
-                                  if (q.correctAnswer === oldVal) {
-                                    updates.correctAnswer = e.target.value;
-                                  }
-                                  handleUpdateQuestion(q.id, updates);
+                          {(q.options || []).map((opt, oIdx) => {
+                            const isCorrect = q.correctAnswer === opt;
+                            return (
+                              <div
+                                key={oIdx}
+                                className="flex items-center gap-2 sm:gap-3 p-1.5 sm:p-2.5 rounded-2xl border-2 border-b-4 transition-all"
+                                style={{
+                                  backgroundColor: isCorrect ? `${themeAccent}18` : themeCardBg,
+                                  borderColor: isCorrect ? themeAccent : themeBorder,
+                                  borderBottomColor: isCorrect ? themeAccentShadow : themeBorderBottom
                                 }}
-                                className="flex-1 px-3 py-1.5 rounded-lg bg-[#022c22] border border-[#065f46] text-white text-xs"
-                              />
-                              {(q.options || []).length > 2 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const nextOptions = (q.options || []).filter((_, i) => i !== oIdx);
-                                    handleUpdateQuestion(q.id, {
-                                      options: nextOptions,
-                                      correctAnswer: q.correctAnswer === opt ? nextOptions[0] : q.correctAnswer
-                                    });
+                              >
+                                <label className="flex items-center justify-center p-2 cursor-pointer shrink-0" title="تحديد كإجابة صحيحة">
+                                  <input
+                                    type="radio"
+                                    name={`correct-${q.id}`}
+                                    checked={isCorrect}
+                                    onChange={() => handleUpdateQuestion(q.id, { correctAnswer: opt })}
+                                    className="w-5 h-5 cursor-pointer"
+                                    style={{ accentColor: themeAccent }}
+                                  />
+                                </label>
+                                <input
+                                  type="text"
+                                  value={opt}
+                                  placeholder={`اكتب نص الخيار ${oIdx + 1}...`}
+                                  onChange={e => {
+                                    const nextOptions = [...(q.options || [])];
+                                    const oldVal = nextOptions[oIdx];
+                                    nextOptions[oIdx] = e.target.value;
+                                    const updates: Partial<ExamQuestion> = { options: nextOptions };
+                                    if (q.correctAnswer === oldVal) {
+                                      updates.correctAnswer = e.target.value;
+                                    }
+                                    handleUpdateQuestion(q.id, updates);
                                   }}
-                                  className="p-1 text-rose-400 hover:text-rose-200"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                                  className="flex-1 bg-transparent px-3 py-2 text-white text-xs sm:text-sm font-bold outline-none placeholder:text-slate-400 min-h-[42px]"
+                                />
+                                {(q.options || []).length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextOptions = (q.options || []).filter((_, i) => i !== oIdx);
+                                      handleUpdateQuestion(q.id, {
+                                        options: nextOptions,
+                                        correctAnswer: q.correctAnswer === opt ? nextOptions[0] : q.correctAnswer
+                                      });
+                                    }}
+                                    className="p-2 text-rose-400 hover:text-white hover:bg-rose-950/60 rounded-xl cursor-pointer transition-colors shrink-0"
+                                    title="حذف هذا الخيار"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                           <button
                             type="button"
                             onClick={() => {
                               const nextOptions = [...(q.options || []), `الخيار ${(q.options || []).length + 1}`];
                               handleUpdateQuestion(q.id, { options: nextOptions });
                             }}
-                            className="text-[11px] text-[#fbbf24] hover:underline font-bold pt-1 block cursor-pointer"
+                            className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black inline-flex items-center gap-2 cursor-pointer transition-all active:translate-y-[1px] hover:brightness-110 shadow-sm"
+                            style={{
+                              backgroundColor: themeCardBg,
+                              borderColor: themeBorder,
+                              borderBottomColor: themeBorderBottom,
+                              color: themeAccent
+                            }}
                           >
-                            + إضافة خيار جديد
+                            <Plus className="w-4 h-4" />
+                            <span>إضافة خيار إضافي</span>
                           </button>
                         </div>
                       )}
 
                       {/* True / False Options */}
                       {q.type === 'true_false' && (
-                        <div className="flex items-center gap-4 pt-1">
-                          <span className="text-[11px] text-emerald-300 font-bold">الإجابة الصحيحة:</span>
-                          <label className="flex items-center gap-1.5 text-xs text-white cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`correct-tf-${q.id}`}
-                              checked={q.correctAnswer === 'صح'}
-                              onChange={() => handleUpdateQuestion(q.id, { correctAnswer: 'صح' })}
-                              className="accent-amber-400"
-                            />
-                            <span>صح</span>
-                          </label>
-                          <label className="flex items-center gap-1.5 text-xs text-white cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`correct-tf-${q.id}`}
-                              checked={q.correctAnswer === 'خطأ'}
-                              onChange={() => handleUpdateQuestion(q.id, { correctAnswer: 'خطأ' })}
-                              className="accent-amber-400"
-                            />
-                            <span>خطأ</span>
-                          </label>
+                        <div className="space-y-2 pt-1">
+                          <span className="text-xs sm:text-sm text-slate-200 font-black block">الإجابة الصحيحة:</span>
+                          <div className="grid grid-cols-2 gap-3 max-w-sm">
+                            <label
+                              className={`p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-center gap-2.5 text-xs sm:text-sm font-black cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 shadow-sm ${
+                                q.correctAnswer === 'صح' ? 'scale-[1.02]' : 'opacity-85 hover:opacity-100'
+                              }`}
+                              style={
+                                q.correctAnswer === 'صح'
+                                   ? {
+                                      backgroundColor: themeAccent,
+                                      borderColor: themeAccent,
+                                      borderBottomColor: themeAccentShadow,
+                                      color: accentTextColor
+                                    }
+                                  : {
+                                      backgroundColor: themeCardBg,
+                                      borderColor: themeBorder,
+                                      borderBottomColor: themeBorderBottom,
+                                      color: '#ffffff'
+                                    }
+                              }
+                            >
+                              <input
+                                type="radio"
+                                name={`correct-tf-${q.id}`}
+                                checked={q.correctAnswer === 'صح'}
+                                onChange={() => handleUpdateQuestion(q.id, { correctAnswer: 'صح' })}
+                                className="w-4 h-4"
+                                style={{ accentColor: themeAccent }}
+                              />
+                              <span>صح (صحيح)</span>
+                            </label>
+
+                            <label
+                              className={`p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-center gap-2.5 text-xs sm:text-sm font-black cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 shadow-sm ${
+                                q.correctAnswer === 'خطأ' ? 'scale-[1.02]' : 'opacity-85 hover:opacity-100'
+                              }`}
+                              style={
+                                q.correctAnswer === 'خطأ'
+                                  ? {
+                                      backgroundColor: themeAccent,
+                                      borderColor: themeAccent,
+                                      borderBottomColor: themeAccentShadow,
+                                      color: accentTextColor
+                                    }
+                                  : {
+                                      backgroundColor: themeCardBg,
+                                      borderColor: themeBorder,
+                                      borderBottomColor: themeBorderBottom,
+                                      color: '#ffffff'
+                                    }
+                              }
+                            >
+                              <input
+                                type="radio"
+                                name={`correct-tf-${q.id}`}
+                                checked={q.correctAnswer === 'خطأ'}
+                                onChange={() => handleUpdateQuestion(q.id, { correctAnswer: 'خطأ' })}
+                                className="w-4 h-4"
+                                style={{ accentColor: themeAccent }}
+                              />
+                              <span>خطأ (غير صحيح)</span>
+                            </label>
+                          </div>
                         </div>
                       )}
 
                       {/* Essay Info */}
                       {q.type === 'essay' && (
-                        <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-200">
-                          هذا السؤال مقالي (كتابي)، سيقوم المعلم بمراجعته وتصحيحه يدوياً في قسم التسليمات.
+                        <div
+                          className="p-3.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-bold leading-relaxed shadow-sm"
+                          style={{
+                            backgroundColor: `${themeAccent}18`,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: '#ffffff'
+                          }}
+                        >
+                          <span className="font-black" style={{ color: themeAccent }}>📝 سؤال مقالي كتابي: </span>
+                          سيقوم الطالب بكتابة الإجابة في مساحة نصية مخصصة، وسيقوم المعلم بمراجعتها وتصحيحها ورصد الدرجات في قسم تسليمات الطلاب.
                         </div>
                       )}
 
-                      <div>
-                        <input
-                          type="text"
-                          placeholder="توضيح أو تغذية راجعة للإجابة الصحيحة (اختياري)..."
+                      {/* Explanation Writing Area */}
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-300">
+                          توضيح أو تغذية راجعة للإجابة الصحيحة (تظهر للطالب بعد الحل):
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="مثال: سبب صحة الإجابة في الآية الكريمة، أو القاعدة التجويدية..."
                           value={q.explanation || ''}
                           onChange={e => handleUpdateQuestion(q.id, { explanation: e.target.value })}
-                          className="w-full px-3 py-1.5 rounded-lg bg-[#022c22]/70 border border-emerald-900 text-emerald-100 text-xs placeholder:text-emerald-500/50"
+                          className="w-full px-4 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs sm:text-sm placeholder:text-slate-400 font-bold outline-none transition-all shadow-inner resize-y leading-relaxed"
+                          style={{
+                            backgroundColor: themeCardBg,
+                            borderColor: themeBorder,
+                            borderBottomColor: themeBorderBottom
+                          }}
                         />
                       </div>
                     </div>
@@ -2349,22 +2807,34 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                 </div>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-emerald-800">
+              {/* Submit / Action Footer with Duolingo 3D tactile buttons */}
+              <div
+                className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t-2"
+                style={{ borderColor: themeBorder }}
+              >
                 <button
                   type="button"
                   onClick={() => setIsCreatingExam(false)}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-900/60 text-emerald-200 text-xs font-bold hover:bg-emerald-800"
+                  className="w-full sm:w-auto px-6 py-3 rounded-2xl text-xs sm:text-sm font-black text-slate-300 hover:text-white border-2 border-b-4 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 text-center"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
                 >
-                  إلغاء
+                  إلغاء التعديل
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl bg-[#fbbf24] text-[#064e3b] text-xs font-black shadow-lg hover:bg-[#f59e0b] cursor-pointer flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-8 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg cursor-pointer flex items-center justify-center gap-2 border-2 border-b-4 active:translate-y-[2px] active:border-b-2 transition-all hover:brightness-110"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
-                  <Sparkles className="w-4 h-4" />
-                  <span>{isSaving ? 'جارٍ الحفظ السحابي...' : 'حفظ ونشر الاختبار الآن'}</span>
                 </button>
               </div>
             </form>

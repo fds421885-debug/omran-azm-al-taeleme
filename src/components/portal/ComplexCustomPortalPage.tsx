@@ -1601,9 +1601,9 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                 {/* 1. Student Full Name (سؤال مقالي) */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-black text-slate-200 flex items-center justify-between">
+                  <label className="text-xs sm:text-sm font-black text-slate-200 flex items-center justify-between">
                     <span>اسم الطالب كاملاً (ثلاثي):</span>
-                    <span className="text-[10px] text-amber-400 font-bold">سؤال مقالي إلزامي *</span>
+                    <span className="text-[10px] sm:text-xs font-bold" style={{ color: themeAccent }}>سؤال مقالي إلزامي *</span>
                   </label>
                   <div className="relative">
                     <input
@@ -1613,10 +1613,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                       value={studentName}
                       onChange={e => setStudentName(e.target.value)}
                       placeholder="اكتب اسم الطالب ثلاثياً (مثال: عبد الرحمن أحمد محمد السعيد)"
-                      className="w-full border-2 rounded-2xl py-3 px-4 pr-11 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 pr-11 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner"
                       style={{
                         backgroundColor: themeBg,
-                        borderColor: themeCardBorder
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeAccentShadow
                       }}
                     />
                     <User className="w-4 h-4 text-slate-400 absolute right-4 top-3.5" />
@@ -1728,14 +1729,15 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 setEmailError(null);
                               }}
                               placeholder="أدخل بريدك الإلكتروني (مثل: name@gmail.com)..."
-                              className="w-full border-2 rounded-2xl py-2.5 px-4 pr-11 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                              className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 pr-11 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner"
                               style={{
                                 backgroundColor: themeBg,
-                                borderColor: themeCardBorder
+                                borderColor: themeCardBorder,
+                                borderBottomColor: themeAccentShadow
                               }}
                               dir="ltr"
                             />
-                            <Mail className="w-4 h-4 text-slate-400 absolute right-4 top-3" />
+                            <Mail className="w-4 h-4 text-slate-400 absolute right-4 top-3.5" />
                           </div>
 
                           <button
@@ -1886,10 +1888,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                         max="100"
                         value={studentAge}
                         onChange={e => setStudentAge(Math.min(100, Math.max(0, Number(e.target.value))))}
-                        className="w-20 text-center border-2 rounded-xl py-1.5 px-2 text-sm font-black text-white outline-none"
+                        className="w-20 text-center border-2 border-b-4 rounded-xl py-2 px-2 text-sm font-black text-white outline-none shadow-inner font-mono"
                         style={{
                           backgroundColor: themeBg,
-                          borderColor: themeCardBorder
+                          borderColor: themeCardBorder,
+                          borderBottomColor: themeAccentShadow
                         }}
                       />
                     </div>
@@ -1897,9 +1900,9 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                   {/* 4. Parent Phone (واتساب) */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-200 flex items-center justify-between">
+                    <label className="text-xs sm:text-sm font-black text-slate-200 flex items-center justify-between">
                       <span>رقم هاتف ولي الأمر (واتساب):</span>
-                      <span className="text-[10px] text-amber-400 font-bold">إلزامي للتواصل *</span>
+                      <span className="text-[10px] sm:text-xs font-bold" style={{ color: themeAccent }}>إلزامي للتواصل *</span>
                     </label>
                     <div className="relative">
                       <input
@@ -1909,10 +1912,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                         value={parentPhone}
                         onChange={e => setParentPhone(e.target.value)}
                         placeholder="مثال: 0501234567"
-                        className="w-full border-2 rounded-2xl py-3 px-4 pr-11 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                        className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 pr-11 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner"
                         style={{
                           backgroundColor: themeBg,
-                          borderColor: themeCardBorder
+                          borderColor: themeCardBorder,
+                          borderBottomColor: themeAccentShadow
                         }}
                         dir="ltr"
                       />
@@ -1923,16 +1927,17 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                 {/* 5. Parent Name */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-black text-slate-200 block">اسم ولي الأمر:</label>
+                  <label className="text-xs sm:text-sm font-black text-slate-200 block">اسم ولي الأمر:</label>
                   <input
                     type="text"
                     value={parentName}
                     onChange={e => setParentName(e.target.value)}
                     placeholder="مثال: أحمد محمد السعيد"
-                    className="w-full border-2 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                    className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner"
                     style={{
                       backgroundColor: themeBg,
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeAccentShadow
                     }}
                   />
                 </div>
@@ -1940,12 +1945,12 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                 {/* 6. PREFERRED HALAQAH SELECTION (سؤال الحلقة القرآنية المرغوبة) */}
                 {showHalaqahQuestion && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-black text-slate-200 flex items-center justify-between">
+                    <label className="text-xs sm:text-sm font-black text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <BookOpen className="w-4 h-4 text-amber-400" />
+                        <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
                         <span>{halaqahQuestionLabel || 'الحلقة القرآنية المرغوبة في المجمع:'}</span>
                       </span>
-                      <span className="text-[10px] text-amber-400 font-bold">
+                      <span className="text-[10px] sm:text-xs font-bold" style={{ color: themeAccent }}>
                         {portalConfig.fieldConfig.preferredHalaqahRequired ? 'إلزامي *' : 'اختياري'}
                       </span>
                     </label>
@@ -1954,10 +1959,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                       value={preferredHalaqahId}
                       onChange={e => setPreferredHalaqahId(e.target.value)}
                       required={portalConfig.fieldConfig.preferredHalaqahRequired && !allowAutoPlacement}
-                      className="w-full border-2 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white font-bold outline-none cursor-pointer transition-all focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white font-bold outline-none cursor-pointer transition-all shadow-inner"
                       style={{
                         backgroundColor: themeBg,
-                        borderColor: themeCardBorder
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeAccentShadow
                       }}
                     >
                       {allowAutoPlacement && (
@@ -2037,10 +2043,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 value={val || ''}
                                 onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
                                 placeholder={q.placeholder || 'اكتب الإجابة هنا...'}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner"
                                 style={{
                                   backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
+                                  borderColor: themeCardBorder,
+                                  borderBottomColor: themeAccentShadow
                                 }}
                               />
                             )}
@@ -2048,15 +2055,16 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                             {/* TEXTAREA INPUT */}
                             {q.type === 'textarea' && (
                               <textarea
-                                rows={2}
+                                rows={3}
                                 required={q.required}
                                 value={val || ''}
                                 onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
-                                placeholder={q.placeholder || 'اكتب التفاصيل والملاحظات هنا...'}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400 resize-none"
+                                placeholder={q.placeholder || 'اكتب التفاصيل والملاحظات هنا بوضوح...'}
+                                className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner resize-y leading-relaxed"
                                 style={{
                                   backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
+                                  borderColor: themeCardBorder,
+                                  borderBottomColor: themeAccentShadow
                                 }}
                               />
                             )}
@@ -2069,10 +2077,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 value={val !== undefined ? val : ''}
                                 onChange={e => handleCustomAnswerChange(q.id, e.target.value === '' ? '' : Number(e.target.value))}
                                 placeholder={q.placeholder || 'أدخل الرقم...'}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner font-mono"
                                 style={{
                                   backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
+                                  borderColor: themeCardBorder,
+                                  borderBottomColor: themeAccentShadow
                                 }}
                               />
                             )}
@@ -2085,10 +2094,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 value={val || ''}
                                 onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
                                 placeholder={q.placeholder || '05xxxxxxxx'}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400"
+                                className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white placeholder-slate-400 outline-none font-bold transition-all shadow-inner font-mono"
                                 style={{
                                   backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
+                                  borderColor: themeCardBorder,
+                                  borderBottomColor: themeAccentShadow
                                 }}
                                 dir="ltr"
                               />
@@ -2115,10 +2125,11 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                 required={q.required}
                                 value={val || ''}
                                 onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none cursor-pointer"
+                                className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs sm:text-sm text-white font-bold outline-none cursor-pointer transition-all shadow-inner"
                                 style={{
                                   backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
+                                  borderColor: themeCardBorder,
+                                  borderBottomColor: themeAccentShadow
                                 }}
                               >
                                 <option value="">{q.placeholder || '-- اختر إجابتك --'}</option>
@@ -2132,15 +2143,30 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                             {/* RADIO BUTTONS */}
                             {q.type === 'radio' && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                                 {q.options?.map((opt, oIdx) => {
                                   const isChecked = val === opt;
                                   return (
                                     <label
                                       key={oIdx}
-                                      className={`p-2.5 rounded-xl border-2 flex items-center justify-between text-xs font-bold cursor-pointer transition-all ${
-                                        isChecked ? 'border-amber-400 bg-amber-400/10 text-white' : 'border-white/10 bg-white/5 text-slate-300'
+                                      className={`p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-between text-xs sm:text-sm font-black cursor-pointer transition-all active:translate-y-[1px] ${
+                                        isChecked ? 'scale-[1.01]' : 'opacity-85 hover:opacity-100'
                                       }`}
+                                      style={
+                                        isChecked
+                                          ? {
+                                              backgroundColor: themeAccent,
+                                              borderColor: themeAccent,
+                                              borderBottomColor: themeAccentShadow,
+                                              color: accentTextColor
+                                            }
+                                          : {
+                                              backgroundColor: themeBg,
+                                              borderColor: themeCardBorder,
+                                              borderBottomColor: themeAccentShadow,
+                                              color: '#ffffff'
+                                            }
+                                      }
                                     >
                                       <span>{opt}</span>
                                       <input
@@ -2148,7 +2174,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                         name={`q_${q.id}`}
                                         checked={isChecked}
                                         onChange={() => handleCustomAnswerChange(q.id, opt)}
-                                        className="w-4 h-4 accent-amber-400 cursor-pointer"
+                                        className="w-4 h-4 cursor-pointer"
+                                        style={{ accentColor: themeAccent }}
                                       />
                                     </label>
                                   );
@@ -2158,7 +2185,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                             {/* CHECKBOXES (MULTI-SELECT) */}
                             {q.type === 'checkbox' && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                                 {q.options?.map((opt, oIdx) => {
                                   const list = Array.isArray(val) ? val : [];
                                   const isChecked = list.includes(opt);
@@ -2167,13 +2194,29 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
                                       key={oIdx}
                                       type="button"
                                       onClick={() => handleToggleCheckboxOption(q.id, opt)}
-                                      className={`p-2.5 rounded-xl border-2 flex items-center justify-between text-xs font-bold cursor-pointer transition-all text-right ${
-                                        isChecked ? 'border-amber-400 bg-amber-400/10 text-white' : 'border-white/10 bg-white/5 text-slate-300'
+                                      className={`p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-between text-xs sm:text-sm font-black cursor-pointer transition-all text-right active:translate-y-[1px] ${
+                                        isChecked ? 'scale-[1.01]' : 'opacity-85 hover:opacity-100'
                                       }`}
+                                      style={
+                                        isChecked
+                                          ? {
+                                              backgroundColor: themeAccent,
+                                              borderColor: themeAccent,
+                                              borderBottomColor: themeAccentShadow,
+                                              color: accentTextColor
+                                            }
+                                          : {
+                                              backgroundColor: themeBg,
+                                              borderColor: themeCardBorder,
+                                              borderBottomColor: themeAccentShadow,
+                                              color: '#ffffff'
+                                            }
+                                      }
                                     >
                                       <span>{opt}</span>
                                       <CheckSquare
-                                        className={`w-4 h-4 ${isChecked ? 'text-amber-400' : 'text-slate-500'}`}
+                                        className="w-4 h-4 shrink-0"
+                                        style={{ color: isChecked ? accentTextColor : themeAccent }}
                                       />
                                     </button>
                                   );

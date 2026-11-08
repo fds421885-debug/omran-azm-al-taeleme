@@ -2650,6 +2650,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const [newPagePtsState, setNewPagePtsState] = useState<number>(pointsPerNewPage);
   const [reviewPagePtsState, setReviewPagePtsState] = useState<number>(pointsPerReviewPage);
   const [listeningPtsState, setListeningPtsState] = useState<number>(pointsPerListening);
+  const [pointsSavedNotice, setPointsSavedNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setNewPagePtsState(pointsPerNewPage);
@@ -2693,6 +2694,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
     const updatedList = [...baseList, newPageCrit, revPageCrit, listeningCrit];
     await onSaveCriteria(updatedList);
+    setPointsSavedNotice('تم حفظ وتحديث معايير نقاط الأوجه والاستماع للمجمع بنجاح!');
+    setTimeout(() => setPointsSavedNotice(null), 3000);
   };
 
   return (
@@ -2781,10 +2784,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 borderBottomColor: 'var(--complex-card-shadow, #16262e)',
                 color: '#ffffff'
               }}
-              title="إدارة معايير التقييم للمجمع (خاص بالمشرفين)"
+              title="إدارة معايير نقاط التسميع والاستماع للمجمع (خاص بالمشرفين)"
             >
-              <Sliders className="w-4 h-4" style={{ color: themeAccent }} />
-              <span>معايير التقييم ({criteria.length})</span>
+              <Award className="w-4 h-4" style={{ color: themeAccent }} />
+              <span>معايير نقاط التسميع</span>
             </button>
           )}
         </div>
@@ -5400,22 +5403,43 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         </div>
       </div>
 
-      {/* Manage Criteria List Modal for Supervisors */}
+      {/* Manage Points Configuration Modal for Supervisors */}
       {isManageCriteriaListOpen && (
         <div className="fixed inset-0 z-[9998] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-[#064e3b] border-2 border-[#fbbf24]/50 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-auto overflow-hidden animate-fadeIn text-right">
+          <div
+            className="relative w-full max-w-lg rounded-[28px] shadow-2xl flex flex-col max-h-[90vh] my-auto overflow-hidden animate-fadeIn text-right border-2 border-b-4"
+            style={{
+              backgroundColor: themePrimary,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-[#065f46] shrink-0 bg-[#064e3b]">
+            <div
+              className="flex items-center justify-between p-4 sm:p-5 border-b-2 shrink-0"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder
+              }}
+            >
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] flex items-center justify-center">
-                  <Sliders className="w-5 h-5" />
+                <div
+                  className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-sm"
+                  style={{
+                    backgroundColor: themeCardBg,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
+                  <Award className="w-5 h-5" style={{ color: themeAccent }} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white font-heading">
-                    إدارة معايير التقييم الخاصة بالمجمع
+                  <h3 className="text-sm sm:text-base font-black text-white font-heading">
+                    إدارة معايير نقاط التسميع والاستماع بالمجمع
                   </h3>
-                  <p className="text-xs text-[#86efac]/80">
-                    خاصة بالمشرفين: إضافة، تعديل، وحذف معايير التقييم
+                  <p className="text-[11px] text-slate-300 font-bold">
+                    خاصة بالمشرفين: ضبط الأوزان النقطية لأوجه الحفظ والمراجعة والاستماع
                   </p>
                 </div>
               </div>
@@ -5423,178 +5447,181 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               <button
                 type="button"
                 onClick={() => setIsManageCriteriaListOpen(false)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-xl cursor-pointer hover:bg-[#022c22]"
+                className="p-2 rounded-xl text-slate-300 hover:text-white transition-colors cursor-pointer border border-transparent hover:border-white/10"
+                style={{ backgroundColor: `${themeCardBg}80` }}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Criteria List */}
-            <div className="p-5 overflow-y-auto flex-1 space-y-4">
-              {/* 1. Page Points & Review Points & Listening Criteria Configuration Card */}
-              <div className="bg-[#022c22] border-2 border-[#fbbf24]/40 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2 border-b border-[#065f46] pb-2">
+            {/* Modal Body: Points Configuration Cards */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              {pointsSavedNotice && (
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 animate-fadeIn shadow-md"
+                  style={{
+                    backgroundColor: `${themeAccent}20`,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{pointsSavedNotice}</span>
+                </div>
+              )}
+
+              {/* 3D Duolingo Card for Points Configuration */}
+              <div
+                className="rounded-2xl p-4 sm:p-5 border-2 border-b-4 space-y-4 shadow-md"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="flex items-center justify-between gap-2 border-b-2 pb-3" style={{ borderColor: `${themeBorder}80` }}>
                   <div className="flex items-center gap-2">
-                    <Award className="w-4 h-4 text-[#fbbf24]" />
-                    <span className="text-xs font-black text-white font-heading">
-                      معايير نقاط الأوجه والاستماع اليومي للمجمع
+                    <Sparkles className="w-4 h-4" style={{ color: themeAccent }} />
+                    <span className="text-xs sm:text-sm font-black text-white font-heading">
+                      أوزان النقاط المعتمدة لتقييم التسميع
                     </span>
                   </div>
-                  <span className="text-[10px] text-amber-300 font-bold bg-[#064e3b] px-2 py-0.5 rounded-md border border-[#065f46]">
+                  <span
+                    className="text-[10px] font-black px-2.5 py-0.5 rounded-xl border"
+                    style={{
+                      backgroundColor: themeSecondary,
+                      borderColor: themeAccent,
+                      color: themeAccent
+                    }}
+                  >
                     تُحسب تلقائياً
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="text-[10px] font-bold text-[#86efac] block mb-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* New Page Points */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-slate-200 block">
                       نقاط الوجه الجديد:
                     </label>
-                    <div className="flex items-center gap-1 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
+                    <div
+                      className="flex items-center gap-2 p-2 rounded-2xl border-2 border-b-4 transition-all focus-within:border-[var(--complex-accent)]"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
                       <input
                         type="number"
                         min={0}
                         max={100}
                         value={newPagePtsState}
                         onChange={e => setNewPagePtsState(Number(e.target.value))}
-                        className="w-full bg-transparent text-xs font-black text-white font-mono text-center outline-none"
+                        className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
-                      <span className="text-[10px] text-[#86efac] font-bold shrink-0">نقطة</span>
+                      <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>
+                        نقطة
+                      </span>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold text-[#86efac] block mb-1">
+                  {/* Review Page Points */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-slate-200 block">
                       نقاط وجه المراجعة:
                     </label>
-                    <div className="flex items-center gap-1 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
+                    <div
+                      className="flex items-center gap-2 p-2 rounded-2xl border-2 border-b-4 transition-all focus-within:border-[var(--complex-accent)]"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
                       <input
                         type="number"
                         min={0}
                         max={100}
                         value={reviewPagePtsState}
                         onChange={e => setReviewPagePtsState(Number(e.target.value))}
-                        className="w-full bg-transparent text-xs font-black text-white font-mono text-center outline-none"
+                        className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
-                      <span className="text-[10px] text-[#86efac] font-bold shrink-0">نقطة</span>
+                      <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>
+                        نقطة
+                      </span>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold text-[#86efac] block mb-1">
+                  {/* Daily Listening Points */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-slate-200 block">
                       نقاط الاستماع اليومي:
                     </label>
-                    <div className="flex items-center gap-1 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
+                    <div
+                      className="flex items-center gap-2 p-2 rounded-2xl border-2 border-b-4 transition-all focus-within:border-[var(--complex-accent)]"
+                      style={{
+                        backgroundColor: themeSecondary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
                       <input
                         type="number"
                         min={0}
                         max={100}
                         value={listeningPtsState}
                         onChange={e => setListeningPtsState(Number(e.target.value))}
-                        className="w-full bg-transparent text-xs font-black text-white font-mono text-center outline-none"
+                        className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
-                      <span className="text-[10px] text-[#86efac] font-bold shrink-0">نقطة</span>
+                      <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>
+                        نقطة
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={handleSavePagePointsConfig}
-                    className="px-3 py-1.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black text-xs cursor-pointer shadow-sm flex items-center gap-1"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>حفظ معايير نقاط الأوجه</span>
-                  </button>
-                </div>
+                <p className="text-[11px] text-slate-300 font-bold leading-relaxed pt-1">
+                  💡 تمنح هذه النقاط للطلاب تلقائياً عند اعتماد التسميع اليومي وفق الأوجه المنجزة والاستماع المصادق عليه من قبل المعلم.
+                </p>
               </div>
-
-              {/* 2. Custom Evaluation Criteria */}
-              <div className="flex items-center justify-between pb-2 border-t border-[#065f46] pt-3">
-                <span className="text-xs font-bold text-[#86efac]">
-                  معايير جودة التسميع والتجويد ({displayCriteria.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsManageCriteriaListOpen(false);
-                    handleOpenAddCriteria();
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>إضافة معيار جديد</span>
-                </button>
-              </div>
-
-              {displayCriteria.length === 0 ? (
-                <div className="p-8 text-center text-xs text-[#86efac]/70 bg-[#022c22]/60 rounded-2xl border border-[#065f46]">
-                  لا توجد معايير مخصصة بعد. اضغط على "إضافة معيار جديد" لإنشاء معايير المجمع.
-                </div>
-              ) : (
-                displayCriteria.map(crit => (
-                  <div
-                    key={crit.id}
-                    className="p-3.5 rounded-2xl bg-[#022c22] border border-[#065f46] flex items-center justify-between gap-3"
-                  >
-                    <div>
-                      <div className="text-sm font-bold text-white flex items-center gap-2">
-                        <span>{crit.name}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-medium border border-emerald-500/30">
-                          {crit.type === 'score'
-                            ? `درجات (من ${crit.maxScore || 10})`
-                            : crit.type === 'stars'
-                            ? 'نجوم (5 نجوم)'
-                            : crit.type === 'options'
-                            ? 'خيارات مخصصة'
-                            : 'نصي'}
-                        </span>
-                      </div>
-                      {crit.type === 'options' && crit.options && (
-                        <div className="text-[11px] text-[#86efac]/70 mt-1">
-                          الخيارات: {crit.options.join(' ، ')}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsManageCriteriaListOpen(false);
-                          handleOpenEditCriteria(crit);
-                        }}
-                        className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
-                        title="تعديل المعيار"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsManageCriteriaListOpen(false);
-                          setCritToDelete(crit);
-                        }}
-                        className="p-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition-colors cursor-pointer"
-                        title="حذف المعيار"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
             </div>
 
-            <div className="p-4 border-t border-[#065f46] shrink-0 bg-[#022c22]/95 flex justify-end">
+            {/* Modal Footer with 3D Duolingo Action Buttons */}
+            <div
+              className="p-4 sm:p-5 border-t-2 shrink-0 flex items-center justify-between gap-3"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setIsManageCriteriaListOpen(false)}
-                className="px-5 py-2.5 rounded-2xl bg-[#064e3b] text-[#86efac] hover:text-white border border-[#065f46] text-xs font-bold cursor-pointer"
+                className="px-4 py-2.5 rounded-2xl text-xs font-black text-slate-300 hover:text-white border-2 border-b-4 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
                 إغلاق
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSavePagePointsConfig}
+                className="px-6 py-2.5 rounded-2xl text-xs sm:text-sm font-black flex items-center gap-2 cursor-pointer transition-all border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110"
+                style={{
+                  backgroundColor: themeAccent,
+                  borderColor: themeAccent,
+                  borderBottomColor: themeAccentShadow,
+                  color: accentTextColor
+                }}
+              >
+                <Check className="w-4 h-4" />
+                <span>حفظ التعديلات واعتماد النقاط</span>
               </button>
             </div>
           </div>
