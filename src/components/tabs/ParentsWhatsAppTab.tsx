@@ -17,7 +17,7 @@ import {
   Clock
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Student, AttendanceRecord, StudentEvaluation, AppSettings, QuranComplex } from '../../types';
+import { Student, AttendanceRecord, StudentEvaluation, AppSettings, QuranComplex, QuranRecitationItem } from '../../types';
 import { calculateRealisticQuranAssignment, formatQuranPortion, getSurahInfo } from '../../data/quranData';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 
@@ -98,6 +98,67 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
       student.dailyNewTarget || 'نصف وجه'
     );
 
+    // Helper to format a single QuranRecitationItem into human readable text with type
+    const formatSingleReview = (r: QuranRecitationItem, fallbackType?: string): string => {
+      const sInfo = getSurahInfo(r.surahNumber || 78);
+      const toSurahInfo = r.toSurahNumber ? getSurahInfo(r.toSurahNumber) : sInfo;
+      const typeLabel = r.type || fallbackType || 'مراجعة';
+      const text = formatQuranPortion(
+        r.surahName || sInfo.name,
+        r.fromAyah || 1,
+        r.toAyah || 1,
+        sInfo.numberOfAyahs,
+        typeLabel,
+        r.toSurahName || toSurahInfo.name,
+        toSurahInfo.numberOfAyahs
+      );
+      if (r.didNotRecite) {
+        return `${text} (لم يُسمّع: ${r.didNotReciteReason || 'لم يراجع'})`;
+      }
+      return text;
+    };
+
+    // Helper to format an array of review items (e.g. مراجعة صغرى + مراجعة تراكمية)
+    const formatReviewItemsList = (items: QuranRecitationItem[]): string => {
+      if (!items || items.length === 0) return '';
+      // Filter out items without surah details
+      const validItems = items.filter(it => it && (it.surahNumber || it.surahName || it.formattedText));
+      if (validItems.length === 0) return '';
+
+      const lines = validItems.map((r, idx) => {
+        if (r.formattedText && (r.formattedText.includes('مراجعة') || r.type)) {
+          let text = r.formattedText;
+          if (r.type && !text.includes(r.type)) {
+            text = `${r.type}: ${text}`;
+          }
+          if (r.didNotRecite) {
+            text = `${text} (لم يُسمّع: ${r.didNotReciteReason || 'لم يراجع'})`;
+          }
+          return text;
+        }
+        const fallbackType = validItems.length > 1 ? `مراجعة ${idx + 1}` : 'مراجعة';
+        return formatSingleReview(r, fallbackType);
+      });
+
+      if (lines.length === 1) {
+        return lines[0];
+      }
+      // If multiple reviews: format cleanly with bullets on each line
+      return lines.map(line => `  • ${line}`).join('\n');
+    };
+
+    // Helper to cleanly append review section into the message
+    const appendReviewSection = (content: string): string => {
+      const trimmed = (content || '').trim();
+      if (!trimmed) {
+        return `- المراجعات: لم يُحدد\n\n`;
+      }
+      if (trimmed.includes('\n') || trimmed.startsWith('•')) {
+        return `- المراجعات:\n${trimmed}\n\n`;
+      }
+      return `- المراجعات: ${trimmed}\n\n`;
+    };
+
     // 1. Today's recitation (ما سمعه الطالب اليوم)
     let todayNewText = '';
     let todayReviewText = '';
@@ -115,6 +176,9 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
         item.toSurahName || toSurahInfo.name,
         toSurahInfo.numberOfAyahs
       );
+      if (item.didNotRecite) {
+        todayNewText = `${todayNewText} (لم يُسمّع: ${item.didNotReciteReason || 'لم يحفظ'})`;
+      }
     } else if (evalData?.recitationDetails?.newMemorizationAchieved) {
       todayNewText = evalData.recitationDetails.newMemorizationAchieved;
     } else if (status === 'حاضر') {
@@ -125,27 +189,23 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
       todayNewText = 'لم يسمّع اليوم (غائب)';
     }
 
+    // Include ALL reviews recited today (e.g. مراجعة صغرى، مراجعة تراكمية، وغيرها)
     if (evalData?.recitationDetails?.todayReviewItems && evalData.recitationDetails.todayReviewItems.length > 0) {
-      const reviewLines = evalData.recitationDetails.todayReviewItems.map(r => {
-        const sInfo = getSurahInfo(r.surahNumber);
-        const toSurahInfo = r.toSurahNumber ? getSurahInfo(r.toSurahNumber) : sInfo;
-        return formatQuranPortion(
-          r.surahName || sInfo.name,
-          r.fromAyah,
-          r.toAyah,
-          sInfo.numberOfAyahs,
-          r.type,
-          r.toSurahName || toSurahInfo.name,
-          toSurahInfo.numberOfAyahs
-        );
-      });
-      todayReviewText = reviewLines.join(' ، ');
+      todayReviewText = formatReviewItemsList(evalData.recitationDetails.todayReviewItems);
     } else if (evalData?.recitationDetails?.reviewAchieved) {
       todayReviewText = evalData.recitationDetails.reviewAchieved;
     } else if (status === 'حاضر') {
-      todayReviewText = student.currentSurahName ? `مراجعة سورة ${student.currentSurahName}` : 'مراجعة وتثبيت ما تم حفظه';
+      if (student.persistentReviewItems && student.persistentReviewItems.length > 0) {
+        todayReviewText = formatReviewItemsList(student.persistentReviewItems);
+      } else if (student.aiPlan?.currentDailyAssignment?.reviewItems && student.aiPlan.currentDailyAssignment.reviewItems.length > 0) {
+        todayReviewText = formatReviewItemsList(student.aiPlan.currentDailyAssignment.reviewItems);
+      } else if (student.aiPlan?.currentDailyAssignment?.review) {
+        todayReviewText = student.aiPlan.currentDailyAssignment.review;
+      } else {
+        todayReviewText = student.currentSurahName ? `مراجعة سورة ${student.currentSurahName}` : 'مراجعة وتثبيت ما تم حفظه';
+      }
     } else {
-      todayReviewText = 'لم يراجع اليوم';
+      todayReviewText = 'لم يراجع اليوم (غائب)';
     }
 
     // 2. Tomorrow's assignment (تقرير غد)
@@ -165,25 +225,36 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
         tItem.toSurahName || toSurahInfo.name,
         toSurahInfo.numberOfAyahs
       );
+    } else if (student.aiPlan?.currentDailyAssignment?.newItem) {
+      const tItem = student.aiPlan.currentDailyAssignment.newItem;
+      const sInfo = getSurahInfo(tItem.surahNumber);
+      const toSurahInfo = tItem.toSurahNumber ? getSurahInfo(tItem.toSurahNumber) : sInfo;
+      tomNewText = formatQuranPortion(
+        tItem.surahName || sInfo.name,
+        tItem.fromAyah,
+        tItem.toAyah,
+        sInfo.numberOfAyahs,
+        tItem.type,
+        tItem.toSurahName || toSurahInfo.name,
+        toSurahInfo.numberOfAyahs
+      );
     } else if (student.aiPlan?.currentDailyAssignment?.newMemorization) {
       tomNewText = student.aiPlan.currentDailyAssignment.newMemorization;
     } else {
       tomNewText = realisticAssignment.newMemorization;
     }
 
-    if (evalData?.recitationDetails?.tomorrowReviewItem) {
-      const tRev = evalData.recitationDetails.tomorrowReviewItem;
-      const sInfo = getSurahInfo(tRev.surahNumber);
-      const toSurahInfo = tRev.toSurahNumber ? getSurahInfo(tRev.toSurahNumber) : sInfo;
-      tomReviewText = formatQuranPortion(
-        tRev.surahName || sInfo.name,
-        tRev.fromAyah,
-        tRev.toAyah,
-        sInfo.numberOfAyahs,
-        tRev.type,
-        tRev.toSurahName || toSurahInfo.name,
-        toSurahInfo.numberOfAyahs
-      );
+    // Comprehensive Tomorrow Reviews checking: all review tracks (e.g. مراجعة صغرى، مراجعة تراكمية، وغيرها)
+    if (evalData?.recitationDetails?.tomorrowReviewItems && evalData.recitationDetails.tomorrowReviewItems.length > 0) {
+      tomReviewText = formatReviewItemsList(evalData.recitationDetails.tomorrowReviewItems);
+    } else if (student.persistentReviewItems && student.persistentReviewItems.length > 0) {
+      tomReviewText = formatReviewItemsList(student.persistentReviewItems);
+    } else if (student.aiPlan?.currentDailyAssignment?.reviewItems && student.aiPlan.currentDailyAssignment.reviewItems.length > 0) {
+      tomReviewText = formatReviewItemsList(student.aiPlan.currentDailyAssignment.reviewItems);
+    } else if (evalData?.recitationDetails?.tomorrowReviewItem) {
+      tomReviewText = formatReviewItemsList([evalData.recitationDetails.tomorrowReviewItem]);
+    } else if (student.aiPlan?.currentDailyAssignment?.reviewItem) {
+      tomReviewText = formatReviewItemsList([student.aiPlan.currentDailyAssignment.reviewItem]);
     } else if (student.aiPlan?.currentDailyAssignment?.review) {
       tomReviewText = student.aiPlan.currentDailyAssignment.review;
     } else {
@@ -197,10 +268,10 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
     msg += `${portalUrl}\n\n`;
     msg += `ما سمعه الطالب اليوم:\n`;
     msg += `- الجديد: ${todayNewText}\n`;
-    msg += `- المراجعات: ${todayReviewText}\n\n`;
+    msg += appendReviewSection(todayReviewText);
     msg += `تقرير غد:\n`;
     msg += `- الجديد: ${tomNewText}\n`;
-    msg += `- المراجعات: ${tomReviewText}\n\n`;
+    msg += appendReviewSection(tomReviewText);
     msg += `جزاكم الله خيرا`;
 
     return msg;
@@ -633,12 +704,28 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                         )}
                       </div>
 
-                      {/* مقرر الغد */}
-                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
-                        <span className="font-black text-xs" style={{ color: themeSubtext }}>مقرر الغد:</span>
-                        <span className="font-bold text-xs truncate max-w-[150px]" style={{ color: themeAccent }}>
-                          {student.aiPlan?.currentDailyAssignment?.newMemorization || 'مقرر الغد محدد'}
-                        </span>
+                      {/* مقرر الغد (جديد ومراجعات) */}
+                      <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-black text-xs" style={{ color: themeSubtext }}>جديد الغد:</span>
+                          <span className="font-bold text-xs truncate max-w-[150px]" style={{ color: themeAccent }}>
+                            {evalData?.recitationDetails?.tomorrowNewItem?.surahName 
+                              ? `سورة ${evalData.recitationDetails.tomorrowNewItem.surahName}` 
+                              : (student.aiPlan?.currentDailyAssignment?.newMemorization || 'مقرر الغد محدد')}
+                          </span>
+                        </div>
+                        {((evalData?.recitationDetails?.tomorrowReviewItems && evalData.recitationDetails.tomorrowReviewItems.length > 0) || 
+                          (student.persistentReviewItems && student.persistentReviewItems.length > 0) ||
+                          (student.aiPlan?.currentDailyAssignment?.reviewItems && student.aiPlan.currentDailyAssignment.reviewItems.length > 0)) && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-black text-xs" style={{ color: themeSubtext }}>مراجعات الغد:</span>
+                            <span className="font-black px-2 py-0.5 rounded-lg text-[11px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              {(evalData?.recitationDetails?.tomorrowReviewItems?.length || 
+                                student.persistentReviewItems?.length || 
+                                student.aiPlan?.currentDailyAssignment?.reviewItems?.length || 1)} مسارات مراجعة
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 

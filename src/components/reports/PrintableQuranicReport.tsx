@@ -1274,10 +1274,11 @@ export const PrintableQuranicReport: React.FC<PrintableQuranicReportProps> = ({
                               ? ev.recitationDetails.todayReviewItems.map(item => {
                                   const s1 = getSurahInfo(item.surahNumber || 78);
                                   const s2 = item.toSurahNumber ? getSurahInfo(item.toSurahNumber) : s1;
+                                  const typePrefix = item.type ? `[${item.type}] ` : '';
                                   if (item.toSurahNumber && item.toSurahNumber !== item.surahNumber) {
-                                    return `من سورة ${s1.name} (آية ${item.fromAyah || 1}) إلى سورة ${s2.name} (آية ${item.toAyah || 1})`;
+                                    return `${typePrefix}من سورة ${s1.name} (آية ${item.fromAyah || 1}) إلى سورة ${s2.name} (آية ${item.toAyah || 1})`;
                                   }
-                                  return `سورة ${s1.name} (${item.fromAyah || 1}-${item.toAyah || 1})`;
+                                  return `${typePrefix}سورة ${s1.name} (${item.fromAyah || 1}-${item.toAyah || 1})`;
                                 }).join(' • ')
                               : ev.recitationDetails?.reviewAchieved || '—';
 
