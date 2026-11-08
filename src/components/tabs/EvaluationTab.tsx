@@ -108,11 +108,26 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const toggleOpen = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // If space below is limited and there is more room above, open upwards
+      if (spaceBelow < 280 && rect.top > 250) {
+        setOpenDirection('up');
+      } else {
+        setOpenDirection('down');
+      }
+    }
+    setIsOpen(prev => !prev);
+  };
+
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setSearchTerm('');
@@ -120,9 +135,11 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
     };
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isOpen]);
 
@@ -133,7 +150,9 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
   }, [isOpen]);
 
   const selectedOption = useMemo(() => {
-    return options.find(o => String(o.value) === String(value)) || options[0];
+    return options.find(o => String(o.value) === String(value)) || 
+      options.find(o => (o as any).id === String(value)) || 
+      options[0];
   }, [options, value]);
 
   const filteredOptions = useMemo(() => {
@@ -146,7 +165,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
   }, [options, searchTerm]);
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[60]' : 'z-10'} ${className}`}>
       {/* Hidden standard select for form autofill and CSS selector compatibility */}
       <select
         value={value}
@@ -156,7 +175,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
         aria-hidden="true"
       >
         {options.map(opt => (
-          <option key={opt.value} value={opt.value}>
+          <option key={String(opt.value)} value={opt.value}>
             {opt.label}
           </option>
         ))}
@@ -165,7 +184,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
       {/* 3D Duolingo Tactile Trigger Button */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
         className={`w-full flex items-center justify-between gap-2 border-2 border-b-4 rounded-2xl ${
           compact ? 'py-1.5 px-2.5 text-xs' : 'py-2 px-3 text-xs sm:text-sm'
         } font-black text-white transition-all shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110 cursor-pointer text-right`}
@@ -190,7 +209,9 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
       {/* In-Platform Floating Options Popover */}
       {isOpen && (
         <div
-          className="absolute z-50 mt-1.5 w-full min-w-[210px] max-h-72 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1 backdrop-blur-md"
+          className={`absolute ${
+            openDirection === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } z-[70] w-full min-w-[210px] max-h-72 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1 backdrop-blur-md`}
           style={{
             backgroundColor: 'var(--complex-card, #203843)',
             borderColor: accentColor,
@@ -4156,7 +4177,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               {/* SECTION 2: TOMORROW'S ASSIGNMENT & MULTI-REVIEWS             */}
               {/* ============================================================ */}
               <div 
-                className="border-2 border-b-4 rounded-[28px] p-5 sm:p-6 space-y-5 shadow-xl relative overflow-hidden"
+                className="border-2 border-b-4 rounded-[28px] p-5 sm:p-6 space-y-5 shadow-xl relative"
                 style={{
                   backgroundColor: 'var(--complex-card, #203843)',
                   borderColor: 'var(--complex-border, #2b4550)',
@@ -4603,14 +4624,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                 {/* 2.3 Reciter & Repetitions Selector */}
                 <div 
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl border-2 border-b-4 shadow-inner"
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl border-2 border-b-4 shadow-inner relative z-30"
                   style={{
                     backgroundColor: 'var(--complex-primary, #131f24)',
                     borderColor: 'var(--complex-border, #2b4550)',
                     borderBottomColor: 'var(--complex-card-shadow, #16262e)'
                   }}
                 >
-                  <div>
+                  <div className="relative">
                     <label className="text-xs font-black block mb-2 flex items-center gap-1.5" style={{ color: themeAccent }}>
                       <Volume2 className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>القارئ المقترح للاستماع له بالمنزل:</span>
@@ -4619,31 +4640,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       value={selectedSheikh}
                       onChange={val => {
                         const strVal = String(val);
-                        setSelectedSheikh(strVal);
                         const found = FAMOUS_RECITERS.find(r => r.name === strVal || r.id === strVal);
+                        const chosenName = found ? found.name : strVal;
+                        setSelectedSheikh(chosenName);
                         if (found) {
                           try {
                             localStorage.setItem('omran_mushaf_reciter', found.id);
                           } catch {}
                         }
-                        if (strVal === 'بدون') {
+                        if (chosenName === 'بدون') {
                           setTargetRepetitions(0);
                         } else if (targetRepetitions === 0) {
                           setTargetRepetitions(3);
                         }
                       }}
                       options={[
-                        { value: 'بدون', label: 'بدون (لا يتطلب استماع - ٠ مرات)' },
-                        ...FAMOUS_RECITERS.filter(r => (r as any).hasAudio).map(r => ({
+                        { value: 'بدون', label: 'بدون (لا يتطلب استماع - ٠ مرات)', subLabel: 'معفى من واجب الاستماع المنزلي' },
+                        ...FAMOUS_RECITERS.map(r => ({
                           value: r.name,
-                          label: r.name
+                          label: r.name,
+                          subLabel: r.style
                         }))
                       ]}
                       accentColor={themeAccent}
                     />
                   </div>
 
-                  <div>
+                  <div className="relative">
                     <label className="text-xs font-black block mb-2 flex items-center gap-1.5" style={{ color: themeAccent }}>
                       <RotateCcw className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                       <span>مرات التكرار المقررة للطالب (0 - 20):</span>
@@ -4660,10 +4683,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         }
                       }}
                       options={[
-                        { value: 0, label: '0 (معفى - لا يحتاج استماع)' },
+                        { value: 0, label: '0 (معفى - لا يحتاج استماع)', subLabel: 'بدون تكرار' },
                         ...Array.from({ length: 20 }, (_, i) => i + 1).map(num => ({
                           value: num,
-                          label: num === 1 ? 'مرة واحدة' : num === 2 ? 'مرتان' : `${num} مرات`
+                          label: num === 1 ? 'مرة واحدة (1)' : num === 2 ? 'مرتان (2)' : `${num} مرات`,
+                          subLabel: `تكرار الاستماع المنزلي ${num} مرات`
                         }))
                       ]}
                       accentColor={themeAccent}
