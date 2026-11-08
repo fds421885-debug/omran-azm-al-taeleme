@@ -1225,6 +1225,7 @@ export interface StudentEvaluation {
     wasListened?: boolean;
     listeningReps?: number;
     listeningRequiredReps?: number;
+    listeningPointsEarnedToday?: number;
     pagesCompletedToday?: number[];
     pointsEarnedToday?: number;
     pagesPointsEarnedToday?: number;

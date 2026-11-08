@@ -70,6 +70,7 @@ interface KingFahdQuranModalProps {
   onRecordAyahError?: (surah: number, ayah: number, errorCount: number) => void;
   onRecordDetailedAyahError?: (errorLog: any) => void;
   recordedAyahErrors?: Record<string, number>;
+  readOnlyErrors?: boolean;
 }
 
 // Convert numbers to Arabic Eastern digits: 1 -> ١
@@ -207,7 +208,8 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   studentId,
   theme,
   onRecordAyahError,
-  recordedAyahErrors
+  recordedAyahErrors,
+  readOnlyErrors = false
 }) => {
   // Platform Theme Resolution
   const themePrimary = theme?.primaryColor || '#022c22';
@@ -475,6 +477,10 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
   // Instant, popup-free error marking on double-click / double-tap
   const recordAyahError = (surahNumber: number, ayahNumber: number) => {
+    if (readOnlyErrors) {
+      showToast('added', 'مصحف مراجعة أخطاء الطالب مخصص للقراءة والاستماع (رصد الأخطاء خاص بالمعلم)');
+      return;
+    }
     const key = `${surahNumber}:${ayahNumber}`;
     const now = Date.now();
     if (lastRecordedTimeRef.current[key] && now - lastRecordedTimeRef.current[key] < 320) {
@@ -516,6 +522,10 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
   ) => {
     e.stopPropagation();
     e.preventDefault();
+    if (readOnlyErrors) {
+      showToast('added', 'هذا الخطأ تم رصده من قبل معلم الحلقة للمراجعة والتثبيت');
+      return;
+    }
     const key = `${surahNumber}:${ayahNumber}`;
 
     const nextMap = { ...ayahErrorsRef.current };
@@ -1730,7 +1740,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                                 outline: isAudioActive ? `2.5px solid ${themeAccent}` : undefined,
                                 boxShadow: isAudioActive ? `0 0 16px ${themeAccent}90` : undefined
                               }}
-                              title="علق بإصبعك (Long Press) لبدء التلاوة المستمرة بصوت الشيخ من هذه الآية • انقر مرتين لرصد خطأ"
+                              title={readOnlyErrors ? "انقر لبدء الاستماع لتلاوة الشيخ المتقن من هذه الآية" : "علق بإصبعك (Long Press) لبدء التلاوة المستمرة بصوت الشيخ من هذه الآية • انقر مرتين لرصد خطأ"}
                             >
                               {/* Error Badge with Instant Clear on Click */}
                               {errCount > 0 && (
@@ -1739,12 +1749,14 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
                                   onClick={e =>
                                     handleClearSingleAyahError(e, section.surahNumber, ay.ayahNumber)
                                   }
-                                  className="inline-flex items-center gap-0.5 mx-1 px-1.5 py-0.5 rounded-full text-[10px] font-black font-sans text-white bg-red-600 hover:bg-red-700 shadow cursor-pointer align-middle transition-transform hover:scale-110 active:scale-95"
-                                  title="خطأ مسجل سحابياً - انقر لحذفه فوراً"
+                                  className={`inline-flex items-center gap-0.5 mx-1 px-1.5 py-0.5 rounded-full text-[10px] font-black font-sans text-white ${
+                                    readOnlyErrors ? 'bg-red-600/90 shadow' : 'bg-red-600 hover:bg-red-700 shadow cursor-pointer align-middle transition-transform hover:scale-110 active:scale-95'
+                                  }`}
+                                  title={readOnlyErrors ? `خطأ مسجل سحابياً (${toArabicNumerals(errCount)} تكرار) للمراجعة والتثبيت` : "خطأ مسجل سحابياً - انقر لحذفه فوراً"}
                                 >
                                   <AlertTriangle className="w-2.5 h-2.5 inline" />
                                   <span>{toArabicNumerals(errCount)}</span>
-                                  <X className="w-2.5 h-2.5 inline mr-0.5" />
+                                  {!readOnlyErrors && <X className="w-2.5 h-2.5 inline mr-0.5" />}
                                 </button>
                               )}
 

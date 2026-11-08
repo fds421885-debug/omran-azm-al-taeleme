@@ -51,11 +51,17 @@ import {
   Coins,
   Lock,
   History,
-  Gift
+  Gift,
+  AlertCircle,
+  BookmarkCheck,
+  Eye,
+  BookMarked
 } from 'lucide-react';
 import { YouTubeAyahPlayer, formatTimeMMSS } from './recordings/YouTubeAyahPlayer';
 import { AudioAyahPlayer } from './recordings/AudioAyahPlayer';
 import { getAyahTextSync } from '../lib/quranTextService';
+import { KingFahdQuranModal } from './quran/KingFahdQuranModal';
+import { getPageOfAyah } from '../data/quranPagesData';
 import confetti from 'canvas-confetti';
 import {
   formatDateTimeArabicWithSeconds,
@@ -157,7 +163,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   isCloudSyncing = false,
   cloudSyncText = 'مزامنة سحابية مباشرة...'
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'store' | 'exams' | 'leaderboard' | 'certificates'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'errors' | 'store' | 'exams' | 'leaderboard' | 'certificates'>('home');
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
   const [activeTakingAttemptNum, setActiveTakingAttemptNum] = useState<number>(1);
   const [viewingReviewSubmission, setViewingReviewSubmission] = useState<ExamSubmission | null>(null);
@@ -542,8 +548,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       const evalPoints = stEvaluations.reduce((sum, ev) => {
         const criteriaPts = ev.recitationDetails?.criteriaPointsEarnedToday || 0;
         const pagePts = ev.recitationDetails?.pagesPointsEarnedToday || 0;
+        const listeningPts = ev.recitationDetails?.listeningPointsEarnedToday || 0;
         const pts = ev.recitationDetails?.pointsEarnedToday;
-        const dailyTotal = pts !== undefined && pts !== null ? pts : (criteriaPts + pagePts);
+        const dailyTotal = pts !== undefined && pts !== null ? pts : (criteriaPts + pagePts + listeningPts);
         return sum + dailyTotal;
       }, 0);
 
@@ -625,6 +632,156 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     const timer = setInterval(() => setOnlineClockTick(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  // ==============================================================
+  // STUDENT ERRORS FOR PORTAL ("أخطائي") & KING FAHD MUSHAF MODAL
+  // ==============================================================
+  const [isErrorsMushafOpen, setIsErrorsMushafOpen] = useState(false);
+  const [selectedErrorSurah, setSelectedErrorSurah] = useState<number>(() => currentStudent.currentSurah || 1);
+  const [selectedErrorAyah, setSelectedErrorAyah] = useState<number>(() => currentStudent.currentAyah || 1);
+  const [mushafErrorVersion, setMushafErrorVersion] = useState<number>(0);
+  const [errorsSearchQuery, setErrorsSearchQuery] = useState<string>('');
+  const [errorsSortMode, setErrorsSortMode] = useState<'mushaf' | 'errorsCount'>('mushaf');
+
+  // Consolidated Map of Student Ayah Errors
+  const studentErrorsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    // 1. Collect from currentStudent.mushafErrors
+    const records = (currentStudent.mushafErrors || []).filter(
+      err => (!err.studentId || err.studentId === currentStudent.id) && !err.cleared && (err.errorCount || 0) > 0
+    );
+    records.forEach(err => {
+      const key = `${err.surahNumber}:${err.ayahNumber}`;
+      map[key] = Math.max(map[key] || 0, err.errorCount || 1);
+    });
+
+    // 2. Supplement with any date-specific evaluation errors
+    studentEvaluations.forEach(ev => {
+      const evalErrors = ev.recitationDetails?.ayahErrors;
+      if (evalErrors && typeof evalErrors === 'object') {
+        Object.entries(evalErrors).forEach(([k, v]) => {
+          if (typeof v === 'number' && v > 0) {
+            map[k] = Math.max(map[k] || 0, v);
+          }
+        });
+      }
+    });
+
+    return map;
+  }, [currentStudent.mushafErrors, currentStudent.id, studentEvaluations]);
+
+  // Total error occurrences and distinct ayahs count
+  const totalErrorsCount = useMemo(() => {
+    return Object.values(studentErrorsMap).reduce((sum, count) => sum + count, 0);
+  }, [studentErrorsMap]);
+
+  const totalErrorAyahsCount = useMemo(() => {
+    return Object.keys(studentErrorsMap).length;
+  }, [studentErrorsMap]);
+
+  // Grouped by Surah
+  const groupedSurahErrors = useMemo(() => {
+    const groupsMap = new Map<number, {
+      surahNumber: number;
+      surahName: string;
+      totalErrorsInSurah: number;
+      ayahs: Array<{
+        ayahNumber: number;
+        errorCount: number;
+        ayahText: string;
+        pageNumber: number;
+        notes?: string;
+        lastDate?: string;
+        teacherName?: string;
+        errorTypeLabel?: string;
+      }>;
+    }>();
+
+    const rawRecords = currentStudent.mushafErrors || [];
+
+    Object.entries(studentErrorsMap).forEach(([key, count]) => {
+      if (count <= 0) return;
+      const parts = key.split(':');
+      const surahNum = parseInt(parts[0], 10);
+      const ayahNum = parseInt(parts[1], 10);
+      if (isNaN(surahNum) || isNaN(ayahNum)) return;
+
+      const recordMatch = rawRecords.find(
+        r => r.surahNumber === surahNum && r.ayahNumber === ayahNum && !r.cleared
+      );
+
+      const sInfo = getSurahInfo(surahNum);
+      const surahName = recordMatch?.surahName || sInfo?.name || `سورة رقم ${surahNum}`;
+      const pageNum = getPageOfAyah(surahNum, ayahNum);
+      const rawText = recordMatch?.ayahText || getAyahTextSync(surahNum, ayahNum);
+      const ayahText = rawText || `الآية رقم ${ayahNum}`;
+
+      if (!groupsMap.has(surahNum)) {
+        groupsMap.set(surahNum, {
+          surahNumber: surahNum,
+          surahName,
+          totalErrorsInSurah: 0,
+          ayahs: []
+        });
+      }
+
+      const group = groupsMap.get(surahNum)!;
+      group.totalErrorsInSurah += count;
+      group.ayahs.push({
+        ayahNumber: ayahNum,
+        errorCount: count,
+        ayahText,
+        pageNumber: pageNum,
+        notes: recordMatch?.notes,
+        lastDate: recordMatch?.lastErrorDate || recordMatch?.sessionDate,
+        teacherName: recordMatch?.teacherName,
+        errorTypeLabel: recordMatch?.errorTypeLabel
+      });
+    });
+
+    const groupsArray = Array.from(groupsMap.values());
+
+    // Filter by search query if any
+    const filtered = groupsArray.map(g => {
+      if (!errorsSearchQuery.trim()) return g;
+      const q = errorsSearchQuery.trim().toLowerCase();
+      const surahMatches = g.surahName.toLowerCase().includes(q) || String(g.surahNumber).includes(q);
+      if (surahMatches) return g;
+      const filteredAyahs = g.ayahs.filter(a =>
+        a.ayahText.toLowerCase().includes(q) ||
+        String(a.ayahNumber).includes(q) ||
+        (a.notes && a.notes.toLowerCase().includes(q))
+      );
+      if (filteredAyahs.length === 0) return null;
+      return {
+        ...g,
+        ayahs: filteredAyahs,
+        totalErrorsInSurah: filteredAyahs.reduce((sum, a) => sum + a.errorCount, 0)
+      };
+    }).filter((g): g is NonNullable<typeof g> => g !== null && g.ayahs.length > 0);
+
+    // Sort ayahs inside each group by ayahNumber ascending
+    filtered.forEach(g => {
+      g.ayahs.sort((a, b) => a.ayahNumber - b.ayahNumber);
+    });
+
+    // Sort groups
+    if (errorsSortMode === 'errorsCount') {
+      filtered.sort((a, b) => b.totalErrorsInSurah - a.totalErrorsInSurah || a.surahNumber - b.surahNumber);
+    } else {
+      filtered.sort((a, b) => a.surahNumber - b.surahNumber);
+    }
+
+    return filtered;
+  }, [studentErrorsMap, currentStudent.mushafErrors, errorsSearchQuery, errorsSortMode]);
+
+  const handleOpenStudentMushafAtAyah = (surah: number, ayah: number) => {
+    setSelectedErrorSurah(surah);
+    setSelectedErrorAyah(ayah);
+    setMushafErrorVersion(v => v + 1);
+    setIsErrorsMushafOpen(true);
+  };
 
   // Real-Time Store Subscriptions for the Student
   useEffect(() => {
@@ -1430,6 +1587,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           {[
             { id: 'home', label: 'الرئيسية', icon: Home },
             { id: 'recitation', label: 'مقرر التسميع', icon: Headphones },
+            { id: 'errors', label: 'أخطائي', icon: AlertCircle, badge: totalErrorsCount > 0 ? toArabicDigits(totalErrorsCount) : undefined },
             { id: 'store', label: 'المتجر', icon: ShoppingBag, badge: availableStoreItemsCount > 0 ? toArabicDigits(availableStoreItemsCount) : undefined },
             { id: 'exams', label: 'الاختبارات', icon: FileText, badge: studentExams.length > 0 ? toArabicDigits(studentExams.length) : undefined },
             { id: 'leaderboard', label: 'لوحة الشرف', icon: Trophy, badge: myRank ? `#${toArabicDigits(myRank)}` : undefined },
@@ -2501,6 +2659,452 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 }}
               />
             </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 2.5: MY ERRORS (أخطائي - سجل الأخطاء والمراجعة في المصحف) */}
+        {/* ============================================================== */}
+        {activeTab === 'errors' && (
+          <div className="space-y-6">
+            {/* Top Summary Header Card (Duolingo 3D Styling with complex theme) */}
+            <div
+              className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-[32px] border-2 border-b-[6px] shadow-2xl space-y-4 backdrop-blur-md relative overflow-hidden transition-all"
+              style={{
+                backgroundColor: themeCardBg,
+                borderColor: `${themeAccent}70`,
+                borderBottomColor: themeAccentShadow
+              }}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 sm:gap-4">
+                  <div
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl font-black flex items-center justify-center border-2 border-b-4 shadow-md shrink-0"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <AlertCircle className="w-6 h-6 sm:w-7 sm:h-7 animate-pulse" />
+                  </div>
+                  <div className="text-right">
+                    <h2 className="text-lg sm:text-2xl font-black font-heading text-white flex items-center gap-2">
+                      <span>سجل أخطائي القرآني للمراجعة والتثبيت</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        {toArabicDigits(totalErrorAyahsCount)} آية
+                      </span>
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 font-medium mt-1">
+                      فهرس منظم لجميع الآيات التي تحتاج إلى مراجعة وتكرار، انقر على أي آية لفتحها فوراً في المصحف الشريف
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenStudentMushafAtAyah(currentStudent.currentSurah || 1, currentStudent.currentAyah || 1)}
+                    className="px-4 py-2.5 rounded-2xl font-black text-xs sm:text-sm border-2 border-b-4 active:translate-y-[2px] transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <BookOpen className="w-4 h-4 shrink-0" />
+                    <span>تصفح المصحف كاملاً 📖</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Counters Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm flex items-center gap-3"
+                  style={{
+                    backgroundColor: `${themeSecondary}aa`,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center shrink-0 border border-rose-500/30">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-slate-300 font-bold">إجمالي تكرار الأخطاء</div>
+                    <div className="text-lg sm:text-xl font-black text-white">
+                      {toArabicDigits(totalErrorsCount)} <span className="text-xs text-rose-300 font-normal">خطأ مسجل</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm flex items-center gap-3"
+                  style={{
+                    backgroundColor: `${themeSecondary}aa`,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-slate-300 font-bold">الآيات المطلوب تثبيتها</div>
+                    <div className="text-lg sm:text-xl font-black text-white">
+                      {toArabicDigits(totalErrorAyahsCount)} <span className="text-xs text-amber-300 font-normal">آية كريمة</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="p-3.5 rounded-2xl border-2 border-b-4 shadow-sm flex items-center gap-3"
+                  style={{
+                    backgroundColor: `${themeSecondary}aa`,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-slate-300 font-bold">عدد السور المتأثرة</div>
+                    <div className="text-lg sm:text-xl font-black text-white">
+                      {toArabicDigits(groupedSurahErrors.length)} <span className="text-xs text-emerald-300 font-normal">سورة</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Encouragement banner */}
+              <div className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center gap-2.5 text-xs text-slate-300">
+                <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+                <span>
+                  «قَالَ رَسُولُ اللَّهِ ﷺ: تَعَاهَدُوا الْقُرْآنَ فَوَالَّذِي نَفْسِي بِيَدِهِ لَهُوَ أَشَدُّ تَفَصِّيًا مِنَ الإِبِلِ فِي عُقُلِهَا» — المراجعة المستمرة هي سر الإتقان والرسوخ.
+                </span>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            {totalErrorAyahsCount > 0 && (
+              <div
+                className="p-3 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col sm:flex-row items-center justify-between gap-3"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={errorsSearchQuery}
+                    onChange={e => setErrorsSearchQuery(e.target.value)}
+                    placeholder="ابحث باسم السورة أو جزء من نص الآية..."
+                    className="w-full pr-9 pl-8 py-2 rounded-xl text-xs sm:text-sm bg-black/30 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:border-amber-400 transition-colors"
+                  />
+                  {errorsSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setErrorsSearchQuery('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <span className="text-xs text-slate-300 font-bold whitespace-nowrap">الترتيب:</span>
+                  <button
+                    type="button"
+                    onClick={() => setErrorsSortMode('mushaf')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
+                      errorsSortMode === 'mushaf'
+                        ? 'border-b-4 shadow-sm'
+                        : 'border-transparent text-slate-400 hover:text-white bg-black/20'
+                    }`}
+                    style={errorsSortMode === 'mushaf' ? {
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    } : undefined}
+                  >
+                    ترتيب المصحف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setErrorsSortMode('errorsCount')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
+                      errorsSortMode === 'errorsCount'
+                        ? 'border-b-4 shadow-sm'
+                        : 'border-transparent text-slate-400 hover:text-white bg-black/20'
+                    }`}
+                    style={errorsSortMode === 'errorsCount' ? {
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    } : undefined}
+                  >
+                    الأكثر أخطاءً
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Empty State: Zero recorded errors */}
+            {totalErrorAyahsCount === 0 && (
+              <div
+                className="p-8 sm:p-12 rounded-3xl border-2 border-b-6 shadow-2xl text-center space-y-5 backdrop-blur-md"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: `${themeAccent}60`,
+                  borderBottomColor: themeAccentShadow
+                }}
+              >
+                <div
+                  className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl flex items-center justify-center border-2 border-b-4 shadow-lg"
+                  style={{
+                    backgroundColor: `${themeAccent}25`,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: themeAccent
+                  }}
+                >
+                  <Sparkles className="w-10 h-10 sm:w-12 sm:h-12 animate-bounce" />
+                </div>
+                <div className="space-y-2 max-w-md mx-auto">
+                  <h3 className="text-xl sm:text-2xl font-black font-heading text-white">
+                    ما شاء الله تبارك الله! سجل ناصع البياض ✨
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
+                    لا توجد أي أخطاء مسجلة لك حالياً في التسميع. حفظك متقن ومثبت، استمر على هذا الأداء العالي واحرص على دوام المراجعة اليومية!
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenStudentMushafAtAyah(currentStudent.currentSurah || 1, currentStudent.currentAyah || 1)}
+                    className="px-6 py-3 rounded-2xl font-black text-sm border-2 border-b-4 active:translate-y-[2px] transition-all inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    style={{
+                      backgroundColor: themeAccent,
+                      color: themePrimary,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow
+                    }}
+                  >
+                    <BookOpen className="w-5 h-5" />
+                    <span>تصفح المصحف الشريف كاملاً 📖</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Empty Search Filter Results */}
+            {totalErrorAyahsCount > 0 && groupedSurahErrors.length === 0 && (
+              <div
+                className="p-8 rounded-2xl border-2 border-b-4 text-center space-y-3"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                <p className="text-sm font-bold text-slate-300">
+                  لم يتم العثور على أخطاء تطابق كلمة البحث "{errorsSearchQuery}"
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setErrorsSearchQuery('')}
+                  className="px-4 py-2 rounded-xl text-xs font-black bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  مسح كلمة البحث
+                </button>
+              </div>
+            )}
+
+            {/* Categorized Surahs with their Erroneous Ayahs */}
+            {groupedSurahErrors.map(group => (
+              <div
+                key={group.surahNumber}
+                className="rounded-2xl sm:rounded-3xl border-2 border-b-[5px] shadow-xl overflow-hidden backdrop-blur-md transition-all"
+                style={{
+                  backgroundColor: themeCardBg,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
+              >
+                {/* Surah Header Card */}
+                <div
+                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2"
+                  style={{
+                    backgroundColor: `${themeSecondary}ee`,
+                    borderColor: themeBorder
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-xl font-black flex items-center justify-center border-2 border-b-3 shrink-0 shadow-sm"
+                      style={{
+                        backgroundColor: themeAccent,
+                        color: themePrimary,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      <span className="text-sm">{toArabicDigits(group.surahNumber)}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base sm:text-lg font-black font-heading text-white">
+                          سورة {group.surahName}
+                        </h3>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-slate-200 border border-white/10">
+                          {toArabicDigits(group.ayahs.length)} آية
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          {toArabicDigits(group.totalErrorsInSurah)} تكرار خطأ
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-0.5">
+                        المصحف الشريف • الجزء {toArabicDigits(getSurahInfo(group.surahNumber)?.juz || 1)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenStudentMushafAtAyah(group.surahNumber, group.ayahs[0].ayahNumber)}
+                      className="px-3.5 py-2 rounded-xl font-black text-xs border-2 border-b-3 active:translate-y-[1px] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      style={{
+                        backgroundColor: themeAccent,
+                        color: themePrimary,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow
+                      }}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>فتح السورة في المصحف 📖</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ayahs Cards Grid */}
+                <div className="p-4 sm:p-5 space-y-3.5">
+                  {group.ayahs.map(ayah => (
+                    <div
+                      key={`${group.surahNumber}:${ayah.ayahNumber}`}
+                      className="p-4 rounded-2xl border-2 border-b-4 transition-all hover:scale-[1.005] group"
+                      style={{
+                        backgroundColor: `${themeSecondary}80`,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
+                    >
+                      {/* Ayah Meta Top Line */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/10">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className="px-2.5 py-1 rounded-lg text-xs font-black border"
+                            style={{
+                              backgroundColor: `${themeAccent}20`,
+                              color: themeAccent,
+                              borderColor: `${themeAccent}40`
+                            }}
+                          >
+                            الآية {toArabicDigits(ayah.ayahNumber)}
+                          </span>
+
+                          <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-white/10 text-slate-300 border border-white/10">
+                            صفحة {toArabicDigits(ayah.pageNumber)} في المصحف
+                          </span>
+
+                          {ayah.errorTypeLabel && (
+                            <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/25">
+                              {ayah.errorTypeLabel}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                            تكرر الخطأ: {toArabicDigits(ayah.errorCount)} {ayah.errorCount === 1 ? 'مرة' : 'مرات'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Verse Quranic Text */}
+                      <p className="font-quran text-lg sm:text-xl md:text-2xl text-right leading-[2.2] text-emerald-100/95 my-3 p-3.5 sm:p-4 rounded-xl bg-black/30 border border-white/5 select-text shadow-inner">
+                        {ayah.ayahText}
+                        <span
+                          className="inline-block mx-2 font-quran text-base sm:text-lg select-none"
+                          style={{ color: themeAccent }}
+                        >
+                          ۝{toArabicDigits(ayah.ayahNumber)}
+                        </span>
+                      </p>
+
+                      {/* Notes & Last Date if available */}
+                      {(ayah.notes || ayah.lastDate || ayah.teacherName) && (
+                        <div className="flex flex-wrap items-center gap-2.5 my-2.5 text-xs text-slate-300">
+                          {ayah.notes && (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-200 border border-amber-500/20 font-medium">
+                              <Info className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                              <span>ملاحظة المعلم: {ayah.notes}</span>
+                            </div>
+                          )}
+                          {ayah.teacherName && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-slate-300 border border-white/10">
+                              <User className="w-3 h-3 text-slate-400" />
+                              <span>المعلم: {ayah.teacherName}</span>
+                            </div>
+                          )}
+                          {ayah.lastDate && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-slate-400 border border-white/10">
+                              <Clock className="w-3 h-3" />
+                              <span>آخر رصد: {toArabicDigits(ayah.lastDate)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Bottom Action: Open Ayah Directly in King Fahd Mushaf */}
+                      <div className="pt-2 flex items-center justify-between gap-3">
+                        <span className="text-[11px] text-slate-400 hidden sm:inline">
+                          انقر للانتقال لموقع الآية ومراجعتها والاستماع لكبار القراء
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStudentMushafAtAyah(group.surahNumber, ayah.ayahNumber)}
+                          className="w-full sm:w-auto px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm border-2 border-b-4 active:translate-y-[2px] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md group-hover:shadow-lg mr-auto"
+                          style={{
+                            backgroundColor: themeAccent,
+                            color: themePrimary,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow
+                          }}
+                        >
+                          <BookOpen className="w-4 h-4 shrink-0" />
+                          <span>فتح في المصحف ومراجعة الآية 📖</span>
+                          <span className="text-[11px] opacity-80 font-bold">
+                            (صفحة {toArabicDigits(ayah.pageNumber)})
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -4341,7 +4945,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     {selectedStudentForBreakdown.stEvaluations.slice(-5).reverse().map((ev: any) => {
                       const cPts = ev.recitationDetails?.criteriaPointsEarnedToday || 0;
                       const pPts = ev.recitationDetails?.pagesPointsEarnedToday || 0;
-                      const tot = ev.recitationDetails?.pointsEarnedToday ?? (cPts + pPts);
+                      const lPts = ev.recitationDetails?.listeningPointsEarnedToday || 0;
+                      const tot = ev.recitationDetails?.pointsEarnedToday ?? (cPts + pPts + lPts);
                       return (
                         <div
                           key={ev.id}
@@ -4906,6 +5511,21 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Student Holy Quran Modal (King Fahd 604-page Edition - Read Only Errors) */}
+      <KingFahdQuranModal
+        isOpen={isErrorsMushafOpen}
+        onClose={() => setIsErrorsMushafOpen(false)}
+        initialSurah={selectedErrorSurah}
+        initialAyah={selectedErrorAyah}
+        initialPage={getPageOfAyah(selectedErrorSurah, selectedErrorAyah)}
+        openRequestVersion={mushafErrorVersion}
+        studentName={currentStudent.name}
+        studentId={currentStudent.id}
+        theme={resolvedComplex?.theme || settings?.theme}
+        recordedAyahErrors={studentErrorsMap}
+        readOnlyErrors={true}
+      />
 
       </div>
     </div>

@@ -2584,19 +2584,22 @@ export function App() {
     const prevCriteriaPts = previousEval?.recitationDetails?.criteriaPointsEarnedToday || 0;
     const prevPagePts = previousEval?.recitationDetails?.pagesPointsEarnedToday || 0;
     const prevAttendancePts = previousEval?.recitationDetails?.attendancePointsEarnedToday || 0;
+    const prevListeningPts = previousEval?.recitationDetails?.listeningPointsEarnedToday || 0;
     const prevTotalEarned = typeof previousEval?.recitationDetails?.pointsEarnedToday === 'number'
       ? previousEval.recitationDetails.pointsEarnedToday
-      : (prevCriteriaPts + prevPagePts + prevAttendancePts);
+      : (prevCriteriaPts + prevPagePts + prevAttendancePts + prevListeningPts);
 
     const newCriteriaPts = evaluation.recitationDetails?.criteriaPointsEarnedToday || 0;
     const newPagePts = evaluation.recitationDetails?.pagesPointsEarnedToday || 0;
     const newAttendancePts = evaluation.recitationDetails?.attendancePointsEarnedToday || 0;
+    const newListeningPts = evaluation.recitationDetails?.listeningPointsEarnedToday || 0;
     const newTotalEarned = typeof evaluation.recitationDetails?.pointsEarnedToday === 'number'
       ? evaluation.recitationDetails.pointsEarnedToday
-      : (newCriteriaPts + newPagePts + newAttendancePts);
+      : (newCriteriaPts + newPagePts + newAttendancePts + newListeningPts);
 
     const deltaCriteria = newCriteriaPts - prevCriteriaPts;
     const deltaPage = newPagePts - prevPagePts;
+    const deltaListening = newListeningPts - prevListeningPts;
     const deltaTotal = newTotalEarned - prevTotalEarned;
 
     await OmranDataService.saveEvaluation(evaluation);
@@ -2628,6 +2631,8 @@ export function App() {
         ? Math.max(0, currentPoints + deltaTotal)
         : Math.max(newTotalEarned, currentPoints + newTotalEarned);
 
+      const isStudentListenedToday = Boolean(evaluation.recitationDetails?.wasListened);
+
       const updatedStudent: Student = {
         ...targetStudent,
         ...studentUpdates,
@@ -2637,7 +2642,11 @@ export function App() {
         currentAyah: finalAyah,
         criteriaPoints: Math.max(0, (targetStudent.criteriaPoints || 0) + deltaCriteria),
         totalPagePoints: Math.max(0, (targetStudent.totalPagePoints || 0) + deltaPage),
+        listeningPoints: Math.max(0, (targetStudent.listeningPoints || 0) + deltaListening),
         points: calculatedPoints,
+        dailyListeningCompletedDate: isStudentListenedToday
+          ? evaluation.date
+          : targetStudent.dailyListeningCompletedDate,
         persistentReviewItems: newAssignment?.reviewItems || targetStudent.persistentReviewItems,
         activeListeningAssignment: listeningAssignment || targetStudent.activeListeningAssignment,
         memorizationPlan: targetStudent.memorizationPlan && newAssignment ? {

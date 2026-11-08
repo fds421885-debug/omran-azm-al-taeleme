@@ -171,8 +171,9 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
       const evalPoints = stEvaluations.reduce((sum, ev) => {
         const criteriaPts = Number(ev.recitationDetails?.criteriaPointsEarnedToday) || 0;
         const pagePts = Number(ev.recitationDetails?.pagesPointsEarnedToday) || 0;
+        const listeningPts = Number(ev.recitationDetails?.listeningPointsEarnedToday) || 0;
         const pts = ev.recitationDetails?.pointsEarnedToday;
-        const recitationOnly = criteriaPts + pagePts;
+        const recitationOnly = criteriaPts + pagePts + listeningPts;
         const dailyTotal = typeof pts === 'number'
           ? pts
           : (recitationOnly > 0 ? recitationOnly : 0);
@@ -873,7 +874,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                 ) : (
                   <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
                     {breakdownData.stEvaluations.map(ev => {
-                      const pts = ev.recitationDetails?.pointsEarnedToday ?? ((ev.recitationDetails?.criteriaPointsEarnedToday || 0) + (ev.recitationDetails?.pagesPointsEarnedToday || 0));
+                      const pts = ev.recitationDetails?.pointsEarnedToday ?? ((ev.recitationDetails?.criteriaPointsEarnedToday || 0) + (ev.recitationDetails?.pagesPointsEarnedToday || 0) + (ev.recitationDetails?.listeningPointsEarnedToday || 0));
                       return (
                         <div
                           key={ev.id}

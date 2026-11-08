@@ -111,6 +111,8 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
   const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
 
   const toggleOpen = () => {
     if (!isOpen && containerRef.current) {
@@ -144,8 +146,17 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
+    if (isOpen) {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+      // Instant auto-scroll to selected option (e.g. Al-Alaq, or current ayah)
+      const timer = setTimeout(() => {
+        if (selectedItemRef.current && listContainerRef.current) {
+          selectedItemRef.current.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        }
+      }, 40);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
@@ -235,7 +246,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
             </div>
           )}
 
-          <div className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+          <div ref={listContainerRef} className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
             {filteredOptions.length === 0 ? (
               <div className="p-3 text-center text-xs text-slate-400 font-bold">
                 لا توجد نتائج مطابقة
@@ -246,6 +257,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
                 return (
                   <button
                     key={opt.value}
+                    ref={isSelected ? selectedItemRef : undefined}
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -526,10 +538,73 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     return evaluations.find(e => e.date === selectedDate && e.studentId === activeStudent.id) || null;
   }, [evaluations, selectedDate, activeStudent?.id]);
 
-  // Unified listening status that persists across holidays and gaps
+  // Session listening state (allows teacher to actively mark/toggle listening status & reps in real time)
+  const [sessionListeningStatus, setSessionListeningStatus] = useState<{
+    isListened: boolean;
+    isPartial: boolean;
+    isExempt: boolean;
+    completedReps: number;
+    requiredReps: number;
+  } | null>(null);
+
+  // Unified listening status that combines stored student status with interactive teacher updates
   const currentStudentListeningStatus = useMemo(() => {
+    if (sessionListeningStatus) {
+      const { isListened, isPartial, isExempt, completedReps, requiredReps } = sessionListeningStatus;
+      if (isExempt) {
+        return {
+          isListened: true,
+          isPartial: false,
+          isExempt: true,
+          completedReps: 0,
+          requiredReps: 0,
+          label: 'معفى من الاستماع (بدون استماع مقرر)',
+          badgeText: 'معفى',
+          badgeColor: 'slate' as const
+        };
+      }
+      if (isListened) {
+        const req = requiredReps > 0 ? requiredReps : 3;
+        const reps = Math.max(completedReps, req);
+        return {
+          isListened: true,
+          isPartial: false,
+          isExempt: false,
+          completedReps: reps,
+          requiredReps: req,
+          label: `استمع للمقطع المقرر بالكامل (${reps} من ${req} مرات)`,
+          badgeText: 'مستمع',
+          badgeColor: 'emerald' as const
+        };
+      }
+      if (isPartial) {
+        const reps = Math.max(1, completedReps);
+        const req = requiredReps > 0 ? requiredReps : 3;
+        return {
+          isListened: false,
+          isPartial: true,
+          isExempt: false,
+          completedReps: reps,
+          requiredReps: req,
+          label: `استمع جزئياً (${reps} من ${req} مرات)`,
+          badgeText: `استماع جزئي (${reps}/${req})`,
+          badgeColor: 'amber' as const
+        };
+      }
+      const req = requiredReps > 0 ? requiredReps : 3;
+      return {
+        isListened: false,
+        isPartial: false,
+        isExempt: false,
+        completedReps: 0,
+        requiredReps: req,
+        label: 'لم يستمع للمقطع المقرر',
+        badgeText: 'لم يستمع',
+        badgeColor: 'rose' as const
+      };
+    }
     return getStudentListeningStatus(activeStudent, selectedDateEvaluation);
-  }, [activeStudent, selectedDateEvaluation]);
+  }, [sessionListeningStatus, activeStudent, selectedDateEvaluation]);
 
   // History Drawer toggle
   const [showHistoryDrawer, setShowHistoryDrawer] = useState<boolean>(false);
@@ -624,8 +699,24 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   const pointsPerListening = useMemo(() => {
     const found = criteria.find(c => c.id === 'crit-points-listening');
-    return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
-  }, [criteria]);
+    if (typeof found?.pointsWeight === 'number') return found.pointsWeight;
+    if (typeof settings?.dailyListeningPoints === 'number') return settings.dailyListeningPoints;
+    return 5;
+  }, [criteria, settings]);
+
+  // Live calculation of listening points earned today:
+  // When student is a listener (مستمع), they receive the exact configured listening points
+  const liveListeningPoints = useMemo(() => {
+    if (currentStudentListeningStatus.isExempt) return 0;
+    if (currentStudentListeningStatus.isListened) {
+      return pointsPerListening;
+    }
+    if (currentStudentListeningStatus.isPartial && currentStudentListeningStatus.completedReps > 0 && currentStudentListeningStatus.requiredReps > 0) {
+      const ratio = Math.min(1, currentStudentListeningStatus.completedReps / currentStudentListeningStatus.requiredReps);
+      return Math.round(ratio * pointsPerListening * 10) / 10;
+    }
+    return 0;
+  }, [currentStudentListeningStatus, pointsPerListening]);
 
   // General evaluation criteria (excluding internal page point definitions)
   const displayCriteria = useMemo(() => {
@@ -702,11 +793,68 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const liveReviewPagePoints = Math.round(liveReviewFacesCount * reviewPageMultiplier * 10) / 10;
   const livePagesTotalPoints = Math.round((liveNewPagePoints + liveReviewPagePoints) * 10) / 10;
 
-  // Points calculated automatically from today's recitation + criteria + attendance
+  // Points calculated automatically from today's recitation + criteria + attendance + listening
   const calculatedRecitationPoints = useMemo(() => {
-    const total = livePagesTotalPoints + liveCriteriaPoints + attendancePoints;
+    const total = livePagesTotalPoints + liveCriteriaPoints + attendancePoints + liveListeningPoints;
     return Math.max(0, Math.round(total * 10) / 10);
-  }, [livePagesTotalPoints, liveCriteriaPoints, attendancePoints]);
+  }, [livePagesTotalPoints, liveCriteriaPoints, attendancePoints, liveListeningPoints]);
+
+  // Handlers to toggle listening mode interactively during evaluation session
+  const handleSetListeningMode = (mode: 'listened' | 'partial' | 'not_listened' | 'exempt') => {
+    const req = currentStudentListeningStatus.requiredReps > 0 ? currentStudentListeningStatus.requiredReps : 3;
+    if (mode === 'listened') {
+      setSessionListeningStatus({
+        isListened: true,
+        isPartial: false,
+        isExempt: false,
+        completedReps: Math.max(currentStudentListeningStatus.completedReps, req),
+        requiredReps: req
+      });
+    } else if (mode === 'partial') {
+      const currentReps = currentStudentListeningStatus.completedReps;
+      const initialPartReps = currentReps > 0 && currentReps < req ? currentReps : Math.max(1, req - 1);
+      setSessionListeningStatus({
+        isListened: false,
+        isPartial: true,
+        isExempt: false,
+        completedReps: initialPartReps,
+        requiredReps: req
+      });
+    } else if (mode === 'not_listened') {
+      setSessionListeningStatus({
+        isListened: false,
+        isPartial: false,
+        isExempt: false,
+        completedReps: 0,
+        requiredReps: req
+      });
+    } else if (mode === 'exempt') {
+      setSessionListeningStatus({
+        isListened: false,
+        isPartial: false,
+        isExempt: true,
+        completedReps: 0,
+        requiredReps: 0
+      });
+    }
+    setIsManualPointsModified(false);
+  };
+
+  const handleStepListeningReps = (delta: number) => {
+    const req = currentStudentListeningStatus.requiredReps > 0 ? currentStudentListeningStatus.requiredReps : 3;
+    const currentReps = currentStudentListeningStatus.completedReps || 0;
+    const nextReps = Math.max(0, currentReps + delta);
+    const isL = nextReps >= req && req > 0;
+    const isP = !isL && nextReps > 0;
+    setSessionListeningStatus({
+      isListened: isL,
+      isPartial: isP,
+      isExempt: false,
+      completedReps: nextReps,
+      requiredReps: req
+    });
+    setIsManualPointsModified(false);
+  };
 
   // Dedicated Student Points for Today State (Adjustable by Teacher: - / + / custom)
   const [studentPointsToday, setStudentPointsToday] = useState<number>(0);
@@ -1295,6 +1443,31 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       if (existing.recitationDetails?.tomorrowDailyNote) {
         setDailyHomeNote(existing.recitationDetails.tomorrowDailyNote);
       }
+      // Load listening state for existing evaluation
+      if (existing.recitationDetails?.wasListened !== undefined) {
+        const req = existing.recitationDetails.listeningRequiredReps ?? 3;
+        const reps = existing.recitationDetails.listeningReps ?? 0;
+        const isEx = req === 0;
+        const isL = !isEx && !!existing.recitationDetails.wasListened;
+        const isPart = !isEx && !isL && reps > 0;
+        setSessionListeningStatus({
+          isListened: isL,
+          isPartial: isPart,
+          isExempt: isEx,
+          completedReps: isL ? Math.max(reps, req) : reps,
+          requiredReps: req
+        });
+      } else {
+        const baseStatus = getStudentListeningStatus(activeStudent, existing);
+        setSessionListeningStatus({
+          isListened: baseStatus.isListened,
+          isPartial: baseStatus.isPartial,
+          isExempt: baseStatus.isExempt,
+          completedReps: baseStatus.completedReps,
+          requiredReps: baseStatus.requiredReps
+        });
+      }
+
       if (existing.recitationDetails?.pointsEarnedToday !== undefined) {
         setStudentPointsToday(existing.recitationDetails.pointsEarnedToday);
         setIsManualPointsModified(true);
@@ -1305,6 +1478,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     } else {
       setIsManualPointsModified(false);
       // 2. No evaluation exists for this date yet!
+      const baseStatus = getStudentListeningStatus(activeStudent, null);
+      setSessionListeningStatus({
+        isListened: baseStatus.isListened,
+        isPartial: baseStatus.isPartial,
+        isExempt: baseStatus.isExempt,
+        completedReps: baseStatus.completedReps,
+        requiredReps: baseStatus.requiredReps
+      });
       if (activeStudent.activeListeningAssignment?.requiredRepetitions !== undefined) {
         setTargetRepetitions(activeStudent.activeListeningAssignment.requiredRepetitions);
       } else if (activeStudent.aiPlan?.currentDailyAssignment?.targetRepetitions !== undefined) {
@@ -2251,6 +2432,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           wasListened: currentStudentListeningStatus.isListened,
           listeningReps: currentStudentListeningStatus.completedReps,
           listeningRequiredReps: currentStudentListeningStatus.requiredReps,
+          listeningPointsEarnedToday: liveListeningPoints,
           criteriaPointsEarnedToday: liveCriteriaPoints,
           pagesPointsEarnedToday: livePagesTotalPoints,
           attendancePointsEarnedToday: attendancePoints,
@@ -2345,7 +2527,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         isFirstSession: false,
         recentlyCompletedSurahs: updatedRecentlyCompleted,
         mushafErrors: taggedUpdatedErrors,
-        mushafErrorsUpdatedAt: evalSavedIso
+        mushafErrorsUpdatedAt: evalSavedIso,
+        ...(currentStudentListeningStatus.isListened ? { dailyListeningCompletedDate: selectedDate } : {})
       };
 
       // 1. Save evaluation and atomically update student's points, position, and assignments
@@ -3589,42 +3772,145 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   </span>
                 </div>
 
-                {/* Real-time Indicator: Did the student listen to yesterday's / current assignment? */}
+                {/* Real-time Interactive Listening Section: Points awarded for listener */}
                 {activeStudent && (
-                  <div className={`p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold transition-all shadow-sm ${
+                  <div className={`p-4 sm:p-5 rounded-2xl border-2 border-b-4 flex flex-col gap-3.5 transition-all shadow-md ${
                     currentStudentListeningStatus.isListened
-                      ? 'bg-emerald-950/80 border-emerald-500/60 border-b-emerald-600 text-emerald-200'
+                      ? 'bg-emerald-950/80 border-emerald-500/60 border-b-emerald-600 text-emerald-100 shadow-emerald-950/30'
                       : currentStudentListeningStatus.isPartial
-                        ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-200'
+                        ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-100'
                         : currentStudentListeningStatus.isExempt
-                        ? 'bg-slate-900/80 border-slate-600/60 border-b-slate-700 text-slate-300'
-                        : 'bg-rose-950/60 border-rose-500/50 border-b-rose-600 text-rose-300'
+                        ? 'bg-slate-900/80 border-slate-600/60 border-b-slate-700 text-slate-200'
+                        : 'bg-rose-950/60 border-rose-500/50 border-b-rose-600 text-rose-200'
                   }`}>
-                    <div className="flex items-center gap-2.5">
-                      <Headphones className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
-                      <span className="font-black text-sm">حالة استماع الطالب للورد المنزلي:</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-black/20 border border-white/10">
+                          <Headphones className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-sm text-white">حالة استماع الطالب للورد المنزلي:</span>
+                            {currentStudentListeningStatus.isListened ? (
+                              <span className="px-3 py-1 rounded-xl bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 font-black text-xs inline-flex items-center gap-1.5 shadow-sm">
+                                <Award className="w-3.5 h-3.5 text-emerald-300" />
+                                <span>مستمع معتمد (+{liveListeningPoints} نقاط استماع مضافة)</span>
+                              </span>
+                            ) : currentStudentListeningStatus.isPartial ? (
+                              <span className="px-3 py-1 rounded-xl bg-amber-500/25 text-amber-300 border border-amber-400/50 font-black text-xs inline-flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-amber-300" />
+                                <span>استماع جزئي (+{liveListeningPoints} نقطة)</span>
+                              </span>
+                            ) : currentStudentListeningStatus.isExempt ? (
+                              <span className="px-3 py-1 rounded-xl bg-slate-500/25 text-slate-300 border border-slate-400/50 font-black text-xs inline-flex items-center gap-1.5">
+                                <Check className="w-3.5 h-3.5 text-slate-300" />
+                                <span>معفى من الاستماع (0 نقطة)</span>
+                              </span>
+                            ) : (
+                              <span className="px-3 py-1 rounded-xl bg-rose-500/25 text-rose-300 border border-rose-400/50 font-black text-xs inline-flex items-center gap-1.5">
+                                <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                                <span>لم يستمع (0 نقطة استماع)</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-300 font-bold block mt-0.5">
+                            {currentStudentListeningStatus.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Prominent Listening Points Pill */}
+                      <div className="flex items-center gap-2 self-start sm:self-center">
+                        <div className="px-3.5 py-1.5 rounded-xl bg-black/30 border border-white/10 flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-slate-300">نقاط الاستماع المستحقة:</span>
+                          <span className={`text-sm font-black font-mono ${liveListeningPoints > 0 ? 'text-emerald-300' : 'text-slate-400'}`}>
+                            +{liveListeningPoints} نقطة
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {currentStudentListeningStatus.isExempt ? (
-                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-slate-500/20 text-slate-300 border-2 border-b-2 border-slate-500/50 font-black">
-                          <Check className="w-4 h-4 text-slate-400" />
-                          <span>معفى من الاستماع (بدون استماع مقرر)</span>
-                        </span>
-                      ) : currentStudentListeningStatus.isListened ? (
-                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/50 font-black">
-                          <Check className="w-4 h-4 text-emerald-400" />
-                          <span>{currentStudentListeningStatus.label}</span>
-                        </span>
-                      ) : currentStudentListeningStatus.isPartial ? (
-                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/50 font-black">
-                          <Clock className="w-4 h-4 text-amber-400" />
-                          <span>{currentStudentListeningStatus.label}</span>
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/50 font-black">
-                          <XCircle className="w-4 h-4 text-rose-400" />
-                          <span>لم يستمع للمقطع المقرر</span>
-                        </span>
+
+                    {/* Quick interactive listening status toggles */}
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 pt-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-black text-slate-300 ml-1">تحديد حالة الطالب:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetListeningMode('listened')}
+                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                            currentStudentListeningStatus.isListened
+                              ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-400/30'
+                              : 'bg-black/30 hover:bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>مستمع (+{pointsPerListening} نقاط)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSetListeningMode('partial')}
+                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                            currentStudentListeningStatus.isPartial
+                              ? 'bg-amber-600 text-white border-amber-400 shadow-md ring-2 ring-amber-400/30'
+                              : 'bg-black/30 hover:bg-amber-950/40 text-amber-300 border-amber-500/30'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>استماع جزئي</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSetListeningMode('not_listened')}
+                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                            !currentStudentListeningStatus.isListened && !currentStudentListeningStatus.isPartial && !currentStudentListeningStatus.isExempt
+                              ? 'bg-rose-600 text-white border-rose-400 shadow-md ring-2 ring-rose-400/30'
+                              : 'bg-black/30 hover:bg-rose-950/40 text-rose-300 border-rose-500/30'
+                          }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>لم يستمع (0 نقطة)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSetListeningMode('exempt')}
+                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                            currentStudentListeningStatus.isExempt
+                              ? 'bg-slate-700 text-white border-slate-400 shadow-md'
+                              : 'bg-black/30 hover:bg-slate-800 text-slate-300 border-slate-600/30'
+                          }`}
+                        >
+                          <span>معفى</span>
+                        </button>
+                      </div>
+
+                      {/* Repetitions stepper if listening required or partial */}
+                      {!currentStudentListeningStatus.isExempt && (
+                        <div className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl border border-white/10">
+                          <span className="text-[11px] font-bold text-slate-300">تكرار الاستماع:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleStepListeningReps(-1)}
+                            className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            title="إنقاص تكرار"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-black text-xs text-white px-1">
+                            {currentStudentListeningStatus.completedReps} / {currentStudentListeningStatus.requiredReps}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleStepListeningReps(1)}
+                            className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            title="زيادة تكرار"
+                          >
+                            +
+                          </button>
+                          <span className="text-[10px] text-slate-400 font-bold">مرات</span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4735,7 +5021,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </span>
                       </h3>
                       <p className="text-xs text-slate-300 font-bold mt-0.5">
-                        تُحسب تلقائياً من أوجه التسميع (الجديد والمراجعات) مع إمكانية التعديل والخصم والزيادة من قبل المعلم.
+                        تُحسب تلقائياً من أوجه التسميع (الجديد والمراجعات) + نقاط الاستماع للمستمع (+{pointsPerListening} نقطة) + معايير التقييم والحضور، مع إمكانية التعديل والخصم والزيادة من قبل المعلم.
                       </p>
                     </div>
                   </div>
@@ -4911,7 +5197,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         borderColor: themeAccent,
                         color: themeAccent
                       }}
-                      title="استعادة النقاط المحسوبة تلقائياً من أوجه التسميع"
+                      title="استعادة النقاط المحسوبة تلقائياً من أوجه التسميع ونقاط الاستماع والحضور"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>إعادة ضبط للمحسوب ({calculatedRecitationPoints.toFixed(2).replace(/\.00$/, '')})</span>
@@ -4920,7 +5206,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
 
                 {/* Detailed Automatic Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
                   <div 
                     className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm"
                     style={{
@@ -4958,6 +5244,38 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     <div className="text-[11px] text-slate-300 flex justify-between font-bold">
                       <span>نقاط المراجعة (×{reviewPageMultiplier}):</span>
                       <strong className="text-white font-mono">+{liveReviewPagePoints.toFixed(2).replace(/\.00$/, '')}</strong>
+                    </div>
+                  </div>
+
+                  {/* Listening points card for listener */}
+                  <div 
+                    className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col justify-between gap-1.5 shadow-sm transition-all"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: currentStudentListeningStatus.isListened ? '#10b981' : 'var(--complex-border, #2b4550)',
+                      borderBottomColor: currentStudentListeningStatus.isListened ? '#059669' : 'var(--complex-secondary-shadow, #122026)'
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-200 font-black flex items-center gap-1.5">
+                        <Headphones className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>نقاط الاستماع (مستمع):</span>
+                      </span>
+                      <span className={`font-mono font-black ${liveListeningPoints > 0 ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        +{liveListeningPoints.toFixed(2).replace(/\.00$/, '')} نقطة
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 flex justify-between font-bold">
+                      <span>حالة الورد المنزلي:</span>
+                      <strong className={`font-mono ${
+                        currentStudentListeningStatus.isListened
+                          ? 'text-emerald-300 font-black'
+                          : currentStudentListeningStatus.isPartial
+                          ? 'text-amber-300 font-black'
+                          : 'text-slate-400'
+                      }`}>
+                        {currentStudentListeningStatus.badgeText} ({currentStudentListeningStatus.completedReps}/{currentStudentListeningStatus.requiredReps})
+                      </strong>
                     </div>
                   </div>
 
