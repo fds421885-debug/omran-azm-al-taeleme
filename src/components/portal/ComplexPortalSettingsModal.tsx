@@ -73,6 +73,7 @@ import {
   SavedPortalMailConfig
 } from '../../lib/portalEmailService';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
+import { DuolingoDatePicker } from './DuolingoDatePicker';
 import { calculateRealisticKhatmTimeline, calculateStudentMemorizedJuz } from '../../lib/aiPlanService';
 import { calculatePortionFromPace } from '../../data/quranPagesData';
 import { toArabicNumerals } from '../quran/KingFahdQuranModal';
@@ -1479,17 +1480,45 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                           <Calendar className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                           <span>تاريخ وتوقيت الإغلاق التلقائي للرابط:</span>
                         </label>
-                        <input
-                          type="datetime-local"
-                          value={registrationDeadline}
-                          onChange={e => setRegistrationDeadline(e.target.value)}
-                          className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none transition-all focus:border-amber-400"
-                          style={{
-                            backgroundColor: themeCard,
-                            borderColor: themeCardBorder,
-                            borderBottomColor: themeCardShadow
-                          }}
-                        />
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex-1">
+                            <DuolingoDatePicker
+                              value={registrationDeadline ? registrationDeadline.split('T')[0] : ''}
+                              onChange={newDate => {
+                                if (!newDate) {
+                                  setRegistrationDeadline('');
+                                  return;
+                                }
+                                const timePart = registrationDeadline && registrationDeadline.includes('T')
+                                  ? registrationDeadline.split('T')[1].substring(0, 5)
+                                  : '23:59';
+                                setRegistrationDeadline(`${newDate}T${timePart}`);
+                              }}
+                              placeholder="حدد تاريخ الإغلاق"
+                              themeBg={themeCard}
+                              themeCard={theme.backgroundColor || '#131f24'}
+                              themeCardBorder={themeCardBorder}
+                              themeAccent={themeAccent}
+                              themeAccentShadow={themeAccentShadow}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 bg-black/25 px-3 py-2 rounded-2xl border-2 border-b-4" style={{ borderColor: themeCardBorder, borderBottomColor: themeCardShadow }}>
+                            <Clock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                            <input
+                              type="time"
+                              value={registrationDeadline && registrationDeadline.includes('T') ? registrationDeadline.split('T')[1].substring(0, 5) : '23:59'}
+                              onChange={e => {
+                                const newTime = e.target.value || '23:59';
+                                const datePart = registrationDeadline && registrationDeadline.includes('T')
+                                  ? registrationDeadline.split('T')[0]
+                                  : new Date().toISOString().split('T')[0];
+                                setRegistrationDeadline(`${datePart}T${newTime}`);
+                              }}
+                              className="bg-transparent text-xs font-mono font-black text-white outline-none cursor-pointer"
+                              title="توقيت الإغلاق (ساعة:دقيقة)"
+                            />
+                          </div>
+                        </div>
                       </div>
 
                       <div className="space-y-1.5">

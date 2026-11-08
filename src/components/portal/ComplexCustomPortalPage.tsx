@@ -54,6 +54,7 @@ import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtil
 import { ModernQuranLoader, ModernOpeningSplash } from '../loading/ModernLoadingSuite';
 import { AIStudentPlacementInterview } from './AIStudentPlacementInterview';
 import { QuickMailSetupModal } from './QuickMailSetupModal';
+import { DuolingoDatePicker } from './DuolingoDatePicker';
 import {
   validateEmailAuthenticity,
   generateEmailOtp,
@@ -2095,16 +2096,16 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
 
                             {/* DATE INPUT */}
                             {q.type === 'date' && (
-                              <input
-                                type="date"
-                                required={q.required}
+                              <DuolingoDatePicker
                                 value={val || ''}
-                                onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
-                                className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white outline-none font-bold transition-all focus:border-amber-400"
-                                style={{
-                                  backgroundColor: themeBg,
-                                  borderColor: themeCardBorder
-                                }}
+                                onChange={newDate => handleCustomAnswerChange(q.id, newDate)}
+                                required={q.required}
+                                placeholder={q.placeholder || 'اختر التاريخ من التقويم'}
+                                themeBg={themeBg}
+                                themeCard={themeCard}
+                                themeCardBorder={themeCardBorder}
+                                themeAccent={themeAccent}
+                                themeAccentShadow={themeAccentShadow}
                               />
                             )}
 

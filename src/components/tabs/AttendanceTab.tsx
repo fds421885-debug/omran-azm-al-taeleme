@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle,
   XCircle,
   Clock,
   HelpCircle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
   Calendar,
   Save,
   CheckCheck,
@@ -135,6 +139,167 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [enableAttPts, setEnableAttPts] = useState<boolean>(settings?.attendancePointsSettings?.enableAttendancePoints ?? true);
   const [pointsSaveSuccess, setPointsSaveSuccess] = useState<string | null>(null);
   const [isSavingPoints, setIsSavingPoints] = useState(false);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
+  const datePickerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const parseIsoDateLocal = (isoStr: string): Date => {
+    const parts = (isoStr || '').split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  };
+
+  const formatLocalIsoDate = (dateObj: Date): string => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const [pickerMonthDate, setPickerMonthDate] = useState<Date>(() => {
+    const initial = parseIsoDateLocal(new Date().toISOString().split('T')[0]);
+    return new Date(initial.getFullYear(), initial.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    const parsed = parseIsoDateLocal(selectedDate);
+    setPickerMonthDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (
+        datePickerContainerRef.current &&
+        !datePickerContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsDatePickerOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDatePickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDatePickerOpen]);
+
+  const ARABIC_WEEKDAYS_FULL = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const ARABIC_WEEKDAYS_SHORT = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+  const ARABIC_GREGORIAN_MONTHS = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ];
+
+  const selectedDateDisplay = useMemo(() => {
+    const d = parseIsoDateLocal(selectedDate);
+    const weekday = ARABIC_WEEKDAYS_FULL[d.getDay()] || '';
+    const monthName = ARABIC_GREGORIAN_MONTHS[d.getMonth()] || '';
+    let hijriStr = '';
+    try {
+      hijriStr = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(d);
+    } catch {
+      hijriStr = '';
+    }
+    return {
+      weekday,
+      dayNum: d.getDate(),
+      monthName,
+      yearNum: d.getFullYear(),
+      shortLabel: `${weekday} • ${d.getDate()} ${monthName} ${d.getFullYear()}`,
+      hijriStr
+    };
+  }, [selectedDate]);
+
+  const pickerMonthHeader = useMemo(() => {
+    const monthName = ARABIC_GREGORIAN_MONTHS[pickerMonthDate.getMonth()] || '';
+    const yearNum = pickerMonthDate.getFullYear();
+    let hijriMonthYear = '';
+    try {
+      hijriMonthYear = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        month: 'long',
+        year: 'numeric'
+      }).format(new Date(yearNum, pickerMonthDate.getMonth(), 15));
+    } catch {
+      hijriMonthYear = '';
+    }
+    return { monthName, yearNum, hijriMonthYear };
+  }, [pickerMonthDate]);
+
+  const pickerCalendarCells = useMemo(() => {
+    const year = pickerMonthDate.getFullYear();
+    const month = pickerMonthDate.getMonth();
+    const firstDayWeekday = new Date(year, month, 1).getDay(); // 0 = Sunday
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const cells: Array<{
+      iso: string;
+      day: number;
+      inCurrentMonth: boolean;
+    }> = [];
+
+    // Leading days from previous month
+    for (let i = firstDayWeekday - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      const dObj = new Date(year, month - 1, dayNum);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: dayNum,
+        inCurrentMonth: false
+      });
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dObj = new Date(year, month, d);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: d,
+        inCurrentMonth: true
+      });
+    }
+
+    // Trailing days from next month to complete full rows of 7
+    const totalTarget = cells.length <= 35 ? 35 : 42;
+    let nextDay = 1;
+    while (cells.length < totalTarget) {
+      const dObj = new Date(year, month + 1, nextDay);
+      cells.push({
+        iso: formatLocalIsoDate(dObj),
+        day: nextDay,
+        inCurrentMonth: false
+      });
+      nextDay++;
+    }
+
+    return cells;
+  }, [pickerMonthDate]);
+
+  const handleStepSelectedDate = (deltaDays: number) => {
+    const current = parseIsoDateLocal(selectedDate);
+    current.setDate(current.getDate() + deltaDays);
+    handleDateChange(formatLocalIsoDate(current));
+  };
 
   // Sync state if settings prop changes
   useEffect(() => {
@@ -536,15 +701,217 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
             />
           )}
 
-          {/* Date Picker */}
-          <div className="flex items-center gap-2 bg-[#022c22] border border-[#fbbf24]/30 px-3.5 py-2 rounded-2xl shadow-inner">
-            <Calendar className="w-4 h-4 text-[#fbbf24]" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => handleDateChange(e.target.value)}
-              className="bg-transparent text-xs sm:text-sm text-[#f0f9f6] outline-none cursor-pointer font-bold"
-            />
+          {/* In-Platform Duolingo-Themed Custom 3D Date Picker */}
+          <div ref={datePickerContainerRef} className="relative z-30">
+            <div className="duo-complex-date-dock inline-flex items-center gap-1.5 flex-wrap">
+              {/* Step Previous Day */}
+              <button
+                type="button"
+                title="اليوم السابق"
+                onClick={() => handleStepSelectedDate(-1)}
+                className="duo-complex-date-step-btn cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {/* Date Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setIsDatePickerOpen(prev => !prev)}
+                className={`duo-complex-date-trigger inline-flex items-center gap-2 text-xs cursor-pointer ${
+                  isDatePickerOpen ? 'is-open' : ''
+                }`}
+              >
+                <Calendar className="w-4 h-4 shrink-0" />
+                <span className="whitespace-nowrap font-bold">{selectedDateDisplay.shortLabel}</span>
+                <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-md opacity-90 bg-black/25">
+                  {selectedDate}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    isDatePickerOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {/* Step Next Day */}
+              <button
+                type="button"
+                title="اليوم التالي"
+                onClick={() => handleStepSelectedDate(1)}
+                className="duo-complex-date-step-btn cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Today Quick Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleDateChange(todayStr);
+                  setIsDatePickerOpen(false);
+                }}
+                className={`duo-complex-today-btn inline-flex items-center gap-1.5 text-xs cursor-pointer ${
+                  selectedDate === todayStr ? 'is-active' : ''
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>اليوم</span>
+              </button>
+            </div>
+
+            {/* In-Platform Duolingo Calendar Popover */}
+            <AnimatePresence>
+              {isDatePickerOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="duo-complex-datepicker-popover absolute top-full left-0 mt-2.5 w-[312px] sm:w-[342px] z-50 space-y-3"
+                >
+                  {/* Selected Date Active Banner */}
+                  <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2">
+                    <div className="text-right">
+                      <div className="text-[11px] font-black text-[#58cc02] dark:text-[#ffc800]">
+                        التاريخ المحدد حالياً
+                      </div>
+                      <div className="text-xs font-black mt-0.5 text-white">
+                        {selectedDateDisplay.shortLabel}
+                      </div>
+                      {selectedDateDisplay.hijriStr && (
+                        <div className="duo-complex-subtext text-[10px] font-bold mt-0.5">
+                          {selectedDateDisplay.hijriStr}
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-mono text-xs font-black px-2.5 py-1 rounded-xl border-2 bg-black/30 border-[#ffc800]/40 text-[#ffc800]">
+                      {selectedDate}
+                    </span>
+                  </div>
+
+                  {/* Month & Year Switcher Bar */}
+                  <div className="duo-complex-datepicker-monthbar flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      title="الشهر السابق"
+                      onClick={() =>
+                        setPickerMonthDate(
+                          prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                        )
+                      }
+                      className="duo-complex-date-step-btn cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <div className="text-center">
+                      <div className="text-sm font-black font-heading text-[#ffc800]">
+                        {pickerMonthHeader.monthName} {pickerMonthHeader.yearNum}
+                      </div>
+                      {pickerMonthHeader.hijriMonthYear && (
+                        <div className="duo-complex-subtext text-[10px] font-bold">
+                          {pickerMonthHeader.hijriMonthYear}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      title="الشهر التالي"
+                      onClick={() =>
+                        setPickerMonthDate(
+                          prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                        )
+                      }
+                      className="duo-complex-date-step-btn cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Weekday Headers */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {ARABIC_WEEKDAYS_SHORT.map(dayLabel => (
+                      <div key={dayLabel} className="duo-complex-weekday-cell">
+                        {dayLabel}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Tactile 3D Day Selection Grid */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {pickerCalendarCells.map(cell => {
+                      const isSelected = cell.iso === selectedDate;
+                      const isTodayCell = cell.iso === todayStr;
+
+                      return (
+                        <button
+                          key={cell.iso}
+                          type="button"
+                          onClick={() => {
+                            handleDateChange(cell.iso);
+                            setIsDatePickerOpen(false);
+                          }}
+                          className={`duo-complex-day-btn cursor-pointer font-mono ${
+                            !cell.inCurrentMonth ? 'is-outside' : ''
+                          } ${isTodayCell ? 'is-today' : ''} ${
+                            isSelected ? 'is-selected' : ''
+                          }`}
+                        >
+                          <span>{cell.day}</span>
+                          {isTodayCell && (
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full mt-0.5 ${
+                                isSelected ? 'bg-black' : 'bg-[#ffc800]'
+                              }`}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Popover Quick Footer Actions */}
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t-2 border-[#2b4550]">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDateChange(todayStr);
+                          setIsDatePickerOpen(false);
+                        }}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          selectedDate === todayStr ? 'is-active' : ''
+                        }`}
+                      >
+                        اليوم
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDateChange(yesterdayStr);
+                          setIsDatePickerOpen(false);
+                        }}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          selectedDate === yesterdayStr ? 'is-active' : ''
+                        }`}
+                      >
+                        أمس
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDatePickerOpen(false)}
+                      className="duo-btn-dark px-3.5 py-1.5 text-[11px] cursor-pointer"
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Daily Attendance Summary Message Button */}
