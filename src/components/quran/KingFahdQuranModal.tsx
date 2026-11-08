@@ -160,6 +160,8 @@ function resolveReciterFolderById(reciterId: string): string {
 function resolveInitialReciterId(sheikhName?: string): string {
   if (!sheikhName) return 'minshawi';
   const lower = sheikhName.toLowerCase();
+  if (lower.includes('معيقلي') || lower.includes('muaiqly') || lower.includes('ماهر')) return 'muaiqly';
+  if (lower.includes('دوسري') || lower.includes('dussary') || lower.includes('dosari') || lower.includes('ياسر')) return 'dosari';
   if (lower.includes('حصري') || lower.includes('husary')) return 'hussary';
   if (lower.includes('عفاسي') || lower.includes('afasy')) return 'afasy';
   if (lower.includes('حذيفي') || lower.includes('hudhaify')) return 'hudhaify';

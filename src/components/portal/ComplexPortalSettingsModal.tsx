@@ -1046,10 +1046,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
   return (
     <div
       dir="rtl"
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-2.5 sm:p-5 bg-black/80 backdrop-blur-md overflow-y-auto"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-5 bg-black/80 backdrop-blur-md overflow-y-auto"
     >
       <div
-        className="relative w-full max-w-4xl rounded-[32px] border-2 border-b-4 shadow-2xl overflow-hidden flex flex-col max-h-[94vh] my-auto animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-4xl rounded-2xl sm:rounded-[32px] border-2 border-b-4 shadow-2xl overflow-hidden flex flex-col h-[96vh] sm:max-h-[94vh] my-auto animate-in zoom-in-95 duration-200"
         style={{
           backgroundColor: themeCard,
           borderColor: themeCardBorder,
@@ -1058,15 +1058,15 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
       >
         {/* Pinned Header */}
         <div
-          className="p-4 sm:p-5 border-b-2 flex items-center justify-between gap-4 shrink-0"
+          className="p-3.5 sm:p-5 border-b-2 flex items-center justify-between gap-3 shrink-0"
           style={{
             backgroundColor: `${themeCard}f2`,
             borderColor: themeCardBorder
           }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
             <div
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md font-black shrink-0"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md font-black shrink-0"
               style={{
                 backgroundColor: `${themeAccent}25`,
                 borderColor: themeAccent,
@@ -1076,10 +1076,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             >
               <LinkIcon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.3]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <span
-                  className="text-[10px] px-2 py-0.5 rounded-full font-black border"
+                  className="text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full font-black border shrink-0"
                   style={{
                     backgroundColor: `${themeAccent}20`,
                     borderColor: `${themeAccent}60`,
@@ -1088,9 +1088,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 >
                   خاص بمشرف المجمع
                 </span>
-                <span className="text-xs text-slate-300">منظومة عُمْرَان</span>
+                <span className="text-[11px] sm:text-xs text-slate-300 truncate">منظومة عُمْرَان</span>
               </div>
-              <h2 className="text-base sm:text-xl font-black font-heading text-white truncate max-w-md">
+              <h2 className="text-xs sm:text-base md:text-xl font-black font-heading text-white truncate max-w-[220px] sm:max-w-md">
                 إدارة استمارة التسجيل وطلبات الانضمام • {complex.name}
               </h2>
             </div>
@@ -1099,7 +1099,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-2 sm:p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer min-h-[40px] min-w-[40px] flex items-center justify-center shrink-0"
             title="إغلاق"
           >
             <X className="w-5 h-5" />
@@ -1108,19 +1108,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Navigation Switcher inside Modal */}
         <div
-          className="flex items-center gap-2 p-2 border-b-2 shrink-0"
+          className="flex items-center gap-1.5 sm:gap-2.5 p-2 sm:p-3 border-b-2 shrink-0 overflow-x-auto no-scrollbar"
           style={{
-            backgroundColor: `${theme.secondaryColor || '#1b2e35'}99`,
+            backgroundColor: `${theme.secondaryColor || '#1b2e35'}`,
             borderColor: themeCardBorder
           }}
         >
           <button
             type="button"
             onClick={() => setModalTab('link_and_config')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5 ${
-              modalTab === 'link_and_config'
-                ? 'border-b-4 shadow-md'
-                : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
+            className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-3.5 rounded-2xl text-[11px] sm:text-sm font-black flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm min-h-[44px] ${
+              modalTab === 'link_and_config' ? 'shadow-md scale-[1.01]' : 'hover:brightness-110 opacity-90 hover:opacity-100'
             }`}
             style={
               modalTab === 'link_and_config'
@@ -1130,20 +1128,24 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     borderBottomColor: themeAccentShadow,
                     color: accentTextColor
                   }
-                : undefined
+                : {
+                    backgroundColor: themeCard,
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow,
+                    color: '#e2e8f0'
+                  }
             }
           >
-            <Sliders className="w-4 h-4" />
-            <span>رابط البوابة وتصميم الأسئلة ({customQuestions.length + 6})</span>
+            <Sliders className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="hidden sm:inline">رابط البوابة وتصميم الأسئلة ({customQuestions.length + 6})</span>
+            <span className="sm:hidden">الرابط والأسئلة</span>
           </button>
 
           <button
             type="button"
             onClick={() => setModalTab('applications')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5 relative ${
-              modalTab === 'applications'
-                ? 'border-b-4 shadow-md'
-                : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
+            className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-3.5 rounded-2xl text-[11px] sm:text-sm font-black flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm relative min-h-[44px] ${
+              modalTab === 'applications' ? 'shadow-md scale-[1.01]' : 'hover:brightness-110 opacity-90 hover:opacity-100'
             }`}
             style={
               modalTab === 'applications'
@@ -1153,14 +1155,20 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     borderBottomColor: themeAccentShadow,
                     color: accentTextColor
                   }
-                : undefined
+                : {
+                    backgroundColor: themeCard,
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow,
+                    color: '#e2e8f0'
+                  }
             }
           >
-            <Users className="w-4 h-4" />
-            <span>مراجعة طلبات الانضمام ({applications.length})</span>
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="hidden sm:inline">مراجعة طلبات الانضمام ({applications.length})</span>
+            <span className="sm:hidden">الطلبات ({applications.length})</span>
             {pendingCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-900 shadow-sm animate-pulse">
-                {pendingCount} جديدة
+              <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black bg-amber-400 text-slate-900 shadow-sm animate-pulse shrink-0">
+                {pendingCount}
               </span>
             )}
           </button>
@@ -1168,23 +1176,29 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           <button
             type="button"
             onClick={() => setIsMailModalOpen(true)}
-            className="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer border-2 border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 active:translate-y-0.5 shrink-0"
+            className="py-2.5 sm:py-3 px-2.5 sm:px-3.5 rounded-2xl text-[11px] sm:text-sm font-black flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm shrink-0 hover:brightness-110 min-h-[44px]"
+            style={{
+              backgroundColor: `${themeCard}`,
+              borderColor: '#f59e0b',
+              borderBottomColor: '#b45309',
+              color: '#fbbf24'
+            }}
             title="تهيئة خدمة البريد الإلكتروني الفعلي (SMTP) للمجمع"
           >
-            <Mail className="w-4 h-4 text-amber-300" />
-            <span className="hidden sm:inline">خدمة البريد (SMTP)</span>
-            <span className="sm:hidden">البريد</span>
+            <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
+            <span className="hidden md:inline">خدمة البريد (SMTP)</span>
+            <span className="md:hidden">البريد</span>
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
           {/* TAB 1: Link & Questionnaire Config */}
           {modalTab === 'link_and_config' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Shareable Link Box */}
               <div
-                className="rounded-2xl border-2 border-b-4 p-4 sm:p-5 space-y-3 shadow-md"
+                className="rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-6 space-y-3.5 sm:space-y-4 shadow-lg"
                 style={{
                   backgroundColor: theme.backgroundColor || '#131f24',
                   borderColor: themeAccent,
@@ -1193,103 +1207,110 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" style={{ color: themeAccent }} />
-                    <h3 className="text-sm font-black text-white">الرابط المباشر لبوابة واستمارة تسجيل {complex.name}:</h3>
+                    <Sparkles className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+                    <h3 className="text-xs sm:text-sm font-black text-white">الرابط المباشر لبوابة واستمارة تسجيل {complex.name}:</h3>
                   </div>
-                  <span className="text-[11px] text-slate-300 font-bold">
+                  <span className="text-[10px] sm:text-[11px] text-slate-300 font-bold">
                     ينقل الزوار مباشرة لاستمارة التسجيل الخاصة بهذا المجمع
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="text"
                     readOnly
                     value={portalUrl}
-                    className="flex-1 border-2 rounded-xl py-2 px-3 text-xs text-white font-mono outline-none select-all font-bold"
+                    className="w-full sm:flex-1 border-2 border-b-4 rounded-2xl py-3 px-4 text-xs text-white font-mono outline-none select-all font-bold transition-all focus:border-amber-400"
                     style={{
                       backgroundColor: themeCard,
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
                     }}
                     dir="ltr"
                   />
 
-                  <button
-                    type="button"
-                    onClick={handleCopyLink}
-                    className="px-4 py-2.5 rounded-xl border-2 border-b-2 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5 shadow-sm hover:brightness-110 shrink-0"
-                    style={{
-                      backgroundColor: themeAccent,
-                      borderColor: themeAccent,
-                      color: accentTextColor
-                    }}
-                  >
-                    {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedLink ? 'تم النسخ!' : 'نسخ الرابط'}</span>
-                  </button>
+                  <div className="grid grid-cols-3 sm:flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      className="w-full sm:w-auto px-3 sm:px-4 py-3 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110 min-h-[44px]"
+                      style={{
+                        backgroundColor: themeAccent,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
+                        color: accentTextColor
+                      }}
+                    >
+                      {copiedLink ? <Check className="w-4 h-4 stroke-[3]" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedLink ? 'تم النسخ!' : 'نسخ'}</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleShareWhatsApp}
-                    className="px-3.5 py-2.5 rounded-xl border-2 border-b-2 bg-[#25D366] text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5 shadow-sm hover:brightness-110 shrink-0"
-                    title="مشاركة الرابط مباشرة عبر واتساب"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span className="hidden sm:inline">واتساب</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleShareWhatsApp}
+                      className="w-full sm:w-auto px-3 sm:px-4 py-3 rounded-2xl border-2 border-[#16a34a] border-b-4 border-b-[#15803d] bg-[#22c55e] text-white text-xs font-black flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110 min-h-[44px]"
+                      title="مشاركة الرابط مباشرة عبر واتساب"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>واتساب</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => window.open(portalUrl, '_blank')}
-                    className="p-2.5 rounded-xl border-2 border-b-2 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0"
-                    style={{
-                      backgroundColor: themeCard,
-                      borderColor: themeCardBorder
-                    }}
-                    title="معاينة وفتح البوابة في نافذة جديدة"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => window.open(portalUrl, '_blank')}
+                      className="w-full sm:w-auto p-3 rounded-2xl border-2 border-b-4 text-slate-300 hover:text-white transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center hover:brightness-110 min-h-[44px]"
+                      style={{
+                        backgroundColor: themeCard,
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
+                      title="معاينة وفتح البوابة في نافذة جديدة"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span className="sm:hidden text-xs font-black mr-1">معاينة</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Permanent Cloud Mail & Key Card for the Complex Link */}
                 <div
-                  className="mt-3 p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className="mt-3.5 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-3.5 shadow-md"
                   style={{
-                    backgroundColor: savedMailConfig?.user && savedMailConfig?.pass ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)',
-                    borderColor: savedMailConfig?.user && savedMailConfig?.pass ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'
+                    backgroundColor: savedMailConfig?.user && savedMailConfig?.pass ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                    borderColor: savedMailConfig?.user && savedMailConfig?.pass ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)',
+                    borderBottomColor: savedMailConfig?.user && savedMailConfig?.pass ? '#059669' : '#d97706'
                   }}
                 >
-                  <div className="flex items-start sm:items-center gap-2.5">
+                  <div className="flex items-start sm:items-center gap-3">
                     <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border-2 border-b-4 ${
                         savedMailConfig?.user && savedMailConfig?.pass
-                          ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
-                          : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                          ? 'bg-emerald-500/20 border-emerald-400 border-b-emerald-600 text-emerald-300'
+                          : 'bg-amber-500/20 border-amber-400 border-b-amber-600 text-amber-300'
                       }`}
                     >
-                      <Mail className="w-4 h-4" />
+                      <Mail className="w-5 h-5" />
                     </div>
-                    <div className="space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-black text-white">
                           بريد ومفتاح إرسال رموز التحقق والقبول لرابط المجمع
                         </span>
                         {savedMailConfig?.user && savedMailConfig?.pass ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                             <Cloud className="w-3 h-3" />
                             <span>محفوظ وفعال في النظام السحابي ✓</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
                             <span>غير مربوط بعد</span>
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-300 font-bold">
+                      <p className="text-[11px] text-slate-300 font-bold leading-relaxed">
                         {savedMailConfig?.user && savedMailConfig?.pass ? (
                           <>
-                            البريد المربوط: <span className="font-mono text-emerald-300" dir="ltr">{savedMailConfig.user}</span> • مفتاح التطبيقات (16 حرفاً) محفوظ ويعمل تلقائياً عند دخول أي طالب لرابط المجمع.
+                            البريد المربوط: <span className="font-mono text-emerald-300 font-bold" dir="ltr">{savedMailConfig.user}</span> • مفتاح التطبيقات (16 حرفاً) محفوظ ويعمل تلقائياً عند دخول أي طالب لرابط المجمع.
                           </>
                         ) : (
                           'أدخل بريد Gmail ومفتاح التطبيقات المكون من 16 حرفاً مرة واحدة ليُحفظ للأبد مع رابط تسجيل دخول المجمع.'
@@ -1301,14 +1322,15 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   <button
                     type="button"
                     onClick={() => setIsMailModalOpen(true)}
-                    className="px-3.5 py-2 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 hover:brightness-110"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 hover:brightness-110 active:translate-y-[2px] active:border-b-2 shadow-sm min-h-[44px]"
                     style={{
                       backgroundColor: themeCard,
                       borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
                       color: themeAccent
                     }}
                   >
-                    <Key className="w-3.5 h-3.5" />
+                    <Key className="w-4 h-4" />
                     <span>
                       {savedMailConfig?.user && savedMailConfig?.pass
                         ? 'عرض أو تعديل البريد والمفتاح'
@@ -1347,29 +1369,32 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         key={item.id}
                         type="button"
                         onClick={() => setPortalMode(item.id)}
-                        className={`p-3.5 rounded-2xl text-right transition-all cursor-pointer border-2 active:translate-y-0.5 flex flex-col justify-between gap-2 ${
-                          isSelected ? 'border-b-4 shadow-md' : 'border-transparent hover:bg-white/5 text-slate-300'
+                        className={`p-4 rounded-2xl text-right transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 flex flex-col justify-between gap-2.5 shadow-sm ${
+                          isSelected ? 'shadow-md scale-[1.01]' : 'hover:brightness-105'
                         }`}
                         style={
                           isSelected
                             ? {
-                                backgroundColor: `${themeAccent}20`,
+                                backgroundColor: `${themeAccent}25`,
                                 borderColor: themeAccent,
-                                borderBottomColor: themeAccentShadow
+                                borderBottomColor: themeAccentShadow,
+                                color: '#ffffff'
                               }
                             : {
-                                backgroundColor: theme.backgroundColor || '#131f24',
-                                borderColor: themeCardBorder
+                                backgroundColor: themeCard,
+                                borderColor: themeCardBorder,
+                                borderBottomColor: themeCardShadow,
+                                color: '#cbd5e1'
                               }
                         }
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`text-xs font-black ${isSelected ? 'text-white' : ''}`}>
+                          <span className="text-xs font-black text-white">
                             {item.title}
                           </span>
-                          {isSelected && <Check className="w-4 h-4" style={{ color: themeAccent }} />}
+                          {isSelected && <Check className="w-4 h-4 stroke-[3]" style={{ color: themeAccent }} />}
                         </div>
-                        <p className="text-[11px] text-slate-400 font-bold leading-relaxed">{item.desc}</p>
+                        <p className="text-[11px] text-slate-300 font-bold leading-relaxed">{item.desc}</p>
                       </button>
                     );
                   })}
@@ -1379,7 +1404,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               {/* 2. Registration Closing & Schedule Card */}
               {portalMode !== 'login_only' && (
                 <div
-                  className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 space-y-4 shadow-md"
+                  className="p-5 sm:p-6 rounded-3xl border-2 border-b-4 space-y-4 shadow-lg"
                   style={{
                     backgroundColor: theme.backgroundColor || '#131f24',
                     borderColor: isRegistrationClosedManually ? '#ef4444' : registrationDeadline ? themeAccent : themeCardBorder,
@@ -1387,11 +1412,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   }}
                 >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-3">
                       <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0"
+                        className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black shrink-0 shadow-sm"
                         style={{
                           backgroundColor: isRegistrationClosedManually ? '#ef444425' : `${themeAccent}25`,
+                          borderColor: isRegistrationClosedManually ? '#ef4444' : themeAccent,
+                          borderBottomColor: isRegistrationClosedManually ? '#b91c1c' : themeAccentShadow,
                           color: isRegistrationClosedManually ? '#ef4444' : themeAccent
                         }}
                       >
@@ -1401,19 +1428,19 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-sm font-black text-white">توقيت إغلاق التسجيل وقفل الرابط</h4>
                           {isRegistrationClosedManually ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
                               مغلق يدوياً حالياً ⛔
                             </span>
                           ) : registrationDeadline && new Date() > new Date(registrationDeadline) ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-black">
                               منتهي ومغلق تلقائياً ⛔
                             </span>
                           ) : registrationDeadline ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 font-black">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 font-black">
                               مؤقت للإغلاق ⏳
                             </span>
                           ) : (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
                               مفتوح دائماً 🟢
                             </span>
                           )}
@@ -1425,7 +1452,14 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     </div>
 
                     {/* Manual immediate toggle */}
-                    <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                    <label
+                      className="flex items-center gap-2.5 cursor-pointer select-none px-4 py-2 rounded-2xl border-2 border-b-4 active:translate-y-[1px] transition-all shadow-sm"
+                      style={{
+                        backgroundColor: isRegistrationClosedManually ? '#ef444420' : themeCard,
+                        borderColor: isRegistrationClosedManually ? '#ef4444' : themeCardBorder,
+                        borderBottomColor: isRegistrationClosedManually ? '#b91c1c' : themeCardShadow
+                      }}
+                    >
                       <span className="text-xs font-black text-white">
                         {isRegistrationClosedManually ? 'إغلاق فوري مفعل (الرابط مقفل)' : 'إغلاق فوري للرابط الآن'}
                       </span>
@@ -1438,36 +1472,45 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     </label>
                   </div>
 
-                  <div className="space-y-3 pt-2 border-t border-white/10">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-3.5 pt-3 border-t border-white/10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-black text-slate-200 block">
-                          تاريخ وتوقيت الإغلاق التلقائي للرابط:
+                        <label className="text-xs font-black text-slate-200 block flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                          <span>تاريخ وتوقيت الإغلاق التلقائي للرابط:</span>
                         </label>
                         <input
                           type="datetime-local"
                           value={registrationDeadline}
                           onChange={e => setRegistrationDeadline(e.target.value)}
-                          className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
+                          className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none transition-all focus:border-amber-400"
                           style={{
                             backgroundColor: themeCard,
-                            borderColor: themeCardBorder
+                            borderColor: themeCardBorder,
+                            borderBottomColor: themeCardShadow
                           }}
                         />
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-black text-slate-200 block">
-                          محددات زمنية سريعة:
+                        <label className="text-xs font-black text-slate-200 block flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                          <span>محددات زمنية سريعة:</span>
                         </label>
-                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 pt-0.5">
                           <button
                             type="button"
                             onClick={() => {
                               const d = new Date(Date.now() + 24 * 3600 * 1000);
                               setRegistrationDeadline(d.toISOString().substring(0, 16));
                             }}
-                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                            className="w-full sm:w-auto px-3 py-2.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black transition-all cursor-pointer shadow-sm hover:brightness-110 flex items-center justify-center min-h-[42px]"
+                            style={{
+                              backgroundColor: themeCard,
+                              borderColor: themeCardBorder,
+                              borderBottomColor: themeCardShadow,
+                              color: '#ffffff'
+                            }}
                           >
                             بعد 24 ساعة
                           </button>
@@ -1477,7 +1520,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               const d = new Date(Date.now() + 3 * 24 * 3600 * 1000);
                               setRegistrationDeadline(d.toISOString().substring(0, 16));
                             }}
-                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                            className="w-full sm:w-auto px-3 py-2.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black transition-all cursor-pointer shadow-sm hover:brightness-110 flex items-center justify-center min-h-[42px]"
+                            style={{
+                              backgroundColor: themeCard,
+                              borderColor: themeCardBorder,
+                              borderBottomColor: themeCardShadow,
+                              color: '#ffffff'
+                            }}
                           >
                             بعد 3 أيام
                           </button>
@@ -1487,7 +1536,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               const d = new Date(Date.now() + 7 * 24 * 3600 * 1000);
                               setRegistrationDeadline(d.toISOString().substring(0, 16));
                             }}
-                            className="px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+                            className="w-full sm:w-auto px-3 py-2.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black transition-all cursor-pointer shadow-sm hover:brightness-110 flex items-center justify-center min-h-[42px]"
+                            style={{
+                              backgroundColor: themeCard,
+                              borderColor: themeCardBorder,
+                              borderBottomColor: themeCardShadow,
+                              color: '#ffffff'
+                            }}
                           >
                             بعد أسبوع
                           </button>
@@ -1495,7 +1550,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                             <button
                               type="button"
                               onClick={() => setRegistrationDeadline('')}
-                              className="px-2.5 py-1 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-[11px] font-bold text-red-300 cursor-pointer"
+                              className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3.5 py-2.5 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black transition-all cursor-pointer shadow-sm hover:brightness-110 flex items-center justify-center min-h-[42px]"
+                              style={{
+                                backgroundColor: 'rgba(239,68,68,0.18)',
+                                borderColor: 'rgba(239,68,68,0.5)',
+                                borderBottomColor: '#b91c1c',
+                                color: '#fca5a5'
+                              }}
                             >
                               إلغاء الموعد (مفتوح دائماً)
                             </button>
@@ -1514,10 +1575,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         value={closedMessage}
                         onChange={e => setClosedMessage(e.target.value)}
                         placeholder="عذراً، تم إغلاق باب التسجيل للفترة الحالية لاكتمال المقاعد المتاحة..."
-                        className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
+                        className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none transition-all focus:border-amber-400"
                         style={{
                           backgroundColor: themeCard,
-                          borderColor: themeCardBorder
+                          borderColor: themeCardBorder,
+                          borderBottomColor: themeCardShadow
                         }}
                       />
                     </div>
@@ -1540,17 +1602,18 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: studentNameRequired ? themeAccent : themeCardBorder,
+                          borderBottomColor: studentNameRequired ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">اسم الطالب كاملاً (سؤال مقالي)</span>
-                          <span className="text-[10px] text-slate-400 font-bold">إلزام الطالب بكتابة اسمه رباعياً</span>
+                          <span className="text-[10px] text-slate-300 font-bold">إلزام الطالب بكتابة اسمه رباعياً</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1561,15 +1624,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </label>
 
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: ageRequired ? themeAccent : themeCardBorder,
+                          borderBottomColor: ageRequired ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">عمر الطالب (أرقام 0 - 100)</span>
-                          <span className="text-[10px] text-slate-400 font-bold">محدد أرقام لاختيار سن الطالب</span>
+                          <span className="text-[10px] text-slate-300 font-bold">محدد أرقام لاختيار سن الطالب</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1580,15 +1644,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </label>
 
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: parentPhoneRequired ? themeAccent : themeCardBorder,
+                          borderBottomColor: parentPhoneRequired ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">رقم هاتف ولي الأمر (واتساب)</span>
-                          <span className="text-[10px] text-slate-400 font-bold">للتواصل وتأكيد القبول</span>
+                          <span className="text-[10px] text-slate-300 font-bold">للتواصل وتأكيد القبول</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1599,15 +1664,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </label>
 
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: parentNameRequired ? themeAccent : themeCardBorder,
+                          borderBottomColor: parentNameRequired ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">اسم ولي الأمر</span>
-                          <span className="text-[10px] text-slate-400 font-bold">اسم الأب أو القائم على رعاية الطالب</span>
+                          <span className="text-[10px] text-slate-300 font-bold">اسم الأب أو القائم على رعاية الطالب</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1618,15 +1684,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </label>
 
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: memorizedJuzRequired ? themeAccent : themeCardBorder,
+                          borderBottomColor: memorizedJuzRequired ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">أجزاء القرآن الكريم (شبكة الـ 30 جزءاً)</span>
-                          <span className="text-[10px] text-slate-400 font-bold">خيارات تفاعلية لأجزاء القرآن الـ 30</span>
+                          <span className="text-[10px] text-slate-300 font-bold">خيارات تفاعلية لأجزاء القرآن الـ 30</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1637,15 +1704,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       </label>
 
                       <label
-                        className="p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3.5 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm hover:brightness-105"
                         style={{
-                          backgroundColor: theme.backgroundColor || '#131f24',
-                          borderColor: themeCardBorder
+                          backgroundColor: themeCard,
+                          borderColor: notesAllowed ? themeAccent : themeCardBorder,
+                          borderBottomColor: notesAllowed ? themeAccentShadow : themeCardShadow
                         }}
                       >
                         <div>
                           <span className="text-xs font-black text-white block">ملاحظات إضافية</span>
-                          <span className="text-[10px] text-slate-400 font-bold">حقل مقالي إضافي لأي ملاحظات للطالب</span>
+                          <span className="text-[10px] text-slate-300 font-bold">حقل مقالي إضافي لأي ملاحظات للطالب</span>
                         </div>
                         <input
                           type="checkbox"
@@ -1658,7 +1726,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   </div>
 
                   {/* 3. DYNAMIC CUSTOM QUESTIONS BUILDER (إضافة أسئلة مخصصة بأنواع مختلفة) */}
-                  <div className="space-y-4 pt-3 border-t border-white/10">
+                  <div className="space-y-4 pt-3.5 border-t border-white/10">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div>
                         <h4 className="text-sm font-black text-white flex items-center gap-2">
@@ -1673,9 +1741,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       <button
                         type="button"
                         onClick={handleOpenAddQuestion}
-                        className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5 shadow-md hover:brightness-110"
+                        className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110"
                         style={{
                           backgroundColor: themeAccent,
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow,
                           color: accentTextColor
                         }}
                       >
@@ -1686,10 +1756,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
                     {customQuestions.length === 0 ? (
                       <div
-                        className="p-6 rounded-2xl border-2 border-dashed text-center space-y-2"
+                        className="p-6 rounded-3xl border-2 border-b-4 border-dashed text-center space-y-2.5 shadow-sm"
                         style={{
                           borderColor: themeCardBorder,
-                          backgroundColor: `${theme.backgroundColor || '#131f24'}80`
+                          borderBottomColor: themeCardShadow,
+                          backgroundColor: themeCard
                         }}
                       >
                         <HelpCircle className="w-8 h-8 text-slate-400 mx-auto opacity-50" />
@@ -1702,13 +1773,19 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={handleOpenAddQuestion}
-                          className="mt-2 px-3 py-1.5 rounded-xl border border-white/20 text-xs font-black text-amber-300 hover:bg-white/5 cursor-pointer"
+                          className="mt-2 px-4 py-2 rounded-2xl border-2 border-b-4 active:translate-y-[2px] active:border-b-2 text-xs font-black cursor-pointer shadow-sm hover:brightness-110"
+                          style={{
+                            backgroundColor: `${themeAccent}25`,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
                         >
                           + أنشئ أول سؤال الآن
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-2.5">
+                      <div className="space-y-3">
                         {customQuestions.map((q, idx) => {
                           const typeMeta = QUESTION_TYPE_LABELS[q.type] || QUESTION_TYPE_LABELS.text;
                           const isInactive = q.isEnabled === false;
@@ -1716,37 +1793,49 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                           return (
                             <div
                               key={q.id}
-                              className={`p-3.5 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
-                                isInactive ? 'opacity-60 bg-white/5 border-white/10' : 'bg-white/5 border-white/15 hover:border-white/25'
+                              className={`p-4 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all shadow-sm ${
+                                isInactive ? 'opacity-60' : 'hover:brightness-105'
                               }`}
+                              style={{
+                                backgroundColor: themeCard,
+                                borderColor: isInactive ? themeCardBorder : `${themeAccent}60`,
+                                borderBottomColor: isInactive ? themeCardShadow : themeAccentShadow
+                              }}
                             >
-                              <div className="space-y-1 min-w-0 flex-1">
+                              <div className="space-y-1.5 min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-xs font-mono font-bold text-slate-300">
+                                  <span
+                                    className="w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-mono font-black"
+                                    style={{
+                                      backgroundColor: `${themeAccent}20`,
+                                      borderColor: `${themeAccent}50`,
+                                      color: themeAccent
+                                    }}
+                                  >
                                     {idx + 1}
                                   </span>
                                   <h5 className="text-xs sm:text-sm font-black text-white truncate">{q.label}</h5>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30 font-black">
+                                  <span className="text-[10px] px-2.5 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30 font-black">
                                     {typeMeta.label}
                                   </span>
                                   {q.required ? (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 font-black">
+                                    <span className="text-[10px] px-2.5 py-0.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 font-black">
                                       إلزامي *
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-500/20 text-slate-300 font-bold">
+                                    <span className="text-[10px] px-2.5 py-0.5 rounded-lg bg-slate-500/20 text-slate-300 font-bold">
                                       اختياري
                                     </span>
                                   )}
                                   {isInactive && (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-lg bg-gray-600/30 text-gray-300 border border-gray-500/30 font-bold">
+                                    <span className="text-[10px] px-2.5 py-0.5 rounded-lg bg-gray-600/30 text-gray-300 border border-gray-500/30 font-bold">
                                       معطل مؤقتاً
                                     </span>
                                   )}
                                 </div>
 
                                 {q.description && (
-                                  <p className="text-[11px] text-slate-400 font-bold truncate">{q.description}</p>
+                                  <p className="text-[11px] text-slate-300 font-bold truncate">{q.description}</p>
                                 )}
 
                                 {q.options && q.options.length > 0 && (
@@ -1755,7 +1844,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                     {q.options.map((opt, oIdx) => (
                                       <span
                                         key={oIdx}
-                                        className="text-[10px] px-2 py-0.5 rounded-md bg-white/10 text-slate-200 border border-white/10 font-bold"
+                                        className="text-[10px] px-2.5 py-1 rounded-xl bg-white/10 text-slate-200 border border-white/15 font-bold"
                                       >
                                         {opt}
                                       </span>
@@ -1765,12 +1854,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               </div>
 
                               {/* Controls */}
-                              <div className="flex items-center gap-1 self-end sm:self-center shrink-0">
+                              <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                                 <button
                                   type="button"
                                   disabled={idx === 0}
                                   onClick={() => handleMoveQuestion(idx, 'up')}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
+                                  className="min-w-[38px] min-h-[38px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 active:translate-y-[1px] text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: themeCardBorder
+                                  }}
                                   title="تحريك لأعلى"
                                 >
                                   <ArrowUp className="w-4 h-4" />
@@ -1779,7 +1872,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                   type="button"
                                   disabled={idx === customQuestions.length - 1}
                                   onClick={() => handleMoveQuestion(idx, 'down')}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
+                                  className="min-w-[38px] min-h-[38px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 active:translate-y-[1px] text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: themeCardBorder
+                                  }}
                                   title="تحريك لأسفل"
                                 >
                                   <ArrowDown className="w-4 h-4" />
@@ -1787,7 +1884,12 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditQuestion(q)}
-                                  className="p-1.5 rounded-lg text-slate-300 hover:text-amber-400 cursor-pointer"
+                                  className="min-w-[38px] min-h-[38px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 active:translate-y-[1px] text-amber-300 hover:text-amber-200 cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: '#f59e0b',
+                                    borderBottomColor: '#b45309'
+                                  }}
                                   title="تعديل السؤال"
                                 >
                                   <Edit3 className="w-4 h-4" />
@@ -1795,7 +1897,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                 <button
                                   type="button"
                                   onClick={() => handleToggleQuestionEnabled(q.id)}
-                                  className="p-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer"
+                                  className="min-w-[38px] min-h-[38px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 active:translate-y-[1px] text-slate-300 hover:text-white cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: themeCardBorder
+                                  }}
                                   title={isInactive ? 'تفعيل السؤال' : 'تعطيل السؤال مؤقتاً'}
                                 >
                                   <Eye className="w-4 h-4" />
@@ -1803,7 +1909,12 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteQuestion(q.id)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 cursor-pointer"
+                                  className="min-w-[38px] min-h-[38px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 active:translate-y-[1px] text-red-400 hover:text-red-300 cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: 'rgba(239,68,68,0.15)',
+                                    borderColor: '#ef4444',
+                                    borderBottomColor: '#b91c1c'
+                                  }}
                                   title="حذف السؤال"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -1819,7 +1930,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               )}
 
               {/* Welcome Message text area */}
-              <div className="space-y-1.5 pt-3 border-t border-white/10">
+              <div className="space-y-1.5 pt-3.5 border-t border-white/10">
                 <label className="text-xs font-black text-slate-200 block">
                   ٤. رسالة الترحيب التي تظهر للزوار في رأس البوابة:
                 </label>
@@ -1828,17 +1939,18 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   value={welcomeMessage}
                   onChange={e => setWelcomeMessage(e.target.value)}
                   placeholder={`أهلاً بكم في بوابة التسجيل والخدمات الإلكترونية لمجمع ${complex.name}...`}
-                  className="w-full border-2 rounded-2xl py-2.5 px-3.5 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400 resize-none"
+                  className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400 resize-none shadow-sm"
                   style={{
-                    backgroundColor: theme.backgroundColor || '#131f24',
-                    borderColor: themeCardBorder
+                    backgroundColor: themeCard,
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
                   }}
                 />
               </div>
 
               {saveSuccessMsg && (
-                <div className="p-3 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500/40 text-emerald-200 text-xs font-black flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <div className="p-3.5 rounded-2xl bg-emerald-500/20 border-2 border-b-4 border-emerald-500/40 text-emerald-200 text-xs font-black flex items-center gap-2 shadow-md">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                   <span>{saveSuccessMsg}</span>
                 </div>
               )}
@@ -1847,7 +1959,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 type="button"
                 onClick={handleSavePortalConfig}
                 disabled={isSavingConfig}
-                className="w-full py-3.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-lg disabled:opacity-50"
+                className="w-full py-4 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-xl disabled:opacity-50"
                 style={{
                   backgroundColor: themeAccent,
                   borderColor: themeAccent,
@@ -1855,7 +1967,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   color: accentTextColor
                 }}
               >
-                <Check className="w-4 h-4" />
+                <Check className="w-4 h-4 stroke-[3]" />
                 <span>{isSavingConfig ? 'جارٍ حفظ الإعدادات...' : 'حفظ واعتماد إعدادات البوابة والأسئلة'}</span>
               </button>
             </div>
@@ -1866,90 +1978,113 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             <div className="space-y-4">
               {/* Header Stats & Cloud Sync Refresh Bar */}
               <div
-                className="p-3.5 rounded-2xl border-2 border-b-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md"
+                className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-b-4 flex flex-col gap-3.5 shadow-lg"
                 style={{
                   backgroundColor: theme.backgroundColor || '#131f24',
                   borderColor: themeCardBorder,
                   borderBottomColor: themeCardShadow
                 }}
               >
-                <div className="flex items-center gap-2 flex-wrap text-xs font-black">
-                  <span className="text-white font-bold">سجل الطلبات:</span>
-                  <span className="px-2.5 py-1 rounded-xl bg-white/10 text-white border border-white/10">
-                    الإجمالي: {applications.length}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40">
-                    قيد المراجعة: {pendingCount}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    مقبولة: {acceptedCount}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-xl bg-red-500/20 text-red-300 border border-red-500/40">
-                    مرفوضة: {rejectedCount}
-                  </span>
+                {/* 4 Responsive Duolingo Metric Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full text-xs font-black">
+                  <div
+                    className="p-2.5 sm:p-3 rounded-2xl border-2 border-b-4 text-center shadow-sm flex flex-col items-center justify-center"
+                    style={{
+                      backgroundColor: themeCard,
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
+                  >
+                    <span className="text-[10px] sm:text-[11px] text-slate-300 font-bold">إجمالي الطلبات</span>
+                    <span className="text-base sm:text-lg font-black text-white font-mono mt-0.5">{applications.length}</span>
+                  </div>
+                  <div className="p-2.5 sm:p-3 rounded-2xl border-2 border-b-4 text-center shadow-sm flex flex-col items-center justify-center bg-amber-400/20 text-amber-300 border-amber-400 border-b-amber-600">
+                    <span className="text-[10px] sm:text-[11px] text-amber-200/90 font-bold">قيد المراجعة</span>
+                    <span className="text-base sm:text-lg font-black text-amber-300 font-mono mt-0.5">{pendingCount}</span>
+                  </div>
+                  <div className="p-2.5 sm:p-3 rounded-2xl border-2 border-b-4 text-center shadow-sm flex flex-col items-center justify-center bg-[#58cc02]/20 text-[#86efac] border-[#58cc02] border-b-[#46a302]">
+                    <span className="text-[10px] sm:text-[11px] text-emerald-200/90 font-bold">المقبولين</span>
+                    <span className="text-base sm:text-lg font-black text-emerald-300 font-mono mt-0.5">{acceptedCount}</span>
+                  </div>
+                  <div className="p-2.5 sm:p-3 rounded-2xl border-2 border-b-4 text-center shadow-sm flex flex-col items-center justify-center bg-red-500/20 text-red-300 border-red-500 border-b-red-700">
+                    <span className="text-[10px] sm:text-[11px] text-red-200/90 font-bold">المعتذر عنهم</span>
+                    <span className="text-base sm:text-lg font-black text-red-300 font-mono mt-0.5">{rejectedCount}</span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* Cloud Sync & Excel Export Buttons */}
+                <div className="flex items-center gap-2 pt-1 border-t border-white/10 flex-col sm:flex-row justify-end">
                   <button
                     type="button"
                     onClick={() => refreshAllApps(true)}
                     disabled={isRefreshingApps || isLoadingApps}
-                    className="flex-1 sm:flex-none px-3 py-2 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5 disabled:opacity-50"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl border-2 border-b-4 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md disabled:opacity-50 hover:brightness-110 min-h-[44px]"
+                    style={{
+                      backgroundColor: themeCard,
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
                     title="تحديث ومزامنة أحدث الطلبات من السحابة"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingApps ? 'animate-spin text-amber-400' : ''}`} />
+                    <RefreshCw className={`w-4 h-4 ${isRefreshingApps ? 'animate-spin text-amber-400' : ''}`} />
                     <span>{isRefreshingApps ? 'جارٍ المزامنة...' : 'تحديث الطلبات الآن'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleExportToExcel}
-                    className="px-3 py-2 rounded-xl border border-emerald-500/40 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer active:translate-y-0.5"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl border-2 border-[#10b981] border-b-4 border-b-[#047857] bg-[#10b981] text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110 min-h-[44px]"
                     title="تصدير كشف الطلبات إلى ملف Excel"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <FileSpreadsheet className="w-4 h-4" />
                     <span>تصدير Excel</span>
                   </button>
                 </div>
               </div>
 
               {/* Filter & Search Bar */}
-              <div className="flex flex-col sm:flex-row gap-2.5 justify-between sm:items-center">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={appSearch}
-                    onChange={e => setAppSearch(e.target.value)}
-                    placeholder="بحث برقم الطلب، اسم الطالب، هاتف ولي الأمر، أو إجابات الأسئلة..."
-                    className="w-full border-2 rounded-2xl py-2 px-3.5 pr-10 text-xs text-white placeholder-slate-400 outline-none font-bold"
-                    style={{
-                      backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: themeCardBorder
-                    }}
-                  />
-                  <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-2.5" />
+              <div className="flex flex-col md:flex-row gap-2.5 justify-between items-stretch md:items-center">
+                <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={appSearch}
+                      onChange={e => setAppSearch(e.target.value)}
+                      placeholder="بحث برقم الطلب، اسم الطالب، هاتف ولي الأمر..."
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 pr-10 text-xs text-white placeholder-slate-400 outline-none font-bold transition-all focus:border-amber-400 shadow-sm min-h-[44px]"
+                      style={{
+                        backgroundColor: themeCard,
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
+                  </div>
+
+                  {/* Halaqah Filter Dropdown */}
+                  <div className="relative sm:w-48 shrink-0">
+                    <select
+                      value={selectedHalaqahFilter}
+                      onChange={e => setSelectedHalaqahFilter(e.target.value)}
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs font-black text-white outline-none cursor-pointer shadow-sm transition-all focus:border-amber-400 min-h-[44px]"
+                      style={{
+                        backgroundColor: themeCard,
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
+                    >
+                      <option value="all">كل الحلقات</option>
+                      {halaqahs.map(h => (
+                        <option key={h.id} value={h.id} style={{ backgroundColor: theme.backgroundColor || '#131f24', color: '#ffffff' }}>
+                          {h.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {/* Halaqah Filter */}
-                <select
-                  value={selectedHalaqahFilter}
-                  onChange={e => setSelectedHalaqahFilter(e.target.value)}
-                  className="border-2 rounded-2xl py-2 px-3 text-xs font-bold text-white outline-none cursor-pointer"
-                  style={{
-                    backgroundColor: theme.backgroundColor || '#131f24',
-                    borderColor: themeCardBorder
-                  }}
-                >
-                  <option value="all">كل الحلقات</option>
-                  {halaqahs.map(h => (
-                    <option key={h.id} value={h.id}>
-                      {h.name}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Status Switcher Tabs */}
-                <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Status Switcher Tabs (2x2 on mobile, flex on tablet/desktop) */}
+                <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-2 shrink-0">
                   {(['all', 'pending', 'accepted', 'rejected'] as const).map(f => {
                     const labels = {
                       all: `الكل (${applications.length})`,
@@ -1963,8 +2098,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         key={f}
                         type="button"
                         onClick={() => setAppFilter(f)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 active:translate-y-0.5 ${
-                          isActive ? 'border-b-4 shadow-sm' : 'border-transparent text-slate-300 hover:bg-white/5'
+                        className={`w-full sm:w-auto px-3 sm:px-3.5 py-2.5 rounded-2xl text-[11px] sm:text-xs font-black transition-all cursor-pointer border-2 border-b-4 active:translate-y-[2px] active:border-b-2 shadow-sm min-h-[44px] flex items-center justify-center text-center ${
+                          isActive ? 'shadow-md scale-[1.01]' : 'hover:brightness-110 opacity-85 hover:opacity-100'
                         }`}
                         style={
                           isActive
@@ -1975,8 +2110,10 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                                 color: accentTextColor
                               }
                             : {
-                                backgroundColor: theme.backgroundColor || '#131f24',
-                                borderColor: themeCardBorder
+                                backgroundColor: themeCard,
+                                borderColor: themeCardBorder,
+                                borderBottomColor: themeCardShadow,
+                                color: '#cbd5e1'
                               }
                         }
                       >
@@ -1990,18 +2127,19 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               {/* Applications List */}
               {isLoadingApps ? (
                 <div className="p-12 text-center text-xs font-bold text-slate-300">
-                  <Clock className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-400" />
+                  <Clock className="w-7 h-7 animate-spin mx-auto mb-2 text-amber-400" />
                   <span>جارٍ جلب وتحديث طلبات الانضمام السحابية...</span>
                 </div>
               ) : filteredApps.length === 0 ? (
                 <div
-                  className="p-10 rounded-2xl border-2 text-center space-y-2"
+                  className="p-10 rounded-3xl border-2 border-b-4 text-center space-y-2.5 shadow-md"
                   style={{
-                    backgroundColor: theme.backgroundColor || '#131f24',
-                    borderColor: themeCardBorder
+                    backgroundColor: themeCard,
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
                   }}
                 >
-                  <Users className="w-8 h-8 text-slate-400 mx-auto opacity-40" />
+                  <Users className="w-9 h-9 text-slate-400 mx-auto opacity-40" />
                   <h4 className="text-sm font-black text-white">لا توجد طلبات انضمام مطابقة</h4>
                   <p className="text-xs text-slate-400 font-bold max-w-md mx-auto">
                     {appSearch
@@ -2010,11 +2148,18 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   {/* Bulk Selection Bar for Waiting List & Applications */}
-                  <div className="p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-200">
+                  <div
+                    className="p-3.5 rounded-3xl border-2 border-b-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-md"
+                    style={{
+                      backgroundColor: themeCard,
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer font-black text-slate-200">
                         <input
                           type="checkbox"
                           checked={filteredApps.length > 0 && selectedAppIds.length === filteredApps.length}
@@ -2030,7 +2175,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <span>تحديد الكل ({filteredApps.length})</span>
                       </label>
                       {selectedAppIds.length > 0 && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 font-bold">
+                        <span className="text-[11px] px-3 py-1 rounded-xl bg-amber-400/20 text-amber-300 font-black border border-amber-400/30">
                           تم تحديد {selectedAppIds.length} طلب
                         </span>
                       )}
@@ -2041,7 +2186,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={handleBulkAcceptSelectedAsExtra}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#58cc02] text-white font-black text-xs flex items-center gap-1.5 shadow-md hover:brightness-110 cursor-pointer"
+                          className="px-4 py-2 rounded-2xl border-2 border-[#58cc02] border-b-4 border-b-[#46a302] bg-[#58cc02] text-white font-black text-xs flex items-center gap-1.5 shadow-md hover:brightness-110 cursor-pointer active:translate-y-[2px] active:border-b-2"
                           title="قبول جميع الطلاب المحددين كطلاب إضافيين وإرسال بريد القبول لكل شخص"
                         >
                           <CheckCircle2 className="w-4 h-4" />
@@ -2051,7 +2196,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={handleBulkRejectSelected}
-                          className="px-3 py-1.5 rounded-xl bg-amber-600/30 text-amber-300 border border-amber-500/40 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-amber-600/40 cursor-pointer"
+                          className="px-4 py-2 rounded-2xl border-2 border-amber-500 border-b-4 border-b-amber-700 bg-amber-600/30 text-amber-300 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-amber-600/40 cursor-pointer active:translate-y-[2px] active:border-b-2"
                           title="الاعتذار لجميع الطلبات المحددة"
                         >
                           <XCircle className="w-4 h-4" />
@@ -2061,7 +2206,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={handleBulkDeleteSelected}
-                          className="px-3 py-1.5 rounded-xl bg-red-700/80 text-white border border-red-500 font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer"
+                          className="px-4 py-2 rounded-2xl border-2 border-red-500 border-b-4 border-b-red-700 bg-red-600 text-white font-black text-xs flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer active:translate-y-[2px] active:border-b-2"
                           title="حذف جميع الطلبات المحددة نهائياً ومنع عودتها"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2071,7 +2216,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         <button
                           type="button"
                           onClick={() => setSelectedAppIds([])}
-                          className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-white text-xs cursor-pointer"
+                          className="px-3 py-2 rounded-2xl text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
                         >
                           إلغاء التحديد
                         </button>
@@ -2084,11 +2229,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     return (
                     <div
                       key={app.id}
-                      className={`rounded-2xl border-2 border-b-4 p-4.5 space-y-3 shadow-md transition-all ${
+                      className={`rounded-3xl border-2 border-b-4 p-5 space-y-3.5 shadow-md transition-all ${
                         isSelected ? 'ring-2 ring-amber-400' : ''
                       }`}
                       style={{
-                        backgroundColor: theme.backgroundColor || '#131f24',
+                        backgroundColor: themeCard,
                         borderColor:
                           isSelected
                             ? '#fbbf24'
@@ -2119,28 +2264,49 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                             }}
                             className="mt-1 w-4 h-4 rounded text-emerald-500 cursor-pointer accent-emerald-500 shrink-0"
                           />
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="text-sm sm:text-base font-black text-white">{app.studentName}</h4>
                             <span className="text-[11px] font-bold text-slate-300">({app.age} سنة)</span>
                             {app.isExtraStudent && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
                                 طالب إضافي
                               </span>
                             )}
                             <span
-                              className="text-[10px] px-2 py-0.5 rounded-lg border font-mono font-black"
+                              className="text-[11px] px-3 py-1 rounded-xl border-2 border-b-2 font-mono font-black shadow-sm"
                               style={{
-                                backgroundColor: `${themeAccent}15`,
-                                borderColor: `${themeAccent}40`,
+                                backgroundColor: `${themeAccent}20`,
+                                borderColor: themeAccent,
+                                borderBottomColor: themeAccentShadow,
                                 color: themeAccent
                               }}
                             >
                               {app.trackingCode}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString('ar-SA') : ''}
-                            </span>
+
+                            {/* Tactile Duolingo Date Badge */}
+                            <div
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border-2 border-b-2 text-[11px] font-bold shadow-sm"
+                              style={{
+                                backgroundColor: theme.backgroundColor || '#131f24',
+                                borderColor: themeCardBorder,
+                                borderBottomColor: themeCardShadow,
+                                color: '#e2e8f0'
+                              }}
+                              title="تاريخ تقديم الطلب"
+                            >
+                              <Calendar className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                              <span>
+                                {app.appliedAt
+                                  ? new Date(app.appliedAt).toLocaleDateString('ar-SA', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })
+                                  : '-'}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-2 text-xs text-slate-300 font-bold flex-wrap">
@@ -2152,7 +2318,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                               rel="noreferrer"
                               className="inline-flex items-center gap-1 text-[#25D366] hover:underline"
                             >
-                              <Phone className="w-3 h-3" />
+                              <Phone className="w-3.5 h-3.5" />
                               <span dir="ltr">{app.parentPhone}</span>
                             </a>
                             <span>•</span>
@@ -2162,147 +2328,176 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         </div>
 
                         {/* Status Label & Action Buttons */}
-                        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
-                          {app.status === 'pending' ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleAcceptSingleAsExtra(app)}
-                                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 active:translate-y-0.5 shadow-sm cursor-pointer flex items-center gap-1.5"
-                                title="قبول الطالب فوراً كطالب إضافي زائد عن السعة الاستيعابية وإرسال بريد القبول"
-                              >
-                                <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                <span>قبول كطالب إضافي</span>
-                              </button>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-2 w-full sm:w-auto pt-2.5 sm:pt-0 border-t border-white/5 sm:border-t-0">
+                          {/* Primary Decision Actions */}
+                          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                            {app.status === 'pending' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptSingleAsExtra(app)}
+                                  className="flex-1 sm:flex-none justify-center min-h-[40px] px-3.5 py-2 rounded-xl border-2 border-emerald-500 border-b-4 border-b-emerald-700 text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white active:translate-y-[2px] active:border-b-2 shadow-md cursor-pointer flex items-center gap-1.5"
+                                  title="قبول الطالب فوراً كطالب إضافي زائد عن السعة الاستيعابية وإرسال بريد القبول"
+                                >
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>قبول كطالب إضافي</span>
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAppToAccept(app);
-                                  setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
-                                }}
-                                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black bg-[#58cc02] text-white border-[#58cc02] active:translate-y-0.5 shadow-sm hover:brightness-110 cursor-pointer flex items-center gap-1"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>قبول وتحديد حلقة</span>
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAppToAccept(app);
+                                    setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
+                                  }}
+                                  className="flex-1 sm:flex-none justify-center min-h-[40px] px-3.5 py-2 rounded-xl border-2 border-[#58cc02] border-b-4 border-b-[#46a302] text-xs font-black bg-[#58cc02] text-white active:translate-y-[2px] active:border-b-2 shadow-md hover:brightness-110 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>قبول وتحديد حلقة</span>
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => setAppToReject(app)}
-                                className="px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black bg-red-600/20 text-red-300 border-red-500/40 active:translate-y-0.5 hover:bg-red-600/30 cursor-pointer flex items-center gap-1"
-                              >
-                                <XCircle className="w-3.5 h-3.5" />
-                                <span>اعتذار</span>
-                              </button>
-                            </>
-                          ) : app.status === 'accepted' ? (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {app.studentAcceptanceStatus === 'confirmed_by_student' ? (
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-300 text-xs font-black shadow-sm">
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>لقد دخل الطالب للحلقة وأكد الانضمام رسمياً 🎉</span>
-                                  {app.studentConfirmedAt && (
-                                    <span className="text-[10px] text-emerald-200 opacity-80 font-mono">
-                                      ({new Date(app.studentConfirmedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})
-                                    </span>
-                                  )}
+                                <button
+                                  type="button"
+                                  onClick={() => setAppToReject(app)}
+                                  className="w-full sm:w-auto justify-center min-h-[40px] px-3.5 py-2 rounded-xl border-2 border-red-500/60 border-b-4 border-b-red-700 text-xs font-black bg-red-600/20 text-red-300 active:translate-y-[2px] active:border-b-2 shadow-md hover:bg-red-600/30 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>اعتذار</span>
+                                </button>
+                              </>
+                            ) : app.status === 'accepted' ? (
+                              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                                {app.studentAcceptanceStatus === 'confirmed_by_student' ? (
+                                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-500/20 border-2 border-b-4 border-emerald-500 border-b-emerald-700 text-emerald-300 text-xs font-black shadow-md">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>تأكيد الانضمام رسمياً 🎉</span>
+                                    {app.studentConfirmedAt && (
+                                      <span className="text-[10px] text-emerald-200 opacity-80 font-mono">
+                                        ({new Date(app.studentConfirmedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 border-2 border-b-4 border-amber-400 border-b-amber-600 text-amber-300 text-xs font-black shadow-md animate-pulse">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>في انتظار قبول وتأكيد الطالب</span>
+                                  </div>
+                                )}
+                                <div
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-b-2 text-xs font-black"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: themeCardBorder,
+                                    borderBottomColor: themeCardShadow,
+                                    color: '#e2e8f0'
+                                  }}
+                                >
+                                  <span>الحلقة: {app.assignedHalaqahName}</span>
                                 </div>
-                              ) : (
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black shadow-sm animate-pulse">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>في انتظار قبول وتأكيد الطالب للدخول</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAppToAccept(app);
+                                    setTargetHalaqahId(app.assignedHalaqahId || halaqahs[0]?.id || '');
+                                  }}
+                                  className="px-3 py-2 min-h-[40px] rounded-xl border-2 border-b-2 active:translate-y-[1px] text-xs font-black cursor-pointer shadow-sm hover:brightness-110 flex items-center justify-center"
+                                  style={{
+                                    backgroundColor: theme.backgroundColor || '#131f24',
+                                    borderColor: themeCardBorder,
+                                    borderBottomColor: themeCardShadow,
+                                    color: '#e2e8f0'
+                                  }}
+                                  title="تعديل الحلقة المخصصة للطالب"
+                                >
+                                  نقل لحلقة أخرى
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                                <div className="inline-flex items-center gap-1 px-3 py-1.5 rounded-2xl bg-red-500/20 border-2 border-b-4 border-red-500 border-b-red-700 text-red-300 text-xs font-black shadow-sm">
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>مرفوض: {app.rejectionReason}</span>
                                 </div>
-                              )}
-                              <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300">
-                                <span>الحلقة: {app.assignedHalaqahName}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAppToAccept(app);
+                                    setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
+                                  }}
+                                  className="px-3 py-2 min-h-[40px] rounded-xl border-2 border-emerald-500/40 border-b-4 border-b-emerald-700 bg-emerald-600/20 hover:bg-emerald-600/30 text-xs font-black text-emerald-300 cursor-pointer flex items-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-sm justify-center"
+                                  title="إعادة فتح الطلب والموافقة عليه"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>إعادة فتح وقبول</span>
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAppToAccept(app);
-                                  setTargetHalaqahId(app.assignedHalaqahId || halaqahs[0]?.id || '');
-                                }}
-                                className="px-2.5 py-1 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 text-xs font-black text-slate-200 cursor-pointer"
-                                title="تعديل الحلقة المخصصة للطالب"
-                              >
-                                نقل لحلقة أخرى
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-500/20 border border-red-500 text-red-300 text-xs font-black">
-                                <XCircle className="w-3.5 h-3.5" />
-                                <span>مرفوض: {app.rejectionReason}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAppToAccept(app);
-                                  setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
-                                }}
-                                className="px-2.5 py-1 rounded-xl border border-emerald-500/40 bg-emerald-600/20 hover:bg-emerald-600/30 text-xs font-black text-emerald-300 cursor-pointer flex items-center gap-1"
-                                title="إعادة فتح الطلب والموافقة عليه"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                <span>إعادة فتح وقبول</span>
-                              </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => setAppDiagnosticToView(app)}
-                            className="px-2.5 py-1.5 rounded-xl border border-cyan-400/50 bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                            title="معاينة الاختبار التشخيصي التفصيلي المكون من 10 أسئلة مع المؤقت وسجل الإجابات"
-                          >
-                            <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>فحص الاختبار {app.placementTestSummary ? `(${app.placementTestSummary.overallScore}%)` : ''}</span>
-                          </button>
+                          {/* Secondary Inspection & Tools */}
+                          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => setAppDiagnosticToView(app)}
+                              className="flex-1 sm:flex-none justify-center min-h-[40px] px-3 py-2 rounded-xl border-2 border-cyan-400/60 border-b-4 border-b-cyan-700 text-cyan-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 bg-cyan-500/20 hover:bg-cyan-500/30"
+                              title="معاينة الاختبار التشخيصي التفصيلي المكون من 10 أسئلة مع المؤقت وسجل الإجابات"
+                            >
+                              <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>فحص الاختبار {app.placementTestSummary ? `(${app.placementTestSummary.overallScore}%)` : ''}</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setAppPlanToView(app)}
-                            className="px-2.5 py-1.5 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                            title="عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم"
-                          >
-                            <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                            <span>عرض الخطة</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setAppPlanToView(app)}
+                              className="flex-1 sm:flex-none justify-center min-h-[40px] px-3 py-2 rounded-xl border-2 border-amber-400/60 border-b-4 border-b-amber-700 text-amber-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 bg-amber-400/20 hover:bg-amber-400/30"
+                              title="عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم"
+                            >
+                              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                              <span>عرض الخطة</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAppPlanToEdit(app);
-                              setEditPlanNewFaces(app.proposedPlanSummary?.dailyNewFaces || 1);
-                              setEditPlanReviewFaces(app.proposedPlanSummary?.dailyReviewFaces || 3);
-                              setEditPlanPathType(app.proposedPlanSummary?.pathType || 'standard_memorization');
-                              setEditPlanHalaqahId(app.assignedHalaqahId || app.preferredHalaqahId || halaqahs[0]?.id || '');
-                            }}
-                            className="px-2.5 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                            title="تعديل الخطة المقترحة وتخصيص الأوجه قبل الاعتماد"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>تعديل الخطة</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAppPlanToEdit(app);
+                                setEditPlanNewFaces(app.proposedPlanSummary?.dailyNewFaces || 1);
+                                setEditPlanReviewFaces(app.proposedPlanSummary?.dailyReviewFaces || 3);
+                                setEditPlanPathType(app.proposedPlanSummary?.pathType || 'standard_memorization');
+                                setEditPlanHalaqahId(app.assignedHalaqahId || app.preferredHalaqahId || halaqahs[0]?.id || '');
+                              }}
+                              className="flex-1 sm:flex-none justify-center min-h-[40px] px-3 py-2 rounded-xl border-2 border-emerald-500/60 border-b-4 border-b-emerald-700 text-emerald-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 bg-emerald-500/20 hover:bg-emerald-500/30"
+                              title="تعديل الخطة المقترحة وتخصيص الأوجه قبل الاعتماد"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>تعديل الخطة</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setAppDetailsToView(app)}
-                            className="p-1.5 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 cursor-pointer"
-                            title="عرض تفاصيل الطلب الكاملة"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setAppDetailsToView(app)}
+                              className="min-h-[40px] min-w-[40px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 text-slate-300 hover:text-white transition-all cursor-pointer active:translate-y-[1px] shadow-sm"
+                              style={{
+                                backgroundColor: theme.backgroundColor || '#131f24',
+                                borderColor: themeCardBorder
+                              }}
+                              title="عرض تفاصيل الطلب الكاملة"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setAppToDelete(app)}
-                            className="p-1.5 rounded-xl border border-red-500/20 text-slate-400 hover:text-red-400 hover:bg-red-500/10 cursor-pointer"
-                            title="حذف الطلب نهائياً"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setAppToDelete(app)}
+                              className="min-h-[40px] min-w-[40px] flex items-center justify-center p-2 rounded-xl border-2 border-b-2 text-red-400 hover:text-red-300 transition-all cursor-pointer active:translate-y-[1px] shadow-sm"
+                              style={{
+                                backgroundColor: 'rgba(239,68,68,0.15)',
+                                borderColor: '#ef4444',
+                                borderBottomColor: '#b91c1c'
+                              }}
+                              title="حذف الطلب نهائياً"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -2363,9 +2558,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Modal Sub-Dialog: QUESTION BUILDER & EDITOR */}
         {isQuestionEditorOpen && (
-          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5 overflow-y-auto">
             <div
-              className="w-full max-w-lg rounded-3xl border-2 border-b-4 p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-lg rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-6 space-y-4 shadow-2xl my-auto animate-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto"
               style={{
                 backgroundColor: themeCard,
                 borderColor: themeAccent,
@@ -2394,7 +2589,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 <button
                   type="button"
                   onClick={() => setIsQuestionEditorOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2410,10 +2605,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   value={questionLabel}
                   onChange={e => setQuestionLabel(e.target.value)}
                   placeholder="مثال: المرحلة الدراسية أو اسم المدرسة..."
-                  className="w-full border-2 rounded-xl py-2.5 px-3.5 text-xs text-white font-bold outline-none"
+                  className="w-full border-2 border-b-4 rounded-2xl py-3 px-4 text-xs text-white font-bold outline-none transition-all shadow-sm focus:border-amber-400"
                   style={{
                     backgroundColor: theme.backgroundColor || '#131f24',
-                    borderColor: themeCardBorder
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
                   }}
                 />
               </div>
@@ -2430,15 +2626,27 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         key={t}
                         type="button"
                         onClick={() => setQuestionType(t)}
-                        className={`p-2 rounded-xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between gap-1 ${
+                        className={`p-2.5 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer flex flex-col justify-between gap-1 active:translate-y-[2px] active:border-b-2 shadow-sm ${
                           isSelected
-                            ? 'border-amber-400 bg-amber-400/20 text-white font-black shadow-sm'
+                            ? 'text-white font-black'
                             : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/20'
                         }`}
+                        style={
+                          isSelected
+                            ? {
+                                backgroundColor: `${themeAccent}25`,
+                                borderColor: themeAccent,
+                                borderBottomColor: themeAccentShadow,
+                                color: '#ffffff'
+                              }
+                            : {
+                                borderBottomColor: 'rgba(255,255,255,0.1)'
+                              }
+                        }
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-mono font-bold text-amber-400">{meta.icon}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                          <span className="text-xs font-mono font-bold" style={{ color: themeAccent }}>{meta.icon}</span>
+                          {isSelected && <Check className="w-4 h-4" style={{ color: themeAccent }} />}
                         </div>
                         <span className="text-[11px] font-black">{meta.label}</span>
                       </button>
@@ -2456,10 +2664,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     value={questionDescription}
                     onChange={e => setQuestionDescription(e.target.value)}
                     placeholder="إرشاد يظهر تحت السؤال"
-                    className="w-full border rounded-xl py-2 px-3 text-xs text-white outline-none"
+                    className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white outline-none font-bold"
                     style={{
                       backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
                     }}
                   />
                 </div>
@@ -2471,10 +2680,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     value={questionPlaceholder}
                     onChange={e => setQuestionPlaceholder(e.target.value)}
                     placeholder="مثال: اكتب الإجابة هنا..."
-                    className="w-full border rounded-xl py-2 px-3 text-xs text-white outline-none"
+                    className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white outline-none font-bold"
                     style={{
                       backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
                     }}
                   />
                 </div>
@@ -2487,7 +2697,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     خيارات السؤال (أضف الخيارات التي سيختار منها الطالب):
                   </label>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       value={newOptionInput}
@@ -2499,22 +2709,25 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         }
                       }}
                       placeholder="اكتب خياراً واضغط إضافة..."
-                      className="flex-1 border rounded-xl py-2 px-3 text-xs text-white font-bold outline-none"
+                      className="flex-1 border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none shadow-sm"
                       style={{
                         backgroundColor: theme.backgroundColor || '#131f24',
-                        borderColor: themeCardBorder
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
                       }}
                     />
                     <button
                       type="button"
                       onClick={handleAddOption}
-                      className="px-3.5 py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm hover:brightness-110"
+                      className="w-full sm:w-auto px-4 py-2.5 min-h-[42px] rounded-2xl text-xs font-black cursor-pointer shadow-md transition-all active:translate-y-[2px] active:border-b-2 border-2 border-b-4 flex items-center justify-center"
                       style={{
                         backgroundColor: themeAccent,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
                         color: accentTextColor
                       }}
                     >
-                      إضافة
+                      إضافة خيار
                     </button>
                   </div>
 
@@ -2522,15 +2735,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     {questionOptions.map((opt, oIdx) => (
                       <span
                         key={oIdx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/10 text-white border border-white/15 text-xs font-bold"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-sm"
+                        style={{
+                          backgroundColor: theme.backgroundColor || '#131f24',
+                          borderColor: themeCardBorder,
+                          borderBottomColor: themeCardShadow,
+                          color: '#ffffff'
+                        }}
                       >
                         <span>{opt}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveOption(opt)}
-                          className="text-slate-400 hover:text-red-400 cursor-pointer"
+                          className="text-slate-400 hover:text-red-400 cursor-pointer min-w-[24px] min-h-[24px] flex items-center justify-center"
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </span>
                     ))}
@@ -2539,7 +2758,14 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               )}
 
               {/* Required Question Checkbox */}
-              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer select-none">
+              <label
+                className="flex items-center justify-between gap-3 p-3.5 rounded-2xl border-2 border-b-4 cursor-pointer select-none transition-all active:translate-y-[1px] shadow-sm"
+                style={{
+                  backgroundColor: theme.backgroundColor || '#131f24',
+                  borderColor: themeCardBorder,
+                  borderBottomColor: themeCardShadow
+                }}
+              >
                 <div>
                   <span className="text-xs font-black text-white block">سؤال إلزامي (مطلوب)</span>
                   <span className="text-[10px] text-slate-400 font-bold">
@@ -2555,27 +2781,32 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               </label>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsQuestionEditorOpen(false)}
+                  className="w-full sm:w-auto py-3 px-5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  إلغاء
+                </button>
                 <button
                   type="button"
                   onClick={handleSaveQuestion}
                   disabled={!questionLabel.trim()}
-                  className="flex-1 py-3 rounded-xl border-2 border-b-2 text-xs font-black cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-md disabled:opacity-50"
+                  className="w-full sm:flex-1 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 shadow-md disabled:opacity-50 flex items-center justify-center"
                   style={{
                     backgroundColor: themeAccent,
                     borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
                     color: accentTextColor
                   }}
                 >
                   {editingQuestionId ? 'حفظ التعديلات' : 'إضافة السؤال للاستمارة'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsQuestionEditorOpen(false)}
-                  className="py-3 px-4 rounded-xl border text-xs font-black text-slate-300 hover:text-white cursor-pointer"
-                  style={{ borderColor: themeCardBorder }}
-                >
-                  إلغاء
                 </button>
               </div>
             </div>
@@ -2584,9 +2815,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Modal Sub-Dialog: FULL APPLICATION DETAILS MODAL */}
         {appDetailsToView && (
-          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5 overflow-y-auto">
             <div
-              className="w-full max-w-lg rounded-3xl border-2 border-b-4 p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto"
+              className="w-full max-w-lg rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-6 space-y-4 shadow-2xl my-auto animate-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto"
               style={{
                 backgroundColor: themeCard,
                 borderColor: themeCardBorder,
@@ -2613,7 +2844,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 <button
                   type="button"
                   onClick={() => setAppDetailsToView(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2621,12 +2852,12 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
               {/* Status Banner */}
               <div
-                className={`p-3 rounded-2xl border flex items-center justify-between gap-2 text-xs font-black ${
+                className={`p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-2 text-xs font-black shadow-sm ${
                   appDetailsToView.status === 'accepted'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                    ? 'bg-emerald-500/20 border-emerald-500 border-b-emerald-700 text-emerald-300'
                     : appDetailsToView.status === 'rejected'
-                    ? 'bg-red-500/20 border-red-500/40 text-red-300'
-                    : 'bg-amber-400/20 border-amber-400/40 text-amber-300'
+                    ? 'bg-red-500/20 border-red-500 border-b-red-700 text-red-300'
+                    : 'bg-amber-400/20 border-amber-400 border-b-amber-600 text-amber-300'
                 }`}
               >
                 <span>
@@ -2640,17 +2871,38 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               {/* Student & Parent Info Grid */}
               <div className="space-y-2 text-xs">
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                  <div
+                    className="p-3 rounded-2xl border-2 border-b-4 shadow-sm"
+                    style={{
+                      backgroundColor: theme.backgroundColor || '#131f24',
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
+                  >
                     <span className="text-[10px] text-slate-400 block font-bold">العمر:</span>
-                    <span className="font-black text-white">{appDetailsToView.age} سنة</span>
+                    <span className="font-black text-white text-sm">{appDetailsToView.age} سنة</span>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                  <div
+                    className="p-3 rounded-2xl border-2 border-b-4 shadow-sm"
+                    style={{
+                      backgroundColor: theme.backgroundColor || '#131f24',
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
+                  >
                     <span className="text-[10px] text-slate-400 block font-bold">اسم ولي الأمر:</span>
-                    <span className="font-black text-white">{appDetailsToView.parentName}</span>
+                    <span className="font-black text-white text-sm">{appDetailsToView.parentName}</span>
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div
+                  className="p-3 rounded-2xl border-2 border-b-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
                   <div>
                     <span className="text-[10px] text-slate-400 block font-bold">هاتف ولي الأمر:</span>
                     <span className="font-black font-mono text-white text-sm" dir="ltr">{appDetailsToView.parentPhone}</span>
@@ -2659,14 +2911,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     href={`https://wa.me/${appDetailsToView.parentPhone?.replace(/\D/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-3 py-1.5 rounded-xl bg-[#25D366] text-white text-xs font-black flex items-center gap-1.5 hover:brightness-110"
+                    className="w-full sm:w-auto justify-center px-3.5 py-2.5 min-h-[42px] rounded-2xl bg-[#25D366] text-white text-xs font-black flex items-center gap-1.5 hover:brightness-110 border-2 border-[#20ba5a] border-b-4 border-b-[#188c44] active:translate-y-[2px] active:border-b-2 shadow-sm"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>مراسلة واتساب</span>
                   </a>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                <div
+                  className="p-3 rounded-2xl border-2 border-b-4 shadow-sm"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
                   <span className="text-[10px] text-slate-400 block font-bold">الحلقة المرغوبة:</span>
                   <span className="font-black text-white">{appDetailsToView.preferredHalaqahName || 'توجيه تلقائي من المشرف'}</span>
                 </div>
@@ -2678,7 +2937,15 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   <h4 className="text-xs font-black text-amber-400">إجابات الأسئلة المخصصة للطالب:</h4>
                   <div className="space-y-1.5">
                     {appDetailsToView.customQuestionResponses.map((res, idx) => (
-                      <div key={idx} className="p-2 rounded-xl bg-white/5 border border-white/10 text-xs">
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-2xl border-2 border-b-4 text-xs shadow-sm"
+                        style={{
+                          backgroundColor: theme.backgroundColor || '#131f24',
+                          borderColor: themeCardBorder,
+                          borderBottomColor: themeCardShadow
+                        }}
+                      >
                         <span className="text-slate-400 font-bold block">{res.questionLabel}:</span>
                         <span className="font-black text-white">
                           {Array.isArray(res.answer) ? res.answer.join(', ') : String(res.answer)}
@@ -2697,7 +2964,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
                     {appDetailsToView.memorizedJuzList.map(j => (
-                      <span key={j} className="px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-black">
+                      <span
+                        key={j}
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-black border-2 border-b-4 shadow-sm"
+                        style={{
+                          backgroundColor: `${themeAccent}25`,
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow,
+                          color: '#ffffff'
+                        }}
+                      >
                         جزء {j}
                       </span>
                     ))}
@@ -2706,10 +2982,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               )}
 
               {/* Timeline */}
-              <div className="pt-2 border-t border-white/10 text-[11px] text-slate-400 font-bold space-y-1">
-                <div>تاريخ التقديم: {appDetailsToView.appliedAt ? new Date(appDetailsToView.appliedAt).toLocaleString('ar-SA') : '-'}</div>
+              <div
+                className="p-3 rounded-2xl border-2 border-b-4 text-[11px] font-bold space-y-1.5 shadow-sm"
+                style={{
+                  backgroundColor: theme.backgroundColor || '#131f24',
+                  borderColor: themeCardBorder,
+                  borderBottomColor: themeCardShadow,
+                  color: '#94a3b8'
+                }}
+              >
+                <div className="flex items-center gap-1.5 text-white">
+                  <Calendar className="w-3.5 h-3.5" style={{ color: themeAccent }} />
+                  <span>تاريخ التقديم: {appDetailsToView.appliedAt ? new Date(appDetailsToView.appliedAt).toLocaleString('ar-SA') : '-'}</span>
+                </div>
                 {appDetailsToView.reviewedAt && (
-                  <div>تمت المراجعة: {new Date(appDetailsToView.reviewedAt).toLocaleString('ar-SA')} بواسطة {appDetailsToView.reviewedByName || 'المشرف'}</div>
+                  <div className="text-emerald-300">تمت المراجعة: {new Date(appDetailsToView.reviewedAt).toLocaleString('ar-SA')} بواسطة {appDetailsToView.reviewedByName || 'المشرف'}</div>
                 )}
                 {appDetailsToView.rejectionReason && (
                   <div className="text-red-300">سبب الاعتذار: {appDetailsToView.rejectionReason}</div>
@@ -2719,9 +3006,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               {/* Diagnostic Test & Plan Action Buttons */}
               {appDetailsToView.placementTestSummary && (
                 <div className="pt-2 border-t border-white/10 space-y-2">
-                  <div className="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 flex items-center justify-between flex-wrap gap-2">
+                  <div className="p-3.5 rounded-2xl bg-cyan-950/40 border-2 border-b-4 border-cyan-500 border-b-cyan-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm">
                     <div className="flex items-center gap-2">
-                      <BrainCircuit className="w-4 h-4 text-cyan-400" />
+                      <BrainCircuit className="w-4 h-4 text-cyan-400 shrink-0" />
                       <div>
                         <span className="text-[11px] font-black text-cyan-300 block">
                           نتيجة الفحص التشخيصي المباشر: {appDetailsToView.placementTestSummary.overallScore || 0}%
@@ -2738,7 +3025,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         setAppDetailsToView(null);
                         setAppDiagnosticToView(target);
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-black border border-cyan-400/40 flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+                      className="w-full sm:w-auto justify-center px-3.5 py-2.5 min-h-[42px] rounded-2xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-black border-2 border-b-4 border-cyan-400 border-b-cyan-700 flex items-center gap-1.5 cursor-pointer shadow-sm active:translate-y-[2px] active:border-b-2 transition-all"
                     >
                       <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
                       <span>معاينة الأسئلة والخيارات والزمن</span>
@@ -2756,7 +3043,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     setAppDetailsToView(null);
                     setAppPlanToView(target);
                   }}
-                  className="w-full py-2.5 px-3 rounded-2xl border-2 border-b-4 bg-amber-400/20 text-amber-300 border-amber-400/40 text-xs font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-amber-400/30 shadow-md active:translate-y-0.5"
+                  className="w-full py-3.5 px-4 min-h-[44px] rounded-2xl border-2 border-b-4 bg-amber-400/20 text-amber-300 border-amber-400 border-b-amber-600 text-xs font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-amber-400/30 shadow-md active:translate-y-[2px] active:border-b-2"
                 >
                   <BookOpen className="w-4 h-4 text-amber-400" />
                   <span>عرض الخطة القرآنية المنهجية والتثبيت وموعد الختم</span>
@@ -2764,9 +3051,22 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               </div>
 
               {/* Action Buttons inside Details */}
-              <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setAppDetailsToView(null)}
+                  className="w-full sm:w-auto py-3 px-5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  إغلاق
+                </button>
+
                 {appDetailsToView.status === 'pending' ? (
-                  <>
+                  <div className="grid grid-cols-1 sm:flex items-center gap-2 w-full sm:flex-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -2774,7 +3074,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         setTargetHalaqahId(appDetailsToView.preferredHalaqahId || halaqahs[0]?.id || '');
                         setAppDetailsToView(null);
                       }}
-                      className="flex-1 py-2.5 rounded-xl border-2 border-b-2 bg-[#58cc02] text-white border-[#58cc02] text-xs font-black flex items-center justify-center gap-1 cursor-pointer hover:brightness-110"
+                      className="flex-1 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 bg-[#58cc02] text-white border-[#58cc02] border-b-[#46a302] text-xs font-black flex items-center justify-center gap-1 cursor-pointer hover:brightness-110 active:translate-y-[2px] active:border-b-2 shadow-md"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>قبول واعتماد الطالب</span>
@@ -2785,11 +3085,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                         setAppToReject(appDetailsToView);
                         setAppDetailsToView(null);
                       }}
-                      className="py-2.5 px-3 rounded-xl border-2 border-b-2 bg-red-600/20 text-red-300 border-red-500/40 text-xs font-black cursor-pointer hover:bg-red-600/30"
+                      className="w-full sm:w-auto py-3 px-4 min-h-[44px] rounded-2xl border-2 border-b-4 bg-red-600/20 text-red-300 border-red-500 border-b-red-700 text-xs font-black cursor-pointer hover:bg-red-600/30 active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
                     >
                       اعتذار
                     </button>
-                  </>
+                  </div>
                 ) : appDetailsToView.status === 'rejected' ? (
                   <button
                     type="button"
@@ -2798,7 +3098,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       setTargetHalaqahId(appDetailsToView.preferredHalaqahId || halaqahs[0]?.id || '');
                       setAppDetailsToView(null);
                     }}
-                    className="flex-1 py-2.5 rounded-xl border-2 border-b-2 bg-[#58cc02] text-white border-[#58cc02] text-xs font-black flex items-center justify-center gap-1 cursor-pointer hover:brightness-110"
+                    className="w-full sm:flex-1 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 bg-[#58cc02] text-white border-[#58cc02] border-b-[#46a302] text-xs font-black flex items-center justify-center gap-1 cursor-pointer hover:brightness-110 active:translate-y-[2px] active:border-b-2 shadow-md"
                   >
                     <RotateCcw className="w-4 h-4" />
                     <span>إعادة النظر وقبول الطالب</span>
@@ -2811,20 +3111,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       setTargetHalaqahId(appDetailsToView.assignedHalaqahId || halaqahs[0]?.id || '');
                       setAppDetailsToView(null);
                     }}
-                    className="flex-1 py-2.5 rounded-xl border-2 border-b-2 bg-white/10 text-white border-white/20 text-xs font-black cursor-pointer hover:bg-white/15"
+                    className="w-full sm:flex-1 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 bg-white/10 text-white border-white/20 border-b-white/40 text-xs font-black cursor-pointer hover:bg-white/15 active:translate-y-[2px] active:border-b-2 shadow-md flex items-center justify-center"
                   >
                     نقل الطالب لحلقة أخرى
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => setAppDetailsToView(null)}
-                  className="py-2.5 px-4 rounded-xl border text-xs font-black text-slate-300 hover:text-white cursor-pointer"
-                  style={{ borderColor: themeCardBorder }}
-                >
-                  إغلاق
-                </button>
               </div>
             </div>
           </div>
@@ -2832,9 +3123,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Modal Sub-Dialog: Confirm Accept & Assign Halaqah */}
         {appToAccept && (
-          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div
-              className="w-full max-w-md rounded-3xl border-2 border-b-4 p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-150"
+              className="w-full max-w-md rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl my-auto animate-in zoom-in-95 duration-150"
               style={{
                 backgroundColor: themeCard,
                 borderColor: '#58cc02',
@@ -2842,7 +3133,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#58cc02] text-white flex items-center justify-center font-black">
+                <div className="w-10 h-10 rounded-2xl bg-[#58cc02] text-white flex items-center justify-center font-black border-2 border-b-4 border-[#46a302] shrink-0">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <div>
@@ -2858,15 +3149,16 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-slate-200 block">
-                    اختر الحلقة التي ترغب بإلحاق الطالب بها:
+                    اختر الحلقة التي ترغب بإلحاق الطالب بها (القوائم):
                   </label>
                   <select
                     value={targetHalaqahId}
                     onChange={e => setTargetHalaqahId(e.target.value)}
-                    className="w-full border-2 rounded-xl py-2.5 px-3 text-xs font-black text-white outline-none cursor-pointer"
+                    className="w-full border-2 border-b-4 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer transition-all shadow-sm active:translate-y-[1px]"
                     style={{
                       backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
                     }}
                   >
                     {halaqahs.map(h => (
@@ -2878,25 +3170,26 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAppToAccept(null)}
+                  className="w-full sm:w-auto py-3.5 px-5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  إلغاء
+                </button>
                 <button
                   type="button"
                   disabled={isProcessingApp}
                   onClick={handleConfirmAcceptApplication}
-                  className="flex-1 py-3 rounded-xl border-2 border-b-2 text-xs font-black bg-[#58cc02] text-white border-[#58cc02] cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-md"
+                  className="w-full sm:flex-1 py-3.5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black bg-[#58cc02] text-white border-[#58cc02] border-b-[#46a302] cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md disabled:opacity-50 flex items-center justify-center"
                 >
                   {isProcessingApp ? 'جارٍ الاعتماد وإنشاء السجل...' : 'تأكيد القبول وإنشاء الطالب'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAppToAccept(null)}
-                  className="py-3 px-4 rounded-xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white cursor-pointer"
-                  style={{
-                    backgroundColor: themeCard,
-                    borderColor: themeCardBorder
-                  }}
-                >
-                  إلغاء
                 </button>
               </div>
             </div>
@@ -2905,9 +3198,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Modal Sub-Dialog: Confirm Reject */}
         {appToReject && (
-          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div
-              className="w-full max-w-md rounded-3xl border-2 border-b-4 p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-150"
+              className="w-full max-w-md rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl my-auto animate-in zoom-in-95 duration-150"
               style={{
                 backgroundColor: themeCard,
                 borderColor: '#ff4b4b',
@@ -2915,7 +3208,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center font-black">
+                <div className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center font-black border-2 border-b-4 border-red-800 shrink-0">
                   <XCircle className="w-6 h-6" />
                 </div>
                 <div>
@@ -2936,34 +3229,36 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     type="text"
                     value={rejectionReason}
                     onChange={e => setRejectionReason(e.target.value)}
-                    className="w-full border-2 rounded-xl py-2 px-3 text-xs text-white outline-none font-bold"
+                    className="w-full border-2 border-b-4 rounded-2xl py-3 px-3.5 text-xs text-white outline-none font-bold shadow-sm"
                     style={{
                       backgroundColor: theme.backgroundColor || '#131f24',
-                      borderColor: themeCardBorder
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
                     }}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAppToReject(null)}
+                  className="w-full sm:w-auto py-3.5 px-5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  تراجع
+                </button>
                 <button
                   type="button"
                   disabled={isProcessingApp}
                   onClick={handleConfirmRejectApplication}
-                  className="flex-1 py-3 rounded-xl border-2 border-b-2 text-xs font-black bg-red-600 text-white border-red-600 cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-md"
+                  className="w-full sm:flex-1 py-3.5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black bg-red-600 text-white border-red-600 border-b-red-800 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md disabled:opacity-50 flex items-center justify-center"
                 >
                   {isProcessingApp ? 'جارٍ الحفظ...' : 'تأكيد الرفض'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAppToReject(null)}
-                  className="py-3 px-4 rounded-xl border-2 border-b-2 text-xs font-black text-slate-300 hover:text-white cursor-pointer"
-                  style={{
-                    backgroundColor: themeCard,
-                    borderColor: themeCardBorder
-                  }}
-                >
-                  تراجع
                 </button>
               </div>
             </div>
@@ -2972,9 +3267,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Modal Sub-Dialog: Confirm Delete */}
         {appToDelete && (
-          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[10005] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div
-              className="w-full max-w-sm rounded-3xl border-2 border-b-4 p-5 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150"
+              className="w-full max-w-sm rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-5 space-y-4 shadow-2xl my-auto animate-in zoom-in-95 duration-150"
               style={{
                 backgroundColor: themeCard,
                 borderColor: '#ff4b4b',
@@ -2982,7 +3277,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               }}
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-600/20 text-red-400 flex items-center justify-center font-black">
+                <div className="w-10 h-10 rounded-2xl bg-red-600/20 text-red-400 flex items-center justify-center font-black border-2 border-b-4 border-red-500/40 shrink-0">
                   <Trash2 className="w-5 h-5" />
                 </div>
                 <div>
@@ -2995,22 +3290,26 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 هل أنت متأكد من حذف طلب الطالب <strong className="text-white">({appToDelete.studentName})</strong> برقم المتابعة <strong className="text-amber-400">({appToDelete.trackingCode})</strong>؟
               </p>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAppToDelete(null)}
+                  className="w-full sm:w-auto py-3 px-4 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  إلغاء
+                </button>
                 <button
                   type="button"
                   disabled={isProcessingApp}
                   onClick={handleConfirmDeleteApp}
-                  className="flex-1 py-2.5 rounded-xl border-2 border-b-2 text-xs font-black bg-red-600 text-white border-red-600 cursor-pointer transition-all active:translate-y-0.5 hover:brightness-110 shadow-md"
+                  className="w-full sm:flex-1 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black bg-red-600 text-white border-red-600 border-b-red-800 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-md disabled:opacity-50 flex items-center justify-center"
                 >
                   {isProcessingApp ? 'جارٍ الحذف...' : 'تأكيد الحذف نهائياً'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAppToDelete(null)}
-                  className="py-2.5 px-3 rounded-xl border text-xs font-black text-slate-300 hover:text-white cursor-pointer"
-                  style={{ borderColor: themeCardBorder }}
-                >
-                  إلغاء
                 </button>
               </div>
             </div>
@@ -3031,9 +3330,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
           });
 
           return (
-            <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+            <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5 overflow-y-auto" dir="rtl">
               <div
-                className="w-full max-w-xl rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-5 shadow-2xl my-auto animate-fadeIn text-right"
+                className="w-full max-w-xl rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-7 space-y-4 sm:space-y-5 shadow-2xl my-auto animate-fadeIn text-right"
                 style={{
                   backgroundColor: themeCard,
                   borderColor: themeAccent,
@@ -3043,7 +3342,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 {/* Header */}
                 <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: themeCardBorder }}>
                   <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30 shrink-0">
                       <BookOpen className="w-5 h-5" />
                     </div>
                     <div>
@@ -3058,7 +3357,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   <button
                     type="button"
                     onClick={() => setAppPlanToView(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                    className="min-w-[36px] min-h-[36px] flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -3146,9 +3445,11 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                   <button
                     type="button"
                     onClick={() => setAppPlanToView(null)}
-                    className="py-2.5 px-6 rounded-xl font-black text-xs cursor-pointer shadow-md"
+                    className="w-full sm:w-auto py-3 px-6 min-h-[44px] rounded-2xl font-black text-xs cursor-pointer shadow-md transition-all active:translate-y-[2px] active:border-b-2 border-2 border-b-4 flex items-center justify-center"
                     style={{
                       backgroundColor: themeAccent,
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
                       color: accentTextColor
                     }}
                   >
@@ -3162,9 +3463,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Full Diagnostic Test Inspector Modal */}
         {appDiagnosticToView && (
-          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5 overflow-y-auto" dir="rtl">
             <div
-              className="w-full max-w-3xl rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-5 shadow-2xl my-auto animate-fadeIn text-right text-white max-h-[90vh] flex flex-col"
+              className="w-full max-w-3xl rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-7 space-y-4 sm:space-y-5 shadow-2xl my-auto animate-fadeIn text-right text-white max-h-[92vh] flex flex-col"
               style={{
                 backgroundColor: themeCard,
                 borderColor: '#38bdf8',
@@ -3173,20 +3474,20 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b pb-3 shrink-0" style={{ borderColor: themeCardBorder }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center border border-cyan-400/40">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center border border-cyan-400/40 shrink-0">
                     <BrainCircuit className="w-6 h-6" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black text-white">
-                        سجل الفحص التشخيصي الكامل: {appDiagnosticToView.studentName}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-black text-white">
+                        سجل الفحص التشخيصي: {appDiagnosticToView.studentName}
                       </h3>
                       <span className="text-xs font-mono px-2 py-0.5 rounded-lg bg-cyan-400/20 text-cyan-300 font-bold border border-cyan-400/30">
                         {appDiagnosticToView.trackingCode}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 font-bold">
+                    <p className="text-[11px] sm:text-xs text-slate-300 font-bold">
                       {appDiagnosticToView.age} سنة • عام البدء: {appDiagnosticToView.startingYear || 'غير محدد'} • المسار: {appDiagnosticToView.previousDirection === 'from_baqarah' || (appDiagnosticToView.previousDirection as any) === 'baqarah_to_nas' ? 'من البقرة إلى الناس' : 'من الناس إلى البقرة'}
                     </p>
                   </div>
@@ -3195,7 +3496,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 <button
                   type="button"
                   onClick={() => setAppDiagnosticToView(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -3431,8 +3732,21 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
               </div>
 
               {/* Footer Actions */}
-              <div className="flex items-center justify-between pt-3 border-t shrink-0 flex-wrap gap-2" style={{ borderColor: themeCardBorder }}>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between pt-3 border-t shrink-0 gap-2" style={{ borderColor: themeCardBorder }}>
+                <button
+                  type="button"
+                  onClick={() => setAppDiagnosticToView(null)}
+                  className="w-full sm:w-auto px-5 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
+                >
+                  إغلاق الفحص
+                </button>
+
+                <div className="grid grid-cols-1 sm:flex items-center gap-2 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => {
@@ -3440,7 +3754,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       setAppDiagnosticToView(null);
                       handleAcceptSingleAsExtra(app);
                     }}
-                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                    className="w-full sm:w-auto justify-center min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5 border-2 border-emerald-500 border-b-4 border-b-emerald-800 active:translate-y-[2px] active:border-b-2 transition-all"
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>قبول كطالب إضافي</span>
@@ -3454,21 +3768,12 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       setAppToAccept(app);
                       setTargetHalaqahId(app.preferredHalaqahId || halaqahs[0]?.id || '');
                     }}
-                    className="px-3 py-2 rounded-xl bg-[#58cc02] text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1"
+                    className="w-full sm:w-auto justify-center min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-[#58cc02] text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1 border-2 border-[#58cc02] border-b-4 border-b-[#46a302] active:translate-y-[2px] active:border-b-2 hover:brightness-110 transition-all"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>قبول وتخصيص حلقة</span>
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setAppDiagnosticToView(null)}
-                  className="px-4 py-2 rounded-xl border text-xs font-bold text-slate-300 hover:text-white cursor-pointer"
-                  style={{ borderColor: themeCardBorder }}
-                >
-                  إغلاق الفحص
-                </button>
               </div>
             </div>
           </div>
@@ -3476,9 +3781,9 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
         {/* Plan Editor Modal Before Approving */}
         {appPlanToEdit && (
-          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto" dir="rtl">
+          <div className="fixed inset-0 z-[10010] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-5 overflow-y-auto" dir="rtl">
             <div
-              className="w-full max-w-lg rounded-3xl border-2 border-b-4 p-5 sm:p-7 space-y-4 shadow-2xl my-auto animate-fadeIn text-right text-white"
+              className="w-full max-w-lg rounded-2xl sm:rounded-3xl border-2 border-b-4 p-4 sm:p-7 space-y-4 shadow-2xl my-auto animate-fadeIn text-right text-white max-h-[92vh] overflow-y-auto"
               style={{
                 backgroundColor: themeCard,
                 borderColor: '#10b981',
@@ -3487,7 +3792,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
             >
               <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: themeCardBorder }}>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 shrink-0">
                     <Edit3 className="w-5 h-5" />
                   </div>
                   <div>
@@ -3500,7 +3805,7 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 <button
                   type="button"
                   onClick={() => setAppPlanToEdit(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -3508,12 +3813,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
 
               <div className="space-y-3.5 text-xs">
                 {/* Halaqah Picker */}
-                <div className="space-y-1">
-                  <label className="font-bold text-emerald-300 block">الحلقة القرآنية:</label>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-emerald-300 block">الحلقة القرآنية (القوائم):</label>
                   <select
                     value={editPlanHalaqahId}
                     onChange={e => setEditPlanHalaqahId(e.target.value)}
-                    className="w-full bg-[#022c22] border border-[#065f46] text-white font-bold rounded-xl py-2 px-3 outline-none cursor-pointer"
+                    className="w-full border-2 border-b-4 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer shadow-sm active:translate-y-[1px] transition-all"
+                    style={{
+                      backgroundColor: theme.backgroundColor || '#131f24',
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
                   >
                     {halaqahs.map(h => (
                       <option key={h.id} value={h.id}>
@@ -3524,12 +3834,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 </div>
 
                 {/* Path Type */}
-                <div className="space-y-1">
-                  <label className="font-bold text-emerald-300 block">نوع المسار القرآني:</label>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-emerald-300 block">نوع المسار القرآني (القوائم):</label>
                   <select
                     value={editPlanPathType}
                     onChange={e => setEditPlanPathType(e.target.value)}
-                    className="w-full bg-[#022c22] border border-[#065f46] text-white font-bold rounded-xl py-2 px-3 outline-none cursor-pointer"
+                    className="w-full border-2 border-b-4 rounded-2xl py-3 px-3.5 text-xs font-black text-white outline-none cursor-pointer shadow-sm active:translate-y-[1px] transition-all"
+                    style={{
+                      backgroundColor: theme.backgroundColor || '#131f24',
+                      borderColor: themeCardBorder,
+                      borderBottomColor: themeCardShadow
+                    }}
                   >
                     <option value="standard_memorization">الحفظ المتدرج القياسي</option>
                     <option value="khatim_itqan">الإتقان العالي وسرد الختمة</option>
@@ -3539,8 +3854,8 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                 </div>
 
                 {/* Daily New Faces */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
                     <label className="font-bold text-slate-300 block">أوجه الحفظ الجديد يومياً:</label>
                     <input
                       type="number"
@@ -3549,12 +3864,17 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       max="10"
                       value={editPlanNewFaces}
                       onChange={e => setEditPlanNewFaces(Number(e.target.value))}
-                      className="w-full bg-[#022c22] border border-[#065f46] text-center font-bold text-amber-300 rounded-xl py-2 px-3 outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-center font-black text-amber-300 outline-none shadow-sm"
+                      style={{
+                        backgroundColor: theme.backgroundColor || '#131f24',
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
                     />
                   </div>
 
                   {/* Daily Review Faces */}
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="font-bold text-slate-300 block">أوجه المراجعة اليومية:</label>
                     <input
                       type="number"
@@ -3563,18 +3883,28 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                       max="40"
                       value={editPlanReviewFaces}
                       onChange={e => setEditPlanReviewFaces(Number(e.target.value))}
-                      className="w-full bg-[#022c22] border border-[#065f46] text-center font-bold text-emerald-300 rounded-xl py-2 px-3 outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-center font-black text-emerald-300 outline-none shadow-sm"
+                      style={{
+                        backgroundColor: theme.backgroundColor || '#131f24',
+                        borderColor: themeCardBorder,
+                        borderBottomColor: themeCardShadow
+                      }}
                     />
                   </div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t" style={{ borderColor: themeCardBorder }}>
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t" style={{ borderColor: themeCardBorder }}>
                 <button
                   type="button"
                   onClick={() => setAppPlanToEdit(null)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white"
+                  className="w-full sm:w-auto py-3 px-5 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black text-slate-300 hover:text-white cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm flex items-center justify-center"
+                  style={{
+                    backgroundColor: theme.backgroundColor || '#131f24',
+                    borderColor: themeCardBorder,
+                    borderBottomColor: themeCardShadow
+                  }}
                 >
                   إلغاء
                 </button>
@@ -3601,7 +3931,13 @@ export const ComplexPortalSettingsModal: React.FC<ComplexPortalSettingsModalProp
                     setApplications(prev => prev.map(a => (a.id === updatedApp.id ? updatedApp : a)));
                     setAppPlanToEdit(null);
                   }}
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#022c22] font-black text-xs shadow-md cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-3 min-h-[44px] rounded-2xl border-2 border-b-4 text-xs font-black cursor-pointer shadow-md transition-all active:translate-y-[2px] active:border-b-2 flex items-center justify-center"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
                   حفظ تعديل الخطة
                 </button>

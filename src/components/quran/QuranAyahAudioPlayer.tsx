@@ -33,6 +33,14 @@ export const EVERY_AYAH_RECITERS: Record<string, { folder: string; label: string
     folder: 'Husary_Muallim_128kbps',
     label: 'الشيخ محمود خليل الحصري (المصحف المعلم)'
   },
+  muaiqly: {
+    folder: 'MaherAlMuaiqly128kbps',
+    label: 'الشيخ ماهر بن حمد المعيقلي'
+  },
+  dosari: {
+    folder: 'Yasser_Ad-Dussary_128kbps',
+    label: 'الشيخ ياسر بن راشد الدوسري'
+  },
   afasy: {
     folder: 'Alafasy_128kbps',
     label: 'الشيخ مشاري بن راشد العفاسي'
@@ -54,6 +62,8 @@ export const EVERY_AYAH_RECITERS: Record<string, { folder: string; label: string
 export function resolveReciterFolder(sheikhName?: string): { folder: string; label: string } {
   if (!sheikhName) return EVERY_AYAH_RECITERS.minshawi;
   const lower = sheikhName.toLowerCase();
+  if (lower.includes('معيقلي') || lower.includes('muaiqly') || lower.includes('ماهر')) return EVERY_AYAH_RECITERS.muaiqly;
+  if (lower.includes('دوسري') || lower.includes('dussary') || lower.includes('dosari') || lower.includes('ياسر')) return EVERY_AYAH_RECITERS.dosari;
   if (lower.includes('منشاوي') || lower.includes('minshawi')) return EVERY_AYAH_RECITERS.minshawi;
   if (lower.includes('حصري') || lower.includes('hussary') || lower.includes('husary')) return EVERY_AYAH_RECITERS.hussary;
   if (lower.includes('عفاسي') || lower.includes('afasy') || lower.includes('alafasy')) return EVERY_AYAH_RECITERS.afasy;
@@ -147,6 +157,8 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   const [selectedSheikhKey, setSelectedSheikhKey] = useState<string>(() => {
     if (!selectedSheikhName) return 'minshawi';
     const lower = selectedSheikhName.toLowerCase();
+    if (lower.includes('معيقلي') || lower.includes('muaiqly') || lower.includes('ماهر')) return 'muaiqly';
+    if (lower.includes('دوسري') || lower.includes('dussary') || lower.includes('dosari') || lower.includes('ياسر')) return 'dosari';
     if (lower.includes('حصري') || lower.includes('hussary') || lower.includes('husary')) return 'hussary';
     if (lower.includes('عفاسي') || lower.includes('afasy') || lower.includes('alafasy')) return 'afasy';
     if (lower.includes('عبد الباسط') || lower.includes('abdulbasit') || lower.includes('عبدالباسط')) return 'abdulbasit';
@@ -639,6 +651,8 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
             const shortLabel =
               key === 'minshawi' ? 'المنشاوي (المعلم)' :
               key === 'hussary' ? 'الحصري (المعلم)' :
+              key === 'muaiqly' ? 'ماهر المعيقلي' :
+              key === 'dosari' ? 'ياسر الدوسري' :
               key === 'afasy' ? 'مشاري العفاسي' :
               key === 'abdulbasit' ? 'عبد الباسط (مرتل)' :
               key === 'hudhaify' ? 'الحذيفي' :

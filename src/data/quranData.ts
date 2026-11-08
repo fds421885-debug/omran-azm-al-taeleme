@@ -129,6 +129,8 @@ export const QURAN_SURAHS: SurahInfo[] = [
 export const FAMOUS_RECITERS = [
   { id: "minshawi", name: "الشيخ محمد صديق المنشاوي (المصحف المعلم)", style: "خشوع وعذوبة الصوت وترسيخ الحفظ للناشئة", everyAyahFolder: "Minshawy_Teacher_128kbps", hasAudio: true },
   { id: "hussary", name: "الشيخ محمود خليل الحصري (المصحف المعلم)", style: "إتقان الأحكام ومخارج الحروف والتأني الفائق", everyAyahFolder: "Husary_Muallim_128kbps", hasAudio: true },
+  { id: "muaiqly", name: "الشيخ ماهر بن حمد المعيقلي", style: "تلاوة خاشعة وسلسة بإتقان بديع ونبرة مؤثرة", everyAyahFolder: "MaherAlMuaiqly128kbps", hasAudio: true },
+  { id: "dosari", name: "الشيخ ياسر بن راشد الدوسري", style: "قراءة شجية محبرة تجمع بين الجمال والتدبر", everyAyahFolder: "Yasser_Ad-Dussary_128kbps", hasAudio: true },
   { id: "afasy", name: "الشيخ مشاري بن راشد العفاسي", style: "نبرة محببة وعصرية للأجيال الناشئة", everyAyahFolder: "Alafasy_128kbps", hasAudio: true },
   { id: "hudhaify", name: "الشيخ علي بن عبد الرحمن الحذيفي", style: "وضوح الترتيل وسلاسة القراءة وضبط الوقف والابتداء", everyAyahFolder: "Hudhaify_128kbps", hasAudio: true },
   { id: "abdulbasit", name: "الشيخ عبد الباسط عبد الصمد (المصحف المرتل)", style: "فصاحة الصوت وقوة الأداء القرآني", everyAyahFolder: "Abdul_Basit_Murattal_192kbps", hasAudio: true },
