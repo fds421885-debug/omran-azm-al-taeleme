@@ -208,8 +208,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return (
         tNormUser === normUser ||
         tNormName === normUser ||
-        t.username.trim().toLowerCase() === cleanUser.toLowerCase() ||
-        t.name.trim().toLowerCase() === cleanUser.toLowerCase() ||
+        (t.username || '').trim().toLowerCase() === cleanUser.toLowerCase() ||
+        (t.name || '').trim().toLowerCase() === cleanUser.toLowerCase() ||
         (cleanPhoneDigits.length >= 7 && tPhone === cleanPhoneDigits)
       );
     });
@@ -355,7 +355,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     // Check duplicate student
     const existsStudent = students.some(s => {
-      const sName = s.name.trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+      const sName = (s.name || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
       return sName === normRegName;
     });
     if (existsStudent) {
@@ -365,7 +365,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     // Check conflict with teacher names
     const existsTeacher = teachers.some(t => {
-      const tName = t.name.trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+      const tName = (t.name || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
       return tName === normRegName;
     });
     if (existsTeacher || normRegName.includes('منتصر') || normRegName === 'admin' || normRegName === 'developer') {

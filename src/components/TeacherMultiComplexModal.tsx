@@ -134,7 +134,7 @@ export const TeacherMultiComplexModal: React.FC<TeacherMultiComplexModalProps> =
                 : complexHalaqahs.filter(h => {
                     if (h.teacherIds?.includes(teacher?.id || '')) return true;
                     if (h.primaryTeacherName && teacher?.name && h.primaryTeacherName.trim().toLowerCase() === teacher.name.trim().toLowerCase()) return true;
-                    if (h.teacherNames && teacher?.name && h.teacherNames.some(tn => tn.trim().toLowerCase() === teacher.name.trim().toLowerCase())) return true;
+                    if (h.teacherNames && teacher?.name && h.teacherNames.some(tn => (tn || '').trim().toLowerCase() === teacher.name.trim().toLowerCase())) return true;
                     return false;
                   });
 

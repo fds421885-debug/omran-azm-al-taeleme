@@ -181,13 +181,13 @@ export const TeacherManagementModal: React.FC<TeacherManagementModalProps> = ({
       return;
     }
 
-    const cleanTeacherName = editingTeacher.name.trim();
+    const cleanTeacherName = (editingTeacher.name || '').trim();
     const normTeacherName = cleanTeacherName.toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
 
     // Check duplicate teacher name
     const duplicateTeacher = teachers.find(
       t => t.id !== editingTeacher.id &&
-           t.name.trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي') === normTeacherName
+           (t.name || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي') === normTeacherName
     );
     if (duplicateTeacher) {
       setStatusMsg({
@@ -200,7 +200,7 @@ export const TeacherManagementModal: React.FC<TeacherManagementModalProps> = ({
     // Check duplicate username if new
     if (isNew) {
       const exists = teachers.some(
-        t => t.username.trim().toLowerCase() === editingTeacher.username?.trim().toLowerCase()
+        t => (t.username || '').trim().toLowerCase() === (editingTeacher.username || '').trim().toLowerCase()
       );
       if (exists) {
         setStatusMsg({ type: 'error', text: 'اسم المستخدم مسجل لمعلم آخر بالفعل. اختر اسم مستخدم مختلف.' });
@@ -212,8 +212,8 @@ export const TeacherManagementModal: React.FC<TeacherManagementModalProps> = ({
       setIsSubmitting(true);
       const fullTeacher: TeacherAccount = {
         id: editingTeacher.id || `teacher-${Date.now()}`,
-        name: editingTeacher.name.trim(),
-        username: editingTeacher.username.trim(),
+        name: (editingTeacher.name || '').trim(),
+        username: (editingTeacher.username || '').trim(),
         password: editingTeacher.password?.trim() || '123',
         phone: editingTeacher.phone?.trim() || '0500000000',
         title: editingTeacher.title?.trim() || 'معلم شريك ومحفظ',
@@ -605,11 +605,11 @@ export const TeacherManagementModal: React.FC<TeacherManagementModalProps> = ({
                 >
                   <div className="flex items-center gap-3.5">
                     <div className="w-11 h-11 rounded-2xl bg-[#064e3b] text-[#fbbf24] border border-[#fbbf24]/30 flex items-center justify-center font-bold text-base shadow-inner shrink-0">
-                      {teacher.name.charAt(0)}
+                      {(teacher.name || 'م').trim().charAt(0) || 'م'}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-sm">{teacher.name}</span>
+                        <span className="font-bold text-white text-sm">{teacher.name || teacher.username || 'معلم'}</span>
                         {isDefaultPrimary ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/40 font-bold">
                             المعلم الأول

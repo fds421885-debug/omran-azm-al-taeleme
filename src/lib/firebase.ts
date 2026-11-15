@@ -2015,7 +2015,8 @@ export class OmranDataService {
 
       const normalized: TeacherAccount = {
         ...raw,
-        name: isDev && !raw.name.includes('منتصر') ? 'م. محمد منتصر' : raw.name,
+        name: isDev && !(raw.name || '').includes('منتصر') ? 'م. محمد منتصر' : (raw.name || raw.username || 'معلم'),
+        username: raw.username || raw.name || '',
         role,
         isPrimary: role === 'developer' || role === 'supervisor',
         teacherCode,
@@ -5534,15 +5535,66 @@ export class OmranDataService {
 
   static subscribeTeachers(callback: (teachers: TeacherAccount[]) => void): () => void {
     try {
-      const unsubActive = onSnapshot(collection(this.getActiveDb(), 'teachers'), snap => {
+      const normalizeTeacher = (raw: TeacherAccount): TeacherAccount => {
+        const cleanUser = (raw.username || '').trim().toLowerCase();
+        const cleanName = (raw.name || '').trim().toLowerCase();
+        const isDev =
+          cleanUser === 'admin' ||
+          cleanUser === 'developer' ||
+          cleanUser === 'montaser' ||
+          cleanUser.includes('منتصر') ||
+          cleanName.includes('منتصر') ||
+          raw.id === 'teacher-1' ||
+          raw.role === 'developer';
+
+        const role = isDev
+          ? 'developer'
+          : (raw.role === 'supervisor' ? 'supervisor' : 'teacher');
+
+        const title = raw.title || (
+          role === 'developer'
+            ? 'المشرف والمعلم المبرمج والمطور العام'
+            : (role === 'supervisor' ? 'معلم مشرف' : 'معلم حلقة ومحفظ')
+        );
+
+        const teacherCode = raw.teacherCode && /^\d{6}$/.test(raw.teacherCode.trim())
+          ? raw.teacherCode.trim()
+          : getTeacherSixDigitCode(raw);
+
+        return {
+          ...raw,
+          name: isDev && !(raw.name || '').includes('منتصر') ? 'م. محمد منتصر' : (raw.name || raw.username || 'معلم'),
+          username: raw.username || raw.name || '',
+          role,
+          isPrimary: role === 'developer' || role === 'supervisor',
+          teacherCode,
+          title
+        };
+      };
+
+      const mergeAndEmit = (activeDocs: TeacherAccount[], centralDocs: TeacherAccount[]) => {
         const deletedTeacherIds = getDeletedTeacherIds();
-        const list: TeacherAccount[] = [];
-        snap.forEach(d => {
-          const t = d.data() as TeacherAccount;
+        const mergedMap = new Map<string, TeacherAccount>();
+        for (const t of activeDocs) {
           if (t?.id && !deletedTeacherIds.has(t.id)) {
-            list.push(t);
+            mergedMap.set(t.id, t);
           }
-        });
+        }
+        if (this.activeComplexId) {
+          for (const ct of centralDocs) {
+            if (ct?.id && !deletedTeacherIds.has(ct.id) && !mergedMap.has(ct.id)) {
+              const isAssigned =
+                ct.complexId === this.activeComplexId ||
+                (Array.isArray(ct.complexIds) && ct.complexIds.includes(this.activeComplexId)) ||
+                ct.role === 'developer';
+              if (isAssigned) {
+                mergedMap.set(ct.id, ct);
+              }
+            }
+          }
+        }
+
+        const list = Array.from(mergedMap.values()).map(normalizeTeacher);
         if (list.length > 0) {
           callback(list);
         } else if (deletedTeacherIds.size === 0) {
@@ -5550,11 +5602,42 @@ export class OmranDataService {
         } else {
           callback([]);
         }
+      };
+
+      let latestActive: TeacherAccount[] = [];
+      let latestCentral: TeacherAccount[] = [];
+      const activeDb = this.getActiveDb();
+      const centralDb = this.getCentralDb();
+
+      const unsubActive = onSnapshot(collection(activeDb, 'teachers'), snap => {
+        const list: TeacherAccount[] = [];
+        snap.forEach(d => {
+          const t = d.data() as TeacherAccount;
+          if (t?.id) list.push(t);
+        });
+        latestActive = list;
+        mergeAndEmit(latestActive, latestCentral);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'teachers');
       });
 
-      return unsubActive;
+      let unsubCentral: (() => void) | null = null;
+      if (activeDb !== centralDb) {
+        unsubCentral = onSnapshot(collection(centralDb, 'teachers'), snap => {
+          const list: TeacherAccount[] = [];
+          snap.forEach(d => {
+            const t = d.data() as TeacherAccount;
+            if (t?.id) list.push(t);
+          });
+          latestCentral = list;
+          mergeAndEmit(latestActive, latestCentral);
+        }, () => {});
+      }
+
+      return () => {
+        unsubActive();
+        if (unsubCentral) unsubCentral();
+      };
     } catch (e) {
       return () => {};
     }

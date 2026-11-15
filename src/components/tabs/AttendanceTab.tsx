@@ -438,7 +438,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   };
 
   const filteredStudents = students.filter(s =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase())
+    (s.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // --------------------------------------------------------------------------

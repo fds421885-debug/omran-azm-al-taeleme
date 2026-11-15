@@ -358,8 +358,8 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
 
   const filteredStudents = students.filter(
     s =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.parentName?.toLowerCase().includes(searchTerm.toLowerCase())
+      (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.parentName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

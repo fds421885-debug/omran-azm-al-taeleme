@@ -400,10 +400,23 @@ export function getStudentListeningStatus(
   const req = assign?.requiredRepetitions ?? 3;
   const completed = assign?.completedRepetitions ?? 0;
 
+  const completedAfterAssignedAt = Boolean(
+    assign?.assignedAt &&
+    student.dailyListeningCompletedAt &&
+    student.dailyListeningCompletedAt > assign.assignedAt
+  );
+  const completedStrictlyAfterLegacyDate = Boolean(
+    !assign?.assignedAt &&
+    student.dailyListeningCompletedDate &&
+    assign?.assignedDate &&
+    student.dailyListeningCompletedDate > assign.assignedDate
+  );
+
   const isDone = Boolean(
     assign?.isCompleted ||
     (completed >= req && req > 0) ||
-    (student.dailyListeningCompletedDate && assign?.assignedDate && student.dailyListeningCompletedDate >= assign.assignedDate)
+    completedAfterAssignedAt ||
+    completedStrictlyAfterLegacyDate
   );
 
   if (isDone) {
@@ -1263,14 +1276,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
       // Read latest student & Mushaf errors so async AI plan NEVER overwrites errors recorded meanwhile!
       const liveStd = latestStudentsMapRef.current[targetStdId] || studentSnapshot;
+      const planNowIso = new Date().toISOString();
+      const planTodayDate = planNowIso.split('T')[0];
+      const planSheikh = aiPlanObj?.currentDailyAssignment?.suggestedSheikh || liveStd.activeListeningAssignment?.sheikhName || 'الشيخ محمد صديق المنشاوي (المصحف المعلم)';
+      const planReps = aiPlanObj?.currentDailyAssignment?.targetRepetitions ?? liveStd.activeListeningAssignment?.requiredRepetitions ?? 3;
+      const isPlanExempt = planSheikh === 'بدون' || planSheikh === 'لا يوجد' || planReps === 0;
       const updatedStd: Student = {
         ...liveStd,
         mushafErrors: studentMushafRecordsRef.current[targetStdId] ?? liveStd.mushafErrors,
         mushafErrorsUpdatedAt: liveStd.mushafErrorsUpdatedAt,
         isGeneratingPlan: false,
+        activeListeningAssignment: {
+          surahNumber: aiPortion.fromSurah,
+          surahName: getSurahInfo(aiPortion.fromSurah).name,
+          fromAyah: aiPortion.fromAyah,
+          toSurahNumber: aiPortion.toSurah,
+          toSurahName: getSurahInfo(aiPortion.toSurah).name,
+          toAyah: aiPortion.toAyah,
+          sheikhName: planSheikh,
+          requiredRepetitions: isPlanExempt ? 0 : planReps,
+          assignedDate: planTodayDate,
+          assignedAt: planNowIso,
+          completedRepetitions: 0,
+          isCompleted: isPlanExempt
+        },
         aiPlan: aiPlanObj ? {
           ...aiPlanObj,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: planNowIso
         } : liveStd.aiPlan,
         memorizationPlan: {
           ...liveStd.memorizationPlan!,
@@ -1279,14 +1311,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             ...liveStd.memorizationPlan?.nextDayAssignment!,
             newMemorization: aiPlanObj?.currentDailyAssignment?.newMemorization || aiPortion.description,
             review: aiPlanObj?.currentDailyAssignment?.review || liveStd.memorizationPlan?.nextDayAssignment?.review || 'مراجعة وتثبيت المحفوظ',
-            suggestedSheikh: aiPlanObj?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمود خليل الحصري',
+            suggestedSheikh: planSheikh,
             surahNumber: aiPortion.fromSurah,
             fromAyah: aiPortion.fromAyah,
             toSurahNumber: aiPortion.toSurah,
             toAyah: aiPortion.toAyah
           },
           aiNotes: aiPlanObj?.roadmapSummary || liveStd.memorizationPlan?.aiNotes,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: planNowIso
         }
       };
 
@@ -1829,6 +1861,53 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
     }
   }, [activeStudentId, selectedDate, evaluations, criteria]);
+
+  // Keep session listening status synced when a new wird drops or student listens in portal (when no evaluation is saved for selectedDate yet)
+  const loadedActiveAssignmentKeyRef = useRef<string>('');
+  useEffect(() => {
+    if (!activeStudent) {
+      loadedActiveAssignmentKeyRef.current = '';
+      return;
+    }
+    const assign = activeStudent.activeListeningAssignment;
+    const assignKey = [
+      activeStudent.id,
+      selectedDate,
+      selectedDateEvaluation ? 'eval' : 'new',
+      assign?.assignedAt || assign?.assignedDate || '',
+      assign?.surahNumber || '',
+      assign?.fromAyah || '',
+      assign?.toSurahNumber || '',
+      assign?.toAyah || '',
+      assign?.isCompleted ? '1' : '0',
+      assign?.completedRepetitions ?? 0,
+      assign?.requiredRepetitions ?? '',
+      assign?.sheikhName || '',
+      activeStudent.dailyListeningCompletedAt || ''
+    ].join('__');
+
+    if (loadedActiveAssignmentKeyRef.current === assignKey) {
+      return;
+    }
+    loadedActiveAssignmentKeyRef.current = assignKey;
+
+    if (!selectedDateEvaluation) {
+      const baseStatus = getStudentListeningStatus(activeStudent, null);
+      setSessionListeningStatus({
+        isListened: baseStatus.isListened,
+        isPartial: baseStatus.isPartial,
+        isExempt: baseStatus.isExempt,
+        completedReps: baseStatus.completedReps,
+        requiredReps: baseStatus.requiredReps
+      });
+      if (assign?.requiredRepetitions !== undefined) {
+        setTargetRepetitions(assign.requiredRepetitions);
+      }
+      if (assign?.sheikhName) {
+        setSelectedSheikh(assign.sheikhName);
+      }
+    }
+  }, [activeStudent, selectedDate, selectedDateEvaluation]);
 
   // Date Navigation Helpers
   const handleDateShift = (days: number) => {
@@ -2466,14 +2545,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         reviewItems: tomReviews || []
       };
 
+      const evalSavedIso = new Date().toISOString();
+
       const listeningAssignmentForStudent = {
         surahNumber: tomNewSurah,
-        surahName: startTomNewSurahInfo.name,
+        surahName: tomStartSurahInfo.name,
         fromAyah: tomNewFromAyah,
+        toSurahNumber: tomNewToSurah,
+        toSurahName: tomEndSurahInfo.name,
         toAyah: tomNewToAyah,
         sheikhName: finalSuggestedSheikh,
         requiredRepetitions: finalTargetReps,
         assignedDate: selectedDate,
+        assignedAt: evalSavedIso,
         completedRepetitions: 0,
         isCompleted: isNoneSheikh
       };
@@ -2518,7 +2602,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         ...e,
         studentId: activeStudent.id
       }));
-      const evalSavedIso = new Date().toISOString();
 
       studentMushafRecordsRef.current[activeStudent.id] = taggedUpdatedErrors;
       studentLocalModifiedAtRef.current[activeStudent.id] = Date.now();
@@ -3219,14 +3302,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           color: themeAccent
                         }}
                       >
-                        {student.name.charAt(0)}
+                        {(student.name || 'ط').trim().charAt(0) || 'ط'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div 
                           className="font-black text-xs line-clamp-1"
                           style={{ color: isSelected ? 'var(--complex-primary, #131f24)' : '#ffffff' }}
                         >
-                          {student.name}
+                          {student.name || 'طالب'}
                         </div>
                         <div
                           className="text-[10px] mt-0.5 font-bold line-clamp-1"
@@ -3282,7 +3365,9 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       )}
                       {(() => {
                         const evalForDate = evaluations.find(e => e.date === selectedDate && e.studentId === student.id);
-                        const lStatus = getStudentListeningStatus(student, evalForDate);
+                        const todayIsoStr = new Date().toISOString().split('T')[0];
+                        const useCurrentActiveWird = !evalForDate || (selectedDate >= todayIsoStr && Boolean(student.activeListeningAssignment));
+                        const lStatus = getStudentListeningStatus(student, useCurrentActiveWird ? null : evalForDate);
                         if (lStatus.isExempt) return null;
                         return (
                           <span
@@ -4983,6 +5068,43 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* 2.4 Active New Wird Live Listening Status */}
+                {activeStudent?.activeListeningAssignment && (() => {
+                  const newWirdStatus = getStudentListeningStatus(activeStudent, null);
+                  return (
+                    <div
+                      className={`p-3.5 rounded-2xl border-2 border-b-4 flex flex-wrap items-center justify-between gap-2.5 text-xs font-black ${
+                        newWirdStatus.isListened && !newWirdStatus.isExempt
+                          ? 'bg-emerald-950/70 border-emerald-500/60 border-b-emerald-600 text-emerald-200'
+                          : newWirdStatus.isPartial
+                          ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-200'
+                          : newWirdStatus.isExempt
+                          ? 'bg-slate-900/70 border-slate-600/60 border-b-slate-700 text-slate-300'
+                          : 'bg-rose-950/70 border-rose-500/60 border-b-rose-600 text-rose-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Headphones className="w-4 h-4 shrink-0" />
+                        <span>حالة استماع الطالب للورد الجديد المقرر:</span>
+                        <span className="font-bold opacity-90">{newWirdStatus.label}</span>
+                      </div>
+                      <span
+                        className={`px-3 py-1 rounded-xl border text-[11px] font-black ${
+                          newWirdStatus.isListened && !newWirdStatus.isExempt
+                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                            : newWirdStatus.isPartial
+                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                            : newWirdStatus.isExempt
+                            ? 'bg-slate-600/30 border-slate-500/50 text-slate-200'
+                            : 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                        }`}
+                      >
+                        {newWirdStatus.badgeText}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ============================================================ */}

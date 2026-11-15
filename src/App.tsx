@@ -214,7 +214,11 @@ export function App() {
     const saved = localStorage.getItem('omran_session');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.role === 'teacher' || parsed.role === 'supervisor' || parsed.role === 'developer')) {
+          return { ...parsed, role: 'admin' as UserRole };
+        }
+        return parsed;
       } catch (e) {
         return null;
       }
@@ -316,12 +320,12 @@ export function App() {
           if (Array.isArray(cached) && cached.length > 0) {
             const cMatch = cached.find(
               s =>
-                s.id === clean ||
-                s.id.toLowerCase() === clean.toLowerCase() ||
-                s.name.trim() === clean ||
-                s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-                s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-                (s.parentPhones && s.parentPhones.some(ph => ph.replace(/\D/g, '') === clean.replace(/\D/g, '')))
+                s?.id === clean ||
+                (s?.id || '').toLowerCase() === clean.toLowerCase() ||
+                (s?.name || '').trim() === clean ||
+                (s?.name || '').replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+                (s?.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+                (s?.parentPhones && s.parentPhones.some(ph => (ph || '').replace(/\D/g, '') === clean.replace(/\D/g, '')))
             );
             if (cMatch) return cMatch;
           }
@@ -674,12 +678,12 @@ export function App() {
       const clean = decodeURIComponent(portalStudentId).trim();
       const match = students.find(
         s =>
-          s.id === clean ||
-          s.id.toLowerCase() === clean.toLowerCase() ||
-          s.name.trim() === clean ||
-          s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-          s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-          (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
+          s?.id === clean ||
+          (s?.id || '').toLowerCase() === clean.toLowerCase() ||
+          (s?.name || '').trim() === clean ||
+          (s?.name || '').replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+          (s?.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+          (s?.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === clean.replace(/\D/g, '')))
       );
       if (match) {
         if (!isCancelled) {
@@ -696,12 +700,12 @@ export function App() {
         if (Array.isArray(cached) && cached.length > 0) {
           const cMatch = cached.find(
             s =>
-              s.id === clean ||
-              s.id.toLowerCase() === clean.toLowerCase() ||
-              s.name.trim() === clean ||
-              s.name.replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-              s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-              (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
+              s?.id === clean ||
+              (s?.id || '').toLowerCase() === clean.toLowerCase() ||
+              (s?.name || '').trim() === clean ||
+              (s?.name || '').replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
+              (s?.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+              (s?.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === clean.replace(/\D/g, '')))
           );
           if (cMatch) {
             if (!isCancelled) {
@@ -862,25 +866,27 @@ export function App() {
 
   // Identify Teacher and Supervisor Roles (MUST run before any conditional returns)
   const currentTeacher = useMemo(() => {
-    if (!currentUser || currentUser.role !== 'admin') return null;
-    const cleanUser = currentUser.username.trim().toLowerCase();
+    if (!currentUser || (currentUser.role !== 'admin' && (currentUser.role as string) !== 'teacher' && (currentUser.role as string) !== 'supervisor' && (currentUser.role as string) !== 'developer')) {
+      return null;
+    }
+    const cleanUser = (currentUser.username || '').trim().toLowerCase();
     const tid = currentUser.teacherId;
     if (tid) {
-      const matchById = teachers.find(t => t.id === tid);
+      const matchById = teachers.find(t => t?.id === tid);
       if (matchById) return matchById;
     }
     return teachers.find(
       t =>
-        t.username.trim().toLowerCase() === cleanUser ||
-        t.name.trim().toLowerCase() === cleanUser ||
-        normalizeArabicText(t.name) === normalizeArabicText(currentUser.username)
+        (t?.username || '').trim().toLowerCase() === cleanUser ||
+        (t?.name || '').trim().toLowerCase() === cleanUser ||
+        (t?.name && currentUser.username && normalizeArabicText(t.name) === normalizeArabicText(currentUser.username))
     ) || null;
   }, [currentUser, teachers]);
 
   // Check Developer / System Administrator
   const isDeveloper = useMemo(() => {
     if (!currentUser) return false;
-    if (currentUser.role !== 'admin' && (currentUser.role as string) !== 'developer') return false;
+    if (currentUser.role !== 'admin' && (currentUser.role as string) !== 'developer' && (currentUser.role as string) !== 'supervisor' && (currentUser.role as string) !== 'teacher') return false;
     if (currentTeacher) {
       if (isTeacherDeveloper(currentTeacher, currentUser)) return true;
     }
@@ -900,7 +906,7 @@ export function App() {
   // STRICT IMMUNITY: Protect teachers and supervisors from demotion, without hijacking other teachers' accounts
   useEffect(() => {
     if (!currentUser) return;
-    const cleanUser = currentUser.username.trim().toLowerCase();
+    const cleanUser = (currentUser.username || '').trim().toLowerCase();
     const isMontaserOrDev =
       cleanUser === 'admin' ||
       cleanUser === 'developer' ||
@@ -910,20 +916,20 @@ export function App() {
     // 1. Resolve the specific teacher account belonging to the active session
     let matchedTeacher: TeacherAccount | undefined;
     if (currentUser.teacherId) {
-      matchedTeacher = teachers.find(t => t.id === currentUser.teacherId);
+      matchedTeacher = teachers.find(t => t?.id === currentUser.teacherId);
     }
-    if (!matchedTeacher) {
+    if (!matchedTeacher && cleanUser) {
       matchedTeacher = teachers.find(
         t =>
-          t.username.trim().toLowerCase() === cleanUser ||
-          t.name.trim().toLowerCase() === cleanUser ||
-          normalizeArabicText(t.name) === normalizeArabicText(currentUser.username)
+          (t?.username || '').trim().toLowerCase() === cleanUser ||
+          (t?.name || '').trim().toLowerCase() === cleanUser ||
+          (t?.name && currentUser.username && normalizeArabicText(t.name) === normalizeArabicText(currentUser.username))
       );
     }
 
     // 2. Only if the logged in user is explicitly developer/Montaser and no other teacher was matched
     if (!matchedTeacher && isMontaserOrDev) {
-      matchedTeacher = teachers.find(t => t.role === 'developer' || t.id === 'teacher-1');
+      matchedTeacher = teachers.find(t => t?.role === 'developer' || t?.id === 'teacher-1');
     }
 
     // 3. If a valid teacher account is matched, preserve their role as admin and ensure no demotion to student
@@ -936,17 +942,17 @@ export function App() {
 
       if (needsUpdate) {
         const safeUser = {
-          username: matchedTeacher.name || matchedTeacher.username,
+          username: matchedTeacher.name || matchedTeacher.username || currentUser.username || 'المعلم',
           role: 'admin' as const,
           teacherId: matchedTeacher.id,
-          complexId: matchedTeacher.complexId
+          complexId: matchedTeacher.complexId || currentUser.complexId
         };
         setCurrentUser(safeUser);
         localStorage.setItem('omran_session', JSON.stringify(safeUser));
-        if (matchedTeacher.complexId) {
-          setSelectedComplexId(matchedTeacher.complexId);
+        if (safeUser.complexId) {
+          setSelectedComplexId(safeUser.complexId);
           try {
-            localStorage.setItem('omran_selected_complex_id', matchedTeacher.complexId);
+            localStorage.setItem('omran_selected_complex_id', safeUser.complexId);
           } catch {}
         }
       }
@@ -956,25 +962,27 @@ export function App() {
   // 1. Resolve active student for parent/student portal if active
   const activePortalStudent = useMemo<Student | null>(() => {
     if (portalStudentId) {
+      const cleanPortal = portalStudentId.trim();
       const matchInStudents = students.find(
         s =>
-          s.id === portalStudentId ||
-          s.id.toLowerCase() === portalStudentId.toLowerCase() ||
-          s.name.trim() === portalStudentId.trim() ||
-          s.name.replace(/\s+/g, '') === portalStudentId.replace(/\s+/g, '') ||
-          s.phone.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '') ||
-          (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === portalStudentId.replace(/\D/g, '')))
+          s?.id === portalStudentId ||
+          (s?.id || '').toLowerCase() === cleanPortal.toLowerCase() ||
+          (s?.name || '').trim() === cleanPortal ||
+          (s?.name || '').replace(/\s+/g, '') === cleanPortal.replace(/\s+/g, '') ||
+          (s?.phone || '').replace(/\D/g, '') === cleanPortal.replace(/\D/g, '') ||
+          (s?.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === cleanPortal.replace(/\D/g, '')))
       );
       return matchInStudents || directPortalStudent || null;
     }
     if (currentUser?.role === 'student') {
+      const cleanUser = (currentUser.username || '').trim();
       return (
         students.find(
           s =>
-            (currentUser.studentId && s.id === currentUser.studentId) ||
-            (currentUser.studentId && s.id.toLowerCase() === currentUser.studentId.toLowerCase()) ||
-            s.name.trim() === currentUser.username.trim() ||
-            normalizeArabicText(s.name) === normalizeArabicText(currentUser.username)
+            (currentUser.studentId && s?.id === currentUser.studentId) ||
+            (currentUser.studentId && (s?.id || '').toLowerCase() === currentUser.studentId.toLowerCase()) ||
+            (cleanUser && (s?.name || '').trim() === cleanUser) ||
+            (cleanUser && s?.name && normalizeArabicText(s.name) === normalizeArabicText(cleanUser))
         ) || null
       );
     }
@@ -983,7 +991,7 @@ export function App() {
 
   // 1. Determine if current user is supervisor or higher (developer has full rights, supervisor manages their complex)
   const isSupervisor = useMemo(() => {
-    if (!currentUser || currentUser.role !== 'admin') return false;
+    if (!currentUser || currentUser.role === 'student') return false;
     if (isDeveloper) return true;
     if (currentTeacher) {
       // STRICT: If role is explicitly teacher, they are strictly a regular teacher, NEVER supervisor
@@ -991,12 +999,12 @@ export function App() {
       if (currentTeacher.role === 'supervisor') return true;
       if (currentTeacher.supervisedComplexId) return true;
       if (complexes.some(c =>
-        (c.supervisorTeacherId && c.supervisorTeacherId === currentTeacher.id) ||
-        (c.supervisorTeacherName && currentTeacher.name && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
+        (c?.supervisorTeacherId && c.supervisorTeacherId === currentTeacher.id) ||
+        (c?.supervisorTeacherName && currentTeacher.name && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
       )) return true;
       return isTeacherSupervisor(currentTeacher);
     }
-    const cleanUser = currentUser.username.trim().toLowerCase();
+    const cleanUser = (currentUser.username || '').trim().toLowerCase();
     return (
       cleanUser === 'admin' ||
       cleanUser === 'developer' ||
@@ -1684,18 +1692,21 @@ export function App() {
 
   // Scoped complexes: Programmer sees all complexes; Supervisor sees their assigned and supervised complexes; teacher sees their assigned complexes
   const scopedComplexes = useMemo(() => {
-    if (isDeveloper) return complexes;
+    const validComplexes = complexes.filter((c): c is QuranComplex => Boolean(c && c.id));
+    if (isDeveloper) return validComplexes;
     if (isSupervisor) {
-      const supComplexes = complexes.filter(c =>
+      const supComplexes = validComplexes.filter(c =>
         c.supervisorTeacherId === currentTeacher?.id ||
         (currentTeacher?.complexIds && currentTeacher.complexIds.includes(c.id)) ||
         (currentTeacher?.complexId === c.id) ||
         (currentTeacher?.name && c.supervisorTeacherName && normalizeTeacherText(c.supervisorTeacherName) === normalizeTeacherText(currentTeacher.name))
       );
       if (supComplexes.length > 0) return supComplexes;
-      return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
     }
-    return availableTeacherComplexes.length > 0 ? availableTeacherComplexes : (activeComplex ? [activeComplex] : [complexes[0]]);
+    const validTeacherComplexes = availableTeacherComplexes.filter((c): c is QuranComplex => Boolean(c && c.id));
+    if (validTeacherComplexes.length > 0) return validTeacherComplexes;
+    if (activeComplex && activeComplex.id) return [activeComplex];
+    return validComplexes[0] ? [validComplexes[0]] : [];
   }, [isDeveloper, isSupervisor, complexes, activeComplex, availableTeacherComplexes, currentTeacher]);
 
   // Permission to switch complexes:
@@ -2127,20 +2138,29 @@ export function App() {
 
   // Save session on login with modern snappy cloud sync confirmation
   const handleLoginSuccess = async (user: { username: string; role: UserRole; studentId?: string; teacherId?: string; complexId?: string }) => {
-    setLoginSyncUser(user.username || 'المستخدم');
+    const normalizedRole: UserRole =
+      (user.role as string) === 'teacher' || (user.role as string) === 'supervisor' || (user.role as string) === 'developer'
+        ? 'admin'
+        : (user.role || 'admin');
+    const safeUser = {
+      ...user,
+      username: user.username || 'المستخدم',
+      role: normalizedRole
+    };
+    setLoginSyncUser(safeUser.username);
     setIsLoginSyncing(true);
-    setCurrentUser(user);
-    if (user.complexId) {
-      setSelectedComplexId(user.complexId);
+    setCurrentUser(safeUser);
+    if (safeUser.complexId) {
+      setSelectedComplexId(safeUser.complexId);
       try {
-        localStorage.setItem('omran_selected_complex_id', user.complexId);
+        localStorage.setItem('omran_selected_complex_id', safeUser.complexId);
       } catch {}
-      const targetComplex = complexes.find(c => c.id === user.complexId);
+      const targetComplex = complexes.find(c => c.id === safeUser.complexId);
       if (targetComplex) {
         OmranDataService.setActiveComplex(targetComplex);
       }
     }
-    localStorage.setItem('omran_session', JSON.stringify(user));
+    localStorage.setItem('omran_session', JSON.stringify(safeUser));
 
     // Refresh cloud data in the background non-blockingly so the UI opens instantly!
     loadAllData(false).catch(() => {});
@@ -2632,6 +2652,17 @@ export function App() {
         : Math.max(newTotalEarned, currentPoints + newTotalEarned);
 
       const isStudentListenedToday = Boolean(evaluation.recitationDetails?.wasListened);
+      const normalizedListeningAssignment = listeningAssignment
+        ? {
+            ...listeningAssignment,
+            assignedAt: listeningAssignment.assignedAt || new Date().toISOString(),
+            completedRepetitions: 0,
+            isCompleted:
+              listeningAssignment.sheikhName === 'بدون' ||
+              listeningAssignment.sheikhName === 'لا يوجد' ||
+              listeningAssignment.requiredRepetitions === 0
+          }
+        : targetStudent.activeListeningAssignment;
 
       const updatedStudent: Student = {
         ...targetStudent,
@@ -2648,7 +2679,7 @@ export function App() {
           ? evaluation.date
           : targetStudent.dailyListeningCompletedDate,
         persistentReviewItems: newAssignment?.reviewItems || targetStudent.persistentReviewItems,
-        activeListeningAssignment: listeningAssignment || targetStudent.activeListeningAssignment,
+        activeListeningAssignment: normalizedListeningAssignment,
         memorizationPlan: targetStudent.memorizationPlan && newAssignment ? {
           ...targetStudent.memorizationPlan,
           nextDayAssignment: {
@@ -2741,19 +2772,66 @@ export function App() {
       const student = prev.find(s => s.id === studentId);
       if (!student) return prev;
 
+      const nowIso = new Date().toISOString();
+      const todayIsoDate = nowIso.split('T')[0];
+      let nextListeningAssignment = student.activeListeningAssignment;
+
+      if (listeningAssignment) {
+        const isNone =
+          listeningAssignment.sheikhName === 'بدون' ||
+          listeningAssignment.sheikhName === 'لا يوجد' ||
+          listeningAssignment.requiredRepetitions === 0;
+        nextListeningAssignment = {
+          ...listeningAssignment,
+          assignedDate: listeningAssignment.assignedDate || todayIsoDate,
+          assignedAt: listeningAssignment.assignedAt || nowIso,
+          completedRepetitions: 0,
+          isCompleted: isNone
+        };
+      } else if (newAssignment?.newItem?.surahNumber) {
+        const nItem = newAssignment.newItem;
+        const prevAssign = student.activeListeningAssignment;
+        const portionChanged =
+          !prevAssign ||
+          prevAssign.surahNumber !== nItem.surahNumber ||
+          prevAssign.fromAyah !== (nItem.fromAyah || 1) ||
+          prevAssign.toAyah !== (nItem.toAyah || nItem.fromAyah || 1) ||
+          (prevAssign.toSurahNumber || prevAssign.surahNumber) !== (nItem.toSurahNumber || nItem.surahNumber);
+
+        if (portionChanged) {
+          const sheikh = newAssignment.suggestedSheikh || prevAssign?.sheikhName || 'الشيخ محمد صديق المنشاوي (المصحف المعلم)';
+          const reqReps = newAssignment.targetRepetitions ?? prevAssign?.requiredRepetitions ?? 3;
+          const isNone = sheikh === 'بدون' || sheikh === 'لا يوجد' || reqReps === 0;
+          nextListeningAssignment = {
+            surahNumber: nItem.surahNumber,
+            surahName: nItem.surahName || getSurahInfo(nItem.surahNumber).name,
+            fromAyah: nItem.fromAyah || 1,
+            toSurahNumber: nItem.toSurahNumber || nItem.surahNumber,
+            toSurahName: nItem.toSurahName || getSurahInfo(nItem.toSurahNumber || nItem.surahNumber).name,
+            toAyah: nItem.toAyah || nItem.fromAyah || 7,
+            sheikhName: isNone ? 'بدون' : sheikh,
+            requiredRepetitions: isNone ? 0 : reqReps,
+            assignedDate: todayIsoDate,
+            assignedAt: nowIso,
+            completedRepetitions: 0,
+            isCompleted: isNone
+          };
+        }
+      }
+
       const updatedStudent: Student = {
         ...student,
         currentSurah: updatedPosition?.surahNumber ?? student.currentSurah,
         currentSurahName: updatedPosition?.surahName ?? student.currentSurahName,
         currentAyah: updatedPosition?.ayah ?? student.currentAyah,
         persistentReviewItems: newAssignment?.reviewItems || student.persistentReviewItems,
-        activeListeningAssignment: listeningAssignment || student.activeListeningAssignment,
+        activeListeningAssignment: nextListeningAssignment,
         aiPlan: {
           roadmapSummary: student.aiPlan?.roadmapSummary || 'خطة الحفظ والمراجعة التراكمية',
           difficultyAdjustment: student.aiPlan?.difficultyAdjustment || 'وتيرة متوازنة',
           estimatedDaysToFinishJuz: student.aiPlan?.estimatedDaysToFinishJuz || 30,
           currentDailyAssignment: newAssignment,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: nowIso
         }
       };
 
@@ -3318,6 +3396,19 @@ export function App() {
     };
   }, [settings, scopedSettings, activePortalStudent, halaqahs, complexes]);
 
+  // Online Halaqahs hooks (MUST be declared unconditionally BEFORE all early returns!)
+  const onlineHalaqahsList = useMemo(() => {
+    if (isDeveloper || isSupervisor) return scopedHalaqahs.filter(h => h.isOnline);
+    if (!currentTeacher) return [];
+    const tHalaqahs = getTeacherHalaqahsInComplex(currentTeacher, activeComplex?.id || '', halaqahs, teachers, isSupervisor, complexes, students);
+    return tHalaqahs.filter(h => h.isOnline);
+  }, [isDeveloper, isSupervisor, scopedHalaqahs, currentTeacher, activeComplex, halaqahs, teachers, complexes, students]);
+
+  const hasOnlineHalaqahAssigned = useMemo(() => {
+    if (isDeveloper || isSupervisor) return true;
+    return onlineHalaqahsList.length > 0;
+  }, [isDeveloper, isSupervisor, onlineHalaqahsList]);
+
   // Priority 0: Direct Portal URL link view (e.g. via parent WhatsApp link ?portal=std-1 or ?student=std-1)
   // When a direct student portal link is opened, it ALWAYS displays the requested student's portal 100% reliably,
   // overriding and bypassing any old account that may have been previously logged in!
@@ -3673,18 +3764,6 @@ export function App() {
       />
     );
   }
-
-  const onlineHalaqahsList = useMemo(() => {
-    if (isDeveloper || isSupervisor) return scopedHalaqahs.filter(h => h.isOnline);
-    if (!currentTeacher) return [];
-    const tHalaqahs = getTeacherHalaqahsInComplex(currentTeacher, activeComplex?.id || '', halaqahs, teachers, isSupervisor, complexes, students);
-    return tHalaqahs.filter(h => h.isOnline);
-  }, [isDeveloper, isSupervisor, scopedHalaqahs, currentTeacher, activeComplex, halaqahs, teachers, complexes, students]);
-
-  const hasOnlineHalaqahAssigned = useMemo(() => {
-    if (isDeveloper || isSupervisor) return true;
-    return onlineHalaqahsList.length > 0;
-  }, [isDeveloper, isSupervisor, onlineHalaqahsList]);
 
   // Navigation Items for Admin/Teacher
   const navItems = [

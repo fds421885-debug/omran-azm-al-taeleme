@@ -350,11 +350,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                         color: themePrimary
                       }}
                     >
-                      {currentUser.username.charAt(0)}
+                      {(currentUser.username || 'م').trim().charAt(0) || 'م'}
                     </div>
                     <div className="text-right max-w-[90px] lg:max-w-[130px] xl:max-w-[160px]">
-                      <div className="text-xs font-bold text-white truncate" title={currentUser.username}>
-                        {currentUser.username}
+                      <div className="text-xs font-bold text-white truncate" title={currentUser.username || 'مستخدم'}>
+                        {currentUser.username || 'مستخدم'}
                       </div>
                       <div
                         className="text-[9px] font-bold truncate"
@@ -469,7 +469,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       color: themePrimary
                     }}
                   >
-                    {currentUser.username.charAt(0)}
+                    {(currentUser.username || 'م').trim().charAt(0) || 'م'}
                   </div>
                   <Menu className="w-4 h-4" style={{ color: themeAccent }} />
                 </button>
@@ -1264,10 +1264,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     borderBottomColor: themeAccentShadow
                   }}
                 >
-                  {currentUser.username.charAt(0)}
+                  {(currentUser.username || 'م').trim().charAt(0) || 'م'}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-white truncate font-heading">{currentUser.username}</h3>
+                  <h3 className="text-sm font-black text-white truncate font-heading">{currentUser.username || 'مستخدم'}</h3>
                   <span
                     className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border border-b-2 mt-0.5"
                     style={{

@@ -1106,15 +1106,27 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     setListensCount(nextCount);
 
     if (nextCount >= target) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const alreadyAwarded = currentStudent.dailyListeningCompletedDate === todayStr;
+      const completedAtIso = new Date().toISOString();
+      const todayStr = completedAtIso.split('T')[0];
+      const activeAssign = currentStudent.activeListeningAssignment;
+      const alreadyAwarded = activeAssign
+        ? Boolean(activeAssign.isCompleted)
+        : currentStudent.dailyListeningCompletedDate === todayStr;
 
       if (!alreadyAwarded && onUpdateStudent) {
         const updatedStudent: Student = {
           ...currentStudent,
           listeningPoints: (currentStudent.listeningPoints || 0) + rewardPoints,
           points: (currentStudent.points || 0) + rewardPoints,
-          dailyListeningCompletedDate: todayStr
+          dailyListeningCompletedDate: todayStr,
+          dailyListeningCompletedAt: completedAtIso,
+          ...(activeAssign ? {
+            activeListeningAssignment: {
+              ...activeAssign,
+              completedRepetitions: target,
+              isCompleted: true
+            }
+          } : {})
         };
         onUpdateStudent(updatedStudent);
 
@@ -1180,26 +1192,40 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   // Student's exact assigned passage (dictated by teacher)
   const currentAssignedPassage = useMemo(() => {
     if (currentStudent.activeListeningAssignment) {
+      const assign = currentStudent.activeListeningAssignment;
       const isNone =
-        currentStudent.activeListeningAssignment.sheikhName === 'بدون' ||
-        currentStudent.activeListeningAssignment.requiredRepetitions === 0;
+        assign.sheikhName === 'بدون' ||
+        assign.sheikhName === 'لا يوجد' ||
+        assign.requiredRepetitions === 0;
+      const req = isNone ? 0 : (assign.requiredRepetitions ?? 3);
+      const completed = assign.completedRepetitions ?? 0;
       return {
-        ...currentStudent.activeListeningAssignment,
-        requiredRepetitions: isNone ? 0 : (currentStudent.activeListeningAssignment.requiredRepetitions ?? 3),
-        isCompleted: isNone ? true : currentStudent.activeListeningAssignment.isCompleted
+        ...assign,
+        toSurahNumber: assign.toSurahNumber || assign.surahNumber,
+        toSurahName: assign.toSurahName || assign.surahName,
+        assignedAt: assign.assignedAt || assign.assignedDate,
+        completedRepetitions: completed,
+        requiredRepetitions: req,
+        isCompleted: isNone ? true : Boolean(assign.isCompleted || (completed >= req && req > 0))
       };
     }
     const newItem = currentStudent.aiPlan?.currentDailyAssignment?.newItem;
     const isPlanNone = currentStudent.aiPlan?.currentDailyAssignment?.suggestedSheikh === 'بدون';
     if (newItem && newItem.surahNumber) {
+      const startInfo = getSurahInfo(newItem.surahNumber);
+      const endSurahNum = newItem.toSurahNumber || newItem.surahNumber;
+      const endInfo = getSurahInfo(endSurahNum);
       return {
         surahNumber: newItem.surahNumber,
-        surahName: newItem.surahName || getSurahInfo(newItem.surahNumber).name,
+        surahName: newItem.surahName || startInfo.name,
         fromAyah: newItem.fromAyah || 1,
+        toSurahNumber: endSurahNum,
+        toSurahName: newItem.toSurahName || endInfo.name,
         toAyah: newItem.toAyah || newItem.fromAyah || 7,
         sheikhName: currentStudent.aiPlan?.currentDailyAssignment?.suggestedSheikh || 'الشيخ محمد صديق المنشاوي (المصحف المعلم)',
         requiredRepetitions: isPlanNone ? 0 : (currentStudent.aiPlan?.currentDailyAssignment?.targetRepetitions ?? 3),
-        assignedDate: new Date().toISOString().split('T')[0],
+        assignedDate: currentStudent.aiPlan?.lastUpdated?.split('T')[0] || new Date().toISOString().split('T')[0],
+        assignedAt: currentStudent.aiPlan?.lastUpdated || new Date().toISOString().split('T')[0],
         completedRepetitions: 0,
         isCompleted: isPlanNone
       };
@@ -1212,10 +1238,13 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       surahNumber: sNum,
       surahName: currentStudent.currentSurahName || sInfo.name,
       fromAyah: fromA,
+      toSurahNumber: sNum,
+      toSurahName: currentStudent.currentSurahName || sInfo.name,
       toAyah: toA,
       sheikhName: 'الشيخ محمد صديق المنشاوي (المصحف المعلم)',
       requiredRepetitions: 3,
       assignedDate: new Date().toISOString().split('T')[0],
+      assignedAt: new Date().toISOString().split('T')[0],
       completedRepetitions: 0,
       isCompleted: false
     };
@@ -2656,16 +2685,24 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             {/* Smart Quran Ayah Audio Player with Repetitions, Auto-Stop & Sheikh Switching */}
             <div className="space-y-4">
               <QuranAyahAudioPlayer
+                key={`${currentStudent.id}_${currentAssignedPassage.assignedAt || currentAssignedPassage.assignedDate}_${currentAssignedPassage.surahNumber}_${currentAssignedPassage.fromAyah}_${currentAssignedPassage.toAyah}`}
                 student={currentStudent}
                 theme={currentTheme}
                 surahNumber={currentAssignedPassage.surahNumber}
                 surahName={currentAssignedPassage.surahName}
                 fromAyah={currentAssignedPassage.fromAyah}
+                toSurahNumber={currentAssignedPassage.toSurahNumber}
+                toSurahName={currentAssignedPassage.toSurahName}
                 toAyah={currentAssignedPassage.toAyah}
+                assignedAt={currentAssignedPassage.assignedAt}
+                initialCompletedRepetitions={currentAssignedPassage.completedRepetitions}
+                initialIsCompleted={currentAssignedPassage.isCompleted}
                 selectedSheikhName={currentAssignedPassage.sheikhName}
                 requiredRepetitions={currentAssignedPassage.requiredRepetitions ?? 3}
                 listeningPointsReward={10}
                 onRepetitionComplete={async (newCount, isFullyDone) => {
+                  const wasAlreadyCompleted = Boolean(currentAssignedPassage.isCompleted);
+                  const completedAtIso = new Date().toISOString();
                   const updated: Student = {
                     ...currentStudent,
                     activeListeningAssignment: {
@@ -2675,9 +2712,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                     }
                   };
                   if (isFullyDone) {
-                    updated.listeningPoints = (updated.listeningPoints || 0) + 10;
-                    updated.points = (updated.points || 0) + 10;
-                    updated.dailyListeningCompletedDate = new Date().toISOString().split('T')[0];
+                    if (!wasAlreadyCompleted) {
+                      updated.listeningPoints = (updated.listeningPoints || 0) + 10;
+                      updated.points = (updated.points || 0) + 10;
+                    }
+                    updated.dailyListeningCompletedDate = completedAtIso.split('T')[0];
+                    updated.dailyListeningCompletedAt = completedAtIso;
                   }
                   setCurrentStudent(updated);
                   await OmranDataService.saveStudent(updated);

@@ -897,7 +897,7 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       // 1. Check if Teacher in this complex
       const teachers = await OmranDataService.loadTeachers();
       const matchedTeacher = teachers.find(t => {
-        const matchUser = t.username.trim().toLowerCase() === cleanIdent;
+        const matchUser = (t.username || '').trim().toLowerCase() === cleanIdent || (t.name || '').trim().toLowerCase() === cleanIdent;
         const matchPhone = t.phone && t.phone.replace(/\D/g, '') === cleanIdentDigits;
         const matchCode = t.teacherCode && t.teacherCode === cleanIdentDigits;
         const inThisComplex =
@@ -931,8 +931,8 @@ export const ComplexCustomPortalPage: React.FC<ComplexCustomPortalPageProps> = (
       const matchedStudent = students.find(s => {
         const inThisComplex = s.complexId === complex.id;
         const matchPhone = s.phone && s.phone.replace(/\D/g, '') === cleanIdentDigits;
-        const matchParentPhone = s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === cleanIdentDigits);
-        const matchName = s.name.trim().toLowerCase() === cleanIdent;
+        const matchParentPhone = s.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === cleanIdentDigits);
+        const matchName = (s.name || '').trim().toLowerCase() === cleanIdent;
         return inThisComplex && (matchPhone || matchParentPhone || matchName);
       });
 

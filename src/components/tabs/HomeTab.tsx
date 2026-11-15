@@ -610,12 +610,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                           color: themeAccent
                         }}
                       >
-                        {student.name.charAt(0)}
+                        {(student.name || 'ط').trim().charAt(0) || 'ط'}
                       </div>
 
                       <div className="space-y-1.5 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm sm:text-base font-black text-white truncate font-heading">{student.name}</h4>
+                          <h4 className="text-sm sm:text-base font-black text-white truncate font-heading">{student.name || 'طالب'}</h4>
                           <span
                             className={`text-[10px] px-2.5 py-0.5 rounded-xl font-black border-2 border-b-2 shadow-xs ${
                               student.level === 'قوي'

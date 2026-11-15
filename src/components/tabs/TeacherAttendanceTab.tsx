@@ -4424,8 +4424,8 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                       const filteredTeachers = teachers.filter(
                         t =>
                           !assignTeachersSearch.trim() ||
-                          t.name.toLowerCase().includes(assignTeachersSearch.toLowerCase()) ||
-                          t.username.toLowerCase().includes(assignTeachersSearch.toLowerCase())
+                          (t.name || '').toLowerCase().includes(assignTeachersSearch.toLowerCase()) ||
+                          (t.username || '').toLowerCase().includes(assignTeachersSearch.toLowerCase())
                       );
 
                       if (filteredTeachers.length === 0) {

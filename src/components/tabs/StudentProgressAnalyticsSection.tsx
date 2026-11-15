@@ -120,7 +120,7 @@ export const StudentProgressAnalyticsSection: React.FC<StudentProgressAnalyticsS
     if (!studentSearchTerm.trim()) return students;
     const term = studentSearchTerm.trim().toLowerCase();
     return students.filter(s =>
-      s.name.toLowerCase().includes(term) ||
+      (s.name || '').toLowerCase().includes(term) ||
       (s.currentSurahName && s.currentSurahName.toLowerCase().includes(term))
     );
   }, [students, studentSearchTerm]);
@@ -579,10 +579,10 @@ export const StudentProgressAnalyticsSection: React.FC<StudentProgressAnalyticsS
                         color: themeAccent
                       }}
                     >
-                      {selectedStudent.name.trim().charAt(0) || 'ط'}
+                      {(selectedStudent.name || '').trim().charAt(0) || 'ط'}
                     </div>
                     <div className="flex flex-col text-right min-w-0 flex-1">
-                      <span className="truncate text-white font-black text-xs">{selectedStudent.name}</span>
+                      <span className="truncate text-white font-black text-xs">{selectedStudent.name || 'طالب'}</span>
                       <span className="text-[10px] text-slate-300 font-bold truncate">
                         {selectedStudent.currentSurahName ? `سورة ${selectedStudent.currentSurahName}` : 'طالب'} {selectedStudent.level ? `• ${selectedStudent.level}` : ''}
                       </span>
@@ -773,10 +773,10 @@ export const StudentProgressAnalyticsSection: React.FC<StudentProgressAnalyticsS
                                   color: isSelected ? themeAccent : '#cbd5e1'
                                 }}
                               >
-                                {s.name.trim().charAt(0) || 'ط'}
+                                {(s.name || '').trim().charAt(0) || 'ط'}
                               </div>
                               <div className="truncate text-right">
-                                <span className="block truncate font-black text-white">{s.name}</span>
+                                <span className="block truncate font-black text-white">{s.name || 'طالب'}</span>
                                 <div className="flex items-center gap-1.5 text-[10px] text-slate-300 font-medium">
                                   <span>{s.currentSurahName ? `سورة ${s.currentSurahName}` : 'طالب'}</span>
                                   {s.level && (

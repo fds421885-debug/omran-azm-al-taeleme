@@ -88,6 +88,9 @@ interface QuranAyahAudioPlayerProps {
   toSurahNumber?: number;
   toSurahName?: string;
   toAyah: number;
+  assignedAt?: string;
+  initialCompletedRepetitions?: number;
+  initialIsCompleted?: boolean;
   selectedSheikhName?: string;
   requiredRepetitions?: number; // 0 to 20 set by teacher
   listeningPointsReward?: number; // points awarded on completion
@@ -104,6 +107,9 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   toSurahNumber,
   toSurahName,
   toAyah,
+  assignedAt,
+  initialCompletedRepetitions,
+  initialIsCompleted,
   selectedSheikhName,
   requiredRepetitions = 3,
   listeningPointsReward = 5,
@@ -170,27 +176,25 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   // Keep reciter folder updated with current selection
   const reciterConfig = EVERY_AYAH_RECITERS[selectedSheikhKey] || resolveReciterFolder(selectedSheikhName);
 
-  // Repetition progress state (persistent in localStorage & listening_logs)
+  // Repetition progress state (persistent in localStorage & listening_logs, scoped per assignment timestamp)
   const todayKey = new Date().toISOString().split('T')[0];
-  const storageProgressKey = `omran_listening_${student.id}_${todayKey}_${safeStartSurah}_${startAyah}_${safeEndSurah}_${endAyah}`;
+  const assignToken = assignedAt ? assignedAt.replace(/[^a-zA-Z0-9_-]/g, '') : todayKey;
+  const storageProgressKey = `omran_listening_${student.id}_${assignToken}_${safeStartSurah}_${startAyah}_${safeEndSurah}_${endAyah}`;
 
-  const [completedRepetitions, setCompletedRepetitions] = useState<number>(() => {
+  const resolveInitialReps = () => {
     try {
       const saved = localStorage.getItem(storageProgressKey);
-      return saved ? Number(saved) : 0;
-    } catch {
-      return 0;
-    }
-  });
+      if (saved !== null) return Math.max(Number(saved) || 0, initialCompletedRepetitions ?? 0);
+    } catch {}
+    return initialCompletedRepetitions ?? 0;
+  };
+
+  const [completedRepetitions, setCompletedRepetitions] = useState<number>(resolveInitialReps);
 
   const [isCompletedAll, setIsCompletedAll] = useState<boolean>(() => {
     if (isNoneSheikh) return true;
-    try {
-      const saved = localStorage.getItem(storageProgressKey);
-      return saved ? Number(saved) >= requiredRepetitions : false;
-    } catch {
-      return false;
-    }
+    if (initialIsCompleted) return true;
+    return resolveInitialReps() >= requiredRepetitions && requiredRepetitions > 0;
   });
 
   // Current playing state (index inside ayahSequence)
@@ -210,11 +214,30 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   const currentPair = ayahSequence[sequenceIndex] || ayahSequence[0] || { surah: safeStartSurah, ayah: startAyah };
   const currentPairSurahName = getSurahInfo(currentPair.surah).name;
 
+  // Reset repetition counter and completion flag whenever a new wird assignment drops
+  useEffect(() => {
+    let savedReps = 0;
+    try {
+      const saved = localStorage.getItem(storageProgressKey);
+      if (saved !== null) savedReps = Number(saved) || 0;
+    } catch {}
+    const nextReps = assignedAt
+      ? Math.max(savedReps, initialCompletedRepetitions ?? 0)
+      : (initialCompletedRepetitions ?? savedReps);
+    completedRepsRef.current = nextReps;
+    setCompletedRepetitions(nextReps);
+    if (isNoneSheikh) {
+      setIsCompletedAll(true);
+    } else {
+      setIsCompletedAll(Boolean(initialIsCompleted) || (requiredRepetitions > 0 && nextReps >= requiredRepetitions));
+    }
+  }, [storageProgressKey, assignedAt, initialCompletedRepetitions, initialIsCompleted, requiredRepetitions, isNoneSheikh]);
+
   // Reset sequence position if assigned range changes
   useEffect(() => {
     sequenceIndexRef.current = 0;
     setSequenceIndex(0);
-  }, [safeStartSurah, startAyah, safeEndSurah, endAyah]);
+  }, [safeStartSurah, startAyah, safeEndSurah, endAyah, assignedAt]);
 
   // Keep refs synced
   useEffect(() => {
@@ -229,10 +252,12 @@ export const QuranAyahAudioPlayer: React.FC<QuranAyahAudioPlayerProps> = ({
   useEffect(() => {
     if (isNoneSheikh) {
       setIsCompletedAll(true);
-    } else if (completedRepetitions >= requiredRepetitions) {
+    } else if (requiredRepetitions > 0 && completedRepetitions >= requiredRepetitions) {
       setIsCompletedAll(true);
+    } else if (!initialIsCompleted) {
+      setIsCompletedAll(false);
     }
-  }, [completedRepetitions, requiredRepetitions, isNoneSheikh]);
+  }, [completedRepetitions, requiredRepetitions, isNoneSheikh, initialIsCompleted]);
 
   // Fetch Ayah Text from local cache / public JSON
   useEffect(() => {

@@ -480,9 +480,9 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       color: badge.badgeBg
                     }}
                   >
-                    {item.student.name.charAt(0)}
+                    {(item.student.name || 'ط').trim().charAt(0) || 'ط'}
                   </div>
-                  <h3 className="text-lg font-black text-white font-heading">{item.student.name}</h3>
+                  <h3 className="text-lg font-black text-white font-heading">{item.student.name || 'طالب'}</h3>
                   <p className="text-xs text-slate-300 font-bold mt-0.5">{item.halaqahName}</p>
                 </div>
 

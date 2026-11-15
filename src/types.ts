@@ -789,15 +789,16 @@ export const getTeacherAllComplexes = (
   halaqahs: Halaqah[] = [],
   isDev: boolean = false
 ): QuranComplex[] => {
-  if (complexes.length === 0) return [];
+  const validComplexes = (complexes || []).filter((c): c is QuranComplex => Boolean(c && c.id));
+  if (validComplexes.length === 0) return [];
 
   // ONLY Developer / Programmer has unrestricted access to all complexes
   if (isDev || isTeacherDeveloper(teacher)) {
-    return complexes;
+    return validComplexes;
   }
 
   if (!teacher) {
-    return [complexes[0]];
+    return [validComplexes[0]];
   }
 
   const matchedComplexIds = new Set<string>();
@@ -805,7 +806,7 @@ export const getTeacherAllComplexes = (
   // 1. Explicit multi-complex IDs array
   if (teacher.complexIds && Array.isArray(teacher.complexIds)) {
     teacher.complexIds.forEach(id => {
-      if (id && complexes.some(c => c.id === id)) {
+      if (id && validComplexes.some(c => c.id === id)) {
         matchedComplexIds.add(id);
       }
     });
@@ -816,7 +817,7 @@ export const getTeacherAllComplexes = (
     teacher.complexNames.forEach(cName => {
       if (cName && typeof cName === 'string') {
         const norm = normalizeTeacherText(cName);
-        const found = complexes.find(c => normalizeTeacherText(c.name) === norm);
+        const found = validComplexes.find(c => normalizeTeacherText(c.name) === norm);
         if (found) {
           matchedComplexIds.add(found.id);
         }
@@ -825,14 +826,14 @@ export const getTeacherAllComplexes = (
   }
 
   // 2. Direct primary complexId
-  if (teacher.complexId && complexes.some(c => c.id === teacher.complexId)) {
+  if (teacher.complexId && validComplexes.some(c => c.id === teacher.complexId)) {
     matchedComplexIds.add(teacher.complexId);
   }
 
   // 2.5 Direct primary complexName
   if (teacher.complexName && typeof teacher.complexName === 'string') {
     const norm = normalizeTeacherText(teacher.complexName);
-    const found = complexes.find(c => normalizeTeacherText(c.name) === norm);
+    const found = validComplexes.find(c => normalizeTeacherText(c.name) === norm);
     if (found) {
       matchedComplexIds.add(found.id);
     }
@@ -841,7 +842,7 @@ export const getTeacherAllComplexes = (
   // 3. Complexes where this teacher is assigned as supervisor (by ID or verified name)
   const teacherNameNorm = normalizeTeacherText(teacher.name);
   const teacherUserNorm = normalizeTeacherText(teacher.username);
-  complexes.forEach(c => {
+  validComplexes.forEach(c => {
     if (c.supervisorTeacherId && c.supervisorTeacherId === teacher.id) {
       matchedComplexIds.add(c.id);
     } else if (
@@ -863,17 +864,17 @@ export const getTeacherAllComplexes = (
       (h.teacherIds && h.teacherIds.includes(teacher.id)) ||
       (h.primaryTeacherName && normalizeTeacherText(h.primaryTeacherName) === teacherNameNorm);
 
-    if (isTaught && h.complexId && complexes.some(c => c.id === h.complexId)) {
+    if (isTaught && h.complexId && validComplexes.some(c => c.id === h.complexId)) {
       matchedComplexIds.add(h.complexId);
     }
   });
 
-  const matched = complexes.filter(c => matchedComplexIds.has(c.id));
+  const matched = validComplexes.filter(c => matchedComplexIds.has(c.id));
   if (matched.length > 0) {
     return matched;
   }
 
-  return [complexes[0]];
+  return [validComplexes[0]];
 };
 
 /**
@@ -1128,14 +1129,18 @@ export interface Student {
   listeningPoints?: number; // نقاط إتمام واجبات الاستماع
   listenedAyahsCount?: number; // إجمالي عدد الآيات المسموعة
   dailyListeningCompletedDate?: string; // تاريخ آخر إنجاز استماع يومي
+  dailyListeningCompletedAt?: string; // التوقيت الدقيق لآخر إنجاز استماع يومي
   activeListeningAssignment?: {
     surahNumber: number;
     surahName: string;
     fromAyah: number;
+    toSurahNumber?: number;
+    toSurahName?: string;
     toAyah: number;
     sheikhName: string;
     requiredRepetitions: number;
     assignedDate: string;
+    assignedAt?: string; // التوقيت الدقيق لتكليف هذا الورد لضمان تصفير حالة الاستماع عند نزول ورد جديد
     completedRepetitions?: number;
     isCompleted?: boolean;
   };

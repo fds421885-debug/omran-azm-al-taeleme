@@ -636,11 +636,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               <div className="flex items-center justify-between p-5 border-b border-[#065f46] shrink-0 bg-[#064e3b]">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-2xl bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] font-black text-lg flex items-center justify-center shadow-md">
-                    {student.name.charAt(0)}
+                    {(student.name || 'ط').trim().charAt(0) || 'ط'}
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-white font-heading">
-                      السجل القرآني الشامل: {student.name}
+                      السجل القرآني الشامل: {student.name || 'طالب'}
                     </h3>
                     <p className="text-xs text-[#86efac]/90">
                       المستوى: {student.level} • هاتف ولي الأمر: {getStudentParentPhone(student) || 'غير مسجل'} • الحلقة: {student.halaqahName || settings.halaqahName}
