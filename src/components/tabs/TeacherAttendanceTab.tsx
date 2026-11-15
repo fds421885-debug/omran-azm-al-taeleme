@@ -44,7 +44,7 @@ import {
   Halaqah,
   LibraryDocument
 } from '../../types';
-import { OmranDataService } from '../../lib/firebase';
+import { OmranDataService, requestCloudSyncRefresh } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { darkenHex, lightenHex, getContrastTextColor, applyComplexThemeToDOM } from '../../lib/themeUtils';
 
@@ -1515,7 +1515,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
             <>
               <button
                 type="button"
-                onClick={() => setActiveSubTab('records')}
+                onClick={() => {
+                  setActiveSubTab('records');
+                  requestCloudSyncRefresh('teacher_attendance', 'جاري تحديث سجل تحضير المعلمين من قاعدة البيانات...');
+                }}
                 className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
                 style={
                   activeSubTab === 'records'
@@ -1539,7 +1542,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 
               <button
                 type="button"
-                onClick={() => setActiveSubTab('shifts')}
+                onClick={() => {
+                  setActiveSubTab('shifts');
+                  requestCloudSyncRefresh('teacher_attendance', 'جاري تحديث فترات الدوام من قاعدة البيانات...');
+                }}
                 className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
                 style={
                   activeSubTab === 'shifts'
@@ -1563,7 +1569,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 
               <button
                 type="button"
-                onClick={() => setActiveSubTab('mosques')}
+                onClick={() => {
+                  setActiveSubTab('mosques');
+                  requestCloudSyncRefresh('teacher_attendance', 'جاري تحديث بيانات الجوامع من قاعدة البيانات...');
+                }}
                 className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
                 style={
                   activeSubTab === 'mosques'
@@ -1589,7 +1598,10 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveSubTab('self')}
+            onClick={() => {
+              setActiveSubTab('self');
+              requestCloudSyncRefresh('teacher_attendance', 'جاري التحقق من سجل الحضور والدوام من قاعدة البيانات...');
+            }}
             className="px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border-2 border-b-4 active:translate-y-0.5"
             style={
               activeSubTab === 'self' || !isSupervisorOrDev

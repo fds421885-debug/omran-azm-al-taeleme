@@ -68,20 +68,10 @@ import {
   OmranDataService,
   DEFAULT_CRITERIA,
   DEFAULT_SETTINGS,
-  DEFAULT_HALAQAHS,
-  INITIAL_STUDENTS,
-  INITIAL_TEACHERS,
-  INITIAL_ATTENDANCE,
-  INITIAL_EVALUATIONS,
   DEFAULT_RECORDINGS_CONFIG,
-  DEFAULT_COMPLEXES,
-  INITIAL_VIOLATIONS,
-  INITIAL_EXAMS,
   DEFAULT_LEADERBOARD_SETTINGS,
-  OMRAN_CACHE_KEYS,
-  getLocalCache,
-  getDeletedExamIds,
-  purgeAllLocalDataCaches
+  purgeAllLocalDataCaches,
+  CloudSyncEventDetail
 } from './lib/firebase';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { Navbar } from './components/Navbar';
@@ -295,45 +285,7 @@ export function App() {
     return null;
   });
 
-  const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      let p =
-        urlParams.get('portal') ||
-        urlParams.get('id') ||
-        urlParams.get('student') ||
-        urlParams.get('studentId');
-      if (!p && window.location.hash) {
-        const hash = window.location.hash.replace(/^#\/?/, '');
-        const hashParams = new URLSearchParams(hash);
-        p =
-          hashParams.get('portal') ||
-          hashParams.get('id') ||
-          hashParams.get('student') ||
-          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
-          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
-      }
-      if (p) {
-        const clean = decodeURIComponent(p).trim();
-        try {
-          const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
-          if (Array.isArray(cached) && cached.length > 0) {
-            const cMatch = cached.find(
-              s =>
-                s?.id === clean ||
-                (s?.id || '').toLowerCase() === clean.toLowerCase() ||
-                (s?.name || '').trim() === clean ||
-                (s?.name || '').replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-                (s?.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-                (s?.parentPhones && s.parentPhones.some(ph => (ph || '').replace(/\D/g, '') === clean.replace(/\D/g, '')))
-            );
-            if (cMatch) return cMatch;
-          }
-        } catch {}
-      }
-    }
-    return null;
-  });
+  const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(null);
 
   // Track active portal student resolution to prevent any premature "not found" screen flashes
   const [isResolvingPortalStudent, setIsResolvingPortalStudent] = useState<boolean>(() => {
@@ -358,70 +310,23 @@ export function App() {
   const [targetStudentForWhatsApp, setTargetStudentForWhatsApp] = useState<string | undefined>();
   const [targetStudentForBehavior, setTargetStudentForBehavior] = useState<string | undefined>();
 
-  // Teachers State & Modal
-  const [teachers, setTeachers] = useState<TeacherAccount[]>(() => {
-    try {
-      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []);
-      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
-      const cached = getLocalCache<TeacherAccount[]>(OMRAN_CACHE_KEYS.TEACHERS, INITIAL_TEACHERS);
-      return Array.isArray(cached) ? cached.filter(t => t?.id && !delSet.has(t.id)) : [];
-    } catch {
-      return INITIAL_TEACHERS;
-    }
-  });
+  // Teachers State & Modal (100% direct from Cloud Firestore, zero stale local cache)
+  const [teachers, setTeachers] = useState<TeacherAccount[]>([]);
   const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
 
   // Halaqahs State & Settings Modal
-  const [halaqahs, setHalaqahs] = useState<Halaqah[]>(() => {
-    try {
-      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []);
-      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
-      const cached = getLocalCache<Halaqah[]>(OMRAN_CACHE_KEYS.HALAQAHS, DEFAULT_HALAQAHS);
-      return Array.isArray(cached) ? cached.filter(h => h?.id && !delSet.has(h.id)) : [];
-    } catch {
-      return DEFAULT_HALAQAHS;
-    }
-  });
-  const [activeHalaqahId, setActiveHalaqahId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('omran_active_halaqah_id');
-      if (saved) return saved;
-    } catch {}
-    return 'all';
-  });
+  const [halaqahs, setHalaqahs] = useState<Halaqah[]>([]);
+  const [activeHalaqahId, setActiveHalaqahId] = useState<string>('all');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Complexes State & Complex Management Modal (المجمعات القرآنية)
-  const [complexes, setComplexes] = useState<QuranComplex[]>(() => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const raw = localStorage.getItem(OMRAN_CACHE_KEYS.COMPLEXES);
-        if (raw && (raw.includes('complex-main') || raw.includes('المجمع القرآني النموذجي'))) {
-          localStorage.removeItem(OMRAN_CACHE_KEYS.COMPLEXES);
-        }
-      }
-      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []);
-      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
-      const cached = getLocalCache<QuranComplex[]>(OMRAN_CACHE_KEYS.COMPLEXES, []);
-      return Array.isArray(cached) ? cached.filter(c => c?.id && c.id !== 'complex-main' && !delSet.has(c.id)) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [complexes, setComplexes] = useState<QuranComplex[]>([]);
   const [isComplexModalOpen, setIsComplexModalOpen] = useState(false);
   const [selectedComplexId, setSelectedComplexId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('omran_selected_complex_id');
-      if (saved && saved !== 'complex-main') return saved;
-      const session = localStorage.getItem('omran_session');
-      if (session) {
-        const u = JSON.parse(session);
-        if (u?.complexId && u.complexId !== 'complex-main') return u.complexId;
-      }
-      return '';
-    } catch {
-      return '';
+    if (currentUser?.complexId && currentUser.complexId !== 'complex-main') {
+      return currentUser.complexId;
     }
+    return '';
   });
   const [isMultiComplexModalOpen, setIsMultiComplexModalOpen] = useState(false);
   const [newlyAddedComplexName, setNewlyAddedComplexName] = useState<string | null>(null);
@@ -435,72 +340,22 @@ export function App() {
   const [applicationsModalInitialTab, setApplicationsModalInitialTab] = useState<'link_and_config' | 'applications'>('applications');
   const [liveNewAppAlert, setLiveNewAppAlert] = useState<StudentRegistrationApplication | null>(null);
 
-  // Main Data States with instantaneous LocalCache hydration
-  const [students, setStudents] = useState<Student[]>(() => {
-    try {
-      const deleted = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []);
-      const delSet = new Set(Array.isArray(deleted) ? deleted : []);
-      const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, INITIAL_STUDENTS);
-      return Array.isArray(cached) ? cached.filter(s => s?.id && !delSet.has(s.id)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE)
-  );
-  const [evaluations, setEvaluations] = useState<StudentEvaluation[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, INITIAL_EVALUATIONS)
-  );
-  const [violations, setViolations] = useState<BehaviorViolation[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.VIOLATIONS, INITIAL_VIOLATIONS)
-  );
-  const [criteria, setCriteria] = useState<EvaluationCriteria[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.CRITERIA, DEFAULT_CRITERIA)
-  );
-  const [settings, setSettings] = useState<AppSettings>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.SETTINGS, DEFAULT_SETTINGS)
-  );
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const fromSession = sessionStorage.getItem('omran_ai_active_messages');
-        if (fromSession) {
-          const parsed = JSON.parse(fromSession);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-        const fromLocal = localStorage.getItem('omran_ai_active_messages');
-        if (fromLocal) {
-          const parsed = JSON.parse(fromLocal);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      }
-    } catch {}
-    return [];
-  });
-  const [exams, setExams] = useState<Exam[]>(() => {
-    const deleted = getDeletedExamIds();
-    const hasInit = typeof localStorage !== 'undefined' && localStorage.getItem('omran_exams_initialized') === 'true';
-    const fallback = hasInit ? [] : INITIAL_EXAMS;
-    return getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, fallback).filter(e => !deleted.has(e.id));
-  });
-  const [submissions, setSubmissions] = useState<ExamSubmission[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.SUBMISSIONS, [])
-  );
-  const [leaderboardSettings, setLeaderboardSettings] = useState<LeaderboardSettings | null>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.LEADERBOARD, DEFAULT_LEADERBOARD_SETTINGS)
-  );
+  // Main Data States (100% hydrated directly from Firestore Server)
+  const [students, setStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [evaluations, setEvaluations] = useState<StudentEvaluation[]>([]);
+  const [violations, setViolations] = useState<BehaviorViolation[]>([]);
+  const [criteria, setCriteria] = useState<EvaluationCriteria[]>(DEFAULT_CRITERIA);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [submissions, setSubmissions] = useState<ExamSubmission[]>([]);
+  const [leaderboardSettings, setLeaderboardSettings] = useState<LeaderboardSettings | null>(DEFAULT_LEADERBOARD_SETTINGS);
   const [googleAuthConfig, setGoogleAuthConfig] = useState<GoogleOAuthConfig>({ isLinked: false });
   const [recordings, setRecordings] = useState<SurahRecording[]>([]);
-  const [recordingsConfig, setRecordingsConfig] = useState<RecordingsConfig>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.RECORDINGS_CONFIG, DEFAULT_RECORDINGS_CONFIG)
-  );
-  const [certificates, setCertificates] = useState<IssuedCertificate[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, [])
-  );
-  const [listeningLogs, setListeningLogs] = useState<StudentListeningLog[]>(() =>
-    getLocalCache(OMRAN_CACHE_KEYS.LISTENING_LOGS, [])
-  );
+  const [recordingsConfig, setRecordingsConfig] = useState<RecordingsConfig>(DEFAULT_RECORDINGS_CONFIG);
+  const [certificates, setCertificates] = useState<IssuedCertificate[]>([]);
+  const [listeningLogs, setListeningLogs] = useState<StudentListeningLog[]>([]);
   const [libraryDocs, setLibraryDocs] = useState<LibraryDocument[]>([]);
   const [libraryDriveUploadVersion, setLibraryDriveUploadVersion] = useState(0);
   const [isLibraryLinkModalOpen, setIsLibraryLinkModalOpen] = useState(false);
@@ -553,14 +408,23 @@ export function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [cloudSyncText, setCloudSyncText] = useState('مزامنة سحابية مباشرة...');
   const syncTimeoutRef = useRef<any>(null);
+  const knownComplexesMapRef = useRef<Record<string, string[]>>({});
+  const skippedComplexWelcomeRef = useRef<Set<string>>(new Set());
+  const isCloudRefreshingRef = useRef(false);
+  const lastFocusRefreshRef = useRef(0);
 
-  const triggerCloudSyncIndicator = useCallback((text = 'تحديث سحابي مباشر (Firestore)...') => {
+  // Immediately purge any stale legacy local data caches on startup (preserving only login token)
+  useEffect(() => {
+    purgeAllLocalDataCaches();
+  }, []);
+
+  const triggerCloudSyncIndicator = useCallback((text = 'تحديث سحابي مباشر (Firestore)...', durationMs = 2600) => {
     setCloudSyncText(text);
     setIsCloudSyncing(true);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
       setIsCloudSyncing(false);
-    }, 2200);
+    }, durationMs);
   }, []);
 
   // Dedicated Complex Portal ID parsed from shareable link (e.g. ?complexPortal=xxx)
@@ -694,31 +558,6 @@ export function App() {
         return;
       }
 
-      // Check synchronous cache for instant loading without wait
-      try {
-        const cached = getLocalCache<Student[]>(OMRAN_CACHE_KEYS.STUDENTS, []);
-        if (Array.isArray(cached) && cached.length > 0) {
-          const cMatch = cached.find(
-            s =>
-              s?.id === clean ||
-              (s?.id || '').toLowerCase() === clean.toLowerCase() ||
-              (s?.name || '').trim() === clean ||
-              (s?.name || '').replace(/\s+/g, '') === clean.replace(/\s+/g, '') ||
-              (s?.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-              (s?.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === clean.replace(/\D/g, '')))
-          );
-          if (cMatch) {
-            if (!isCancelled) {
-              setDirectPortalStudent(cMatch);
-              setStudents(prev => (prev.some(s => s.id === cMatch.id) ? prev : [...prev, cMatch]));
-              setIsResolvingPortalStudent(false);
-              setPortalResolveAttempted(true);
-            }
-            return;
-          }
-        }
-      } catch {}
-
       if (!isCancelled) {
         setIsResolvingPortalStudent(true);
       }
@@ -827,9 +666,7 @@ export function App() {
       setEvaluations(loadedEvaluations);
       setCriteria(loadedCriteria);
       setSettings(loadedSettings);
-      if (Array.isArray(loadedChats) && loadedChats.length > 0) {
-        setChatHistory(prev => (prev && prev.length > 0 ? prev : loadedChats));
-      }
+      setChatHistory(Array.isArray(loadedChats) ? loadedChats : []);
       setTeachers(loadedTeachers);
       setViolations(loadedViolations);
       setHalaqahs(loadedHalaqahs);
@@ -838,6 +675,7 @@ export function App() {
       setLeaderboardSettings(loadedLeaderboard);
       setGoogleAuthConfig(loadedGoogleOAuth);
       setRecordings(loadedRecordings);
+      setRecordingsConfig(loadedRecordingsConfig);
       // Enrich complexes with cloud-persisted planScheduleConfig if not directly attached
       const enrichedComplexes = await Promise.all(
         loadedComplexes.map(async c => {
@@ -854,6 +692,7 @@ export function App() {
       const now = new Date();
       const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       setLastSyncedTime(`مُحدّث (${timeStr})`);
+      triggerCloudSyncIndicator('تم تحديث كافة السجلات من قاعدة البيانات ✓', 2400);
     } catch (e) {
       console.warn('Initial data load notice:', e);
     } finally {
@@ -951,9 +790,6 @@ export function App() {
         localStorage.setItem('omran_session', JSON.stringify(safeUser));
         if (safeUser.complexId) {
           setSelectedComplexId(safeUser.complexId);
-          try {
-            localStorage.setItem('omran_selected_complex_id', safeUser.complexId);
-          } catch {}
         }
       }
     }
@@ -1231,11 +1067,7 @@ export function App() {
     });
     const unsubHalaqahs = OmranDataService.subscribeHalaqahs(newHalaqahs => {
       if (isMounted) {
-        if (newHalaqahs && newHalaqahs.length > 0) {
-          setHalaqahs(newHalaqahs);
-        } else {
-          setHalaqahs(prev => (prev.length > 0 ? prev : newHalaqahs));
-        }
+        setHalaqahs(newHalaqahs || []);
         notifyBackgroundSync();
       }
     });
@@ -1260,15 +1092,25 @@ export function App() {
           return c;
         })
       );
+      notifyBackgroundSync();
     }, activeComplex?.id);
     const unsubExams = OmranDataService.subscribeExams(newExams => {
-      if (isMounted) setExams(newExams);
+      if (isMounted) {
+        setExams(newExams);
+        notifyBackgroundSync();
+      }
     });
     const unsubSubmissions = OmranDataService.subscribeSubmissions(newSubs => {
-      if (isMounted) setSubmissions(newSubs);
+      if (isMounted) {
+        setSubmissions(newSubs);
+        notifyBackgroundSync();
+      }
     });
     const unsubLeaderboard = OmranDataService.subscribeLeaderboardSettings(newLead => {
-      if (isMounted) setLeaderboardSettings(newLead);
+      if (isMounted) {
+        setLeaderboardSettings(newLead);
+        notifyBackgroundSync();
+      }
     });
     const unsubGoogle = OmranDataService.subscribeGoogleOAuthConfig(newGoogle => {
       if (!isMounted) return;
@@ -1283,21 +1125,37 @@ export function App() {
         }
         return newGoogle;
       });
+      notifyBackgroundSync();
     }, activeComplex?.id);
     const unsubRecordings = OmranDataService.subscribeRecordings(newRecordings => {
-      if (isMounted) setRecordings(newRecordings);
+      if (isMounted) {
+        setRecordings(newRecordings);
+        notifyBackgroundSync();
+      }
     });
     const unsubRecordingsConfig = OmranDataService.subscribeRecordingsConfig(newConfig => {
-      if (isMounted) setRecordingsConfig(newConfig);
+      if (isMounted) {
+        setRecordingsConfig(newConfig);
+        notifyBackgroundSync();
+      }
     });
     const unsubCertificates = OmranDataService.subscribeCertificates(newCerts => {
-      if (isMounted) setCertificates(newCerts);
+      if (isMounted) {
+        setCertificates(newCerts);
+        notifyBackgroundSync();
+      }
     });
     const unsubListeningLogs = OmranDataService.subscribeListeningLogs(newLogs => {
-      if (isMounted) setListeningLogs(newLogs);
+      if (isMounted) {
+        setListeningLogs(newLogs);
+        notifyBackgroundSync();
+      }
     });
     const unsubLibraryDocs = OmranDataService.subscribeLibraryDocuments(newDocs => {
-      if (isMounted) setLibraryDocs(newDocs);
+      if (isMounted) {
+        setLibraryDocs(newDocs);
+        notifyBackgroundSync();
+      }
     }, activeComplex?.id);
     const unsubTombstones = OmranDataService.subscribeTombstones(tombstones => {
       if (!isMounted) return;
@@ -1308,6 +1166,10 @@ export function App() {
       if (currentTeacher && tombstones.deletedTeachers.has(currentTeacher.id)) {
         handleLogout();
       }
+      if (currentUser?.role === 'student' && currentUser.studentId && tombstones.deletedStudents.has(currentUser.studentId)) {
+        handleLogout();
+      }
+      notifyBackgroundSync();
     });
 
     // Real-time synchronization of active halaqah across all devices and browser tabs
@@ -1324,15 +1186,7 @@ export function App() {
       }
       const remoteHId = data.activeHalaqahId;
       targetHalaqahIdRef.current = remoteHId;
-      setActiveHalaqahId(prev => {
-        if (prev !== remoteHId) {
-          try {
-            localStorage.setItem('omran_active_halaqah_id', remoteHId);
-          } catch {}
-          return remoteHId;
-        }
-        return prev;
-      });
+      setActiveHalaqahId(prev => (prev !== remoteHId ? remoteHId : prev));
     });
 
     const handleBroadcastUpdate = (e: any) => {
@@ -1471,6 +1325,318 @@ export function App() {
       unsubActiveHalaqah();
     };
   }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+
+  // Verify & Fetch Live Cloud Data from Firestore Server per Domain/Tab/Action
+  const refreshDomainFromCloud = useCallback(async (domain: string = 'all', customMessage?: string) => {
+    if (isCloudRefreshingRef.current) return;
+    isCloudRefreshingRef.current = true;
+    const syncingText = customMessage || 'جاري التحقق وجلب أحدث البيانات من قاعدة البيانات...';
+    triggerCloudSyncIndicator(syncingText, 6000);
+
+    try {
+      const targetComplexId = activeComplex?.id;
+      switch (domain) {
+        case 'students': {
+          const [s, h, a] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadAttendance()
+          ]);
+          setStudents(s);
+          setHalaqahs(h);
+          setAttendance(a);
+          break;
+        }
+        case 'attendance': {
+          const [a, s, st] = await Promise.all([
+            OmranDataService.loadAttendance(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadSettings()
+          ]);
+          setAttendance(a);
+          setStudents(s);
+          setSettings(st);
+          break;
+        }
+        case 'teacher_attendance': {
+          const [t, h, c, ta, ts, tm] = await Promise.all([
+            OmranDataService.loadTeachers(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadComplexes(),
+            OmranDataService.loadTeacherAttendance(),
+            OmranDataService.loadTeacherShifts(targetComplexId),
+            OmranDataService.loadMosques(targetComplexId)
+          ]);
+          setTeachers(t);
+          setHalaqahs(h);
+          setComplexes(c);
+          void ta; void ts; void tm;
+          break;
+        }
+        case 'evaluation': {
+          const [s, ev, cr, logs, recs, recCfg] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadEvaluations(),
+            OmranDataService.loadCriteria(),
+            OmranDataService.loadListeningLogs(),
+            OmranDataService.loadRecordings(),
+            OmranDataService.loadRecordingsConfig()
+          ]);
+          setStudents(s);
+          setEvaluations(ev);
+          setCriteria(cr);
+          setListeningLogs(logs);
+          setRecordings(recs);
+          setRecordingsConfig(recCfg);
+          break;
+        }
+        case 'exams': {
+          const [ex, subs, s, lb] = await Promise.all([
+            OmranDataService.loadExams(),
+            OmranDataService.loadSubmissions(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadLeaderboardSettings()
+          ]);
+          setExams(ex);
+          setSubmissions(subs);
+          setStudents(s);
+          setLeaderboardSettings(lb);
+          break;
+        }
+        case 'certificates': {
+          const [certs, s, subs, st] = await Promise.all([
+            OmranDataService.loadCertificates(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadSubmissions(),
+            OmranDataService.loadSettings()
+          ]);
+          setCertificates(certs);
+          setStudents(s);
+          setSubmissions(subs);
+          setSettings(st);
+          break;
+        }
+        case 'leaderboard': {
+          const [s, ev, ex, subs, lb] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadEvaluations(),
+            OmranDataService.loadExams(),
+            OmranDataService.loadSubmissions(),
+            OmranDataService.loadLeaderboardSettings()
+          ]);
+          setStudents(s);
+          setEvaluations(ev);
+          setExams(ex);
+          setSubmissions(subs);
+          setLeaderboardSettings(lb);
+          break;
+        }
+        case 'store': {
+          const [s, c, si, sp, ss] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadComplexes(),
+            OmranDataService.loadStoreItems(targetComplexId),
+            OmranDataService.loadStorePurchases(targetComplexId),
+            OmranDataService.loadStoreSettings(targetComplexId)
+          ]);
+          setStudents(s);
+          setComplexes(c);
+          void si; void sp; void ss;
+          break;
+        }
+        case 'accounts': {
+          const [t, s, h, c] = await Promise.all([
+            OmranDataService.loadTeachers(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadComplexes()
+          ]);
+          setTeachers(t);
+          setStudents(s);
+          setHalaqahs(h);
+          setComplexes(c);
+          break;
+        }
+        case 'online_halaqahs': {
+          const [h, s, t] = await Promise.all([
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadTeachers()
+          ]);
+          setHalaqahs(h);
+          setStudents(s);
+          setTeachers(t);
+          break;
+        }
+        case 'behavior': {
+          const [v, s] = await Promise.all([
+            OmranDataService.loadViolations(),
+            OmranDataService.loadStudents()
+          ]);
+          setViolations(v);
+          setStudents(s);
+          break;
+        }
+        case 'parents': {
+          const [s, a, ev, v, st] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadAttendance(),
+            OmranDataService.loadEvaluations(),
+            OmranDataService.loadViolations(),
+            OmranDataService.loadSettings()
+          ]);
+          setStudents(s);
+          setAttendance(a);
+          setEvaluations(ev);
+          setViolations(v);
+          setSettings(st);
+          break;
+        }
+        case 'reports': {
+          const [s, a, ev, v, ex, subs, logs] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadAttendance(),
+            OmranDataService.loadEvaluations(),
+            OmranDataService.loadViolations(),
+            OmranDataService.loadExams(),
+            OmranDataService.loadSubmissions(),
+            OmranDataService.loadListeningLogs()
+          ]);
+          setStudents(s);
+          setAttendance(a);
+          setEvaluations(ev);
+          setViolations(v);
+          setExams(ex);
+          setSubmissions(subs);
+          setListeningLogs(logs);
+          break;
+        }
+        case 'halaqah_plans': {
+          const [s, h, c] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadComplexes()
+          ]);
+          setStudents(s);
+          setHalaqahs(h);
+          setComplexes(c);
+          break;
+        }
+        case 'library': {
+          const [docs, gAuth] = await Promise.all([
+            OmranDataService.loadLibraryDocuments(targetComplexId),
+            GoogleWorkspaceService.loadGoogleAuthConfig(targetComplexId, true)
+          ]);
+          setLibraryDocs(docs);
+          setGoogleAuthConfig(gAuth);
+          break;
+        }
+        case 'settings': {
+          const [st, t, h, s, c] = await Promise.all([
+            OmranDataService.loadSettings(),
+            OmranDataService.loadTeachers(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadStudents(),
+            OmranDataService.loadComplexes()
+          ]);
+          setSettings(st);
+          setTeachers(t);
+          setHalaqahs(h);
+          setStudents(s);
+          setComplexes(c);
+          break;
+        }
+        case 'complexes': {
+          const [c, h, t, s] = await Promise.all([
+            OmranDataService.loadComplexes(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadTeachers(),
+            OmranDataService.loadStudents()
+          ]);
+          setComplexes(c);
+          setHalaqahs(h);
+          setTeachers(t);
+          setStudents(s);
+          break;
+        }
+        case 'applications': {
+          const apps = await OmranDataService.loadRegistrationApplications(targetComplexId);
+          setRegistrationApplications(apps);
+          break;
+        }
+        case 'home': {
+          const [s, h, t, a, ev, c] = await Promise.all([
+            OmranDataService.loadStudents(),
+            OmranDataService.loadHalaqahs(),
+            OmranDataService.loadTeachers(),
+            OmranDataService.loadAttendance(),
+            OmranDataService.loadEvaluations(),
+            OmranDataService.loadComplexes()
+          ]);
+          setStudents(s);
+          setHalaqahs(h);
+          setTeachers(t);
+          setAttendance(a);
+          setEvaluations(ev);
+          setComplexes(c);
+          break;
+        }
+        case 'portal':
+        case 'backup':
+        case 'all':
+        default: {
+          await loadAllData(false);
+          break;
+        }
+      }
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      setLastSyncedTime(`مُحدّث (${timeStr})`);
+      triggerCloudSyncIndicator('تم التحقق وتحديث البيانات من قاعدة البيانات ✓', 2400);
+    } catch {
+      triggerCloudSyncIndicator('تم فحص المزامنة السحابية ✓', 2000);
+    } finally {
+      isCloudRefreshingRef.current = false;
+    }
+  }, [activeComplex?.id, triggerCloudSyncIndicator]);
+
+  // Global Cloud Sync Event Bus Listener + Sub-Tab Refresh + Focus/Visibility/Online Auto-Verify
+  useEffect(() => {
+    const handleCloudSyncBus = (e: Event) => {
+      const detail = (e as CustomEvent<CloudSyncEventDetail>).detail;
+      if (!detail?.message) return;
+      const duration = detail.status === 'syncing' ? 6000 : detail.status === 'error' ? 3200 : 2600;
+      triggerCloudSyncIndicator(detail.message, duration);
+    };
+
+    const handleRequestRefreshBus = (e: Event) => {
+      const detail = (e as CustomEvent<{ domain?: string; message?: string }>).detail;
+      refreshDomainFromCloud(detail?.domain || 'all', detail?.message);
+    };
+
+    const handleWindowFocusOrOnline = () => {
+      const now = Date.now();
+      if (now - lastFocusRefreshRef.current < 4000) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      lastFocusRefreshRef.current = now;
+      const targetDomain = (portalStudentId || currentUser?.role === 'student') ? 'portal' : (activeTab || 'all');
+      refreshDomainFromCloud(targetDomain, 'جاري التحقق وتحديث البيانات من قاعدة البيانات...');
+    };
+
+    window.addEventListener('omran:cloud-sync', handleCloudSyncBus);
+    window.addEventListener('omran:request-cloud-refresh', handleRequestRefreshBus);
+    window.addEventListener('focus', handleWindowFocusOrOnline);
+    window.addEventListener('online', handleWindowFocusOrOnline);
+    document.addEventListener('visibilitychange', handleWindowFocusOrOnline);
+
+    return () => {
+      window.removeEventListener('omran:cloud-sync', handleCloudSyncBus);
+      window.removeEventListener('omran:request-cloud-refresh', handleRequestRefreshBus);
+      window.removeEventListener('focus', handleWindowFocusOrOnline);
+      window.removeEventListener('online', handleWindowFocusOrOnline);
+      document.removeEventListener('visibilitychange', handleWindowFocusOrOnline);
+    };
+  }, [triggerCloudSyncIndicator, refreshDomainFromCloud, portalStudentId, currentUser?.role, activeTab]);
 
   // Real-time Background AI Tuning Worker for Student Plans
   useEffect(() => {
@@ -1831,14 +1997,12 @@ export function App() {
     return matched;
   }, [isDeveloper, selectedComplexId, teachers, supervisedComplex, currentTeacher, scopedHalaqahIds]);
 
-  // Handle switching halaqahs: Live synchronization across all devices and sessions
+  // Handle switching halaqahs: Live synchronization across all devices and sessions + server verify
   const handleSwitchHalaqah = (newHalaqahId: string) => {
     targetHalaqahIdRef.current = newHalaqahId;
     setActiveHalaqahId(newHalaqahId);
 
-    // 1. Sync to local device storage & BroadcastChannel
     try {
-      localStorage.setItem('omran_active_halaqah_id', newHalaqahId);
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('omran_active_halaqah_sync');
         bc.postMessage({ activeHalaqahId: newHalaqahId, timestamp: Date.now() });
@@ -1846,36 +2010,30 @@ export function App() {
       }
     } catch (e) {}
 
-    // 2. Real-time multi-device cloud synchronization via Firestore
+    // Real-time multi-device cloud synchronization via Firestore
     OmranDataService.syncActiveHalaqah(newHalaqahId, activeComplex?.id, currentUser?.username);
 
     if (newHalaqahId !== 'all') {
       const targetH = halaqahs.find(h => h.id === newHalaqahId);
       if (targetH && targetH.complexId && targetH.complexId !== activeComplex?.id) {
         setSelectedComplexId(targetH.complexId);
-        try {
-          localStorage.setItem('omran_selected_complex_id', targetH.complexId);
-        } catch (e) {}
       }
     }
+    refreshDomainFromCloud(activeTab, 'جاري جلب وتحديث بيانات الحلقة من قاعدة البيانات...');
   };
 
-  // Switch between complexes seamlessly
+  // Switch between complexes seamlessly + verify live data from Firestore Server
   const handleSwitchComplex = (newComplexId: string) => {
     // Only permitted if user can switch complexes and target complex is authorized
     if (!canSwitchComplex) return;
     if (!isDeveloper && !scopedComplexes.some(c => c.id === newComplexId)) return;
 
     setSelectedComplexId(newComplexId);
-    try {
-      localStorage.setItem('omran_selected_complex_id', newComplexId);
-    } catch (e) {
-      // ignore
-    }
     const targetComplex = complexes.find(c => c.id === newComplexId);
     if (targetComplex) {
       setActiveHalaqahId('all');
     }
+    refreshDomainFromCloud(activeTab, 'جاري جلب وتحديث بيانات المجمع من قاعدة البيانات...');
   };
 
   // Multi-complex detection & welcome alert when teacher is added to another complex or enters
@@ -1885,38 +2043,22 @@ export function App() {
     if (isDeveloper) return; // Developers don't need intrusive popups for complex list
 
     const teacherKey = currentTeacher?.id || currentTeacher?.username || currentUser.username;
-    const storageKeyKnown = `omran_known_complexes_${teacherKey}`;
-    const storageKeySkip = `omran_skip_complex_welcome_${teacherKey}`;
-
-    let knownIds: string[] = [];
-    try {
-      const stored = localStorage.getItem(storageKeyKnown);
-      if (stored) knownIds = JSON.parse(stored);
-    } catch (e) {
-      knownIds = [];
-    }
-
+    const knownIds = knownComplexesMapRef.current[teacherKey] || [];
     const currentIds = availableTeacherComplexes.map(c => c.id);
     const newlyAdded = availableTeacherComplexes.find(c => !knownIds.includes(c.id));
-    const skipWelcome = localStorage.getItem(storageKeySkip) === 'true';
+    const skipWelcome = skippedComplexWelcomeRef.current.has(teacherKey);
 
     if (newlyAdded && knownIds.length > 0) {
       setNewlyAddedComplexName(newlyAdded.name);
       setIsMultiComplexModalOpen(true);
-      try {
-        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
-      } catch (e) {}
+      knownComplexesMapRef.current[teacherKey] = currentIds;
     } else if (!skipWelcome && knownIds.length === 0) {
       setIsMultiComplexModalOpen(true);
-      try {
-        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
-      } catch (e) {}
+      knownComplexesMapRef.current[teacherKey] = currentIds;
     } else {
-      try {
-        localStorage.setItem(storageKeyKnown, JSON.stringify(currentIds));
-      } catch (e) {}
+      knownComplexesMapRef.current[teacherKey] = currentIds;
     }
-  }, [currentUser, currentTeacher, availableTeacherComplexes]);
+  }, [currentUser, currentTeacher, availableTeacherComplexes, canSwitchComplex, isDeveloper]);
 
   // Scoped settings for the active complex:
   // If user belongs to a separate complex, ensures halaqahName and teacherName strictly
@@ -2152,9 +2294,6 @@ export function App() {
     setCurrentUser(safeUser);
     if (safeUser.complexId) {
       setSelectedComplexId(safeUser.complexId);
-      try {
-        localStorage.setItem('omran_selected_complex_id', safeUser.complexId);
-      } catch {}
       const targetComplex = complexes.find(c => c.id === safeUser.complexId);
       if (targetComplex) {
         OmranDataService.setActiveComplex(targetComplex);
@@ -2742,22 +2881,16 @@ export function App() {
     const updatedList = await OmranDataService.loadTeachers();
     setTeachers(updatedList);
 
-    // Sync session user
+    // Sync session user in memory and omran_session
     if (currentUser) {
-      setCurrentUser(prev => prev ? {
-        ...prev,
-        username: updatedTeacher.name || updatedTeacher.username
-      } : null);
-      try {
-        const stored = sessionStorage.getItem('omran_auth_user');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          parsed.username = updatedTeacher.name || updatedTeacher.username;
-          sessionStorage.setItem('omran_auth_user', JSON.stringify(parsed));
-        }
-      } catch (e) {
-        // ignore
-      }
+      setCurrentUser(prev => {
+        if (!prev) return null;
+        const nextUser = { ...prev, username: updatedTeacher.name || updatedTeacher.username };
+        try {
+          localStorage.setItem('omran_session', JSON.stringify(nextUser));
+        } catch {}
+        return nextUser;
+      });
     }
   };
 
@@ -2872,9 +3005,6 @@ export function App() {
     setSettings(merged);
     if (merged.theme) {
       applyComplexThemeToDOM(merged.theme, true);
-      try {
-        localStorage.setItem('omran_active_theme', JSON.stringify(merged.theme));
-      } catch (e) {}
       const targetC = activeComplex || complexes[0];
       if (targetC) {
         const updatedC: QuranComplex = { ...targetC, theme: merged.theme };
@@ -3270,12 +3400,9 @@ export function App() {
     if (complex.theme) {
       applyComplexThemeToDOM(complex.theme, true);
       setSettings(prev => ({ ...prev, theme: complex.theme }));
-      try {
-        localStorage.setItem('omran_active_theme', JSON.stringify(complex.theme));
-      } catch (e) {}
     }
 
-    // 3. Persist to storage & cloud
+    // 3. Persist to cloud Firestore
     await OmranDataService.saveComplex(complex);
     const list = await OmranDataService.loadComplexes();
     setComplexes(list);
@@ -3289,7 +3416,6 @@ export function App() {
     await OmranDataService.deleteComplex(complexId);
     if (selectedComplexId === complexId) {
       setSelectedComplexId('');
-      localStorage.removeItem('omran_selected_complex_id');
     }
     const list = await OmranDataService.loadComplexes();
     setComplexes(list);
@@ -3305,7 +3431,7 @@ export function App() {
   const [navMeta, setNavMeta] = useState<any>(null);
   const [complexToEditForTheme, setComplexToEditForTheme] = useState<QuranComplex | null>(null);
 
-  // 15. Navigation Handlers with Smooth Contextual Loading
+  // 15. Navigation Handlers with Live Cloud Verification on Every Move/Tab
   const handleNavigateTab = (tab: string, meta?: any) => {
     setNavMeta(meta || null);
     if (tab === 'settings') {
@@ -3320,20 +3446,22 @@ export function App() {
         triggerComplexThemePulse(targetId);
       }, 700);
     }
+    refreshDomainFromCloud(tab, 'جاري التحقق وجلب أحدث البيانات من قاعدة البيانات...');
     if (tab === activeTab) {
       setIsTabLoading(true);
-      setTimeout(() => setIsTabLoading(false), 350);
+      setTimeout(() => setIsTabLoading(false), 300);
       return;
     }
     setIsTabLoading(true);
     setActiveTab(tab);
-    setTimeout(() => setIsTabLoading(false), 450);
+    setTimeout(() => setIsTabLoading(false), 400);
   };
 
   const handleOpenThemeCustomizer = (targetComplex?: any) => {
     const comp = targetComplex || activeComplex || complexes[0] || null;
     setComplexToEditForTheme(comp);
     setIsComplexModalOpen(true);
+    refreshDomainFromCloud('complexes', 'جاري جلب إعدادات المجمع من قاعدة البيانات...');
   };
 
   const handleRefreshViolations = async () => {
@@ -3376,12 +3504,6 @@ export function App() {
       }
       return msgs;
     });
-    try {
-      if (typeof window !== 'undefined' && msgs.length > 0) {
-        sessionStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
-        localStorage.setItem('omran_ai_active_messages', JSON.stringify(msgs));
-      }
-    } catch {}
   }, []);
 
   // Scoped settings for students / parent portal
@@ -3409,13 +3531,14 @@ export function App() {
     return onlineHalaqahsList.length > 0;
   }, [isDeveloper, isSupervisor, onlineHalaqahsList]);
 
-  // Priority 0: Direct Portal URL link view (e.g. via parent WhatsApp link ?portal=std-1 or ?student=std-1)
-  // When a direct student portal link is opened, it ALWAYS displays the requested student's portal 100% reliably,
-  // overriding and bypassing any old account that may have been previously logged in!
-  if (portalStudentId) {
-    // 1. Loading State: If student is not yet resolved AND resolution or data load is in progress
-    // Show high-quality loading screen - NEVER prematurely show "not found"!
-    if (!activePortalStudent && (isResolvingPortalStudent || isLoadingData || !portalResolveAttempted)) {
+  const renderAppContent = () => {
+    // Priority 0: Direct Portal URL link view (e.g. via parent WhatsApp link ?portal=std-1 or ?student=std-1)
+    // When a direct student portal link is opened, it ALWAYS displays the requested student's portal 100% reliably,
+    // overriding and bypassing any old account that may have been previously logged in!
+    if (portalStudentId) {
+      // 1. Loading State: If student is not yet resolved AND resolution or data load is in progress
+      // Show high-quality loading screen - NEVER prematurely show "not found"!
+      if (!activePortalStudent && (isResolvingPortalStudent || isLoadingData || !portalResolveAttempted)) {
       return (
         <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] flex items-center justify-center p-4" dir="rtl">
           <TopProgressBar isLoading={true} />
@@ -3826,7 +3949,10 @@ export function App() {
         activeComplexId={activeComplex?.id}
         activeComplex={activeComplex}
         onSwitchComplex={canSwitchComplex ? handleSwitchComplex : undefined}
-        onOpenMultiComplexModal={canSwitchComplex ? () => setIsMultiComplexModalOpen(true) : undefined}
+        onOpenMultiComplexModal={canSwitchComplex ? () => {
+          setIsMultiComplexModalOpen(true);
+          refreshDomainFromCloud('complexes', 'جاري جلب أحدث بيانات المجمعات والحلقات من قاعدة البيانات...');
+        } : undefined}
         canSwitchComplex={canSwitchComplex}
         halaqahs={scopedHalaqahs}
         assignedHalaqahs={assignedHalaqahs}
@@ -3834,9 +3960,18 @@ export function App() {
         isDeveloper={isDeveloper}
         activeHalaqahId={activeHalaqahId}
         onSwitchHalaqah={handleSwitchHalaqah}
-        onOpenTeacherManagement={() => setIsSettingsModalOpen(true)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onOpenComplexManagement={(isDeveloper || isSupervisor) ? () => setIsComplexModalOpen(true) : undefined}
+        onOpenTeacherManagement={() => {
+          setIsSettingsModalOpen(true);
+          refreshDomainFromCloud('settings', 'جاري التحقق من إعدادات المنظومة والمعلمين من قاعدة البيانات...');
+        }}
+        onOpenSettings={() => {
+          setIsSettingsModalOpen(true);
+          refreshDomainFromCloud('settings', 'جاري التحقق من إعدادات المنظومة من قاعدة البيانات...');
+        }}
+        onOpenComplexManagement={(isDeveloper || isSupervisor) ? () => {
+          setIsComplexModalOpen(true);
+          refreshDomainFromCloud('complexes', 'جاري جلب بيانات المجمعات والحلقات من قاعدة البيانات...');
+        } : undefined}
         onOpenPrivacyPolicy={() => navigatePublic('privacy')}
 
         onOpenEditAccount={() => setIsEditAccountModalOpen(true)}
@@ -3844,6 +3979,7 @@ export function App() {
         onOpenApplications={() => {
           setApplicationsModalInitialTab('applications');
           setIsApplicationsModalOpen(true);
+          refreshDomainFromCloud('applications', 'جاري جلب أحدث طلبات التسجيل من قاعدة البيانات...');
         }}
       />
 
@@ -4575,6 +4711,12 @@ export function App() {
         students={students}
         isNewlyAdded={Boolean(newlyAddedComplexName)}
         newlyAddedComplexName={newlyAddedComplexName}
+        onSkipWelcomeForever={() => {
+          const teacherKey = currentTeacher?.id || currentTeacher?.username || currentUser?.username;
+          if (teacherKey) {
+            skippedComplexWelcomeRef.current.add(teacherKey);
+          }
+        }}
       />
 
       {/* Edit Account Modal (for Teacher, Supervisor, and Developer) */}
@@ -4794,24 +4936,34 @@ export function App() {
         )}
       </AnimatePresence>
 
-      {/* Sleek Modern Bottom-Right Cloud Sync Indicator (تحميل وتحديث اسفل اليمين بدون إعادة تحميل أو إزعاج) */}
+    </div>
+    );
+  };
+
+  return (
+    <>
+      {renderAppContent()}
+
+      {/* Unified Global Bottom-Right Live Cloud Sync Bar (ظاهر للجميع: المشرف والمبرمج والمعلم والطالب وكل الشاشات) */}
       <AnimatePresence>
         {isCloudSyncing && (
           <motion.div
-            initial={{ opacity: 0, y: 25, scale: 0.9 }}
+            initial={{ opacity: 0, y: 25, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 25, scale: 0.9 }}
+            exit={{ opacity: 0, y: 25, scale: 0.92 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-5 sm:right-5 max-w-[calc(100vw-1.5rem)] z-[9990] flex items-center justify-center sm:justify-start gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
+            onClick={() => refreshDomainFromCloud(portalStudentId || currentUser?.role === 'student' ? 'portal' : (activeTab || 'all'), 'جاري التحديث المباشر من قاعدة البيانات...')}
+            title="انقر للتحقق وتحديث البيانات الآن من قاعدة البيانات"
+            className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-5 sm:right-5 max-w-[calc(100vw-1.5rem)] z-[9990] flex items-center justify-center sm:justify-start gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold cursor-pointer select-none active:translate-y-0.5 transition-all"
             style={{
               backgroundColor: `${activeComplex?.theme?.cardColor || '#1b2e35'}fa`,
-              borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}80`,
+              borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}85`,
               borderBottomColor: darkenHex(activeComplex?.theme?.accentColor || '#fbbf24', 0.3),
               color: activeComplex?.theme?.accentColor || '#fbbf24'
             }}
             dir="rtl"
           >
-            <span className="relative flex h-2.5 w-2.5">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
               <span
                 className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                 style={{ backgroundColor: activeComplex?.theme?.accentColor || '#fbbf24' }}
@@ -4821,12 +4973,12 @@ export function App() {
                 style={{ backgroundColor: activeComplex?.theme?.accentColor || '#fbbf24' }}
               />
             </span>
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ color: activeComplex?.theme?.accentColor || '#fbbf24' }} />
-            <span className="text-white font-medium">{cloudSyncText}</span>
+            <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" style={{ color: activeComplex?.theme?.accentColor || '#fbbf24' }} />
+            <span className="text-white font-medium truncate">{cloudSyncText}</span>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
 

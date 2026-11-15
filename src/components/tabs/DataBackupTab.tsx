@@ -403,13 +403,6 @@ export const DataBackupTab: React.FC<DataBackupTabProps> = ({
         lastVerifiedModel: masterModelInput
       };
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('omran_platform_ai_config', JSON.stringify(updatedConfig));
-        if (cleanKey) {
-          localStorage.setItem('omran_gemini_api_key', cleanKey);
-        }
-      }
-
       await OmranAIService.saveConfig(updatedConfig);
       setAiConfig(updatedConfig);
       setAiSaveSuccessMsg('✨ تم حفظ واعتماد مفتاح الذكاء الاصطناعي الرئيسي للمنصة وتفعيله لجميع المستخدمين بنجاح!');

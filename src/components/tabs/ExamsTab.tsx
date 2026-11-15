@@ -62,7 +62,7 @@ import {
   LibraryDocument
 } from '../../types';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
-import { OmranDataService } from '../../lib/firebase';
+import { OmranDataService, requestCloudSyncRefresh } from '../../lib/firebase';
 import { StudentExamTaker } from '../StudentExamTaker';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import { DuolingoDatePicker } from '../portal/DuolingoDatePicker';
@@ -1011,7 +1011,10 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
         {/* Sub-Tabs Selector */}
         <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t" style={{ borderColor: themeBorder }}>
           <button
-            onClick={() => setActiveSubTab('exams')}
+            onClick={() => {
+              setActiveSubTab('exams');
+              requestCloudSyncRefresh('exams', 'جاري تحديث قائمة الاختبارات من قاعدة البيانات...');
+            }}
             className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
             style={activeSubTab === 'exams' ? {
               backgroundColor: themeAccent,
@@ -1032,7 +1035,10 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('submissions')}
+            onClick={() => {
+              setActiveSubTab('submissions');
+              requestCloudSyncRefresh('exams', 'جاري تحديث التسليمات والدرجات من قاعدة البيانات...');
+            }}
             className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
             style={activeSubTab === 'submissions' ? {
               backgroundColor: themeAccent,
@@ -1056,7 +1062,10 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('google_sheets')}
+            onClick={() => {
+              setActiveSubTab('google_sheets');
+              requestCloudSyncRefresh('exams', 'جاري التحقق من ربط Google Sheets والاختبارات سحابياً...');
+            }}
             className="px-4 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer border-2 active:translate-y-0.5"
             style={activeSubTab === 'google_sheets' ? {
               backgroundColor: themeAccent,

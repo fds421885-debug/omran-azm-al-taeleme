@@ -9,10 +9,6 @@ import {
 import { ApiConfig } from './apiConfig';
 import { doc, setDoc } from 'firebase/firestore';
 
-const AI_CONFIG_CACHE_KEY = 'omran_platform_ai_config';
-const MASTER_KEY_LOCAL_KEY = 'omran_gemini_api_key';
-const AI_USAGE_CACHE_KEY = 'omran_ai_usage_metrics';
-
 export function sanitizeGeminiModelName(modelName?: string): string {
   if (!modelName) return 'gemini-3.8-flash';
   const m = modelName.trim().toLowerCase();
@@ -47,6 +43,7 @@ export interface GenerateContentOptions {
 
 export class OmranAIService {
   private static cachedConfig: PlatformAIConfig | null = null;
+  private static usageMetrics: AIUsageMetrics | null = null;
   private static listeners: Array<(config: PlatformAIConfig) => void> = [];
   private static usageListeners: Array<(metrics: AIUsageMetrics) => void> = [];
 
@@ -94,43 +91,31 @@ export class OmranAIService {
   }
 
   /**
-   * Get current AI Usage and Limit metrics
+   * Get current AI Usage and Limit metrics (in-memory session metrics, no localStorage)
    */
   static getUsageMetrics(): AIUsageMetrics {
     const todayStr = new Date().toISOString().split('T')[0];
-    let metrics: AIUsageMetrics = { ...DEFAULT_AI_USAGE_METRICS, date: todayStr };
+    let metrics: AIUsageMetrics = this.usageMetrics
+      ? { ...this.usageMetrics }
+      : { ...DEFAULT_AI_USAGE_METRICS, date: todayStr };
 
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(AI_USAGE_CACHE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed.date === todayStr) {
-              metrics = { ...metrics, ...parsed };
-            } else {
-              // New day: retain all-time total, tier, limits, but reset daily count
-              metrics = {
-                ...metrics,
-                tier: parsed.tier || 'free',
-                dailyLimit: parsed.dailyLimit || 1500,
-                rpmLimit: parsed.rpmLimit || 15,
-                tpmLimit: parsed.tpmLimit || 1000000,
-                totalAllTimeRequests: parsed.totalAllTimeRequests || 0,
-                dailyRequestsCount: 0,
-                recentTimestamps: [],
-                date: todayStr
-              };
-              localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(metrics));
-            }
-          }
-        }
-      } catch {}
+    if (metrics.date !== todayStr) {
+      metrics = {
+        ...DEFAULT_AI_USAGE_METRICS,
+        tier: metrics.tier || 'free',
+        dailyLimit: metrics.dailyLimit || 1500,
+        rpmLimit: metrics.rpmLimit || 15,
+        tpmLimit: metrics.tpmLimit || 1000000,
+        totalAllTimeRequests: metrics.totalAllTimeRequests || 0,
+        dailyRequestsCount: 0,
+        recentTimestamps: [],
+        date: todayStr
+      };
     }
 
-    // Clean timestamps older than 60 seconds
     const now = Date.now();
     metrics.recentTimestamps = (metrics.recentTimestamps || []).filter(t => now - t < 60000);
+    this.usageMetrics = metrics;
     return metrics;
   }
 
@@ -150,12 +135,7 @@ export class OmranAIService {
       lastRequestAt: new Date().toISOString()
     };
 
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
-      } catch {}
-    }
-
+    this.usageMetrics = updated;
     this.notifyUsageListeners(updated);
     return updated;
   }
@@ -172,11 +152,7 @@ export class OmranAIService {
       recentTimestamps: [],
       date: todayStr
     };
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
-      } catch {}
-    }
+    this.usageMetrics = updated;
     this.notifyUsageListeners(updated);
     return updated;
   }
@@ -207,48 +183,19 @@ export class OmranAIService {
       tpmLimit
     };
 
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(AI_USAGE_CACHE_KEY, JSON.stringify(updated));
-      } catch {}
-    }
+    this.usageMetrics = updated;
     this.notifyUsageListeners(updated);
     return updated;
   }
 
   /**
-   * Load AI Configuration from localStorage and Cloud Firestore
+   * Load AI Configuration directly from Cloud Firestore Server
    */
   static async loadConfig(): Promise<PlatformAIConfig> {
-    if (this.cachedConfig) {
-      return this.cachedConfig;
-    }
+    let config: PlatformAIConfig = this.cachedConfig
+      ? { ...this.cachedConfig }
+      : { ...DEFAULT_AI_CONFIG };
 
-    let config: PlatformAIConfig = { ...DEFAULT_AI_CONFIG };
-
-    // 1. Read from localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(AI_CONFIG_CACHE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          config = { ...config, ...parsed };
-        }
-      } catch {}
-
-      // Legacy fallback key if stored previously
-      if (!config.masterApiKey) {
-        const legacyKey =
-          localStorage.getItem(MASTER_KEY_LOCAL_KEY) ||
-          localStorage.getItem('gemini_api_key') ||
-          '';
-        if (legacyKey) {
-          config.masterApiKey = legacyKey.trim();
-        }
-      }
-    }
-
-    // 2. Fetch from Firestore settings collection in active database if available
     try {
       const { safeGetDoc, OmranDataService } = await import('./firebase');
       const activeDb = OmranDataService.getActiveDb() || OmranDataService.getCentralDb();
@@ -267,16 +214,10 @@ export class OmranAIService {
               ? cloudData.groupAllocations
               : config.groupAllocations
           };
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(AI_CONFIG_CACHE_KEY, JSON.stringify(config));
-            if (config.masterApiKey) {
-              localStorage.setItem(MASTER_KEY_LOCAL_KEY, config.masterApiKey);
-            }
-          }
         }
       }
     } catch (e) {
-      // Non-blocking cloud fetch
+      // Non-blocking cloud fetch fallback to memory
     }
 
     config.masterModel = sanitizeGeminiModelName(config.masterModel);
@@ -286,23 +227,17 @@ export class OmranAIService {
   }
 
   /**
-   * Save AI Configuration to localStorage and Cloud Firestore (Active DB & Central DB)
+   * Save AI Configuration directly to Cloud Firestore (Active DB & Central DB)
    */
   static async saveConfig(updated: PlatformAIConfig): Promise<void> {
     this.cachedConfig = updated;
 
-    // 1. Persist to localStorage
     if (typeof window !== 'undefined') {
-      localStorage.setItem(AI_CONFIG_CACHE_KEY, JSON.stringify(updated));
-      if (updated.masterApiKey) {
-        localStorage.setItem(MASTER_KEY_LOCAL_KEY, updated.masterApiKey);
-      }
       window.dispatchEvent(new CustomEvent('omran:ai-config-updated', { detail: updated }));
     }
 
     this.notifyListeners(updated);
 
-    // Sync to backend Express server if available
     try {
       fetch(ApiConfig.getEndpoint('/api/gemini/sync-config'), {
         method: 'POST',
@@ -311,9 +246,9 @@ export class OmranAIService {
       }).catch(() => {});
     } catch {}
 
-    // 2. Persist to Firestore settings collection in active database and central database
     try {
-      const { OmranDataService, cleanFirestoreData } = await import('./firebase');
+      const { OmranDataService, cleanFirestoreData, emitCloudSyncEvent } = await import('./firebase');
+      emitCloudSyncEvent('syncing', 'جاري حفظ إعدادات الذكاء الاصطناعي سحابياً...', 'ai_config');
       const activeDb = OmranDataService.getActiveDb();
       const centralDb = OmranDataService.getCentralDb();
       const dbs = [activeDb];
@@ -343,8 +278,9 @@ export class OmranAIService {
           }
         })
       );
+      emitCloudSyncEvent('synced', 'تم حفظ إعدادات الذكاء الاصطناعي في السحابة ✓', 'ai_config');
     } catch (e) {
-      console.warn('[OmranAIService] Cloud save failed, cached locally:', e);
+      console.warn('[OmranAIService] Cloud save notice:', e);
     }
   }
 

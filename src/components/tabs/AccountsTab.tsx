@@ -36,7 +36,7 @@ import {
   normalizeTeacherText
 } from '../../types';
 import { GoogleWorkspaceService } from '../../lib/googleWorkspace';
-import { OmranDataService } from '../../lib/firebase';
+import { OmranDataService, requestCloudSyncRefresh } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 
 interface AccountsTabProps {
@@ -765,7 +765,10 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#022c22]/80 border border-[#065f46] p-3 rounded-2xl">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveSubTab('teachers')}
+            onClick={() => {
+              setActiveSubTab('teachers');
+              requestCloudSyncRefresh('accounts', 'جاري تحديث حسابات المعلمين والمشرفين من قاعدة البيانات...');
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'teachers'
                 ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
@@ -776,7 +779,10 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
             <span>حسابات المعلمين والمشرفين ({teachers.length})</span>
           </button>
           <button
-            onClick={() => setActiveSubTab('students')}
+            onClick={() => {
+              setActiveSubTab('students');
+              requestCloudSyncRefresh('accounts', 'جاري تحديث حسابات الطلاب من قاعدة البيانات...');
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'students'
                 ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'

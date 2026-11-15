@@ -103,20 +103,6 @@ export async function loadSavedMailConfigFromCloud(
     } catch {}
   }
 
-  // 6. Check localStorage fallback
-  if ((!foundUser || !foundPass) && typeof window !== 'undefined') {
-    try {
-      if (complexId) {
-        const rawComplex = localStorage.getItem(`omran_mail_config_${complexId}`);
-        if (rawComplex) applyCandidate(JSON.parse(rawComplex));
-      }
-      if (!foundUser || !foundPass) {
-        const rawGlobal = localStorage.getItem('omran_mail_config');
-        if (rawGlobal) applyCandidate(JSON.parse(rawGlobal));
-      }
-    } catch {}
-  }
-
   if (!foundUser && !foundPass) return null;
 
   return {
@@ -221,17 +207,7 @@ export async function saveMailConfigToCloudForever(params: {
     }
   }
 
-  // 3. Mirror to localStorage for instant offline/zero-latency read
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('omran_mail_config', JSON.stringify(configPayload));
-      if (targetComplexId) {
-        localStorage.setItem(`omran_mail_config_${targetComplexId}`, JSON.stringify(configPayload));
-      }
-    } catch {}
-  }
-
-  // 4. Sync with backend Express server
+  // 3. Sync with backend Express server
   try {
     await fetch(ApiConfig.getEndpoint('/api/mail/config'), {
       method: 'POST',

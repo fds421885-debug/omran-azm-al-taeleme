@@ -1314,14 +1314,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             planScheduleConfig: c.planScheduleConfig,
           })),
           metrics: platformMetrics,
-          planScheduleConfig: livePlanScheduleConfig || activeComplex?.planScheduleConfig || (() => {
-            try {
-              const docKey = activeComplex?.id ? `plan_schedule_${activeComplex.id.replace(/[^a-zA-Z0-9_-]/g, '_')}` : 'plan_schedule_default';
-              const raw = localStorage.getItem(`omran_plan_schedule_data_${docKey}`) || localStorage.getItem('omran_plan_schedule_data_plan_schedule_default');
-              if (raw) return JSON.parse(raw);
-            } catch {}
-            return null;
-          })() || {
+          planScheduleConfig: livePlanScheduleConfig || activeComplex?.planScheduleConfig || {
             selectedDays: ['sun', 'mon', 'tue', 'wed', 'thu'],
             dailyHours: 2.0,
             strategyPreset: 'tathbeet_first',
@@ -1343,10 +1336,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         },
       };
 
-      let clientApiKey = (
-        (typeof window !== 'undefined' ? (localStorage.getItem('omran_gemini_api_key') || localStorage.getItem('gemini_api_key') || '') : '') ||
-        ''
-      ).trim();
+      let clientApiKey = '';
 
       let clientModel = 'gemini-3.8-flash';
       try {
@@ -2956,13 +2946,6 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
           await OmranDataService.saveComplex(updatedComplex);
         }
       }
-
-      try {
-        const storedLocal = localStorage.getItem('omran_certificates_templates');
-        const list = storedLocal ? JSON.parse(storedLocal) : [];
-        const mergedLocal = [newTemplate, ...list.filter((t: any) => t.id !== newTemplate.id)];
-        localStorage.setItem('omran_certificates_templates', JSON.stringify(mergedLocal));
-      } catch {}
 
       confetti({ particleCount: 60, spread: 50 });
       showToast(`تم بنجاح اعتماد قالب (${name.trim()}) لمجمعكم دون احتسابه من الـ 5 نماذج! 🎨`);

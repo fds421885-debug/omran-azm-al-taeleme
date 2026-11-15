@@ -44,7 +44,7 @@ import {
   LibraryDocument
 } from '../../types';
 import { QURAN_SURAHS, getSurahInfo } from '../../data/quranData';
-import { OmranDataService, OMRAN_CACHE_KEYS, getLocalCache, setLocalCache } from '../../lib/firebase';
+import { OmranDataService, requestCloudSyncRefresh } from '../../lib/firebase';
 import { triggerComplexThemePulse } from '../../utils/highlightHelper';
 import { darkenHex, lightenHex, getContrastTextColor } from '../../lib/themeUtils';
 import jsPDF from 'jspdf';
@@ -208,28 +208,26 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
     }
   }, [initialHighlightId]);
 
-  // Load custom templates (Dual persistence)
+  // Custom templates loaded exclusively from Cloud Firestore settings & complex config
   const [customTemplates, setCustomTemplates] = useState<CustomCertificateTemplate[]>(() => {
-    return getLocalCache<CustomCertificateTemplate[]>('omran_certificates_templates', []);
+    const fromSettings = (settings as any)?.customCertificatesTemplates;
+    return Array.isArray(fromSettings) ? fromSettings : [];
   });
 
-  // Local certificates fallback
+  // Live certificates state synchronized directly with Cloud Firestore props
   const [localCertificates, setLocalCertificates] = useState<IssuedCertificate[]>(() => {
-    return getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []);
+    return Array.isArray(certificates) ? certificates : [];
   });
 
-  // Keep local certificates in sync with props dynamically so UI reflects additions instantly without page refresh
+  // Mirror Cloud Firestore certificates prop directly so additions, updates, and deletions propagate immediately
   useEffect(() => {
-    if (certificates && certificates.length > 0) {
-      setLocalCertificates(prev => {
-        const map = new Map<string, IssuedCertificate>();
-        for (const c of certificates) if (c?.id) map.set(c.id, c);
-        for (const c of prev) if (c?.id && !map.has(c.id)) map.set(c.id, c);
-        return Array.from(map.values()).sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-      });
-    }
+    setLocalCertificates(
+      Array.isArray(certificates)
+        ? [...certificates].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+        : []
+    );
   }, [certificates]);
 
   // Track deleted certificate IDs locally to ensure instantaneous and permanent deletion
@@ -341,10 +339,9 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
     });
   }, [allCertificates, archiveSearch, archiveHalaqahFilter, archiveOccasionFilter]);
 
-  // Save custom templates to local cache & cloud settings
+  // Save custom templates directly to Cloud Firestore settings
   const saveCustomTemplates = async (updated: CustomCertificateTemplate[]) => {
     setCustomTemplates(updated);
-    localStorage.setItem('omran_certificates_templates', JSON.stringify(updated));
     if (onUpdateSettings) {
       try {
         await onUpdateSettings({
@@ -357,28 +354,18 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
     }
   };
 
-  // Sync from settings if available
+  // Sync from settings & activeComplex directly from Firestore
   useEffect(() => {
+    const map = new Map<string, CustomCertificateTemplate>();
     const fromSettings = (settings as any)?.customCertificatesTemplates;
-    if (Array.isArray(fromSettings) && fromSettings.length > 0) {
-      setCustomTemplates(fromSettings);
-      localStorage.setItem('omran_certificates_templates', JSON.stringify(fromSettings));
+    if (Array.isArray(fromSettings)) {
+      for (const t of fromSettings) if (t?.id) map.set(t.id, t);
     }
-  }, [settings]);
-
-  // Sync from activeComplex custom templates (including Assistant-created platform templates)
-  useEffect(() => {
-    if (activeComplex?.customCertificateTemplates && activeComplex.customCertificateTemplates.length > 0) {
-      setCustomTemplates(prev => {
-        const map = new Map<string, CustomCertificateTemplate>();
-        for (const t of prev) map.set(t.id, t);
-        for (const t of activeComplex.customCertificateTemplates!) map.set(t.id, t);
-        const merged = Array.from(map.values());
-        localStorage.setItem('omran_certificates_templates', JSON.stringify(merged));
-        return merged;
-      });
+    if (Array.isArray(activeComplex?.customCertificateTemplates)) {
+      for (const t of activeComplex.customCertificateTemplates) if (t?.id) map.set(t.id, t);
     }
-  }, [activeComplex?.customCertificateTemplates]);
+    setCustomTemplates(Array.from(map.values()));
+  }, [settings, activeComplex?.customCertificateTemplates]);
 
   // ---------------------------------------------------------------------------
   // TRACK 1: ISSUE CERTIFICATES STATE
@@ -791,14 +778,9 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         // 1. Instantly track as deleted so it immediately vanishes from the UI and never resurrects
         OmranDataService.addDeletedCertificateId(id);
         setDeletedCertIds(prev => new Set([...prev, id]));
-        // 2. Instantly filter from local state
+        // 2. Instantly filter from state
         setLocalCertificates(prev => prev.filter(c => c.id !== id));
-        // 3. Clean from localStorage
-        try {
-          const stored = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []);
-          setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, stored.filter(c => c.id !== id));
-        } catch (e) {}
-        // 4. Notify parent / Firestore
+        // 3. Notify parent / Firestore
         if (onDeleteCertificate) {
           try {
             await onDeleteCertificate(id);
@@ -889,16 +871,9 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
     setIsSavingCert(true);
     try {
       const cert = createCertificatePayload(student);
-      // Immediately reflect in UI & local state
+      // Immediately reflect in UI
       setLocalCertificates(prev => [cert, ...prev.filter(c => c.id !== cert.id)]);
       setSavedStudentIds(prev => new Set([...prev, student.id]));
-
-      // Save to localStorage immediately so archive reflects it instantly
-      try {
-        const stored = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []);
-        const updatedStored = [cert, ...stored.filter(c => c.id !== cert.id)];
-        setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, updatedStored);
-      } catch (e) {}
 
       if (onSaveCertificate) {
         await onSaveCertificate(cert);
@@ -913,7 +888,7 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
       });
       setTimeout(() => setSavedSuccessToast(null), 4000);
     } catch (err) {
-      console.warn('Certificate local save completed, remote sync warning:', err);
+      console.warn('Certificate cloud sync notice:', err);
       setSavedSuccessToast('تم حفظ الشهادة بنجاح');
       setTimeout(() => setSavedSuccessToast(null), 4000);
     } finally {
@@ -936,14 +911,6 @@ export const CertificatesTab: React.FC<CertificatesTabProps> = ({
         );
       });
       setSavedStudentIds(new Set(targetStudents.map(s => s.id)));
-
-      try {
-        const stored = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []);
-        const map = new Map<string, IssuedCertificate>();
-        for (const c of stored) if (c?.id) map.set(c.id, c);
-        for (const c of certsToSave) if (c?.id) map.set(c.id, c);
-        setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, Array.from(map.values()));
-      } catch (e) {}
 
       if (onSaveCertificates) {
         await onSaveCertificates(certsToSave);
@@ -1595,7 +1562,10 @@ ${occasionText}
         <div className="flex items-center gap-1.5 bg-[#022c22] p-1.5 rounded-2xl border border-[#065f46] shrink-0 flex-wrap">
           <button
             type="button"
-            onClick={() => setActiveSubTab('issue')}
+            onClick={() => {
+              setActiveSubTab('issue');
+              requestCloudSyncRefresh('certificates', 'جاري التحقق من بيانات الشهادات والطلاب سحابياً...');
+            }}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'issue'
                 ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
@@ -1608,7 +1578,10 @@ ${occasionText}
 
           <button
             type="button"
-            onClick={() => setActiveSubTab('archive')}
+            onClick={() => {
+              setActiveSubTab('archive');
+              requestCloudSyncRefresh('certificates', 'جاري تحديث أرشيف الشهادات من قاعدة البيانات...');
+            }}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'archive'
                 ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
@@ -1626,6 +1599,7 @@ ${occasionText}
               setBuilderImage(null);
               setBuilderName('');
               setActiveSubTab('builder');
+              requestCloudSyncRefresh('certificates', 'جاري التحقق من نماذج الشهادات سحابياً...');
             }}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'builder'
@@ -1639,7 +1613,10 @@ ${occasionText}
 
           <button
             type="button"
-            onClick={() => setActiveSubTab('templates')}
+            onClick={() => {
+              setActiveSubTab('templates');
+              requestCloudSyncRefresh('certificates', 'جاري تحديث قوالب الشهادات من السحابة...');
+            }}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'templates'
                 ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'

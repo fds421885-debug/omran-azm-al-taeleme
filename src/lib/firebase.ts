@@ -14,6 +14,7 @@ import {
   query,
   where,
   getDocFromServer,
+  getDocsFromServer,
   writeBatch,
   runTransaction
 } from 'firebase/firestore';
@@ -150,30 +151,103 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Resilient, non-blocking Firestore query helpers with automatic responsive timeout (3s)
-export async function safeGetDocs(colRef: any, timeoutMs = 3000): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
+// =========================================================================
+// Universal Cloud Sync Event Bus (للإشعارات الفورية والتحديث المباشر للجميع)
+// =========================================================================
+export interface CloudSyncEventDetail {
+  status: 'syncing' | 'synced' | 'realtime' | 'error';
+  message: string;
+  source?: string;
+  timestamp: number;
+}
+
+export function emitCloudSyncEvent(
+  status: CloudSyncEventDetail['status'],
+  message: string,
+  source?: string
+): void {
+  if (typeof window === 'undefined') return;
   try {
-    const fetchPromise = getDocs(colRef);
-    // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
-    fetchPromise.catch(() => {});
+    window.dispatchEvent(
+      new CustomEvent<CloudSyncEventDetail>('omran:cloud-sync', {
+        detail: { status, message, source, timestamp: Date.now() }
+      })
+    );
+  } catch {}
+}
+
+export function requestCloudSyncRefresh(domain: string = 'all', message?: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent('omran:request-cloud-refresh', {
+        detail: { domain, message, timestamp: Date.now() }
+      })
+    );
+  } catch {}
+}
+
+function createSnapshotSyncNotifier(label: string) {
+  let hasInitialSnapshot = false;
+  return (snap?: any) => {
+    const fromCache = Boolean(snap?.metadata?.fromCache);
+    if (!hasInitialSnapshot) {
+      hasInitialSnapshot = true;
+      if (!fromCache) {
+        emitCloudSyncEvent('realtime', `تم التحقق ومزامنة (${label}) مباشرة من قاعدة البيانات ✓`, label);
+      }
+      return;
+    }
+    if (!fromCache) {
+      emitCloudSyncEvent('realtime', `تم استقبال تحديث مباشر لـ (${label}) من قاعدة البيانات ✓`, label);
+    }
+  };
+}
+
+// Non-blocking boot connectivity verification against Firestore Server
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    try {
+      getDocFromServer(doc(db, 'settings', 'main')).catch(() => {});
+    } catch {}
+  }, 50);
+}
+
+// Cloud-First Firestore query helpers: strictly prefer Firestore Server (`getDocsFromServer` / `getDocFromServer`)
+// with graceful fallback to standard query only if genuinely offline/unavailable.
+export async function safeGetDocs(
+  colRef: any,
+  timeoutMs = 5000
+): Promise<{ docs: any[]; empty: boolean; forEach: (fn: (doc: any) => void) => void }> {
+  try {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    const serverOrCachePromise = isOnline
+      ? getDocsFromServer(colRef).catch(() => getDocs(colRef))
+      : getDocs(colRef);
+    serverOrCachePromise.catch(() => {});
     const timeoutPromise = new Promise<{ docs: any[]; empty: boolean; forEach: (fn: any) => void }>((resolve) =>
       setTimeout(() => resolve({ docs: [], empty: true, forEach: () => {} }), timeoutMs)
     );
-    return await Promise.race([fetchPromise, timeoutPromise]);
+    return await Promise.race([serverOrCachePromise, timeoutPromise]);
   } catch {
     return { docs: [], empty: true, forEach: () => {} };
   }
 }
 
-export async function safeGetDoc(docRef: any, timeoutMs = 3000): Promise<{ exists: () => boolean; data: () => any }> {
+export async function safeGetDoc(
+  docRef: any,
+  timeoutMs = 5000
+): Promise<{ exists: () => boolean; data: () => any }> {
   try {
-    const fetchPromise = getDoc(docRef);
-    // Crucial: attach no-op catch so late rejections don't cause unhandledrejection
-    fetchPromise.catch(() => {});
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    const serverOrCachePromise = isOnline
+      ? getDocFromServer(docRef).catch(() => getDoc(docRef))
+      : getDoc(docRef);
+    serverOrCachePromise.catch(() => {});
     const timeoutPromise = new Promise<{ exists: () => boolean; data: () => any }>((resolve) =>
       setTimeout(() => resolve({ exists: () => false, data: () => null }), timeoutMs)
     );
-    return await Promise.race([fetchPromise, timeoutPromise]);
+    return await Promise.race([serverOrCachePromise, timeoutPromise]);
   } catch {
     return { exists: () => false, data: () => null };
   }
@@ -1210,11 +1284,18 @@ export function broadcastDataUpdate(type: string, payload?: any) {
   }
 }
 
-// Persistent Tombstone Helpers to ensure permanent and irreversible deletion
-let lastTombstonesSyncTime = 0;
-let cachedTombstonesResult: any = null;
+// Persistent Tombstone Helpers to ensure permanent and irreversible deletion directly from Cloud Firestore
+let inFlightTombstonesPromise: Promise<{
+  deletedStudents: Set<string>;
+  deletedCertificates: Set<string>;
+  deletedComplexes: Set<string>;
+  deletedHalaqahs: Set<string>;
+  deletedExams: Set<string>;
+  deletedTeachers: Set<string>;
+  deletedApplications: Set<string>;
+}> | null = null;
 
-export async function syncTombstonesFromCloud(force = false): Promise<{
+export async function syncTombstonesFromCloud(_force = false): Promise<{
   deletedStudents: Set<string>;
   deletedCertificates: Set<string>;
   deletedComplexes: Set<string>;
@@ -1223,80 +1304,75 @@ export async function syncTombstonesFromCloud(force = false): Promise<{
   deletedTeachers: Set<string>;
   deletedApplications: Set<string>;
 }> {
-  const localStudents = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []);
-  const localCerts = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_CERTIFICATES, []);
-  const localComplexes = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []);
-  const localHalaqahs = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []);
-  const localExams = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_EXAMS, []);
-  const localTeachers = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []);
-  const localApps = getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, []);
-
-  const studentSet = new Set<string>(Array.isArray(localStudents) ? localStudents : []);
-  const certSet = new Set<string>(Array.isArray(localCerts) ? localCerts : []);
-  const complexSet = new Set<string>(Array.isArray(localComplexes) ? localComplexes : []);
-  const halaqahSet = new Set<string>(Array.isArray(localHalaqahs) ? localHalaqahs : []);
-  const examSet = new Set<string>(Array.isArray(localExams) ? localExams : []);
-  const teacherSet = new Set<string>(Array.isArray(localTeachers) ? localTeachers : []);
-  const appSet = new Set<string>(Array.isArray(localApps) ? localApps : []);
-
-  // Return cached result if checked within the last 15 seconds to avoid duplicate parallel network calls
-  const now = Date.now();
-  if (!force && cachedTombstonesResult && now - lastTombstonesSyncTime < 15000) {
-    return cachedTombstonesResult;
-  }
-  lastTombstonesSyncTime = now;
-
-  try {
-    const centralSnap = await safeGetDoc(doc(OmranDataService.getCentralDb(), 'settings', 'deleted_records'), 2500);
-    if (centralSnap.exists()) {
-      const data = centralSnap.data();
-      if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
-      if (Array.isArray(data.deletedCertificates)) data.deletedCertificates.forEach((id: string) => certSet.add(id));
-      if (Array.isArray(data.deletedComplexes)) data.deletedComplexes.forEach((id: string) => complexSet.add(id));
-      if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
-      if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
-      if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
-      if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
-    }
-
-    if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
-      try {
-        const activeSnap = await safeGetDoc(doc(OmranDataService.getActiveDb(), 'settings', 'deleted_records'), 2000);
-        if (activeSnap.exists()) {
-          const data = activeSnap.data();
-          if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
-          if (Array.isArray(data.deletedCertificates)) data.deletedCertificates.forEach((id: string) => certSet.add(id));
-          if (Array.isArray(data.deletedComplexes)) data.deletedComplexes.forEach((id: string) => complexSet.add(id));
-          if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
-          if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
-          if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
-          if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
-        }
-      } catch {}
-    }
-  } catch (e) {
-    // Non-blocking
+  if (inFlightTombstonesPromise && !_force) {
+    return inFlightTombstonesPromise;
   }
 
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_STUDENTS, Array.from(studentSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_CERTIFICATES, Array.from(certSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, Array.from(complexSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, Array.from(halaqahSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_EXAMS, Array.from(examSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(teacherSet));
-  setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(appSet));
+  const runSync = async () => {
+    const studentSet = new Set<string>();
+    const certSet = new Set<string>();
+    const complexSet = new Set<string>();
+    const halaqahSet = new Set<string>();
+    const examSet = new Set<string>();
+    const teacherSet = new Set<string>();
+    const appSet = new Set<string>();
 
-  cachedTombstonesResult = {
-    deletedStudents: studentSet,
-    deletedCertificates: certSet,
-    deletedComplexes: complexSet,
-    deletedHalaqahs: halaqahSet,
-    deletedExams: examSet,
-    deletedTeachers: teacherSet,
-    deletedApplications: appSet
+    try {
+      const centralSnap = await safeGetDoc(doc(OmranDataService.getCentralDb(), 'settings', 'deleted_records'), 3500);
+      if (centralSnap.exists()) {
+        const data = centralSnap.data();
+        if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
+        if (Array.isArray(data.deletedCertificates)) data.deletedCertificates.forEach((id: string) => certSet.add(id));
+        if (Array.isArray(data.deletedComplexes)) data.deletedComplexes.forEach((id: string) => complexSet.add(id));
+        if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
+        if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
+        if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
+        if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
+      }
+
+      if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
+        try {
+          const activeSnap = await safeGetDoc(doc(OmranDataService.getActiveDb(), 'settings', 'deleted_records'), 3000);
+          if (activeSnap.exists()) {
+            const data = activeSnap.data();
+            if (Array.isArray(data.deletedStudents)) data.deletedStudents.forEach((id: string) => studentSet.add(id));
+            if (Array.isArray(data.deletedCertificates)) data.deletedCertificates.forEach((id: string) => certSet.add(id));
+            if (Array.isArray(data.deletedComplexes)) data.deletedComplexes.forEach((id: string) => complexSet.add(id));
+            if (Array.isArray(data.deletedHalaqahs)) data.deletedHalaqahs.forEach((id: string) => halaqahSet.add(id));
+            if (Array.isArray(data.deletedExams)) data.deletedExams.forEach((id: string) => examSet.add(id));
+            if (Array.isArray(data.deletedTeachers)) data.deletedTeachers.forEach((id: string) => teacherSet.add(id));
+            if (Array.isArray(data.deletedApplications)) data.deletedApplications.forEach((id: string) => appSet.add(id));
+          }
+        } catch {}
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_STUDENTS, Array.from(studentSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_CERTIFICATES, Array.from(certSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, Array.from(complexSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, Array.from(halaqahSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_EXAMS, Array.from(examSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(teacherSet));
+    setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(appSet));
+
+    return {
+      deletedStudents: studentSet,
+      deletedCertificates: certSet,
+      deletedComplexes: complexSet,
+      deletedHalaqahs: halaqahSet,
+      deletedExams: examSet,
+      deletedTeachers: teacherSet,
+      deletedApplications: appSet
+    };
   };
 
-  return cachedTombstonesResult;
+  inFlightTombstonesPromise = runSync().finally(() => {
+    inFlightTombstonesPromise = null;
+  });
+
+  return inFlightTombstonesPromise;
 }
 
 async function writeTombstoneToBothDbs(field: string, id: string): Promise<void> {
@@ -1530,10 +1606,23 @@ export function purgeAllLocalDataCaches(): void {
           k.startsWith('omran_deleted_') ||
           k.startsWith('omran_plan_schedule_') ||
           k.startsWith('omran_registration_applications') ||
+          k.startsWith('omran_known_complexes_') ||
+          k.startsWith('omran_isolated_db_') ||
+          k.startsWith('omran_skip_complex_welcome_') ||
           k === 'omran_certificates_templates' ||
           k === 'omran_exams_initialized' ||
           k === 'omran_platform_initialized_flag' ||
-          k === 'omran_temp_transient_session')
+          k === 'omran_temp_transient_session' ||
+          k === 'omran_active_theme' ||
+          k === 'omran_active_halaqah_id' ||
+          k === 'omran_selected_complex_id' ||
+          k === 'omran_ai_active_messages' ||
+          k === 'omran_google_account_email' ||
+          k === 'omran_platform_ai_config' ||
+          k === 'omran_gemini_api_key' ||
+          k === 'gemini_api_key' ||
+          k === 'omran_ai_usage_metrics' ||
+          k === 'omran_saved_reports_library')
       ) {
         keysToRemove.push(k);
       }
@@ -1743,9 +1832,6 @@ export class OmranDataService {
             const isPlainMatch = cleanPass === (t.password || '123') || cleanPass === '123' || cleanPass === 'moh2022M';
             if (isPassValid || isPlainMatch) {
               this.setActiveComplex(comp);
-              try {
-                localStorage.setItem('omran_selected_complex_id', comp.id);
-              } catch {}
               return {
                 user: {
                   username: t.name || t.username,
@@ -1778,9 +1864,6 @@ export class OmranDataService {
             const isPlainMatch = cleanPass === (s.password || '123') || cleanPass === '123';
             if (isPassValid || isPlainMatch) {
               this.setActiveComplex(comp);
-              try {
-                localStorage.setItem('omran_selected_complex_id', comp.id);
-              } catch {}
               return {
                 user: {
                   username: s.name,
@@ -1899,23 +1982,16 @@ export class OmranDataService {
       }
 
       // 6. Seed Quran Exams if empty (strictly on brand new clean install only)
-      const examSnap = await getDocs(collection(db, 'exams'));
+      const examSnap = await safeGetDocs(collection(db, 'exams'));
       const deletedExamIds = getDeletedExamIds();
-      const hasExamInit = typeof localStorage !== 'undefined' && localStorage.getItem('omran_exams_initialized') === 'true';
-      if (examSnap.empty && deletedExamIds.size === 0 && !hasExamInit && !examsAlreadyInitialized) {
+      if (examSnap.empty && deletedExamIds.size === 0 && !examsAlreadyInitialized) {
         for (const ex of INITIAL_EXAMS) {
           if (!deletedExamIds.has(ex.id)) {
             await setDoc(doc(db, 'exams', ex.id), cleanFirestoreData(ex));
           }
         }
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('omran_exams_initialized', 'true');
-        }
         await setDoc(doc(db, 'settings', 'main'), { examsInitialized: true }, { merge: true }).catch(() => {});
-      } else if (examSnap.empty || deletedExamIds.size > 0 || hasExamInit || examsAlreadyInitialized) {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('omran_exams_initialized', 'true');
-        }
+      } else if (examSnap.empty || deletedExamIds.size > 0 || examsAlreadyInitialized) {
         await setDoc(doc(db, 'settings', 'main'), { examsInitialized: true }, { merge: true }).catch(() => {});
       }
 
@@ -2050,6 +2126,7 @@ export class OmranDataService {
     const updated = [clean, ...local.filter(t => t.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.TEACHERS, updated);
 
+    emitCloudSyncEvent('syncing', 'جاري حفظ بيانات المعلم في السحابة...', 'teachers');
     try {
       await setDoc(doc(this.getActiveDb(), 'teachers', teacher.id), clean, { merge: true });
       if (this.getActiveDb() !== this.getCentralDb() && isTeacherDeveloper(teacher)) {
@@ -2082,9 +2159,10 @@ export class OmranDataService {
           console.warn('[OmranDataService] Teacher multi-complex sync notice:', syncErr);
         }
       }
+      emitCloudSyncEvent('synced', 'تم حفظ بيانات المعلم في قاعدة البيانات ✓', 'teachers');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `teachers/${teacher.id}`);
-      console.warn('[OmranDataService] Teacher saved locally, cloud sync pending/offline:', e);
+      console.warn('[OmranDataService] Teacher cloud sync error:', e);
     }
   }
 
@@ -2259,6 +2337,7 @@ export class OmranDataService {
   // Subscribe to Complexes in real-time
   static subscribeComplexes(callback: (complexes: QuranComplex[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('المجمعات');
       return onSnapshot(collection(this.getCentralDb(), 'complexes'), snap => {
         const deletedComplexIds = getDeletedComplexIds();
         const list: QuranComplex[] = [];
@@ -2269,6 +2348,7 @@ export class OmranDataService {
           }
         });
         callback(list);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'complexes');
       });
@@ -3080,21 +3160,6 @@ export class OmranDataService {
       }
     }
     await yieldTick(30);
-
-    if (Array.isArray(data.customCertificateTemplates) && data.customCertificateTemplates.length > 0) {
-      try {
-        if (typeof window !== 'undefined') {
-          const raw = localStorage.getItem('omran_certificates_templates');
-          const list = raw ? JSON.parse(raw) : [];
-          for (const t of data.customCertificateTemplates) {
-            if (!list.some((it: any) => it.id === t.id)) {
-              list.push(t);
-            }
-          }
-          localStorage.setItem('omran_certificates_templates', JSON.stringify(list));
-        }
-      } catch {}
-    }
 
     onProgress?.(95, 'مزامنة وتطهير الكاش', 'جاري مسح أي كاش قديم وتوحيد بيانات فايربيس...');
     await yieldTick(40);
@@ -5131,15 +5196,17 @@ export class OmranDataService {
     broadcastDataUpdate('attendance-records', cleanRecords);
     broadcastDataUpdate('attendance', cleanRecords);
 
-    // 2. Persist to Firestore in parallel without throwing fatal errors
+    // 2. Persist directly to Firestore
+    emitCloudSyncEvent('syncing', 'جاري حفظ سجل الحضور في قاعدة البيانات...', 'attendance');
     try {
       const activeDb = this.getActiveDb();
       await Promise.allSettled(
         cleanRecords.map(rec => setDoc(doc(activeDb, 'attendance', rec.id), rec))
       );
+      emitCloudSyncEvent('synced', 'تم حفظ وتحديث سجل الحضور سحابياً ✓', 'attendance');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'attendance');
-      console.warn('[OmranDataService] Attendance saved locally, cloud sync pending/offline:', e);
+      emitCloudSyncEvent('error', 'تعذر مزامنة الحضور مع السحابة', 'attendance');
     }
   }
 
@@ -5167,22 +5234,25 @@ export class OmranDataService {
     const updated = [clean, ...local.filter(e => e.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, updated);
 
-    // Synchronize to Firestore Cloud
+    emitCloudSyncEvent('syncing', 'جاري حفظ التقييم والتسميع سحابياً...', 'evaluations');
     try {
       await setDoc(doc(this.getActiveDb(), 'evaluations', clean.id), clean);
+      emitCloudSyncEvent('synced', 'تم حفظ التقييم في قاعدة البيانات السحابية ✓', 'evaluations');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `evaluations/${clean.id}`);
-      console.warn('[OmranDataService] Evaluation saved locally, cloud sync pending/offline:', e);
+      emitCloudSyncEvent('error', 'تعذر حفظ التقييم سحابياً', 'evaluations');
     }
   }
 
-  // Delete Evaluation with Dual Persistence
+  // Delete Evaluation directly from Firestore
   static async deleteEvaluation(evaluationId: string): Promise<void> {
     const local = getLocalCache<StudentEvaluation[]>(OMRAN_CACHE_KEYS.EVALUATIONS, []);
     setLocalCache(OMRAN_CACHE_KEYS.EVALUATIONS, local.filter(e => e.id !== evaluationId));
 
+    emitCloudSyncEvent('syncing', 'جاري حذف التقييم من قاعدة البيانات...', 'evaluations');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'evaluations', evaluationId));
+      emitCloudSyncEvent('synced', 'تم حذف التقييم من قاعدة البيانات ✓', 'evaluations');
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `evaluations/${evaluationId}`);
     }
@@ -5212,29 +5282,32 @@ export class OmranDataService {
     }
   }
 
-  // Save Criteria List with Dual Persistence
+  // Save Criteria List directly in Firestore
   static async saveCriteriaList(list: EvaluationCriteria[]): Promise<void> {
     const clean = list.map(c => cleanFirestoreData(c));
     setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, clean);
 
+    emitCloudSyncEvent('syncing', 'جاري تحديث معايير التقييم في السحابة...', 'criteria');
     try {
       const activeDb = this.getActiveDb();
       await Promise.allSettled(
         clean.map(item => setDoc(doc(activeDb, 'criteria', item.id), item))
       );
+      emitCloudSyncEvent('synced', 'تم حفظ معايير التقييم في قاعدة البيانات ✓', 'criteria');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'criteria');
-      console.warn('[OmranDataService] Criteria saved locally, cloud sync pending/offline:', e);
     }
   }
 
-  // Delete Criteria with Dual Persistence
+  // Delete Criteria directly from Firestore
   static async deleteCriteria(id: string): Promise<void> {
     const local = getLocalCache<EvaluationCriteria[]>(OMRAN_CACHE_KEYS.CRITERIA, []);
     setLocalCache(OMRAN_CACHE_KEYS.CRITERIA, local.filter(c => c.id !== id));
 
+    emitCloudSyncEvent('syncing', 'جاري حذف المعيار من قاعدة البيانات...', 'criteria');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'criteria', id));
+      emitCloudSyncEvent('synced', 'تم حذف المعيار من قاعدة البيانات ✓', 'criteria');
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `criteria/${id}`);
     }
@@ -5261,7 +5334,7 @@ export class OmranDataService {
     return DEFAULT_SETTINGS;
   }
 
-  // Save Settings with Dual Persistence
+  // Save Settings directly to Firestore
   static async saveSettings(settings: AppSettings): Promise<void> {
     const enrichedSettings: AppSettings = {
       ...DEFAULT_SETTINGS,
@@ -5275,6 +5348,7 @@ export class OmranDataService {
     setLocalCache(OMRAN_CACHE_KEYS.SETTINGS, clean);
     broadcastDataUpdate('settings', clean);
 
+    emitCloudSyncEvent('syncing', 'جاري حفظ إعدادات المنصة سحابياً...', 'settings');
     try {
       await setDoc(doc(this.getActiveDb(), 'settings', 'main'), clean, { merge: true });
       if (this.getActiveDb() !== this.getCentralDb()) {
@@ -5282,9 +5356,9 @@ export class OmranDataService {
           await setDoc(doc(this.getCentralDb(), 'settings', 'main'), clean, { merge: true });
         } catch {}
       }
+      emitCloudSyncEvent('synced', 'تم حفظ الإعدادات في قاعدة البيانات ✓', 'settings');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'settings/main');
-      console.warn('[OmranDataService] Settings saved locally, cloud sync pending/offline:', e);
     }
   }
 
@@ -5363,11 +5437,13 @@ export class OmranDataService {
   // Real-time listener for violations
   static subscribeViolations(callback: (violations: BehaviorViolation[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('المخالفات السلوكية');
       return onSnapshot(collection(this.getActiveDb(), 'violations'), snap => {
         const list: BehaviorViolation[] = [];
         snap.forEach(d => list.push(d.data() as BehaviorViolation));
         list.sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime());
         callback(list);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'violations');
       });
@@ -5425,6 +5501,7 @@ export class OmranDataService {
   // Real-time Firestore Subscriptions for instant multi-device / multi-teacher sync
   static subscribeStudents(callback: (students: Student[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('بيانات الطلاب');
       return onSnapshot(collection(this.getActiveDb(), 'students'), snap => {
         const deletedIds = OmranDataService.getDeletedStudentIds();
         const cloudList: Student[] = [];
@@ -5451,6 +5528,7 @@ export class OmranDataService {
         } else {
           callback([]);
         }
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'students');
       });
@@ -5461,6 +5539,7 @@ export class OmranDataService {
 
   static subscribeAttendance(callback: (attendance: AttendanceRecord[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('سجلات الحضور');
       return onSnapshot(collection(this.getActiveDb(), 'attendance'), snap => {
         const cloudList: AttendanceRecord[] = [];
         snap.forEach(d => {
@@ -5468,6 +5547,7 @@ export class OmranDataService {
           if (a?.id) cloudList.push(a);
         });
         callback(cloudList);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'attendance');
       });
@@ -5478,6 +5558,7 @@ export class OmranDataService {
 
   static subscribeEvaluations(callback: (evaluations: StudentEvaluation[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('تقييمات التسميع');
       return onSnapshot(collection(this.getActiveDb(), 'evaluations'), snap => {
         const cloudList: StudentEvaluation[] = [];
         snap.forEach(d => {
@@ -5486,6 +5567,7 @@ export class OmranDataService {
         });
         cloudList.sort((a, b) => (b?.date || '').localeCompare(a?.date || ''));
         callback(cloudList);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'evaluations');
       });
@@ -5496,6 +5578,7 @@ export class OmranDataService {
 
   static subscribeCriteria(callback: (criteria: EvaluationCriteria[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('معايير التقييم');
       return onSnapshot(collection(this.getActiveDb(), 'criteria'), snap => {
         const cloudList: EvaluationCriteria[] = [];
         snap.forEach(d => {
@@ -5503,6 +5586,7 @@ export class OmranDataService {
           if (c?.id) cloudList.push(c);
         });
         callback(cloudList.length > 0 ? cloudList : DEFAULT_CRITERIA);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'criteria');
       });
@@ -5513,6 +5597,7 @@ export class OmranDataService {
 
   static subscribeSettings(callback: (settings: AppSettings) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('إعدادات المنصة');
       return onSnapshot(doc(this.getActiveDb(), 'settings', 'main'), snap => {
         if (snap.exists()) {
           const cloud = snap.data() as AppSettings;
@@ -5525,6 +5610,7 @@ export class OmranDataService {
             }
           });
         }
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.GET, 'settings/main');
       });
@@ -5535,6 +5621,7 @@ export class OmranDataService {
 
   static subscribeTeachers(callback: (teachers: TeacherAccount[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('بيانات المعلمين');
       const normalizeTeacher = (raw: TeacherAccount): TeacherAccount => {
         const cleanUser = (raw.username || '').trim().toLowerCase();
         const cleanName = (raw.name || '').trim().toLowerCase();
@@ -5617,6 +5704,7 @@ export class OmranDataService {
         });
         latestActive = list;
         mergeAndEmit(latestActive, latestCentral);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'teachers');
       });
@@ -5631,6 +5719,7 @@ export class OmranDataService {
           });
           latestCentral = list;
           mergeAndEmit(latestActive, latestCentral);
+          notify(snap);
         }, () => {});
       }
 
@@ -5645,6 +5734,7 @@ export class OmranDataService {
 
   static subscribeHalaqahs(callback: (halaqahs: Halaqah[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('الحلقات القرآنية');
       const unsubActive = onSnapshot(collection(this.getActiveDb(), 'halaqahs'), snap => {
         const deletedHalaqahIds = getDeletedHalaqahIds();
         const cloudList: Halaqah[] = [];
@@ -5661,6 +5751,7 @@ export class OmranDataService {
         } else {
           callback([]);
         }
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'halaqahs');
       });
@@ -5680,6 +5771,7 @@ export class OmranDataService {
     deletedApplications?: Set<string>;
   }) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('سجل المحذوفات');
       const handleSnap = (snap: any) => {
         if (snap && snap.exists()) {
           const data = snap.data();
@@ -5689,11 +5781,11 @@ export class OmranDataService {
           const cList = Array.isArray(data.deletedComplexes) ? data.deletedComplexes : [];
           const aList = Array.isArray(data.deletedApplications) ? data.deletedApplications : [];
 
-          const curS = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_STUDENTS, []), ...sList]);
-          const curT = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_TEACHERS, []), ...tList]);
-          const curH = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_HALAQAHS, []), ...hList]);
-          const curC = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_COMPLEXES, []), ...cList]);
-          const curA = new Set([...getLocalCache<string[]>(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, []), ...aList]);
+          const curS = new Set<string>(sList);
+          const curT = new Set<string>(tList);
+          const curH = new Set<string>(hList);
+          const curC = new Set<string>(cList);
+          const curA = new Set<string>(aList);
 
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_STUDENTS, Array.from(curS));
           setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(curT));
@@ -5708,6 +5800,7 @@ export class OmranDataService {
             deletedComplexes: curC,
             deletedApplications: curA
           });
+          notify(snap);
         }
       };
 
@@ -5826,7 +5919,7 @@ export class OmranDataService {
     };
   }
 
-  // Load Exams directly from Firestore
+  // Load Exams strictly from Firestore
   static async loadExams(): Promise<Exam[]> {
     try {
       await syncTombstonesFromCloud().catch(() => {});
@@ -5842,23 +5935,18 @@ export class OmranDataService {
         }
       });
 
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('omran_exams_initialized', 'true');
-      }
-
       list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setLocalCache(OMRAN_CACHE_KEYS.EXAMS, list);
       return list;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'exams');
-      const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []);
-      const deletedExamIds = getDeletedExamIds();
-      return local.filter(x => !deletedExamIds.has(x.id));
+      return [];
     }
   }
 
   // Save Exam directly in Firestore
   static async saveExam(exam: Exam): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حفظ الاختبار في السحابة...', 'exams');
     try {
       removeDeletedExamId(exam.id);
       const sanitized = this.sanitizeExam(exam);
@@ -5866,24 +5954,21 @@ export class OmranDataService {
       const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []);
       const updated = [cleanExam, ...local.filter(e => e.id !== cleanExam.id)];
       setLocalCache(OMRAN_CACHE_KEYS.EXAMS, updated);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('omran_exams_initialized', 'true');
-      }
 
       await setDoc(doc(this.getActiveDb(), 'exams', exam.id), cleanExam);
       broadcastDataUpdate('exam', cleanExam);
+      emitCloudSyncEvent('synced', 'تم حفظ الاختبار في قاعدة البيانات ✓', 'exams');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `exams/${exam.id}`);
+      emitCloudSyncEvent('error', 'تعذر حفظ الاختبار سحابياً', 'exams');
       throw e;
     }
   }
 
   // Delete Exam permanently with Tombstones across Active and Central DBs
   static async deleteExam(examId: string): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حذف الاختبار من السحابة...', 'exams');
     await addDeletedExamId(examId);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('omran_exams_initialized', 'true');
-    }
     const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []);
     setLocalCache(OMRAN_CACHE_KEYS.EXAMS, local.filter(e => e.id !== examId));
 
@@ -5895,15 +5980,17 @@ export class OmranDataService {
         } catch {}
       }
       broadcastDataUpdate('exam-deleted', examId);
+      emitCloudSyncEvent('synced', 'تم حذف الاختبار من قاعدة البيانات ✓', 'exams');
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `exams/${examId}`);
       throw e;
     }
   }
 
-  // Subscribe to Exams in real time with tombstone filtering
+  // Subscribe to Exams in real time directly from Firestore
   static subscribeExams(callback: (exams: Exam[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('الاختبارات');
       return onSnapshot(collection(this.getActiveDb(), 'exams'), snap => {
         const deletedExamIds = getDeletedExamIds();
         const list: Exam[] = [];
@@ -5914,18 +6001,12 @@ export class OmranDataService {
             list.push(OmranDataService.sanitizeExam({ ...raw, id }));
           }
         });
-        const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []).filter(e => !deletedExamIds.has(e.id));
-        const map = new Map<string, Exam>();
-        for (const e of local) map.set(e.id, e);
-        for (const e of list) map.set(e.id, e);
-        const merged = Array.from(map.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        if (merged.length > 0) setLocalCache(OMRAN_CACHE_KEYS.EXAMS, merged);
-        callback(merged.length > 0 ? merged : local);
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setLocalCache(OMRAN_CACHE_KEYS.EXAMS, list);
+        callback(list);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'exams');
-        const deletedExamIds = getDeletedExamIds();
-        const local = getLocalCache<Exam[]>(OMRAN_CACHE_KEYS.EXAMS, []).filter(e => !deletedExamIds.has(e.id));
-        callback(local);
       });
     } catch (e) {
       return () => {};
@@ -5952,9 +6033,11 @@ export class OmranDataService {
 
   // Save Exam Submission directly in Firestore
   static async saveSubmission(submission: ExamSubmission): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حفظ نتيجة الاختبار سحابياً...', 'exam_submissions');
     try {
       const cleanSubmission = JSON.parse(JSON.stringify(submission));
       await setDoc(doc(this.getActiveDb(), 'exam_submissions', submission.id), cleanSubmission);
+      emitCloudSyncEvent('synced', 'تم اعتماد وحفظ نتيجة الاختبار في السحابة ✓', 'exam_submissions');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `exam_submissions/${submission.id}`);
       throw e;
@@ -5963,8 +6046,10 @@ export class OmranDataService {
 
   // Delete Submission
   static async deleteSubmission(submissionId: string): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حذف نتيجة الاختبار من السحابة...', 'exam_submissions');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'exam_submissions', submissionId));
+      emitCloudSyncEvent('synced', 'تم حذف نتيجة الاختبار ✓', 'exam_submissions');
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `exam_submissions/${submissionId}`);
       throw e;
@@ -5974,11 +6059,13 @@ export class OmranDataService {
   // Subscribe to Exam Submissions in real time
   static subscribeSubmissions(callback: (submissions: ExamSubmission[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('نتائج الاختبارات');
       return onSnapshot(collection(this.getActiveDb(), 'exam_submissions'), snap => {
         const list: ExamSubmission[] = [];
         snap.forEach(d => list.push(d.data() as ExamSubmission));
         list.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
         callback(list);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'exam_submissions');
       });
@@ -6005,8 +6092,10 @@ export class OmranDataService {
 
   // Save Leaderboard Settings
   static async saveLeaderboardSettings(settings: LeaderboardSettings): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري تحديث إعدادات لوحة الشرف سحابياً...', 'leaderboard');
     try {
       await setDoc(doc(this.getActiveDb(), 'settings', 'leaderboard'), settings);
+      emitCloudSyncEvent('synced', 'تم حفظ إعدادات لوحة الشرف ✓', 'leaderboard');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'settings/leaderboard');
       throw e;
@@ -6016,9 +6105,11 @@ export class OmranDataService {
   // Subscribe to Leaderboard Settings
   static subscribeLeaderboardSettings(callback: (settings: LeaderboardSettings) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('لوحة الشرف');
       return onSnapshot(doc(this.getActiveDb(), 'settings', 'leaderboard'), snap => {
         if (snap.exists()) {
           callback(snap.data() as LeaderboardSettings);
+          notify(snap);
         }
       }, err => {
         handleFirestoreError(err, OperationType.GET, 'settings/leaderboard');
@@ -6070,6 +6161,7 @@ export class OmranDataService {
         }),
         { merge: true }
       );
+      emitCloudSyncEvent('synced', 'تم تحديث ربط Google سحابياً ✓', 'google_oauth');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `settings/${docId}`);
       throw e;
@@ -6084,6 +6176,7 @@ export class OmranDataService {
     const effectiveComplexId = (complexId || this.activeComplexId || 'default-complex').trim();
     const docId = this.getComplexGoogleOAuthDocId(effectiveComplexId);
     try {
+      const notify = createSnapshotSyncNotifier('إعدادات الربط السحابي');
       return onSnapshot(doc(this.getActiveDb(), 'settings', docId), snap => {
         if (snap.exists()) {
           const data = snap.data() as GoogleOAuthConfig;
@@ -6095,6 +6188,7 @@ export class OmranDataService {
         } else {
           callback({ isLinked: false, complexId: effectiveComplexId });
         }
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.GET, `settings/${docId}`);
       });
@@ -6122,9 +6216,11 @@ export class OmranDataService {
 
   // Save / Update Surah Recording
   static async saveRecording(recording: SurahRecording): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حفظ التلاوة الصوتية سحابياً...', 'recordings');
     try {
       const clean = cleanFirestoreData(recording);
       await setDoc(doc(this.getActiveDb(), 'surah_recordings', recording.id), clean);
+      emitCloudSyncEvent('synced', 'تم حفظ التلاوة الصوتية سحابياً ✓', 'recordings');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `surah_recordings/${recording.id}`);
       throw e;
@@ -6133,8 +6229,10 @@ export class OmranDataService {
 
   // Delete Surah Recording
   static async deleteRecording(recordingId: string): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حذف التلاوة من السحابة...', 'recordings');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'surah_recordings', recordingId));
+      emitCloudSyncEvent('synced', 'تم حذف التلاوة الصوتية ✓', 'recordings');
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `surah_recordings/${recordingId}`);
       throw e;
@@ -6144,10 +6242,12 @@ export class OmranDataService {
   // Subscribe to Surah Recordings in Realtime
   static subscribeRecordings(callback: (recordings: SurahRecording[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('التلاوات الصوتية');
       return onSnapshot(collection(this.getActiveDb(), 'surah_recordings'), snap => {
         const list: SurahRecording[] = [];
         snap.forEach(d => list.push(d.data() as SurahRecording));
         callback(list.sort((a, b) => a.surahNumber - b.surahNumber));
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'surah_recordings');
       });
@@ -6172,9 +6272,11 @@ export class OmranDataService {
 
   // Save Recordings Config
   static async saveRecordingsConfig(config: RecordingsConfig): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري تحديث إعدادات الاستماع سحابياً...', 'recordings_config');
     try {
       const clean = cleanFirestoreData(config);
       await setDoc(doc(this.getActiveDb(), 'settings', 'recordings_config'), clean);
+      emitCloudSyncEvent('synced', 'تم حفظ إعدادات الاستماع ✓', 'recordings_config');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'settings/recordings_config');
       throw e;
@@ -6184,12 +6286,14 @@ export class OmranDataService {
   // Subscribe to Recordings Config
   static subscribeRecordingsConfig(callback: (config: RecordingsConfig) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('إعدادات الاستماع');
       return onSnapshot(doc(this.getActiveDb(), 'settings', 'recordings_config'), snap => {
         if (snap.exists()) {
           callback(snap.data() as RecordingsConfig);
         } else {
           callback(DEFAULT_RECORDINGS_CONFIG);
         }
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.GET, 'settings/recordings_config');
       });
@@ -6224,9 +6328,11 @@ export class OmranDataService {
 
   // Save / Update Student Listening Log
   static async saveListeningLog(log: StudentListeningLog): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري توثيق سجل الاستماع في السحابة...', 'listening_logs');
     try {
       const clean = cleanFirestoreData(log);
       await setDoc(doc(this.getActiveDb(), 'listening_logs', log.id), clean);
+      emitCloudSyncEvent('synced', 'تم توثيق الاستماع سحابياً ✓', 'listening_logs');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `listening_logs/${log.id}`);
       throw e;
@@ -6236,10 +6342,12 @@ export class OmranDataService {
   // Subscribe to Listening Logs
   static subscribeListeningLogs(callback: (logs: StudentListeningLog[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('سجلات الاستماع');
       return onSnapshot(collection(this.getActiveDb(), 'listening_logs'), snap => {
         const list: StudentListeningLog[] = [];
         snap.forEach(d => list.push(d.data() as StudentListeningLog));
         callback(list.sort((a, b) => (b?.timestamp || '').localeCompare(a?.timestamp || '')));
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'listening_logs');
       });
@@ -6307,31 +6415,13 @@ export class OmranDataService {
         customCertificateTemplates.push(...c.customCertificateTemplates);
       }
     });
-    if (typeof window !== 'undefined') {
-      try {
-        const rawLocalTpls = localStorage.getItem('omran_certificates_templates');
-        if (rawLocalTpls) {
-          const parsed = JSON.parse(rawLocalTpls);
-          if (Array.isArray(parsed)) {
-            for (const pt of parsed) {
-              if (pt && pt.id && !customCertificateTemplates.some(t => t.id === pt.id)) {
-                customCertificateTemplates.push(pt);
-              }
-            }
-          }
-        }
-      } catch {}
-    }
 
-    // Load AI config from Firestore settings or localStorage
+    // Load AI config exclusively from Firestore settings
     let aiConfig: PlatformAIConfig | undefined;
     try {
       const snap = await safeGetDoc(doc(this.getCentralDb(), 'settings', 'ai_config'));
       if (snap && snap.exists()) {
         aiConfig = snap.data() as PlatformAIConfig;
-      } else if (typeof window !== 'undefined') {
-        const local = localStorage.getItem('omran_platform_ai_config');
-        if (local) aiConfig = JSON.parse(local);
       }
     } catch {}
 
@@ -6516,7 +6606,7 @@ export class OmranDataService {
     return cloudList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  // Save Single Certificate directly in Firestore & Cache
+  // Save Single Certificate directly in Firestore
   static async saveCertificate(cert: IssuedCertificate): Promise<void> {
     OmranDataService.removeDeletedCertificateId(cert.id);
     const cleanCert = OmranDataService.sanitizeCertificate(cert);
@@ -6530,11 +6620,13 @@ export class OmranDataService {
       delete firestoreData.customTemplateImageUrl;
     }
 
+    emitCloudSyncEvent('syncing', 'جاري حفظ الشهادة في السحابة...', 'certificates');
     try {
       await setDoc(doc(this.getActiveDb(), 'certificates', cleanCert.id), cleanFirestoreData(firestoreData));
       broadcastDataUpdate('certificate', cleanCert);
+      emitCloudSyncEvent('synced', 'تم حفظ الشهادة في قاعدة البيانات ✓', 'certificates');
     } catch (e) {
-      console.warn('[OmranDataService] Certificate saved locally, cloud sync notice:', e);
+      console.warn('[OmranDataService] Certificate cloud sync notice:', e);
     }
   }
 
@@ -6555,6 +6647,7 @@ export class OmranDataService {
     );
     setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, merged);
 
+    emitCloudSyncEvent('syncing', 'جاري حفظ الشهادات في السحابة...', 'certificates');
     try {
       const activeDb = this.getActiveDb();
       await Promise.allSettled(
@@ -6567,31 +6660,33 @@ export class OmranDataService {
         })
       );
       broadcastDataUpdate('certificates-batch', cleanList);
+      emitCloudSyncEvent('synced', 'تم حفظ الشهادات في قاعدة البيانات ✓', 'certificates');
     } catch (e) {
-      console.warn('[OmranDataService] Batch certificates saved locally, cloud sync notice:', e);
+      console.warn('[OmranDataService] Batch certificates cloud sync notice:', e);
     }
   }
 
-  // Delete Certificate from Firestore & Cache
+  // Delete Certificate from Firestore
   static async deleteCertificate(certId: string): Promise<void> {
-    // 0. Register persistent tombstone so certificate NEVER resurrects
     OmranDataService.addDeletedCertificateId(certId);
 
     const local = getLocalCache<IssuedCertificate[]>(OMRAN_CACHE_KEYS.CERTIFICATES, []);
     const updated = local.filter(c => c.id !== certId);
     setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, updated);
 
+    emitCloudSyncEvent('syncing', 'جاري حذف الشهادة من السحابة...', 'certificates');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'certificates', certId));
+      emitCloudSyncEvent('synced', 'تم حذف الشهادة من قاعدة البيانات ✓', 'certificates');
     } catch (e) {
-      console.warn(`Firestore delete doc notice for certificates/${certId} (deleted locally):`, e);
-      // Do not rethrow so UI deletion is not blocked by remote permission limits
+      console.warn(`Firestore delete doc notice for certificates/${certId}:`, e);
     }
   }
 
   // Subscribe to Certificates in real time
   static subscribeCertificates(callback: (certs: IssuedCertificate[]) => void): () => void {
     try {
+      const notify = createSnapshotSyncNotifier('الشهادات');
       return onSnapshot(collection(this.getActiveDb(), 'certificates'), snap => {
         const deletedCertIds = OmranDataService.getDeletedCertificateIds();
         const cloudList: IssuedCertificate[] = [];
@@ -6606,7 +6701,9 @@ export class OmranDataService {
         const sorted = cloudList.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
+        setLocalCache(OMRAN_CACHE_KEYS.CERTIFICATES, sorted);
         callback(sorted);
+        notify(snap);
       }, err => {
         handleFirestoreError(err, OperationType.LIST, 'certificates');
       });
@@ -6860,22 +6957,9 @@ export class OmranDataService {
         if (this.getActiveDb() !== this.getCentralDb()) {
           await setDoc(doc(this.getCentralDb(), 'settings', 'ai_config'), cleanFirestoreData(backup.aiConfig), { merge: true }).catch(() => {});
         }
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('omran_platform_ai_config', JSON.stringify(backup.aiConfig));
-          if (backup.aiConfig.masterApiKey) {
-            localStorage.setItem('omran_platform_master_ai_key', backup.aiConfig.masterApiKey);
-          }
-        }
       } catch {}
     }
 
-    if (Array.isArray(backup.customCertificateTemplates) && backup.customCertificateTemplates.length > 0) {
-      try {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('omran_certificates_templates', JSON.stringify(backup.customCertificateTemplates));
-        }
-      } catch {}
-    }
     await yieldTick();
 
     onProgress?.(99, 'المزامنة السحابية وتطهير الكاش المحلي', 'جاري مسح أي كاش قديم وتوحيد قاعدة بيانات فايربيس...');
@@ -7054,6 +7138,7 @@ export class OmranDataService {
   ): () => void {
     const safeId = (complexId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
     const docKey = `plan_schedule_${safeId}`;
+    const notify = createSnapshotSyncNotifier('خطة الحفظ');
     try {
       const unsubSpecific = onSnapshot(
         doc(this.getActiveDb(), 'settings', docKey),
@@ -7063,6 +7148,7 @@ export class OmranDataService {
             setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, data);
             setLocalCache(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_plan_schedule_default`, data);
             callback(data);
+            notify(snap);
           }
         },
         err => {
@@ -7080,6 +7166,7 @@ export class OmranDataService {
               const specificLocal = getLocalCache<ComplexPlanScheduleConfig | null>(`${OMRAN_CACHE_KEYS.PLAN_SCHEDULE}_${docKey}`, null);
               if (!specificLocal) {
                 callback(data);
+                notify(snap);
               }
             }
           },
@@ -7097,7 +7184,6 @@ export class OmranDataService {
   }
 
   static async loadTeacherShifts(complexId?: string): Promise<TeacherShift[]> {
-    const local = getLocalCache<TeacherShift[]>(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, []);
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'teacher_shifts'));
       const list = snap.docs.map(d => {
@@ -7110,40 +7196,32 @@ export class OmranDataService {
       });
       setLocalCache(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, list);
       return complexId ? list.filter(s => s.complexId === complexId) : list;
-    } catch (e) {
-      // quiet fallback
+    } catch {
+      return [];
     }
-    return complexId ? local.filter(s => s.complexId === complexId) : local;
   }
 
   static async saveTeacherShift(shift: TeacherShift): Promise<void> {
-    const local = getLocalCache<TeacherShift[]>(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, []);
     const safeShift = {
       ...shift,
       assignedTeacherIds: Array.isArray(shift.assignedTeacherIds) ? shift.assignedTeacherIds : []
     };
-    const updated = [...local.filter(s => s.id !== safeShift.id), safeShift];
-    setLocalCache(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, updated);
+    emitCloudSyncEvent('syncing', 'جاري حفظ وردية المعلمين سحابياً...', 'teacher_shifts');
     try {
       await setDoc(doc(this.getActiveDb(), 'teacher_shifts', safeShift.id), cleanFirestoreData(safeShift), { merge: true });
-    } catch (e) {
-      // Quiet fallback without breaking UI or throwing
-    }
+      emitCloudSyncEvent('synced', 'تم حفظ الوردية في السحابة ✓', 'teacher_shifts');
+    } catch {}
   }
 
   static async deleteTeacherShift(shiftId: string): Promise<void> {
-    const local = getLocalCache<TeacherShift[]>(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, []);
-    setLocalCache(OMRAN_CACHE_KEYS.TEACHER_SHIFTS, local.filter(s => s.id !== shiftId));
+    emitCloudSyncEvent('syncing', 'جاري حذف الوردية من السحابة...', 'teacher_shifts');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'teacher_shifts', shiftId));
-    } catch (e) {
-      // quiet fallback
-    }
+      emitCloudSyncEvent('synced', 'تم حذف الوردية ✓', 'teacher_shifts');
+    } catch {}
   }
 
   static async loadTeacherAttendance(date?: string, complexId?: string): Promise<TeacherAttendanceRecord[]> {
-    const cacheKey = date ? `${OMRAN_CACHE_KEYS.TEACHER_ATTENDANCE}_${date}` : OMRAN_CACHE_KEYS.TEACHER_ATTENDANCE;
-    const local = getLocalCache<TeacherAttendanceRecord[]>(cacheKey, []);
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'teacher_attendance'));
       const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as TeacherAttendanceRecord));
@@ -7154,74 +7232,56 @@ export class OmranDataService {
       if (complexId) {
         filtered = filtered.filter(r => r.complexId === complexId);
       }
-      setLocalCache(cacheKey, list);
       return filtered;
-    } catch (e) {
-      // quiet fallback
-      return complexId ? local.filter(r => r.complexId === complexId) : local;
+    } catch {
+      return [];
     }
   }
 
   static async saveTeacherAttendanceRecord(record: TeacherAttendanceRecord): Promise<void> {
-    const cacheKey = `${OMRAN_CACHE_KEYS.TEACHER_ATTENDANCE}_${record.date}`;
-    const local = getLocalCache<TeacherAttendanceRecord[]>(cacheKey, []);
-    const updated = [...local.filter(r => r.id !== record.id), record];
-    setLocalCache(cacheKey, updated);
+    emitCloudSyncEvent('syncing', 'جاري تسجيل تحضير المعلم سحابياً...', 'teacher_attendance');
     try {
       await setDoc(doc(this.getActiveDb(), 'teacher_attendance', record.id), cleanFirestoreData(record), { merge: true });
-    } catch (e) {
-      // Quiet fallback
-    }
+      emitCloudSyncEvent('synced', 'تم حفظ تحضير المعلم في قاعدة البيانات ✓', 'teacher_attendance');
+    } catch {}
   }
 
-  static async deleteTeacherAttendanceRecord(recordId: string, date?: string): Promise<void> {
-    if (date) {
-      const cacheKey = `${OMRAN_CACHE_KEYS.TEACHER_ATTENDANCE}_${date}`;
-      const local = getLocalCache<TeacherAttendanceRecord[]>(cacheKey, []);
-      setLocalCache(cacheKey, local.filter(r => r.id !== recordId));
-    }
+  static async deleteTeacherAttendanceRecord(recordId: string, _date?: string): Promise<void> {
+    emitCloudSyncEvent('syncing', 'جاري حذف سجل التحضير من السحابة...', 'teacher_attendance');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'teacher_attendance', recordId));
-    } catch (e) {
-      // Quiet fallback
-    }
+      emitCloudSyncEvent('synced', 'تم حذف سجل التحضير ✓', 'teacher_attendance');
+    } catch {}
   }
 
   // =========================================================================
   // Mosques Management (إدارة الجوامع والمساجد المتعددة)
   // =========================================================================
   static async loadMosques(complexId?: string): Promise<MosqueItem[]> {
-    const local = getLocalCache<MosqueItem[]>(OMRAN_CACHE_KEYS.MOSQUES, []);
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'mosques'));
       const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as MosqueItem));
       setLocalCache(OMRAN_CACHE_KEYS.MOSQUES, list);
       return complexId ? list.filter(m => m.complexId === complexId) : list;
-    } catch (e) {
-      // quiet fallback
+    } catch {
+      return [];
     }
-    return complexId ? local.filter(m => m.complexId === complexId) : local;
   }
 
   static async saveMosque(mosque: MosqueItem): Promise<void> {
-    const local = getLocalCache<MosqueItem[]>(OMRAN_CACHE_KEYS.MOSQUES, []);
-    const updated = [...local.filter(m => m.id !== mosque.id), mosque];
-    setLocalCache(OMRAN_CACHE_KEYS.MOSQUES, updated);
+    emitCloudSyncEvent('syncing', 'جاري حفظ بيانات المسجد سحابياً...', 'mosques');
     try {
       await setDoc(doc(this.getActiveDb(), 'mosques', mosque.id), cleanFirestoreData(mosque), { merge: true });
-    } catch (e) {
-      // quiet fallback
-    }
+      emitCloudSyncEvent('synced', 'تم حفظ المسجد في السحابة ✓', 'mosques');
+    } catch {}
   }
 
   static async deleteMosque(mosqueId: string): Promise<void> {
-    const local = getLocalCache<MosqueItem[]>(OMRAN_CACHE_KEYS.MOSQUES, []);
-    setLocalCache(OMRAN_CACHE_KEYS.MOSQUES, local.filter(m => m.id !== mosqueId));
+    emitCloudSyncEvent('syncing', 'جاري حذف المسجد من السحابة...', 'mosques');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'mosques', mosqueId));
-    } catch (e) {
-      // quiet fallback
-    }
+      emitCloudSyncEvent('synced', 'تم حذف المسجد ✓', 'mosques');
+    } catch {}
   }
 
   // =========================================================================
@@ -7232,7 +7292,6 @@ export class OmranDataService {
     const scopedCacheKey = effectiveComplexId
       ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
       : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
-    const local = getLocalCache<LibraryDocument[]>(scopedCacheKey, []);
     try {
       const snap = await safeGetDocs(collection(this.getActiveDb(), 'library_docs'));
       const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as LibraryDocument));
@@ -7241,10 +7300,9 @@ export class OmranDataService {
         : list;
       setLocalCache(scopedCacheKey, filtered);
       return filtered;
-    } catch (e) {
-      // quiet fallback
+    } catch {
+      return [];
     }
-    return effectiveComplexId ? local.filter(d => d.complexId === effectiveComplexId) : local;
   }
 
   static async saveLibraryDocument(documentItem: LibraryDocument): Promise<void> {
@@ -7261,6 +7319,7 @@ export class OmranDataService {
     const updated = [normalizedDoc, ...local.filter(d => d.id !== normalizedDoc.id)];
     setLocalCache(scopedCacheKey, updated);
     broadcastDataUpdate('library', normalizedDoc);
+    emitCloudSyncEvent('syncing', 'جاري حفظ المستند في الأرشيف السحابي...', 'library');
     try {
       await setDoc(doc(this.getActiveDb(), 'library_docs', normalizedDoc.id), cleanFirestoreData(normalizedDoc), { merge: true });
       if (this.getActiveDb() !== this.getCentralDb()) {
@@ -7268,8 +7327,9 @@ export class OmranDataService {
           await setDoc(doc(this.getCentralDb(), 'library_docs', normalizedDoc.id), cleanFirestoreData(normalizedDoc), { merge: true });
         } catch {}
       }
+      emitCloudSyncEvent('synced', 'تم حفظ المستند في السحابة ✓', 'library');
     } catch (e) {
-      console.warn('Library document saved locally, cloud error:', e);
+      console.warn('Library document cloud error:', e);
     }
   }
 
@@ -7281,6 +7341,7 @@ export class OmranDataService {
     const local = getLocalCache<LibraryDocument[]>(scopedCacheKey, []);
     setLocalCache(scopedCacheKey, local.filter(d => d.id !== documentId));
     broadcastDataUpdate('library-deleted', documentId);
+    emitCloudSyncEvent('syncing', 'جاري حذف المستند من الأرشيف السحابي...', 'library');
     try {
       await deleteDoc(doc(this.getActiveDb(), 'library_docs', documentId));
       if (this.getActiveDb() !== this.getCentralDb()) {
@@ -7288,6 +7349,7 @@ export class OmranDataService {
           await deleteDoc(doc(this.getCentralDb(), 'library_docs', documentId));
         } catch {}
       }
+      emitCloudSyncEvent('synced', 'تم حذف المستند ✓', 'library');
     } catch (e) {
       console.warn('Delete library doc cloud error:', e);
     }
@@ -7301,6 +7363,7 @@ export class OmranDataService {
     const scopedCacheKey = effectiveComplexId
       ? `${OMRAN_CACHE_KEYS.LIBRARY_DOCS}_${effectiveComplexId}`
       : OMRAN_CACHE_KEYS.LIBRARY_DOCS;
+    const notify = createSnapshotSyncNotifier('المكتبة والأرشيف');
     const q = query(collection(this.getActiveDb(), 'library_docs'));
     return onSnapshot(
       q,
@@ -7311,10 +7374,10 @@ export class OmranDataService {
           : list;
         setLocalCache(scopedCacheKey, filtered);
         callback(filtered);
+        notify(snapshot);
       },
       error => {
-        console.warn('Library documents subscription fallback to local cache:', error);
-        callback(getLocalCache(scopedCacheKey, []));
+        console.warn('Library documents subscription error:', error);
       }
     );
   }
@@ -7360,11 +7423,7 @@ export class OmranDataService {
     // 0. Ensure tombstones are strictly synchronized from Firestore before querying
     await syncTombstonesFromCloud().catch(() => {});
     const deletedIds = this.getDeletedApplicationIds();
-
-    const local = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, [])
-      .filter(a => a && a.id && !deletedIds.has(a.id));
     const itemsMap = new Map<string, StudentRegistrationApplication>();
-    local.forEach(a => { if (a && a.id) itemsMap.set(a.id, a); });
 
     try {
       // 1. Resilient check in settings/registration_applications first to ingest tombstones and official items
@@ -7615,15 +7674,6 @@ export class OmranDataService {
     const unsubs: (() => void)[] = [];
     const itemsMap = new Map<string, StudentRegistrationApplication>();
     const deletedIds = this.getDeletedApplicationIds();
-
-    // Seed from local cache, filtering out any deleted IDs
-    const initial = getLocalCache<StudentRegistrationApplication[]>(OMRAN_CACHE_KEYS.REGISTRATION_APPLICATIONS, []);
-    initial.forEach(a => {
-      if (a && a.id && !deletedIds.has(a.id)) {
-        itemsMap.set(a.id, a);
-      }
-    });
-
     let isInitialLoad = true;
 
     const emit = (isRealtime: boolean = false, latestNewApp?: StudentRegistrationApplication) => {
@@ -7904,11 +7954,10 @@ export class OmranDataService {
   // =========================================================================
 
   /**
-   * Loads all store items for the complex (cloud-synced with settings doc and collection fallbacks).
+   * Loads all store items strictly from Firestore cloud database.
    */
   static async loadStoreItems(complexId?: string): Promise<StoreItem[]> {
     const targetComplexId = complexId || this.activeComplexId || '';
-    const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
     const isMatch = (item: StoreItem) => {
       if (!targetComplexId || targetComplexId === 'all') return true;
       if (!item.complexId || item.complexId === 'default' || item.complexId === 'all') return true;
@@ -7918,12 +7967,12 @@ export class OmranDataService {
     const targetDb = this.getActiveDb();
     let cloudItems: StoreItem[] = [];
 
-    // 1. Try settings/store_items_data (most reliable cloud endpoint)
+    // 1. Try settings/store_items_data (primary cloud endpoint)
     try {
       const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_items_data'));
       if (snap.exists()) {
         const rawItems = (snap.data()?.items as StoreItem[]) || [];
-        if (Array.isArray(rawItems) && rawItems.length > 0) {
+        if (Array.isArray(rawItems)) {
           cloudItems = rawItems;
         }
       }
@@ -7942,22 +7991,15 @@ export class OmranDataService {
       } catch {}
     }
 
-    if (cloudItems.length > 0) {
-      const map = new Map<string, StoreItem>();
-      for (const item of local) map.set(item.id, item);
-      for (const item of cloudItems) map.set(item.id, item);
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-      );
-      setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, merged);
-      return merged.filter(isMatch);
-    }
-
-    return local.filter(isMatch);
+    const sorted = [...cloudItems].sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+    setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, sorted);
+    return sorted.filter(isMatch);
   }
 
   /**
-   * Saves or updates a store item with immediate local update, cloud settings doc sync, and Firestore write.
+   * Saves or updates a store item directly in Cloud Firestore.
    */
   static async saveStoreItem(item: StoreItem): Promise<void> {
     const clean: StoreItem = cleanFirestoreData({
@@ -7967,7 +8009,6 @@ export class OmranDataService {
       updatedAt: new Date().toISOString()
     });
 
-    // 1. Update local cache immediately
     const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
     const updated = [clean, ...local.filter(i => i.id !== clean.id)];
     setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, updated);
@@ -7982,7 +8023,7 @@ export class OmranDataService {
     const targetDb = this.getActiveDb();
     const centralDb = this.getCentralDb();
 
-    // 2. Synchronize to settings/store_items_data in Firestore (unrestricted realtime pub/sub)
+    emitCloudSyncEvent('syncing', 'جاري حفظ صنف المتجر في السحابة...', 'store_items');
     try {
       let currentItems: StoreItem[] = [];
       try {
@@ -7993,7 +8034,6 @@ export class OmranDataService {
         }
       } catch {}
 
-      // Upsert item
       const itemMap = new Map<string, StoreItem>();
       for (const it of currentItems) itemMap.set(it.id, it);
       itemMap.set(clean.id, clean);
@@ -8009,11 +8049,11 @@ export class OmranDataService {
       if (centralDb !== targetDb) {
         await setDoc(doc(centralDb, 'settings', 'store_items_data'), payload, { merge: true }).catch(() => {});
       }
+      emitCloudSyncEvent('synced', 'تم حفظ صنف المتجر في قاعدة البيانات ✓', 'store_items');
     } catch (err) {
       console.warn('[OmranDataService] settings/store_items_data sync warning:', err);
     }
 
-    // 3. Also try writing to store_items collection
     try {
       await setDoc(doc(targetDb, 'store_items', clean.id), clean, { merge: true });
       if (centralDb !== targetDb) {
@@ -8023,7 +8063,7 @@ export class OmranDataService {
   }
 
   /**
-   * Deletes a store item from local cache, cloud settings doc, and Firestore collection.
+   * Deletes a store item from Cloud Firestore.
    */
   static async deleteStoreItem(itemId: string): Promise<void> {
     const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
@@ -8040,7 +8080,7 @@ export class OmranDataService {
     const targetDb = this.getActiveDb();
     const centralDb = this.getCentralDb();
 
-    // 1. Remove from settings/store_items_data in Firestore
+    emitCloudSyncEvent('syncing', 'جاري حذف الصنف من المتجر السحابي...', 'store_items');
     try {
       let currentItems: StoreItem[] = [];
       try {
@@ -8061,11 +8101,11 @@ export class OmranDataService {
       if (centralDb !== targetDb) {
         await setDoc(doc(centralDb, 'settings', 'store_items_data'), payload, { merge: true }).catch(() => {});
       }
+      emitCloudSyncEvent('synced', 'تم حذف الصنف من قاعدة البيانات ✓', 'store_items');
     } catch (err) {
       console.warn('[OmranDataService] settings/store_items_data delete sync warning:', err);
     }
 
-    // 2. Also try deleting from store_items collection
     try {
       await deleteDoc(doc(targetDb, 'store_items', itemId));
       if (centralDb !== targetDb) {
@@ -8075,9 +8115,7 @@ export class OmranDataService {
   }
 
   /**
-   * Real-time subscription to store items.
-   * Listens to cloud settings/store_items_data document (and store_items collection)
-   * as well as window events for instantaneous reactivity without page reload.
+   * Real-time subscription to store items strictly from Firestore.
    */
   static subscribeStoreItems(callback: (items: StoreItem[]) => void, complexId?: string): () => void {
     const targetComplexId = complexId || this.activeComplexId || '';
@@ -8087,14 +8125,13 @@ export class OmranDataService {
       return item.complexId === targetComplexId;
     };
 
+    const notify = createSnapshotSyncNotifier('أصناف المتجر');
+
     const emit = () => {
       const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
       const filtered = local.filter(isMatch);
       callback(filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     };
-
-    // Immediate initial emit from cache
-    emit();
 
     const handleLocalUpdate = (e: any) => {
       const type = e?.detail?.type;
@@ -8112,7 +8149,6 @@ export class OmranDataService {
     let unsubDoc: (() => void) | null = null;
     let unsubCol: (() => void) | null = null;
 
-    // 1. Primary real-time listener: settings/store_items_data (fully authorized & real-time)
     try {
       unsubDoc = onSnapshot(doc(targetDb, 'settings', 'store_items_data'), snap => {
         if (snap.exists()) {
@@ -8136,14 +8172,15 @@ export class OmranDataService {
             setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, cloudList);
             callback(cloudList.filter(isMatch));
           }
+        } else {
+          callback([]);
         }
+        notify(snap);
       }, err => {
         console.warn('[OmranDataService] onSnapshot store_items_data notice:', err);
-        emit();
       });
     } catch {}
 
-    // 2. Secondary real-time listener: collection store_items (if permitted)
     try {
       unsubCol = onSnapshot(collection(targetDb, 'store_items'), snap => {
         if (!snap.empty) {
@@ -8157,15 +8194,10 @@ export class OmranDataService {
               pointsRequired: typeof raw.pointsRequired === 'number' ? raw.pointsRequired : 10
             });
           });
-          const local = getLocalCache<StoreItem[]>(OMRAN_CACHE_KEYS.STORE_ITEMS, []);
-          const map = new Map<string, StoreItem>();
-          for (const i of local) map.set(i.id, i);
-          for (const i of colList) map.set(i.id, i);
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
-          setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, merged);
-          callback(merged.filter(isMatch));
+          colList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setLocalCache(OMRAN_CACHE_KEYS.STORE_ITEMS, colList);
+          callback(colList.filter(isMatch));
+          notify(snap);
         }
       }, () => {});
     } catch {}
@@ -8182,11 +8214,10 @@ export class OmranDataService {
   }
 
   /**
-   * Loads all store purchases / redemption audit logs.
+   * Loads all store purchases / redemption audit logs strictly from Firestore.
    */
   static async loadStorePurchases(complexId?: string): Promise<StorePurchase[]> {
     const targetComplexId = complexId || this.activeComplexId || '';
-    const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
     const isMatch = (p: StorePurchase) => {
       if (!targetComplexId || targetComplexId === 'all') return true;
       if (!p.complexId || p.complexId === 'default' || p.complexId === 'all') return true;
@@ -8196,18 +8227,16 @@ export class OmranDataService {
     const targetDb = this.getActiveDb();
     let cloudPurchases: StorePurchase[] = [];
 
-    // 1. Try settings/store_purchases_data
     try {
       const snap = await safeGetDoc(doc(targetDb, 'settings', 'store_purchases_data'));
       if (snap.exists()) {
         const raw = (snap.data()?.purchases as StorePurchase[]) || [];
-        if (Array.isArray(raw) && raw.length > 0) {
+        if (Array.isArray(raw)) {
           cloudPurchases = raw;
         }
       }
     } catch {}
 
-    // 2. Also try store_purchases collection if empty
     if (cloudPurchases.length === 0) {
       try {
         const colSnap = await safeGetDocs(collection(targetDb, 'store_purchases'));
@@ -8220,22 +8249,15 @@ export class OmranDataService {
       } catch {}
     }
 
-    if (cloudPurchases.length > 0) {
-      const map = new Map<string, StorePurchase>();
-      for (const p of local) map.set(p.id, p);
-      for (const p of cloudPurchases) map.set(p.id, p);
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
-      );
-      setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, merged);
-      return merged.filter(isMatch);
-    }
-
-    return local.filter(isMatch);
+    const sorted = [...cloudPurchases].sort(
+      (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
+    );
+    setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, sorted);
+    return sorted.filter(isMatch);
   }
 
   /**
-   * Real-time subscription to store purchases.
+   * Real-time subscription to store purchases strictly from Firestore.
    */
   static subscribeStorePurchases(callback: (purchases: StorePurchase[]) => void, complexId?: string): () => void {
     const targetComplexId = complexId || this.activeComplexId || '';
@@ -8245,13 +8267,13 @@ export class OmranDataService {
       return p.complexId === targetComplexId;
     };
 
+    const notify = createSnapshotSyncNotifier('مشتريات المتجر');
+
     const emit = () => {
       const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
       const filtered = local.filter(isMatch);
       callback(filtered.sort((a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()));
     };
-
-    emit();
 
     const handleLocalUpdate = (e: any) => {
       const type = e?.detail?.type;
@@ -8272,7 +8294,6 @@ export class OmranDataService {
     let unsubDoc: (() => void) | null = null;
     let unsubCol: (() => void) | null = null;
 
-    // 1. Primary real-time listener: settings/store_purchases_data
     try {
       unsubDoc = onSnapshot(doc(targetDb, 'settings', 'store_purchases_data'), snap => {
         if (snap.exists()) {
@@ -8283,13 +8304,13 @@ export class OmranDataService {
             setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, list);
             callback(list.filter(isMatch));
           }
+        } else {
+          callback([]);
         }
-      }, () => {
-        emit();
-      });
+        notify(snap);
+      }, () => {});
     } catch {}
 
-    // 2. Secondary real-time listener: collection store_purchases
     try {
       unsubCol = onSnapshot(collection(targetDb, 'store_purchases'), snap => {
         if (!snap.empty) {
@@ -8298,15 +8319,10 @@ export class OmranDataService {
             const raw = d.data() as StorePurchase;
             colList.push({ ...raw, id: d.id || raw.id });
           });
-          const local = getLocalCache<StorePurchase[]>(OMRAN_CACHE_KEYS.STORE_PURCHASES, []);
-          const map = new Map<string, StorePurchase>();
-          for (const p of local) map.set(p.id, p);
-          for (const p of colList) map.set(p.id, p);
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime()
-          );
-          setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, merged);
-          callback(merged.filter(isMatch));
+          colList.sort((a, b) => new Date(b.purchasedAt || 0).getTime() - new Date(a.purchasedAt || 0).getTime());
+          setLocalCache(OMRAN_CACHE_KEYS.STORE_PURCHASES, colList);
+          callback(colList.filter(isMatch));
+          notify(snap);
         }
       }, () => {});
     } catch {}
@@ -8710,41 +8726,29 @@ export class OmranDataService {
   }
 
   /**
-   * Loads store configuration (open/closed status and banner message).
+   * Loads store configuration strictly from Firestore.
    */
   static async loadStoreSettings(complexId?: string): Promise<StoreSettings> {
     const targetComplexId = complexId || this.activeComplexId || 'default';
-    const local = getLocalCache<Record<string, StoreSettings>>(OMRAN_CACHE_KEYS.STORE_SETTINGS, {});
-    const cached = local[targetComplexId] || DEFAULT_STORE_SETTINGS;
-
     try {
       const targetDb = this.getActiveDb();
-      // Try settings/store_{complexId}
       const docName = `store_${targetComplexId}`;
       const snap = await safeGetDoc(doc(targetDb, 'settings', docName));
       if (snap.exists()) {
-        const found = { ...DEFAULT_STORE_SETTINGS, ...(snap.data() as StoreSettings) };
-        local[targetComplexId] = found;
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
-        return found;
+        return { ...DEFAULT_STORE_SETTINGS, ...(snap.data() as StoreSettings) };
       }
-      // Fallback to store_settings
       const fallbackSnap = await safeGetDoc(doc(targetDb, 'settings', 'store_settings'));
       if (fallbackSnap.exists()) {
-        const found = { ...DEFAULT_STORE_SETTINGS, ...(fallbackSnap.data() as StoreSettings) };
-        local[targetComplexId] = found;
-        setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
-        return found;
+        return { ...DEFAULT_STORE_SETTINGS, ...(fallbackSnap.data() as StoreSettings) };
       }
     } catch (e) {
       handleFirestoreError(e, OperationType.GET, `settings/store_${targetComplexId}`);
     }
-
-    return cached;
+    return DEFAULT_STORE_SETTINGS;
   }
 
   /**
-   * Saves store configuration (open/closed status).
+   * Saves store configuration directly to Firestore.
    */
   static async saveStoreSettings(settings: StoreSettings, complexId?: string): Promise<void> {
     const targetComplexId = complexId || this.activeComplexId || 'default';
@@ -8759,27 +8763,28 @@ export class OmranDataService {
     setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
     broadcastDataUpdate('store_settings', { complexId: targetComplexId, settings: clean });
 
+    emitCloudSyncEvent('syncing', 'جاري حفظ إعدادات المتجر سحابياً...', 'store_settings');
     try {
       const targetDb = this.getActiveDb();
       const docName = `store_${targetComplexId}`;
       await setDoc(doc(targetDb, 'settings', docName), clean, { merge: true });
       await setDoc(doc(targetDb, 'settings', 'store_settings'), clean, { merge: true }).catch(() => {});
+      emitCloudSyncEvent('synced', 'تم حفظ إعدادات المتجر في السحابة ✓', 'store_settings');
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `settings/store_${targetComplexId}`);
     }
   }
 
   /**
-   * Real-time subscription to store configuration.
+   * Real-time subscription to store configuration strictly from Firestore.
    */
   static subscribeStoreSettings(callback: (settings: StoreSettings) => void, complexId?: string): () => void {
     const targetComplexId = complexId || this.activeComplexId || 'default';
+    const notify = createSnapshotSyncNotifier('إعدادات المتجر');
     const emit = () => {
       const local = getLocalCache<Record<string, StoreSettings>>(OMRAN_CACHE_KEYS.STORE_SETTINGS, {});
       callback(local[targetComplexId] || local['default'] || DEFAULT_STORE_SETTINGS);
     };
-
-    emit();
 
     const handleLocalUpdate = (e: any) => {
       const type = e?.detail?.type;
@@ -8801,20 +8806,17 @@ export class OmranDataService {
           local[targetComplexId] = remote;
           setLocalCache(OMRAN_CACHE_KEYS.STORE_SETTINGS, local);
           callback(remote);
+          notify(snap);
         } else {
-          // Check general store_settings
           safeGetDoc(doc(targetDb, 'settings', 'store_settings')).then(genSnap => {
             if (genSnap.exists()) {
-              const remote = { ...DEFAULT_STORE_SETTINGS, ...(genSnap.data() as StoreSettings) };
-              callback(remote);
+              callback({ ...DEFAULT_STORE_SETTINGS, ...(genSnap.data() as StoreSettings) });
             } else {
-              emit();
+              callback(DEFAULT_STORE_SETTINGS);
             }
-          }).catch(() => emit());
+          }).catch(() => callback(DEFAULT_STORE_SETTINGS));
         }
-      }, () => {
-        emit();
-      });
+      }, () => {});
 
       return () => {
         try { unsub(); } catch {}

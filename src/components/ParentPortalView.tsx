@@ -95,7 +95,7 @@ import {
 import { StudentExamTaker } from './StudentExamTaker';
 import { QuranAyahAudioPlayer } from './quran/QuranAyahAudioPlayer';
 import { getSurahInfo } from '../data/quranData';
-import { OmranDataService, auth } from '../lib/firebase';
+import { OmranDataService, auth, emitCloudSyncEvent, requestCloudSyncRefresh } from '../lib/firebase';
 import { GoogleWorkspaceService } from '../lib/googleWorkspace';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import {
@@ -279,6 +279,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     att: attendance.length,
     exams: exams.length,
     submissions: submissions.length,
+    certs: certificates.length,
+    logs: listeningLogs.length,
+    violations: violations.length,
     points: student.points || 0,
     ayah: student.currentAyah || 1,
     surah: student.currentSurah || 1
@@ -287,6 +290,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const triggerSyncNotice = useCallback((text: string) => {
     setSyncNoticeText(text);
     setShowSyncBadge(true);
+    emitCloudSyncEvent('synced', text, 'student_portal');
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       setShowSyncBadge(false);
@@ -299,25 +303,31 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
     const autoSyncOnOpen = async () => {
       setIsSyncingLocal(true);
-      setSyncNoticeText('جاري تنزيل وتحديث كافة البيانات من قاعدة البيانات...');
+      const startMsg = 'جاري تنزيل وتحديث كافة البيانات من قاعدة البيانات...';
+      setSyncNoticeText(startMsg);
       setShowSyncBadge(true);
+      emitCloudSyncEvent('syncing', startMsg, 'student_portal');
 
       try {
         if (onRefresh) {
           await onRefresh();
         }
         if (!isCancelled) {
-          setSyncNoticeText('تم تنزيل وتحديث كافة السجلات من قاعدة البيانات بنجاح ✓');
+          const doneMsg = 'تم تنزيل وتحديث كافة السجلات من قاعدة البيانات بنجاح ✓';
+          setSyncNoticeText(doneMsg);
+          emitCloudSyncEvent('synced', doneMsg, 'student_portal');
         }
       } catch (e) {
         if (!isCancelled) {
-          setSyncNoticeText('تم فحص وتحديث السجلات سحابياً ✓');
+          const doneMsg = 'تم فحص وتحديث السجلات سحابياً ✓';
+          setSyncNoticeText(doneMsg);
+          emitCloudSyncEvent('synced', doneMsg, 'student_portal');
         }
       } finally {
         if (!isCancelled) {
           setTimeout(() => {
             setIsSyncingLocal(false);
-          }, 1500);
+          }, 1000);
           if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
           syncTimerRef.current = setTimeout(() => {
             setShowSyncBadge(false);
@@ -346,6 +356,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       att: attendance.length,
       exams: exams.length,
       submissions: submissions.length,
+      certs: certificates.length,
+      logs: listeningLogs.length,
+      violations: violations.length,
       points: currentStudent.points || 0,
       ayah: currentStudent.currentAyah || 1,
       surah: currentStudent.currentSurah || 1
@@ -356,15 +369,25 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
       prev.att !== current.att ||
       prev.exams !== current.exams ||
       prev.submissions !== current.submissions ||
+      prev.certs !== current.certs ||
+      prev.logs !== current.logs ||
+      prev.violations !== current.violations ||
       prev.points !== current.points ||
       prev.ayah !== current.ayah ||
       prev.surah !== current.surah;
 
     if (hasChanged) {
       prevDataCountsRef.current = current;
-      triggerSyncNotice('تم استقبال تحديث جديد وتحديث البيانات تلقائياً من السحابة ✓');
+      const msg = 'تم استقبال تحديث جديد وتحديث البيانات تلقائياً من السحابة ✓';
+      setSyncNoticeText(msg);
+      setShowSyncBadge(true);
+      emitCloudSyncEvent('realtime', msg, 'student_portal');
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        setShowSyncBadge(false);
+      }, 3800);
     }
-  }, [evaluations, attendance, exams, submissions, currentStudent.points, currentStudent.currentAyah, currentStudent.currentSurah, triggerSyncNotice]);
+  }, [evaluations, attendance, exams, submissions, certificates, listeningLogs, violations, currentStudent.points, currentStudent.currentAyah, currentStudent.currentSurah]);
 
   // 3. Parent-driven real-time cloud synchronization event
   useEffect(() => {
@@ -378,19 +401,25 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const handleManualRefresh = async () => {
     if (isSyncingLocal) return;
     setIsSyncingLocal(true);
-    setSyncNoticeText('جاري الاتصال وتحديث البيانات من السحابة...');
+    const syncingMsg = 'جاري الاتصال وتحديث البيانات من السحابة...';
+    setSyncNoticeText(syncingMsg);
     setShowSyncBadge(true);
+    emitCloudSyncEvent('syncing', syncingMsg, 'student_portal');
     try {
       if (onRefresh) {
         await onRefresh();
       }
-      setSyncNoticeText('تم تحديث كافة السجلات من قاعدة البيانات بنجاح ✓');
+      const doneMsg = 'تم تحديث كافة السجلات من قاعدة البيانات بنجاح ✓';
+      setSyncNoticeText(doneMsg);
+      emitCloudSyncEvent('synced', doneMsg, 'student_portal');
     } catch {
-      setSyncNoticeText('تم فحص وتحديث البيانات من السحابة ✓');
+      const doneMsg = 'تم فحص وتحديث البيانات من السحابة ✓';
+      setSyncNoticeText(doneMsg);
+      emitCloudSyncEvent('synced', doneMsg, 'student_portal');
     } finally {
       setTimeout(() => {
         setIsSyncingLocal(false);
-      }, 1200);
+      }, 1000);
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       syncTimerRef.current = setTimeout(() => {
         setShowSyncBadge(false);
@@ -1657,7 +1686,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  requestCloudSyncRefresh('portal', 'جاري التحقق وتحديث بيانات الطالب من قاعدة البيانات...');
+                }}
                 className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 min-h-[44px] rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all cursor-pointer border-2 active:translate-y-[2px] shrink-0 select-none snap-start ${
                   isActive
                     ? 'border-b-4 shadow-lg scale-[1.02]'
@@ -5537,50 +5569,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           </div>
         )}
 
-      {/* Sleek Modern Right-Side Sync & Refresh Indicator in Platform Theme (زي المعلمين اسفل اليمين بتحديثات السحابة وقاعدة البيانات) */}
-      <AnimatePresence>
-        {(showSyncBadge || isCloudSyncing || isSyncingLocal) && (
-          <motion.div
-            initial={{ opacity: 0, y: 25, x: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 25, x: 20, scale: 0.95 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-3 px-4 py-3 rounded-2xl border-2 border-b-4 shadow-[0_12px_40px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold select-none cursor-pointer group active:translate-y-[2px]"
-            style={{
-              backgroundColor: `${themeCardBg}fa`,
-              borderColor: `${themeAccent}90`,
-              borderBottomColor: themeAccentShadow,
-              color: '#ffffff'
-            }}
-            onClick={handleManualRefresh}
-            title="انقر لتحديث السجلات يدوياً من قاعدة البيانات"
-            dir="rtl"
-          >
-            <span className="relative flex h-3 w-3 shrink-0">
-              <span
-                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style={{ backgroundColor: themeAccent }}
-              />
-              <span
-                className="relative inline-flex rounded-full h-3 w-3"
-                style={{ backgroundColor: themeAccent }}
-              />
-            </span>
-            <RefreshCw
-              className={`w-4 h-4 shrink-0 ${(isSyncingLocal || isCloudSyncing) ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}
-              style={{ color: themeAccent }}
-            />
-            <div className="flex flex-col text-right">
-              <span className="text-[11px] font-black font-heading text-white">
-                {syncNoticeText || cloudSyncText || 'تحديث البيانات السحابية مباشرة...'}
-              </span>
-              <span className="text-[10px] text-slate-300 font-normal">
-                {isSyncingLocal ? 'جاري جلب أحدث السجلات...' : 'انقر لتحديث البيانات الآن'}
-              </span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Unified global bottom-right cloud sync bar is rendered at root level */}
 
       {/* Student Holy Quran Modal (King Fahd 604-page Edition - Read Only Errors) */}
       <KingFahdQuranModal

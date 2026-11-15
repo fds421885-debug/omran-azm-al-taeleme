@@ -29,6 +29,7 @@ interface TeacherMultiComplexModalProps {
   students: Student[];
   isNewlyAdded?: boolean;
   newlyAddedComplexName?: string | null;
+  onSkipWelcomeForever?: () => void;
 }
 
 export const TeacherMultiComplexModal: React.FC<TeacherMultiComplexModalProps> = ({
@@ -43,31 +44,24 @@ export const TeacherMultiComplexModal: React.FC<TeacherMultiComplexModalProps> =
   allTeachers,
   students,
   isNewlyAdded = false,
-  newlyAddedComplexName
+  newlyAddedComplexName,
+  onSkipWelcomeForever
 }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dontShowAgain && teacher) {
-      try {
-        localStorage.setItem(`omran_skip_complex_welcome_${teacher.id || teacher.username}`, 'true');
-      } catch (e) {
-        // ignore storage error
-      }
+    if (dontShowAgain && teacher && onSkipWelcomeForever) {
+      onSkipWelcomeForever();
     }
     onClose();
   };
 
   const handleSelectAndClose = (complexId: string) => {
     onSelectComplex(complexId);
-    if (dontShowAgain && teacher) {
-      try {
-        localStorage.setItem(`omran_skip_complex_welcome_${teacher.id || teacher.username}`, 'true');
-      } catch (e) {
-        // ignore storage error
-      }
+    if (dontShowAgain && teacher && onSkipWelcomeForever) {
+      onSkipWelcomeForever();
     }
     onClose();
   };
