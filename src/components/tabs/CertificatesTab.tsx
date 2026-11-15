@@ -3144,7 +3144,7 @@ ${occasionText}
                 return (
                   <div
                     id="cert-single-preview"
-                    className="w-full max-w-[850px] min-h-[540px] sm:min-h-[580px] md:aspect-[1.414/1] rounded-3xl relative overflow-hidden shadow-2xl flex flex-col justify-between p-5 sm:p-8 md:p-12 text-center border-4 select-none shrink-0 my-auto"
+                    className="w-full max-w-[850px] min-h-[360px] sm:min-h-[540px] md:aspect-[1.414/1] rounded-3xl relative overflow-hidden shadow-2xl flex flex-col justify-between p-4 sm:p-8 md:p-12 text-center border-4 select-none shrink-0 my-auto"
                     style={{
                       backgroundImage: activeTemplate.type === 'custom' ? `url(${activeTemplate.data.imageUrl})` : undefined,
                       backgroundSize: '100% 100%',

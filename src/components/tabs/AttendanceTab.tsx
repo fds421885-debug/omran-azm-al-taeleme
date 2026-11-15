@@ -304,11 +304,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   // Sync state if settings prop changes
   useEffect(() => {
     if (settings?.attendancePointsSettings) {
-      setPresentPts(settings.attendancePointsSettings.presentPoints);
-      setLatePts(settings.attendancePointsSettings.latePoints);
-      setExcusedPts(settings.attendancePointsSettings.excusedPoints);
-      setAbsentDeductPts(settings.attendancePointsSettings.absentPointsDeduction);
-      setEnableAttPts(settings.attendancePointsSettings.enableAttendancePoints);
+      setPresentPts(settings.attendancePointsSettings.presentPoints ?? 1);
+      setLatePts(settings.attendancePointsSettings.latePoints ?? 0);
+      setExcusedPts(settings.attendancePointsSettings.excusedPoints ?? 0);
+      setAbsentDeductPts(settings.attendancePointsSettings.absentPointsDeduction ?? 1);
+      setEnableAttPts(settings.attendancePointsSettings.enableAttendancePoints ?? true);
     }
   }, [settings]);
 
@@ -768,7 +768,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="duo-complex-datepicker-popover absolute top-full left-0 mt-2.5 w-[312px] sm:w-[342px] z-50 space-y-3"
+                  className="duo-complex-datepicker-popover absolute top-full right-0 sm:right-auto sm:left-0 mt-2.5 w-[min(320px,calc(100vw-2rem))] sm:w-[342px] z-50 space-y-3"
                 >
                   {/* Selected Date Active Banner */}
                   <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2">
@@ -1223,7 +1223,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.03] transition-colors"
                 >
                   {/* Student Info */}
-                  <div className="flex items-center gap-3 min-w-[200px]">
+                  <div className="flex items-center gap-3 min-w-0 sm:min-w-[200px]">
                     <div
                       className="w-8 h-8 rounded-xl border-2 border-b-2 text-xs font-black flex items-center justify-center shrink-0 shadow-xs"
                       style={{

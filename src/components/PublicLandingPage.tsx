@@ -542,7 +542,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-[#131f24] text-[#ffffff] font-sans selection:bg-[#58cc02] selection:text-[#131f24]" dir="rtl">
+    <div className="min-h-screen min-h-[100dvh] bg-[#131f24] text-[#ffffff] font-sans selection:bg-[#58cc02] selection:text-[#131f24] w-full max-w-full overflow-x-clip" dir="rtl">
       {/* Background Decorative Gradient Orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 right-1/4 w-[550px] h-[550px] bg-[#58cc02]/15 rounded-full blur-3xl animate-pulse" />
@@ -551,8 +551,8 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
       </div>
 
       {/* Header / Navbar */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-[#131f24]/95 border-b-2 border-[#2b4550] transition-all w-full max-w-full overflow-hidden">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-[#131f24]/95 border-b-2 border-[#2b4550] transition-all w-full max-w-full overflow-x-clip">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-2.5 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand / Logo */}
           <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-[#ffc800] border-b-4 border-[#e5a500] p-0.5 shadow-lg shadow-yellow-500/20 shrink-0 flex items-center justify-center text-[#131f24]">
@@ -691,13 +691,13 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
         </AnimatePresence>
 
         {/* HERO SECTION */}
-        <section className="pt-8 sm:pt-14 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto text-center space-y-8">
+        <section className="pt-6 sm:pt-14 px-3.5 sm:px-6 lg:px-8 max-w-5xl mx-auto text-center space-y-6 sm:space-y-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-            className="space-y-6 flex flex-col items-center"
+            className="space-y-5 sm:space-y-6 flex flex-col items-center"
           >
             {/* Complete Quranic Verse Banner */}
             <motion.div
@@ -705,7 +705,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
               whileInView={{ opacity: 1, scale: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.65, delay: 0.08 }}
-              className="inline-flex items-center justify-center gap-3 px-6 py-3 rounded-full bg-[#1b2e35] border-2 border-[#ffc800]/60 text-[#ffd233] text-xs sm:text-base font-quran shadow-[0_4px_20px_rgba(255,200,0,0.18)] max-w-full flex-wrap"
+              className="inline-flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl sm:rounded-full bg-[#1b2e35] border-2 border-[#ffc800]/60 text-[#ffd233] text-xs sm:text-base font-quran shadow-[0_4px_20px_rgba(255,200,0,0.18)] max-w-full flex-wrap"
             >
               <Sparkles className="w-4 h-4 text-[#ffc800] shrink-0 animate-pulse" />
               <span className="text-center font-bold tracking-wide leading-relaxed text-white">
@@ -722,7 +722,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.16 }}
-              className="text-3xl sm:text-5xl lg:text-6xl font-black font-heading text-white leading-tight tracking-tight"
+              className="text-2xl sm:text-5xl lg:text-6xl font-black font-heading text-white leading-tight tracking-tight"
             >
               المنظومة الرقمية الشاملة لإدارة
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-[#ffc800] via-[#ffd900] to-[#ff9600] mt-2">
@@ -981,7 +981,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
                             <span className="text-xs text-slate-400 block">معاينة النظام:</span>
                             <strong className="text-sm text-white font-bold">{currentActiveTabFeature.previewSnippet.subText}</strong>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                             <span className="px-3 py-1 rounded-xl bg-[#203843] text-xs font-bold text-amber-300 border border-[#2b4550]">
                               {currentActiveTabFeature.previewSnippet.stat1.label}: {currentActiveTabFeature.previewSnippet.stat1.val}
                             </span>

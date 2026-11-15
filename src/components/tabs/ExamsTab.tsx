@@ -3503,7 +3503,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                 return (
                   <div
                     id="exam-printable-certificate"
-                    className="w-full max-w-[760px] min-h-[520px] sm:min-h-[560px] md:aspect-[1.414/1] rounded-3xl relative overflow-hidden shadow-2xl flex flex-col justify-between p-5 sm:p-8 md:p-10 text-center border-4 border-[#fbbf24] bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#022c22] text-white select-none shrink-0 my-auto"
+                    className="w-full max-w-[760px] min-h-[360px] sm:min-h-[520px] md:aspect-[1.414/1] rounded-3xl relative overflow-hidden shadow-2xl flex flex-col justify-between p-4 sm:p-8 md:p-10 text-center border-4 border-[#fbbf24] bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#022c22] text-white select-none shrink-0 my-auto"
                   >
                     {/* Header */}
                     <div className="flex flex-col items-center justify-center pt-2 sm:pt-1 pb-1">

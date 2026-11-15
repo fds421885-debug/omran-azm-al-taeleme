@@ -1342,7 +1342,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
   return (
     <div
-      className="min-h-screen p-4 sm:p-6 lg:p-8 relative z-10 transition-colors duration-300"
+      className="min-h-screen min-h-[100dvh] p-3 sm:p-6 lg:p-8 relative z-10 transition-colors duration-300 overflow-x-clip"
       style={resolvedComplex?.theme ? {
         backgroundColor: resolvedComplex.theme.backgroundColor || themePrimary,
         color: resolvedComplex.theme.textColor || '#f0f9f6'
@@ -1351,10 +1351,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         color: '#f0f9f6'
       }}
     >
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-5 sm:space-y-6">
         {/* Top Portal Header - Duolingo 3D Themed */}
         <div
-          className="border-2 border-b-6 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl backdrop-blur-md transition-all relative overflow-hidden"
+          className="border-2 border-b-6 rounded-3xl p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xl backdrop-blur-md transition-all relative overflow-hidden"
           style={{
             backgroundColor: `${themeSecondary}f2`,
             borderColor: `${themeAccent}50`,
@@ -1364,9 +1364,9 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           {/* Subtle 3D Top Sheen */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
 
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
             <div
-              className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black shrink-0 overflow-hidden shadow-xl border-2 border-b-4 active:translate-y-[2px] transition-all select-none"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black shrink-0 overflow-hidden shadow-xl border-2 border-b-4 active:translate-y-[2px] transition-all select-none"
               style={{
                 backgroundColor: themeAccent,
                 borderColor: lightenHex(themeAccent, 0.2),
@@ -1377,12 +1377,12 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
               {resolvedComplex?.logoUrl ? (
                 <img src={resolvedComplex.logoUrl} alt={displayComplexName} className="w-full h-full object-cover" />
               ) : (
-                <BookOpen className="w-7 h-7" />
+                <BookOpen className="w-6 h-6 sm:w-7 sm:h-7" />
               )}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <h1
-                className="text-lg sm:text-xl font-black font-heading text-white flex items-center gap-2 drop-shadow-sm"
+                className="text-base sm:text-xl font-black font-heading text-white flex flex-wrap items-center gap-2 drop-shadow-sm"
                 style={{ color: themeAccent }}
               >
                 <span>{displayComplexName}</span>
@@ -1489,7 +1489,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             {/* Duolingo 3D Attendance Metric Box in Quranic Complex Theme */}
             <div
-              className="flex sm:flex-col items-start justify-center gap-1.5 p-4 sm:px-6 sm:py-4 rounded-3xl border-2 border-b-4 shadow-xl min-w-[155px] text-right shrink-0 transition-transform hover:scale-[1.02]"
+              className="flex flex-wrap sm:flex-nowrap md:flex-col items-center md:items-start justify-between md:justify-center gap-2 sm:gap-1.5 p-4 sm:px-6 sm:py-4 rounded-3xl border-2 border-b-4 shadow-xl w-full md:w-auto md:min-w-[165px] text-right shrink-0 transition-transform hover:scale-[1.02]"
               style={{
                 backgroundColor: themeSecondary,
                 borderColor: `${themeAccent}70`,
@@ -1632,7 +1632,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
         {/* DUOLINGO 3D TABS NAVIGATION BAR (نظام التبويبات الثلاثية الأبعاد مثل واجهة المعلمين) */}
         <div
-          className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none slider-horizontal p-2 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
+          className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto lg:flex-wrap lg:overflow-visible pb-1.5 lg:pb-2 scrollbar-none slider-horizontal p-2 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x snap-x"
           style={{
             backgroundColor: `${resolvedComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
             borderColor: resolvedComplex?.theme?.cardColor || '#203843',
@@ -1658,7 +1658,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all cursor-pointer border-2 active:translate-y-[2px] shrink-0 select-none ${
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 min-h-[44px] rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all cursor-pointer border-2 active:translate-y-[2px] shrink-0 select-none snap-start ${
                   isActive
                     ? 'border-b-4 shadow-lg scale-[1.02]'
                     : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
@@ -3775,7 +3775,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             {confirmingPurchaseItem && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
                 <div
-                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] overflow-y-auto"
+                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] max-h-[92dvh] overflow-y-auto"
                   style={{
                     backgroundColor: themeCardBg,
                     borderColor: themeAccent,
@@ -3860,7 +3860,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
             {refundingConfirmPurchase && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
                 <div
-                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] overflow-y-auto"
+                  className="w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-7 border-2 border-b-4 shadow-2xl relative space-y-4 sm:space-y-5 mx-2 sm:mx-auto max-h-[92vh] max-h-[92dvh] overflow-y-auto"
                   style={{
                     backgroundColor: themeCardBg,
                     borderColor: themeAccent,
@@ -4710,7 +4710,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {selectedStudentForBreakdown && (
           <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <div
-              className="border-2 border-b-6 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
+              className="border-2 border-b-6 rounded-3xl w-full max-w-xl max-h-[90vh] max-h-[90dvh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
               style={{
                 backgroundColor: themeSecondary,
                 borderColor: `${themeAccent}70`,
@@ -5077,7 +5077,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {viewingReviewSubmission && (
           <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <div
-              className="border-2 border-b-6 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
+              className="border-2 border-b-6 rounded-3xl w-full max-w-2xl max-h-[90vh] max-h-[90dvh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 text-right relative backdrop-blur-md"
               style={{
                 backgroundColor: themeSecondary,
                 borderColor: `${themeAccent}70`,
@@ -5354,7 +5354,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
         {selectedCertificateForView && (
           <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <div
-              className="border-2 border-b-6 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 text-right relative flex flex-col"
+              className="border-2 border-b-6 rounded-3xl w-full max-w-3xl max-h-[92vh] max-h-[92dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 text-right relative flex flex-col"
               style={{
                 backgroundColor: themeSecondary,
                 borderColor: `${themeAccent}70`,

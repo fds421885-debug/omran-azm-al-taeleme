@@ -899,7 +899,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
 
                     <td className="p-4 font-mono text-emerald-200">{teacher.phone || '-'}</td>
 
-                    <td className="p-4 min-w-[210px]">
+                    <td className="p-3 sm:p-4 min-w-[175px] sm:min-w-[210px]">
                       <div className="flex flex-col gap-1.5">
                         {teacher.role === 'developer' || cleanTUser === 'admin' || cleanTUser.includes('منتصر') ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black bg-gradient-to-r from-amber-400 to-amber-500 text-[#064e3b] shadow-sm border border-amber-300">
@@ -942,7 +942,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                           المبرمج (يتنقل بين كل المجمعات)
                         </span>
                       ) : isMultiComplexTeacher ? (
-                        <div className="flex flex-col gap-1 items-start min-w-[200px]">
+                        <div className="flex flex-col gap-1 items-start min-w-[170px] sm:min-w-[200px]">
                           {/* Main badge: انه في المجمع كذا وكذا */}
                           <div className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/25 via-emerald-900/50 to-[#064e3b] text-amber-200 border border-amber-400/60 font-bold shadow-md">
                             <Building2 className="w-4 h-4 text-amber-400 shrink-0" />

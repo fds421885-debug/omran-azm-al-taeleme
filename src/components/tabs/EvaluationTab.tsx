@@ -222,7 +222,7 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
         <div
           className={`absolute ${
             openDirection === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } z-[70] w-full min-w-[210px] max-h-72 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1 backdrop-blur-md`}
+          } z-[70] w-full min-w-[min(210px,calc(100vw-2.5rem))] max-h-72 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1 backdrop-blur-md`}
           style={{
             backgroundColor: 'var(--complex-card, #203843)',
             borderColor: accentColor,
@@ -230,7 +230,10 @@ export const DuoPlatformSelect: React.FC<DuoPlatformSelectProps> = ({
           }}
         >
           {options.length > 7 && (
-            <div className="p-1 mb-1 border-b border-white/10 sticky top-0 bg-[#203843] z-10">
+            <div
+              className="p-1 mb-1 border-b border-white/10 sticky top-0 z-10"
+              style={{ backgroundColor: 'var(--complex-card, #203843)' }}
+            >
               <div className="relative flex items-center">
                 <Search className="w-3.5 h-3.5 absolute right-2.5 text-slate-400 pointer-events-none" />
                 <input
@@ -513,10 +516,133 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const themeAccentShadow = darkenHex(themeAccent, 0.28);
   const accentTextColor = getContrastTextColor(themeAccent);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const ARABIC_GREGORIAN_MONTHS = useMemo(
+    () => ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'],
+    []
+  );
+  const ARABIC_WEEKDAYS_FULL = useMemo(
+    () => ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
+    []
+  );
+  const ARABIC_WEEKDAYS_SHORT = useMemo(
+    () => ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'],
+    []
+  );
+
+  const formatLocalIsoDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const parseIsoDateLocal = (iso: string) => {
+    const parts = (iso || '').split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date();
+  };
+
+  const todayStr = formatLocalIsoDate(new Date());
 
   // Selected Date for evaluation view & entry (Default: Today)
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false);
+  const [pickerMonthDate, setPickerMonthDate] = useState<Date>(() => parseIsoDateLocal(todayStr));
+  const datePickerContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideDateClick = (e: MouseEvent | TouchEvent) => {
+      if (datePickerContainerRef.current && !datePickerContainerRef.current.contains(e.target as Node)) {
+        setIsDatePickerOpen(false);
+      }
+    };
+    if (isDatePickerOpen) {
+      document.addEventListener('mousedown', handleOutsideDateClick);
+      document.addEventListener('touchstart', handleOutsideDateClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideDateClick);
+      document.removeEventListener('touchstart', handleOutsideDateClick);
+    };
+  }, [isDatePickerOpen]);
+
+  useEffect(() => {
+    const parsed = parseIsoDateLocal(selectedDate);
+    setPickerMonthDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+  }, [selectedDate]);
+
+  const selectedDateDisplay = useMemo(() => {
+    const d = parseIsoDateLocal(selectedDate);
+    const weekday = ARABIC_WEEKDAYS_FULL[d.getDay()] || '';
+    const monthName = ARABIC_GREGORIAN_MONTHS[d.getMonth()] || '';
+    let hijriStr = '';
+    try {
+      hijriStr = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(d);
+    } catch {
+      hijriStr = '';
+    }
+    return {
+      shortLabel: `${weekday} • ${d.getDate()} ${monthName} ${d.getFullYear()}`,
+      hijriStr
+    };
+  }, [selectedDate, ARABIC_WEEKDAYS_FULL, ARABIC_GREGORIAN_MONTHS]);
+
+  const pickerMonthHeader = useMemo(() => {
+    const monthName = ARABIC_GREGORIAN_MONTHS[pickerMonthDate.getMonth()] || '';
+    const yearNum = pickerMonthDate.getFullYear();
+    let hijriMonthYear = '';
+    try {
+      hijriMonthYear = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+        month: 'long',
+        year: 'numeric'
+      }).format(new Date(yearNum, pickerMonthDate.getMonth(), 15));
+    } catch {
+      hijriMonthYear = '';
+    }
+    return { monthName, yearNum, hijriMonthYear };
+  }, [pickerMonthDate, ARABIC_GREGORIAN_MONTHS]);
+
+  const pickerCalendarCells = useMemo(() => {
+    const year = pickerMonthDate.getFullYear();
+    const month = pickerMonthDate.getMonth();
+    const firstDayWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    const cells: Array<{ iso: string; day: number; inCurrentMonth: boolean }> = [];
+
+    for (let i = firstDayWeekday - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      cells.push({
+        iso: formatLocalIsoDate(new Date(year, month - 1, dayNum)),
+        day: dayNum,
+        inCurrentMonth: false
+      });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({
+        iso: formatLocalIsoDate(new Date(year, month, d)),
+        day: d,
+        inCurrentMonth: true
+      });
+    }
+    const totalTarget = cells.length <= 35 ? 35 : 42;
+    let nextDay = 1;
+    while (cells.length < totalTarget) {
+      cells.push({
+        iso: formatLocalIsoDate(new Date(year, month + 1, nextDay)),
+        day: nextDay,
+        inCurrentMonth: false
+      });
+      nextDay++;
+    }
+    return cells;
+  }, [pickerMonthDate]);
 
   // Active student selection
   const [activeStudentId, setActiveStudentId] = useState<string>(
@@ -2785,7 +2911,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     <div className="space-y-6">
       {/* Top Banner & Date / Criteria Controls */}
       <div
-        className="rounded-[32px] p-6 shadow-xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4 border-2 border-b-4"
+        className="rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-xl backdrop-blur-md flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-2 border-b-4"
         style={{
           backgroundColor: 'var(--complex-card, #203843)',
           borderColor: 'var(--complex-border, #2b4550)',
@@ -2825,10 +2951,10 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
               borderBottomColor: themeAccentShadow,
               color: themeAccent
             }}
-            title="فتح مصحف مجمع الملك فهد كاملاً"
+            title="افتح المصحف الشريف كاملاً"
           >
             <BookOpen className="w-4 h-4" style={{ color: themeAccent }} />
-            <span>المصحف الشريف (طبعة الملك فهد)</span>
+            <span>افتح المصحف</span>
           </button>
 
           <button
@@ -2932,7 +3058,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
           </span>
 
           <div
-            className="flex items-center gap-1.5 p-1 rounded-2xl border-2 border-b-4"
+            className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl border-2 border-b-4"
             style={{
               backgroundColor: 'var(--complex-primary, #131f24)',
               borderColor: 'var(--complex-border, #2b4550)',
@@ -3007,22 +3133,186 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             </button>
           </div>
 
-          {/* Custom Date Input */}
-          <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 border-b-4"
-            style={{
-              backgroundColor: 'var(--complex-primary, #131f24)',
-              borderColor: 'var(--complex-border, #2b4550)',
-              borderBottomColor: 'var(--complex-secondary-shadow, #122026)'
-            }}
-          >
-            <span className="text-[11px] font-black" style={{ color: themeAccent }}>تاريخ مخصص:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs text-white outline-none font-black cursor-pointer"
-            />
+          {/* In-Platform Duolingo Custom Date Selector */}
+          <div ref={datePickerContainerRef} className="relative z-40">
+            <button
+              type="button"
+              onClick={() => setIsDatePickerOpen(prev => !prev)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm"
+              style={{
+                backgroundColor: 'var(--complex-primary, #131f24)',
+                borderColor: isDatePickerOpen ? themeAccent : 'var(--complex-border, #2b4550)',
+                borderBottomColor: isDatePickerOpen ? themeAccentShadow : 'var(--complex-secondary-shadow, #122026)',
+                color: '#ffffff'
+              }}
+            >
+              <Calendar className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
+              <span className="whitespace-nowrap">{selectedDateDisplay.shortLabel}</span>
+              <span
+                className="font-mono text-[11px] px-2 py-0.5 rounded-xl border"
+                style={{
+                  backgroundColor: `${themeAccent}20`,
+                  borderColor: `${themeAccent}50`,
+                  color: themeAccent
+                }}
+              >
+                {selectedDate}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform duration-150 ${isDatePickerOpen ? 'rotate-180' : ''}`}
+                style={{ color: themeAccent }}
+              />
+            </button>
+
+            <AnimatePresence>
+              {isDatePickerOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="duo-complex-datepicker-popover absolute top-full right-0 sm:right-auto sm:left-0 mt-2.5 w-[min(320px,calc(100vw-2rem))] sm:w-[336px] z-50 space-y-3"
+                >
+                  <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2">
+                    <div className="text-right">
+                      <div className="text-[11px] font-black" style={{ color: themeAccent }}>
+                        تاريخ التسميع المحدد
+                      </div>
+                      <div className="text-xs font-black mt-0.5 text-white">
+                        {selectedDateDisplay.shortLabel}
+                      </div>
+                      {selectedDateDisplay.hijriStr && (
+                        <div className="duo-complex-subtext text-[10px] font-bold mt-0.5">
+                          {selectedDateDisplay.hijriStr}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className="font-mono text-xs font-black px-2.5 py-1 rounded-xl border-2"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: `${themeAccent}66`,
+                        color: themeAccent
+                      }}
+                    >
+                      {selectedDate}
+                    </span>
+                  </div>
+
+                  <div className="duo-complex-datepicker-monthbar flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      title="الشهر السابق"
+                      onClick={() => setPickerMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                      className="duo-complex-date-step-btn cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <div className="text-center">
+                      <div className="text-sm font-black font-heading" style={{ color: themeAccent }}>
+                        {pickerMonthHeader.monthName} {pickerMonthHeader.yearNum}
+                      </div>
+                      {pickerMonthHeader.hijriMonthYear && (
+                        <div className="duo-complex-subtext text-[10px] font-bold">
+                          {pickerMonthHeader.hijriMonthYear}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      title="الشهر التالي"
+                      onClick={() => setPickerMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                      className="duo-complex-date-step-btn cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {ARABIC_WEEKDAYS_SHORT.map(dayLabel => (
+                      <div key={dayLabel} className="duo-complex-weekday-cell">
+                        {dayLabel}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {pickerCalendarCells.map(cell => {
+                      const isSelectedCell = cell.iso === selectedDate;
+                      const isTodayCell = cell.iso === todayStr;
+                      return (
+                        <button
+                          key={cell.iso}
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(cell.iso);
+                            setIsDatePickerOpen(false);
+                          }}
+                          className={`duo-complex-day-btn cursor-pointer font-mono ${
+                            !cell.inCurrentMonth ? 'is-outside' : ''
+                          } ${isTodayCell ? 'is-today' : ''} ${
+                            isSelectedCell ? 'is-selected' : ''
+                          }`}
+                        >
+                          <span>{cell.day}</span>
+                          {isTodayCell && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full mt-0.5"
+                              style={{ backgroundColor: isSelectedCell ? accentTextColor : themeAccent }}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t-2" style={{ borderColor: 'var(--complex-border, #2b4550)' }}>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate(todayStr);
+                          setIsDatePickerOpen(false);
+                        }}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          selectedDate === todayStr ? 'is-active' : ''
+                        }`}
+                      >
+                        اليوم
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate(getYesterdayStr());
+                          setIsDatePickerOpen(false);
+                        }}
+                        className={`duo-complex-today-btn text-[11px] cursor-pointer ${
+                          selectedDate === getYesterdayStr() ? 'is-active' : ''
+                        }`}
+                      >
+                        أمس
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDatePickerOpen(false)}
+                      className="px-3.5 py-1.5 rounded-xl border-2 border-b-4 text-[11px] font-black cursor-pointer transition-all active:translate-y-[1px] active:border-b-2"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                        color: '#ffffff'
+                      }}
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -3065,7 +3355,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       {/* Past Date Notice Banner */}
       {selectedDate !== todayStr && (
         <div
-          className="p-4 rounded-2xl border-2 border-b-4 text-xs font-bold flex items-center justify-between gap-3 animate-fadeIn"
+          className="p-4 rounded-2xl border-2 border-b-4 text-xs font-bold flex flex-wrap items-center justify-between gap-3 animate-fadeIn"
           style={{
             backgroundColor: 'var(--complex-secondary, #1b2e35)',
             borderColor: themeAccent,
@@ -3244,7 +3534,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             </span>
           </div>
 
-          <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1 custom-scrollbar">
+          <div className="space-y-2.5 max-h-[260px] sm:max-h-[340px] lg:max-h-[620px] overflow-y-auto pr-1 custom-scrollbar">
             {students.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400 font-bold">
                 لا يوجد طلاب مسجلين في الحلقة حالياً.
@@ -3454,41 +3744,57 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     {activeStudent.name.charAt(0)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-bold text-white font-heading">
                         {activeStudent.name}
                       </h3>
                       <span
-                        className="text-xs px-2.5 py-0.5 rounded-full font-black border"
+                        className="text-xs px-3 py-1 rounded-2xl font-black border-2 border-b-[3px] shadow-xs"
                         style={{
-                          backgroundColor: `${themeAccent}25`,
-                          borderColor: `${themeAccent}70`,
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow,
                           color: themeAccent
                         }}
                       >
                         مستوى: {activeStudent.level}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 font-bold mt-0.5">
+                    <p className="text-xs text-slate-300 font-bold mt-1">
                       موضع الحفظ الحالي: سورة {activeStudent.currentSurahName || getSurahInfo(activeStudent.currentSurah || 78).name} (الآية {activeStudent.currentAyah || 1})
                     </p>
 
                     {/* Active AI Plan & Target Completion Date */}
                     {activeStudent.memorizationPlan?.targetCompletionDate && (
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center gap-1 shadow-sm">
-                          <Sparkles className="w-3 h-3 text-amber-400" />
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span
+                          className="text-[11px] px-3 py-1 rounded-2xl font-black border-2 border-b-[3px] flex items-center gap-1.5 shadow-sm"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: themeAccent }} />
                           <span>الختم المستهدف: <strong>{activeStudent.memorizationPlan.targetCompletionDate}</strong></span>
                         </span>
-                        <span className="text-[10px] text-slate-300 font-bold">
-                          • المثبت: {activeStudent.memorizationPlan.consolidatedJuzCount || 0} أجزاء • نسبة المسار: {activeStudent.memorizationPlan.progressPercentage || 0}%
+                        <span
+                          className="text-[11px] px-2.5 py-1 rounded-2xl border-2 border-b-[3px] font-bold text-slate-200"
+                          style={{
+                            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
+                          المثبت: {activeStudent.memorizationPlan.consolidatedJuzCount || 0} أجزاء • نسبة المسار: {activeStudent.memorizationPlan.progressPercentage || 0}%
                         </span>
                       </div>
                     )}
 
                     {/* Ayah Mistakes Recorded Indicator */}
                     {Object.values(mushafAyahErrors).reduce((s, c) => s + c, 0) > 0 && (
-                      <div className="mt-1.5 px-3 py-1 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
+                      <div className="mt-2 px-3.5 py-1.5 rounded-2xl bg-rose-500/15 border-2 border-b-[3px] border-rose-500/60 border-b-rose-700 text-rose-200 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                         <span>تم رصد ({Object.values(mushafAyahErrors).reduce((s, c) => s + c, 0)}) أخطاء تسميع في المصحف (بالنقر المزدوج) • سيتم تخصيص ورد تثبيت وتكرار غداً بالذكاء الاصطناعي</span>
                       </div>
@@ -3497,12 +3803,20 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 </div>
 
                 {isAbsent ? (
-                  <div className="px-3.5 py-2 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-bold flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4" />
+                  <div className="px-4 py-2 rounded-2xl bg-rose-500/15 border-2 border-b-4 border-rose-500/60 border-b-rose-700 text-rose-200 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                    <AlertCircle className="w-4 h-4 text-rose-400" />
                     <span>الطالب مسجل غائب في {selectedDate}</span>
                   </div>
                 ) : isExcused ? (
-                  <div className="px-3.5 py-2 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-[#86efac] text-xs font-bold flex items-center gap-1.5">
+                  <div
+                    className="px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     <Clock className="w-4 h-4" />
                     <span>الطالب معتذر ({selectedDateAtt?.note || 'عذر مقبول'})</span>
                   </div>
@@ -3579,25 +3893,34 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                             <span className="text-xs sm:text-sm font-black" style={{ color: themeAccent }}>
                               التقدم في سورة {sInfo.name}:
                             </span>
-                            <span 
-                              className="text-[11px] px-2.5 py-0.5 rounded-xl font-bold border"
+                            <span
+                              className="text-[11px] px-2.5 py-0.5 rounded-2xl font-black border-2 border-b-[3px]"
                               style={{
                                 backgroundColor: 'var(--complex-primary, #131f24)',
                                 borderColor: 'var(--complex-border, #2b4550)',
-                                color: '#cbd5e1'
+                                borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                color: '#e2e8f0'
                               }}
                             >
                               {sInfo.revelationType || 'مكية'}
                             </span>
 
                             {isCompleted ? (
-                              <span className="text-xs px-3 py-1 rounded-2xl bg-emerald-500/20 text-emerald-300 font-black border-2 border-b-2 border-emerald-400/50 flex items-center gap-1 shadow-sm">
-                                <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+                              <span className="text-xs px-3 py-1 rounded-2xl bg-[#58cc02]/15 text-[#89e219] font-black border-2 border-b-[3px] border-[#58cc02] border-b-[#46a302] flex items-center gap-1 shadow-sm">
+                                <Sparkles className="w-3.5 h-3.5 text-[#89e219]" />
                                 <span>مكتملة بحمد الله</span>
                               </span>
                             ) : isNearing ? (
-                              <span className="text-xs px-3 py-1 rounded-2xl bg-orange-500/20 text-orange-300 font-black border-2 border-b-2 border-orange-400/50 flex items-center gap-1 shadow-sm">
-                                <Flame className="w-3.5 h-3.5 text-orange-400 animate-bounce" />
+                              <span
+                                className="text-xs px-3 py-1 rounded-2xl font-black border-2 border-b-[3px] flex items-center gap-1 shadow-sm"
+                                style={{
+                                  backgroundColor: `${themeAccent}20`,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow,
+                                  color: themeAccent
+                                }}
+                              >
+                                <Flame className="w-3.5 h-3.5" style={{ color: themeAccent }} />
                                 <span>على وشك الختام!</span>
                               </span>
                             ) : null}
@@ -3696,14 +4019,35 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           {pagesInfo.totalPagesCount} وجه
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-200 flex-wrap">
+                        <span
+                          className="px-3 py-1 rounded-2xl border-2 border-b-[3px]"
+                          style={{
+                            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
                           حفظ جديد: <strong className="text-white font-mono">{pagesInfo.newPagesCount}</strong> وجه
                         </span>
-                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
+                        <span
+                          className="px-3 py-1 rounded-2xl border-2 border-b-[3px]"
+                          style={{
+                            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
                           مراجعة: <strong className="text-white font-mono">{pagesInfo.reviewPagesCount}</strong> وجه
                         </span>
-                        <span className="px-2.5 py-1 rounded-xl border border-white/10" style={{ backgroundColor: 'var(--complex-secondary, #1b2e35)' }}>
+                        <span
+                          className="px-3 py-1 rounded-2xl border-2 border-b-[3px]"
+                          style={{
+                            backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow
+                          }}
+                        >
                           موضع المصحف: <strong className="font-mono" style={{ color: themeAccent }}>الوجه {pagesInfo.currentMushafPage}</strong> (الجزء {pagesInfo.currentJuz})
                         </span>
                       </div>
@@ -3789,21 +4133,44 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
               {/* AI Plan Generating Card (Blocks recitation until plan is finalized) */}
               {(activeStudent.isGeneratingPlan || isManualGeneratingPlan) && (
-                <div className="bg-gradient-to-r from-amber-500/20 via-emerald-600/25 to-teal-500/20 border-2 border-amber-400/80 rounded-3xl p-6 text-center space-y-4 shadow-[0_0_35px_rgba(251,191,36,0.25)] animate-pulse">
-                  <div className="w-16 h-16 rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center mx-auto text-amber-300">
+                <div
+                  className="border-2 border-b-4 rounded-[28px] p-6 text-center space-y-4 shadow-xl"
+                  style={{
+                    backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow
+                  }}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl border-2 border-b-4 flex items-center justify-center mx-auto shadow-md"
+                    style={{
+                      backgroundColor: 'var(--complex-primary, #131f24)',
+                      borderColor: themeAccent,
+                      borderBottomColor: themeAccentShadow,
+                      color: themeAccent
+                    }}
+                  >
                     <Sparkles className="w-8 h-8 animate-spin" style={{ animationDuration: '3s' }} />
                   </div>
                   <div className="space-y-2">
-                    <h3 className="text-lg font-black text-amber-300 font-heading">
-                      جاري صياغة وبناء الخطة القرآنية الذكية للطالب بواسطة الذكاء الاصطناعي (Gemini)...
+                    <h3 className="text-lg font-black font-heading" style={{ color: themeAccent }}>
+                      جاري صياغة وبناء الخطة القرآنية الذكية للطالب...
                     </h3>
-                    <p className="text-sm text-emerald-100 max-w-xl mx-auto leading-relaxed">
-                      يقوم الذكاء الاصطناعي الآن بضبط موضع البداية وحساب وتيرة الحفظ وضبط ورد الغد بدقة مصحف المدينة (604 أوجه). يرجى الانتظار ثوانٍ معدودة حتى تكتمل الخطة ويُفتح تسجيل التسميع تلقائياً.
+                    <p className="text-sm text-slate-200 max-w-xl mx-auto leading-relaxed font-bold">
+                      يقوم النظام الآن بضبط موضع البداية وحساب وتيرة الحفظ وضبط ورد الغد بدقة مصحف المدينة (604 أوجه). يرجى الانتظار ثوانٍ معدودة حتى تكتمل الخطة ويُفتح تسجيل التسميع تلقائياً.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs font-bold">
-                      <Clock className="w-4 h-4 text-amber-300 animate-pulse" />
+                    <div
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl border-2 border-b-[3px] text-xs font-black"
+                      style={{
+                        backgroundColor: 'var(--complex-primary, #131f24)',
+                        borderColor: 'var(--complex-border, #2b4550)',
+                        borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                        color: themeAccent
+                      }}
+                    >
+                      <Clock className="w-4 h-4" />
                       <span>التسجيل موقوف مؤقتاً لحين اكتمال الخطة لضمان دقة مواضع التسميع</span>
                     </div>
 
@@ -3811,12 +4178,18 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       type="button"
                       disabled={isManualGeneratingPlan}
                       onClick={handleForceGeneratePlan}
-                      className="px-4 py-2 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-50 text-[#064e3b] text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                      className="px-5 py-2.5 rounded-2xl border-2 border-b-4 disabled:opacity-50 text-xs font-black shadow-md flex items-center gap-2 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: themeAccent,
+                        borderColor: themeAccent,
+                        borderBottomColor: themeAccentShadow,
+                        color: accentTextColor
+                      }}
                     >
                       {isManualGeneratingPlan ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>جاري توليد الخطة بالذكاء الاصطناعي...</span>
+                          <span>جاري توليد الخطة...</span>
                         </>
                       ) : (
                         <>
@@ -3862,46 +4235,80 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                 {/* Real-time Interactive Listening Section: Points awarded for listener */}
                 {activeStudent && (
-                  <div className={`p-4 sm:p-5 rounded-2xl border-2 border-b-4 flex flex-col gap-3.5 transition-all shadow-md ${
-                    currentStudentListeningStatus.isListened
-                      ? 'bg-emerald-950/80 border-emerald-500/60 border-b-emerald-600 text-emerald-100 shadow-emerald-950/30'
-                      : currentStudentListeningStatus.isPartial
-                        ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-100'
+                  <div
+                    className="p-4 sm:p-5 rounded-2xl border-2 border-b-4 flex flex-col gap-3.5 transition-all shadow-md"
+                    style={{
+                      backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                      borderColor: currentStudentListeningStatus.isListened
+                        ? '#58cc02'
+                        : currentStudentListeningStatus.isPartial
+                        ? themeAccent
                         : currentStudentListeningStatus.isExempt
-                        ? 'bg-slate-900/80 border-slate-600/60 border-b-slate-700 text-slate-200'
-                        : 'bg-rose-950/60 border-rose-500/50 border-b-rose-600 text-rose-200'
-                  }`}>
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-black/20 border border-white/10">
-                          <Headphones className="w-5 h-5 shrink-0" style={{ color: themeAccent }} />
+                        ? 'var(--complex-border, #2b4550)'
+                        : '#ff4b4b',
+                      borderBottomColor: currentStudentListeningStatus.isListened
+                        ? '#46a302'
+                        : currentStudentListeningStatus.isPartial
+                        ? themeAccentShadow
+                        : currentStudentListeningStatus.isExempt
+                        ? 'var(--complex-card-shadow, #16262e)'
+                        : '#cc2e2e'
+                    }}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
+                        >
+                          <Headphones className="w-5 h-5 shrink-0" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-sm text-white">حالة استماع الطالب للورد المنزلي:</span>
                             {currentStudentListeningStatus.isListened ? (
-                              <span className="px-3 py-1 rounded-xl bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 font-black text-xs inline-flex items-center gap-1.5 shadow-sm">
-                                <Award className="w-3.5 h-3.5 text-emerald-300" />
+                              <span className="px-3 py-1 rounded-2xl bg-[#58cc02]/15 text-[#89e219] border-2 border-b-[3px] border-[#58cc02] border-b-[#46a302] font-black text-xs inline-flex items-center gap-1.5 shadow-sm">
+                                <Award className="w-3.5 h-3.5" />
                                 <span>مستمع معتمد (+{liveListeningPoints} نقاط استماع مضافة)</span>
                               </span>
                             ) : currentStudentListeningStatus.isPartial ? (
-                              <span className="px-3 py-1 rounded-xl bg-amber-500/25 text-amber-300 border border-amber-400/50 font-black text-xs inline-flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-amber-300" />
+                              <span
+                                className="px-3 py-1 rounded-2xl border-2 border-b-[3px] font-black text-xs inline-flex items-center gap-1.5 shadow-sm"
+                                style={{
+                                  backgroundColor: `${themeAccent}20`,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow,
+                                  color: themeAccent
+                                }}
+                              >
+                                <Clock className="w-3.5 h-3.5" />
                                 <span>استماع جزئي (+{liveListeningPoints} نقطة)</span>
                               </span>
                             ) : currentStudentListeningStatus.isExempt ? (
-                              <span className="px-3 py-1 rounded-xl bg-slate-500/25 text-slate-300 border border-slate-400/50 font-black text-xs inline-flex items-center gap-1.5">
+                              <span
+                                className="px-3 py-1 rounded-2xl border-2 border-b-[3px] font-black text-xs inline-flex items-center gap-1.5 text-slate-200"
+                                style={{
+                                  backgroundColor: 'var(--complex-primary, #131f24)',
+                                  borderColor: 'var(--complex-border, #2b4550)',
+                                  borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                                }}
+                              >
                                 <Check className="w-3.5 h-3.5 text-slate-300" />
                                 <span>معفى من الاستماع (0 نقطة)</span>
                               </span>
                             ) : (
-                              <span className="px-3 py-1 rounded-xl bg-rose-500/25 text-rose-300 border border-rose-400/50 font-black text-xs inline-flex items-center gap-1.5">
-                                <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                              <span className="px-3 py-1 rounded-2xl bg-[#ff4b4b]/15 text-rose-200 border-2 border-b-[3px] border-[#ff4b4b] border-b-[#cc2e2e] font-black text-xs inline-flex items-center gap-1.5 shadow-sm">
+                                <XCircle className="w-3.5 h-3.5 text-[#ff6b6b]" />
                                 <span>لم يستمع (0 نقطة استماع)</span>
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-slate-300 font-bold block mt-0.5">
+                          <span className="text-[11px] text-slate-300 font-bold block mt-1">
                             {currentStudentListeningStatus.label}
                           </span>
                         </div>
@@ -3909,9 +4316,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                       {/* Prominent Listening Points Pill */}
                       <div className="flex items-center gap-2 self-start sm:self-center">
-                        <div className="px-3.5 py-1.5 rounded-xl bg-black/30 border border-white/10 flex items-center gap-2">
+                        <div
+                          className="px-3.5 py-2 rounded-2xl border-2 border-b-[3px] flex items-center gap-2"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: liveListeningPoints > 0 ? themeAccent : 'var(--complex-border, #2b4550)',
+                            borderBottomColor: liveListeningPoints > 0 ? themeAccentShadow : 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
                           <span className="text-[11px] font-bold text-slate-300">نقاط الاستماع المستحقة:</span>
-                          <span className={`text-sm font-black font-mono ${liveListeningPoints > 0 ? 'text-emerald-300' : 'text-slate-400'}`}>
+                          <span
+                            className="text-sm font-black font-mono"
+                            style={{ color: liveListeningPoints > 0 ? themeAccent : '#94a3b8' }}
+                          >
                             +{liveListeningPoints} نقطة
                           </span>
                         </div>
@@ -3920,16 +4337,27 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                     {/* Quick interactive listening status toggles */}
                     <div className="flex items-center justify-between flex-wrap gap-2.5 pt-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-black text-slate-300 ml-1">تحديد حالة الطالب:</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black text-slate-200 ml-1">تحديد حالة الطالب:</span>
                         <button
                           type="button"
                           onClick={() => handleSetListeningMode('listened')}
-                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                          className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                          style={
                             currentStudentListeningStatus.isListened
-                              ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-400/30'
-                              : 'bg-black/30 hover:bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
-                          }`}
+                              ? {
+                                  backgroundColor: '#58cc02',
+                                  borderColor: '#58cc02',
+                                  borderBottomColor: '#46a302',
+                                  color: '#ffffff'
+                                }
+                              : {
+                                  backgroundColor: 'var(--complex-primary, #131f24)',
+                                  borderColor: 'var(--complex-border, #2b4550)',
+                                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                  color: '#89e219'
+                                }
+                          }
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>مستمع (+{pointsPerListening} نقاط)</span>
@@ -3938,11 +4366,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSetListeningMode('partial')}
-                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                          className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                          style={
                             currentStudentListeningStatus.isPartial
-                              ? 'bg-amber-600 text-white border-amber-400 shadow-md ring-2 ring-amber-400/30'
-                              : 'bg-black/30 hover:bg-amber-950/40 text-amber-300 border-amber-500/30'
-                          }`}
+                              ? {
+                                  backgroundColor: themeAccent,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow,
+                                  color: accentTextColor
+                                }
+                              : {
+                                  backgroundColor: 'var(--complex-primary, #131f24)',
+                                  borderColor: 'var(--complex-border, #2b4550)',
+                                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                  color: themeAccent
+                                }
+                          }
                         >
                           <Clock className="w-3.5 h-3.5" />
                           <span>استماع جزئي</span>
@@ -3951,11 +4390,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSetListeningMode('not_listened')}
-                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                          className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                          style={
                             !currentStudentListeningStatus.isListened && !currentStudentListeningStatus.isPartial && !currentStudentListeningStatus.isExempt
-                              ? 'bg-rose-600 text-white border-rose-400 shadow-md ring-2 ring-rose-400/30'
-                              : 'bg-black/30 hover:bg-rose-950/40 text-rose-300 border-rose-500/30'
-                          }`}
+                              ? {
+                                  backgroundColor: '#ff4b4b',
+                                  borderColor: '#ff4b4b',
+                                  borderBottomColor: '#cc2e2e',
+                                  color: '#ffffff'
+                                }
+                              : {
+                                  backgroundColor: 'var(--complex-primary, #131f24)',
+                                  borderColor: 'var(--complex-border, #2b4550)',
+                                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                  color: '#fda4af'
+                                }
+                          }
                         >
                           <XCircle className="w-3.5 h-3.5" />
                           <span>لم يستمع (0 نقطة)</span>
@@ -3964,11 +4414,22 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSetListeningMode('exempt')}
-                          className={`px-3 py-1.5 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-xs ${
+                          className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                          style={
                             currentStudentListeningStatus.isExempt
-                              ? 'bg-slate-700 text-white border-slate-400 shadow-md'
-                              : 'bg-black/30 hover:bg-slate-800 text-slate-300 border-slate-600/30'
-                          }`}
+                              ? {
+                                  backgroundColor: themeAccent,
+                                  borderColor: themeAccent,
+                                  borderBottomColor: themeAccentShadow,
+                                  color: accentTextColor
+                                }
+                              : {
+                                  backgroundColor: 'var(--complex-primary, #131f24)',
+                                  borderColor: 'var(--complex-border, #2b4550)',
+                                  borderBottomColor: 'var(--complex-card-shadow, #16262e)',
+                                  color: '#cbd5e1'
+                                }
+                          }
                         >
                           <span>معفى</span>
                         </button>
@@ -3976,28 +4437,45 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
                       {/* Repetitions stepper if listening required or partial */}
                       {!currentStudentListeningStatus.isExempt && (
-                        <div className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-xl border border-white/10">
+                        <div
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border-2 border-b-[3px]"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
                           <span className="text-[11px] font-bold text-slate-300">تكرار الاستماع:</span>
                           <button
                             type="button"
                             onClick={() => handleStepListeningReps(-1)}
-                            className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            className="w-7 h-7 rounded-xl border-2 border-b-[3px] text-white font-black flex items-center justify-center cursor-pointer active:translate-y-[1px] active:border-b-2"
+                            style={{
+                              backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                            }}
                             title="إنقاص تكرار"
                           >
                             -
                           </button>
-                          <span className="font-mono font-black text-xs text-white px-1">
+                          <span className="font-mono font-black text-xs px-1" style={{ color: themeAccent }}>
                             {currentStudentListeningStatus.completedReps} / {currentStudentListeningStatus.requiredReps}
                           </span>
                           <button
                             type="button"
                             onClick={() => handleStepListeningReps(1)}
-                            className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            className="w-7 h-7 rounded-xl border-2 border-b-[3px] text-white font-black flex items-center justify-center cursor-pointer active:translate-y-[1px] active:border-b-2"
+                            style={{
+                              backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                              borderColor: 'var(--complex-border, #2b4550)',
+                              borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                            }}
                             title="زيادة تكرار"
                           >
                             +
                           </button>
-                          <span className="text-[10px] text-slate-400 font-bold">مرات</span>
+                          <span className="text-[10px] text-slate-300 font-bold">مرات</span>
                         </div>
                       )}
                     </div>
@@ -4016,27 +4494,52 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   <div className="flex items-center justify-between flex-wrap gap-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full border border-black/20" style={{ backgroundColor: themeAccent }} />
+                        <span
+                          className="w-6 h-6 rounded-xl border-2 border-b-2 flex items-center justify-center shrink-0"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                        </span>
                         <span>الحفظ الجديد (بداية ونهاية التسميع):</span>
                       </span>
                       {currentStudentListeningStatus.isExempt ? (
-                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-slate-500/20 text-slate-300 border-2 border-b-2 border-slate-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
-                          <Check className="w-3.5 h-3.5 text-slate-400" />
+                        <span
+                          className="text-[11px] px-3 py-1 rounded-2xl border-2 border-b-[3px] font-black inline-flex items-center gap-1.5 shadow-sm text-slate-200"
+                          style={{
+                            backgroundColor: 'var(--complex-primary, #131f24)',
+                            borderColor: 'var(--complex-border, #2b4550)',
+                            borderBottomColor: 'var(--complex-card-shadow, #16262e)'
+                          }}
+                        >
+                          <Check className="w-3.5 h-3.5 text-slate-300" />
                           <span>معفى من الاستماع</span>
                         </span>
                       ) : currentStudentListeningStatus.isListened ? (
-                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-emerald-500/20 text-emerald-300 border-2 border-b-2 border-emerald-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-[#58cc02]/15 text-[#89e219] border-2 border-b-[3px] border-[#58cc02] border-b-[#46a302] font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <Check className="w-3.5 h-3.5" />
                           <span>استمع للمقطع المقرر ({currentStudentListeningStatus.completedReps} مرات)</span>
                         </span>
                       ) : currentStudentListeningStatus.isPartial ? (
-                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-amber-500/20 text-amber-300 border-2 border-b-2 border-amber-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
-                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span
+                          className="text-[11px] px-3 py-1 rounded-2xl border-2 border-b-[3px] font-black inline-flex items-center gap-1.5 shadow-sm"
+                          style={{
+                            backgroundColor: `${themeAccent}20`,
+                            borderColor: themeAccent,
+                            borderBottomColor: themeAccentShadow,
+                            color: themeAccent
+                          }}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
                           <span>استمع جزئياً ({currentStudentListeningStatus.completedReps} من {currentStudentListeningStatus.requiredReps})</span>
                         </span>
                       ) : (
-                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-rose-500/20 text-rose-300 border-2 border-b-2 border-rose-500/40 font-black inline-flex items-center gap-1.5 shadow-sm">
-                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span className="text-[11px] px-3 py-1 rounded-2xl bg-[#ff4b4b]/15 text-rose-200 border-2 border-b-[3px] border-[#ff4b4b] border-b-[#cc2e2e] font-black inline-flex items-center gap-1.5 shadow-sm">
+                          <XCircle className="w-3.5 h-3.5 text-[#ff6b6b]" />
                           <span>لم يستمع للمقطع المقرر</span>
                         </span>
                       )}
@@ -4229,7 +4732,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   >
                     <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
                     <span>
-                      قراءة ومتابعة في مصحف الملك فهد ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • {formatMushafPageLabel(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)})
+                      افتح المصحف ({formatHighlightBadgeRange(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)} • {formatMushafPageLabel(todayNewSurah, todayNewFromAyah, todayNewToSurah, todayNewToAyah)})
                     </span>
                   </button>
 
@@ -4537,7 +5040,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }}
                             >
                               <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
-                              <span>قراءة في المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
+                              <span>افتح المصحف ({formatHighlightBadgeRange(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
                             </button>
                           </div>
                         );
@@ -4607,7 +5110,17 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2.5">
                     <span className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full border border-black/20" style={{ backgroundColor: themeAccent }} />
+                      <span
+                        className="w-6 h-6 rounded-xl border-2 border-b-2 flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: 'var(--complex-primary, #131f24)',
+                          borderColor: themeAccent,
+                          borderBottomColor: themeAccentShadow,
+                          color: themeAccent
+                        }}
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                      </span>
                       <span>ورد الحفظ الجديد المطلوب لغد (بداية ونهاية المقرر):</span>
                     </span>
                     <button
@@ -4766,7 +5279,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     }}
                   >
                     <BookOpen className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
-                    <span>قراءة في مصحف الملك فهد ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • {formatMushafPageLabel(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)})</span>
+                    <span>افتح المصحف ({formatHighlightBadgeRange(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)} • {formatMushafPageLabel(tomNewSurah, tomNewFromAyah, tomNewToSurah, tomNewToAyah)})</span>
                   </button>
                 </div>
 
@@ -4987,7 +5500,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                               }}
                             >
                               <BookOpen className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
-                              <span>قراءة في المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
+                              <span>افتح المصحف ({revStartSurahInfo.name} {rev.fromAyah}-{rev.toAyah} • {formatMushafPageLabel(rev.surahNumber, rev.fromAyah, rev.toSurahNumber, rev.toAyah)})</span>
                             </button>
                           </div>
                         );
@@ -5074,31 +5587,42 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                   const newWirdStatus = getStudentListeningStatus(activeStudent, null);
                   return (
                     <div
-                      className={`p-3.5 rounded-2xl border-2 border-b-4 flex flex-wrap items-center justify-between gap-2.5 text-xs font-black ${
-                        newWirdStatus.isListened && !newWirdStatus.isExempt
-                          ? 'bg-emerald-950/70 border-emerald-500/60 border-b-emerald-600 text-emerald-200'
+                      className="p-4 rounded-2xl border-2 border-b-4 flex flex-wrap items-center justify-between gap-2.5 text-xs font-black shadow-sm"
+                      style={{
+                        backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                        borderColor: newWirdStatus.isListened && !newWirdStatus.isExempt
+                          ? '#58cc02'
                           : newWirdStatus.isPartial
-                          ? 'bg-amber-950/70 border-amber-500/60 border-b-amber-600 text-amber-200'
+                          ? themeAccent
                           : newWirdStatus.isExempt
-                          ? 'bg-slate-900/70 border-slate-600/60 border-b-slate-700 text-slate-300'
-                          : 'bg-rose-950/70 border-rose-500/60 border-b-rose-600 text-rose-200'
-                      }`}
+                          ? 'var(--complex-border, #2b4550)'
+                          : '#ff4b4b',
+                        borderBottomColor: newWirdStatus.isListened && !newWirdStatus.isExempt
+                          ? '#46a302'
+                          : newWirdStatus.isPartial
+                          ? themeAccentShadow
+                          : newWirdStatus.isExempt
+                          ? 'var(--complex-card-shadow, #16262e)'
+                          : '#cc2e2e',
+                        color: '#ffffff'
+                      }}
                     >
-                      <div className="flex items-center gap-2">
-                        <Headphones className="w-4 h-4 shrink-0" />
+                      <div className="flex items-center gap-2.5">
+                        <Headphones className="w-4 h-4 shrink-0" style={{ color: themeAccent }} />
                         <span>حالة استماع الطالب للورد الجديد المقرر:</span>
-                        <span className="font-bold opacity-90">{newWirdStatus.label}</span>
+                        <span className="font-bold text-slate-300">{newWirdStatus.label}</span>
                       </div>
                       <span
-                        className={`px-3 py-1 rounded-xl border text-[11px] font-black ${
+                        className="px-3 py-1 rounded-2xl border-2 border-b-[3px] text-[11px] font-black"
+                        style={
                           newWirdStatus.isListened && !newWirdStatus.isExempt
-                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                            ? { backgroundColor: '#58cc0220', borderColor: '#58cc02', borderBottomColor: '#46a302', color: '#89e219' }
                             : newWirdStatus.isPartial
-                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                            ? { backgroundColor: `${themeAccent}20`, borderColor: themeAccent, borderBottomColor: themeAccentShadow, color: themeAccent }
                             : newWirdStatus.isExempt
-                            ? 'bg-slate-600/30 border-slate-500/50 text-slate-200'
-                            : 'bg-rose-500/20 border-rose-400/50 text-rose-200'
-                        }`}
+                            ? { backgroundColor: 'var(--complex-primary, #131f24)', borderColor: 'var(--complex-border, #2b4550)', borderBottomColor: 'var(--complex-card-shadow, #16262e)', color: '#cbd5e1' }
+                            : { backgroundColor: '#ff4b4b20', borderColor: '#ff4b4b', borderBottomColor: '#cc2e2e', color: '#fda4af' }
+                        }
                       >
                         {newWirdStatus.badgeText}
                       </span>
@@ -5187,7 +5711,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 1).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-rose-200 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#ff4b4b',
+                          borderBottomColor: '#cc2e2e'
+                        }}
                         title="خصم نقطة واحدة"
                       >
                         -1.0
@@ -5198,7 +5727,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 0.5).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-rose-200 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#ff4b4b',
+                          borderBottomColor: '#cc2e2e'
+                        }}
                         title="خصم نصف نقطة"
                       >
                         -0.5
@@ -5209,7 +5743,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => Math.max(0, parseFloat((prev - 0.25).toFixed(2))));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-rose-950/60 hover:text-rose-300 border-rose-500/40 border-b-rose-700 text-white text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-rose-200 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#ff4b4b',
+                          borderBottomColor: '#cc2e2e'
+                        }}
                         title="خصم ربع نقطة"
                       >
                         -0.25
@@ -5251,7 +5790,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 0.25).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-[#89e219] text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#58cc02',
+                          borderBottomColor: '#46a302'
+                        }}
                         title="إضافة ربع نقطة"
                       >
                         +0.25
@@ -5262,7 +5806,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 0.5).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-[#89e219] text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#58cc02',
+                          borderBottomColor: '#46a302'
+                        }}
                         title="إضافة نصف نقطة"
                       >
                         +0.5
@@ -5273,7 +5822,12 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                           setStudentPointsToday(prev => parseFloat((prev + 1).toFixed(2)));
                           setIsManualPointsModified(true);
                         }}
-                        className="px-3 py-2 rounded-2xl border-2 border-b-4 bg-[#1b2e35] hover:bg-emerald-950/60 hover:text-emerald-300 border-emerald-500/40 border-b-emerald-700 text-emerald-300 text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm"
+                        className="px-3 py-2 rounded-2xl border-2 border-b-4 text-[#89e219] text-xs font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2 shadow-sm hover:brightness-110"
+                        style={{
+                          backgroundColor: 'var(--complex-secondary, #1b2e35)',
+                          borderColor: '#58cc02',
+                          borderBottomColor: '#46a302'
+                        }}
                         title="إضافة نقطة واحدة"
                       >
                         +1.0
@@ -5753,25 +6307,43 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       {/* Add / Edit Criteria Modal */}
       {isCriteriaModalOpen && (
         <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-md bg-[#064e3b] border border-[#fbbf24]/40 rounded-2xl sm:rounded-[32px] shadow-2xl flex flex-col max-h-[92vh] my-auto overflow-hidden overscroll-contain animate-fadeIn">
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#065f46] shrink-0 bg-[#064e3b]">
-              <h3 className="text-sm sm:text-base font-bold text-[#fbbf24] font-heading">
+          <div
+            className="relative w-full max-w-md border-2 border-b-[6px] rounded-2xl sm:rounded-[32px] shadow-2xl flex flex-col max-h-[92vh] my-auto overflow-hidden overscroll-contain animate-fadeIn"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: themeBorder,
+              borderBottomColor: themeBorderBottom
+            }}
+          >
+            <div
+              className="flex items-center justify-between p-4 sm:p-6 border-b-2 shrink-0"
+              style={{
+                backgroundColor: themeSecondary,
+                borderColor: themeBorder
+              }}
+            >
+              <h3 className="text-sm sm:text-base font-black font-heading" style={{ color: themeAccent }}>
                 {editingCriteriaId ? 'تعديل معيار التقييم' : 'إضافة معيار تقييم جديد'}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsCriteriaModalOpen(false)}
-                className="p-1.5 text-[#86efac] hover:text-white rounded-lg cursor-pointer hover:bg-[#022c22]"
+                className="w-9 h-9 rounded-2xl border-2 border-b-4 flex items-center justify-center text-slate-300 hover:text-white cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
+                style={{
+                  backgroundColor: themePrimary,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSaveCriteriaForm} className="flex flex-col flex-1 overflow-hidden">
               <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#86efac] mb-1.5 text-right">
-                    اسم المعيار <span className="text-red-400">*</span>
+                  <label className="block text-xs font-black text-slate-200 mb-1.5 text-right">
+                    اسم المعيار <span className="text-rose-400">*</span>
                   </label>
                   <input
                     type="text"
@@ -5779,30 +6351,39 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     value={newCritName}
                     onChange={e => setNewCritName(e.target.value)}
                     placeholder="مثال: أحكام التجويد، الصوت والترتيل، الآداب"
-                    className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-3.5 text-xs text-[#f0f9f6] outline-none"
+                    className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none"
+                    style={{
+                      backgroundColor: themePrimary,
+                      borderColor: themeBorder,
+                      borderBottomColor: themeBorderBottom
+                    }}
                     dir="rtl"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#86efac] mb-1.5 text-right">
+                  <label className="block text-xs font-black text-slate-200 mb-1.5 text-right">
                     نوع التقييم
                   </label>
-                  <select
+                  <DuoPlatformSelect
                     value={newCritType}
-                    onChange={e => setNewCritType(e.target.value as CriteriaType)}
-                    className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-3.5 text-xs text-[#f0f9f6] outline-none"
-                  >
-                    <option value="score">تقييم بالدرجات (مثلاً من 10 أو 7 أو 100)</option>
-                    <option value="stars">تقييم بالنجوم (1 إلى 5 نجوم)</option>
-                    <option value="options">خيارات مخصصة (ممتاز، جيد، إلخ)</option>
-                    <option value="text">ملاحظات نصية حرة</option>
-                  </select>
+                    onChange={val => setNewCritType(val as CriteriaType)}
+                    options={[
+                      { value: 'score', label: 'تقييم بالدرجات (مثلاً من 10 أو 7 أو 100)' },
+                      { value: 'stars', label: 'تقييم بالنجوم (1 إلى 5 نجوم)' },
+                      { value: 'options', label: 'خيارات مخصصة (ممتاز، جيد، إلخ)' },
+                      { value: 'text', label: 'ملاحظات نصية حرة' }
+                    ]}
+                    accentColor={themeAccent}
+                    primaryColor={themePrimary}
+                    borderColor={themeBorder}
+                    shadowColor={themeBorderBottom}
+                  />
                 </div>
 
                 {newCritType === 'score' && (
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1.5 text-right">
+                    <label className="block text-xs font-black text-slate-200 mb-1.5 text-right">
                       الدرجة العظمى (الحد الأقصى)
                     </label>
                     <input
@@ -5811,14 +6392,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       max={100}
                       value={newCritMaxScore}
                       onChange={e => setNewCritMaxScore(Number(e.target.value))}
-                      className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-3.5 text-xs text-[#f0f9f6] outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-mono font-black outline-none"
+                      style={{
+                        backgroundColor: themePrimary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
                     />
                   </div>
                 )}
 
                 {newCritType === 'options' && (
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1.5 text-right">
+                    <label className="block text-xs font-black text-slate-200 mb-1.5 text-right">
                       الخيارات المتاحة (افصل بينها بفاصلة ,)
                     </label>
                     <input
@@ -5826,14 +6412,19 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       value={newCritOptions}
                       onChange={e => setNewCritOptions(e.target.value)}
                       placeholder="مثال: ممتاز, جيد جدا, جيد, ضعيف"
-                      className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-3.5 text-xs text-[#f0f9f6] outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs text-white font-bold outline-none"
+                      style={{
+                        backgroundColor: themePrimary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom
+                      }}
                       dir="rtl"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#86efac] mb-1.5 text-right">
+                  <label className="block text-xs font-black text-slate-200 mb-1.5 text-right">
                     النقاط المكتسبة لهذا المعيار (عند الدرجة الكاملة أو 5 نجوم)
                   </label>
                   <div className="flex items-center gap-2">
@@ -5843,27 +6434,50 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                       max={100}
                       value={newCritPointsWeight}
                       onChange={e => setNewCritPointsWeight(Number(e.target.value))}
-                      className="w-full bg-[#022c22] border border-[#065f46] focus:border-[#fbbf24] rounded-2xl py-2.5 px-3.5 text-xs text-[#fbbf24] font-black outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl py-2.5 px-3.5 text-xs font-mono font-black outline-none"
+                      style={{
+                        backgroundColor: themePrimary,
+                        borderColor: themeBorder,
+                        borderBottomColor: themeBorderBottom,
+                        color: themeAccent
+                      }}
                     />
-                    <span className="text-xs text-[#86efac] shrink-0 font-bold">نقاط</span>
+                    <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>نقاط</span>
                   </div>
-                  <p className="text-[11px] text-[#86efac]/70 mt-1">
+                  <p className="text-[11px] text-slate-300 font-bold mt-1.5">
                     خاص بالمشرف: تحدد كم نقطة يستحقها الطالب عند نيل 5 نجوم أو الدرجة الكاملة في هذا المعيار (مثلاً: 10 أو 5 نقاط).
                   </p>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2.5 p-4 sm:p-5 border-t border-[#065f46] shrink-0 bg-[#022c22]/95">
+              <div
+                className="flex justify-end gap-2.5 p-4 sm:p-5 border-t-2 shrink-0"
+                style={{
+                  backgroundColor: themeSecondary,
+                  borderColor: themeBorder
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setIsCriteriaModalOpen(false)}
-                  className="px-4 py-2.5 rounded-2xl text-xs font-bold text-[#86efac] hover:bg-[#064e3b] cursor-pointer"
+                  className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black text-slate-200 hover:text-white cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
+                  style={{
+                    backgroundColor: themePrimary,
+                    borderColor: themeBorder,
+                    borderBottomColor: themeBorderBottom
+                  }}
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-2xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] text-xs font-black shadow-md cursor-pointer"
+                  className="px-5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black shadow-md cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: themeAccent,
+                    borderColor: themeAccent,
+                    borderBottomColor: themeAccentShadow,
+                    color: accentTextColor
+                  }}
                 >
                   {editingCriteriaId ? 'حفظ التعديلات' : 'إضافة المعيار'}
                 </button>
@@ -5876,21 +6490,33 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       {/* Delete Criteria Confirmation Modal */}
       {critToDelete && (
         <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain">
-          <div className="relative w-full max-w-sm bg-[#064e3b] border border-red-500/50 rounded-2xl sm:rounded-[32px] p-5 sm:p-6 shadow-2xl space-y-4 text-center my-auto overscroll-contain animate-fadeIn">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto border border-red-500/30">
+          <div
+            className="relative w-full max-w-sm border-2 border-b-[6px] rounded-2xl sm:rounded-[32px] p-5 sm:p-6 shadow-2xl space-y-4 text-center my-auto overscroll-contain animate-fadeIn"
+            style={{
+              backgroundColor: themeCardBg,
+              borderColor: '#ff4b4b',
+              borderBottomColor: '#cc2e2e'
+            }}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-[#ff4b4b]/20 text-[#ff6b6b] flex items-center justify-center mx-auto border-2 border-b-4 border-[#ff4b4b] border-b-[#cc2e2e]">
               <Trash2 className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-heading">تأكيد حذف معيار التقييم</h3>
-              <p className="text-xs text-[#86efac]/90 mt-1">
-                هل أنت متأكد من رغبتك في حذف معيار <span className="text-[#fbbf24] font-bold">"{critToDelete.name}"</span>؟
+              <h3 className="text-base font-black text-white font-heading">تأكيد حذف معيار التقييم</h3>
+              <p className="text-xs text-slate-300 font-bold mt-1">
+                هل أنت متأكد من رغبتك في حذف معيار <span className="font-black" style={{ color: themeAccent }}>"{critToDelete.name}"</span>؟
               </p>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2 flex-col sm:flex-row">
               <button
                 type="button"
                 onClick={() => setCritToDelete(null)}
-                className="w-full sm:flex-1 py-2.5 rounded-2xl text-xs font-bold bg-[#022c22] text-[#86efac] hover:text-white border border-[#065f46] cursor-pointer"
+                className="w-full sm:flex-1 py-2.5 rounded-2xl text-xs font-black text-slate-200 hover:text-white border-2 border-b-4 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
+                style={{
+                  backgroundColor: themePrimary,
+                  borderColor: themeBorder,
+                  borderBottomColor: themeBorderBottom
+                }}
               >
                 إلغاء
               </button>
@@ -5903,7 +6529,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     await onDeleteCriteria(id);
                   }
                 }}
-                className="w-full sm:flex-1 py-2.5 rounded-2xl text-xs font-black bg-red-600 hover:bg-red-700 text-white shadow-lg cursor-pointer transition-all"
+                className="w-full sm:flex-1 py-2.5 rounded-2xl text-xs font-black bg-[#ff4b4b] hover:brightness-110 border-2 border-b-4 border-[#ff4b4b] border-b-[#cc2e2e] text-white shadow-lg cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
               >
                 نعم، احذف المعيار
               </button>

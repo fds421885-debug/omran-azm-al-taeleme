@@ -671,7 +671,7 @@ export const StudentExamTaker: React.FC<StudentExamTakerProps> = ({
             <span>خريطة الأسئلة:</span>
           </span>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto py-1 max-w-[240px] sm:max-w-md scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto py-1 flex-1 min-w-0 sm:max-w-md scrollbar-none slider-horizontal">
             {questions.map((q, idx) => {
               const isAnswered = Boolean(answersMap[q.id]?.trim());
               const isCurrent = idx === currentQuestionIndex;

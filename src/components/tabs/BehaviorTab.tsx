@@ -970,7 +970,7 @@ export const BehaviorTab: React.FC<BehaviorTabProps> = ({
                   <label className="block text-[#fbbf24] font-bold mb-1.5">
                     درجة الشدة:
                   </label>
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {(['تنبيه', 'بسيطة', 'متوسطة', 'جسيمة'] as ViolationSeverity[]).map(sev => (
                       <button
                         type="button"

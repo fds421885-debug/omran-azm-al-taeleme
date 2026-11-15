@@ -2343,7 +2343,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 6, scale: 0.96 }}
                     transition={{ duration: 0.15, ease: 'easeOut' }}
-                    className="duo-complex-datepicker-popover absolute top-full left-0 mt-2.5 w-[312px] sm:w-[342px] z-50 space-y-3"
+                    className="duo-complex-datepicker-popover absolute top-full right-0 sm:right-auto sm:left-0 mt-2.5 w-[min(320px,calc(100vw-2rem))] sm:w-[342px] z-50 space-y-3"
                   >
                     {/* Selected Date Active Banner */}
                     <div className="duo-complex-datepicker-selected-banner flex items-center justify-between gap-2">
@@ -3948,7 +3948,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                             <span className="duo-complex-subtext text-[11px] font-black block">
                               اختر الساعة:
                             </span>
-                            <div className="grid grid-cols-6 gap-1.5">
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(hr => {
                                 const isSelectedHr = activeParts.hour12 === hr;
                                 return (
@@ -3982,7 +3982,7 @@ export const TeacherAttendanceTab: React.FC<TeacherAttendanceTabProps> = ({
                             <span className="duo-complex-subtext text-[11px] font-black block">
                               اختر الدقائق:
                             </span>
-                            <div className="grid grid-cols-6 gap-1.5">
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                               {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(minVal => {
                                 const isSelectedMin = activeParts.minute === minVal;
                                 return (

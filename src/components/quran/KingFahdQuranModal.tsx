@@ -1241,7 +1241,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
         {/* 1. TOP BAR: TITLE + STUDENT INFO + AUDIO BAR + ZOOM & FULLSCREEN CONTROLS */}
         {/* ========================================================================= */}
         <div
-          className="border-b px-3 sm:px-5 py-2.5 flex items-center justify-between gap-2 shrink-0 flex-wrap sm:flex-nowrap"
+          className="border-b px-3 sm:px-5 py-2.5 flex items-center justify-between gap-2 shrink-0 flex-wrap lg:flex-nowrap"
           style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
         >
           {/* Right: Title & Student Name / Juz */}
@@ -1258,7 +1258,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
             </div>
             <div className="min-w-0">
               <h3 className="font-heading font-black text-xs sm:text-sm text-white truncate flex items-center gap-2">
-                <span>مصحف المدينة النبوية (مجمع الملك فهد)</span>
+                <span>المصحف الشريف</span>
                 <span
                   className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-black/30 border border-white/10"
                   style={{ color: themeAccent }}
@@ -1274,7 +1274,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
 
           {/* Center: Built-in Audio Play Bar (زر تشغيل التلاوة داخل المصحف) */}
           <div
-            className="flex items-center gap-1.5 p-1 rounded-2xl border flex-wrap sm:flex-nowrap"
+            className="flex items-center gap-1.5 p-1 rounded-2xl border flex-wrap lg:flex-nowrap"
             style={{
               backgroundColor: `${themePrimary}ee`,
               borderColor: isPlayingAudio ? themeAccent : themeBorder
@@ -1477,7 +1477,7 @@ export const KingFahdQuranModal: React.FC<KingFahdQuranModalProps> = ({
         {/* ========================================================================= */}
         {showSubToolbar && (
           <div
-            className="border-b px-3 sm:px-5 py-2 flex items-center justify-between gap-2 shrink-0 flex-wrap sm:flex-nowrap"
+            className="border-b px-3 sm:px-5 py-2 flex items-center justify-between gap-2 shrink-0 flex-wrap lg:flex-nowrap"
             style={{ backgroundColor: `${themePrimary}ee`, borderColor: themeBorder }}
           >
             {/* Highlight Portion Tabs */}

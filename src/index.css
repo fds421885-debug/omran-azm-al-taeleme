@@ -52,8 +52,8 @@
 @layer base {
   html, body {
     width: 100%;
-    max-width: 100vw;
-    overflow-x: hidden !important;
+    max-width: 100%;
+    overflow-x: clip !important;
     position: relative;
     margin: 0;
     padding: 0;
@@ -62,9 +62,10 @@
 
   #root {
     width: 100%;
-    max-width: 100vw;
-    overflow-x: hidden !important;
+    max-width: 100%;
+    overflow-x: clip !important;
     min-height: 100vh;
+    min-height: 100dvh;
     position: relative;
   }
 
@@ -2144,3 +2145,42 @@ button.duo-complex-self-action-btn.is-completed svg {
     max-width: 194mm !important;
   }
 }
+
+/* ========================================================================= */
+/* Cross-Device Horizontal Slider & Responsive Viewport Safeguards           */
+/* ========================================================================= */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.slider-horizontal {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .duo-complex-datepicker-popover,
+  .duo-complex-time-popover,
+  .duo-complex-select-menu {
+    max-width: calc(100vw - 1.25rem) !important;
+  }
+
+  .duo-complex-modal-shell {
+    border-radius: 1.5rem !important;
+  }
+
+  .duo-complex-records-shell {
+    border-radius: 1.35rem !important;
+  }
+}
+

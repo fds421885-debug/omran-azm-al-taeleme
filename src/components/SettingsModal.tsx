@@ -30,13 +30,15 @@ import {
   AlertCircle,
   Upload,
   ArrowLeftRight,
-  Award,
   RefreshCw,
   Wand2,
   Globe,
   Mail,
   Send,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  Clock,
+  Building2
 } from 'lucide-react';
 import {
   TeacherAccount,
@@ -45,7 +47,6 @@ import {
   AppSettings,
   QuranComplex,
   ComplexThemeConfig,
-  AttendancePointsSettings,
   getThreePartNameValidation,
   isTeacherDeveloper,
   getTeacherSixDigitCode,
@@ -53,12 +54,286 @@ import {
   normalizeTeacherText,
   normalizeArabicText
 } from '../types';
-import { ISLAMIC_THEME_PRESETS, applyComplexThemeToDOM, extractColorsFromImageDataUrl, generateHarmoniousIslamicPalette } from '../lib/themeUtils';
-import { OmranDataService, db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  ISLAMIC_THEME_PRESETS,
+  applyComplexThemeToDOM,
+  extractColorsFromImageDataUrl,
+  darkenHex,
+  lightenHex,
+  getContrastTextColor
+} from '../lib/themeUtils';
+import { OmranDataService } from '../lib/firebase';
 import { triggerComplexThemePulse } from '../utils/highlightHelper';
 import { ApiConfig } from '../lib/apiConfig';
 import { loadSavedMailConfigFromCloud, saveMailConfigToCloudForever } from '../lib/portalEmailService';
+
+export interface DuoSettingsSelectOption {
+  value: string;
+  label: string;
+  subLabel?: string;
+}
+
+interface DuoSettingsSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: DuoSettingsSelectOption[];
+  placeholder?: string;
+  primaryColor: string;
+  secondaryColor: string;
+  cardColor: string;
+  accentColor: string;
+  borderColor: string;
+  shadowColor: string;
+  accentShadowColor: string;
+  accentTextColor: string;
+  textColor?: string;
+  compact?: boolean;
+  className?: string;
+}
+
+const DuoSettingsSelect: React.FC<DuoSettingsSelectProps> = ({
+  value,
+  onChange,
+  options,
+  placeholder = '-- اختر --',
+  primaryColor,
+  secondaryColor,
+  cardColor,
+  accentColor,
+  borderColor,
+  shadowColor,
+  accentShadowColor,
+  accentTextColor,
+  textColor = '#ffffff',
+  compact = false,
+  className = ''
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
+
+  const toggleOpen = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 240 && rect.top > 220) {
+        setOpenDirection('up');
+      } else {
+        setOpenDirection('down');
+      }
+    }
+    setIsOpen(prev => !prev);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (searchInputRef.current) searchInputRef.current.focus();
+      const timer = setTimeout(() => {
+        if (selectedItemRef.current && listContainerRef.current) {
+          selectedItemRef.current.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        }
+      }, 40);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  const selectedOption = options.find(o => o.value === value);
+  const filteredOptions = searchTerm.trim()
+    ? options.filter(
+        o =>
+          o.label.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
+          (o.subLabel && o.subLabel.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+      )
+    : options;
+
+  return (
+    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[75]' : 'z-10'} ${className}`}>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className={`w-full flex items-center justify-between gap-2 border-2 border-b-4 rounded-2xl ${
+          compact ? 'py-2 px-3 text-xs' : 'py-2.5 px-3.5 text-xs sm:text-sm'
+        } font-black transition-all shadow-sm active:translate-y-[2px] active:border-b-2 hover:brightness-110 cursor-pointer text-right`}
+        style={{
+          backgroundColor: primaryColor,
+          borderColor: isOpen ? accentColor : borderColor,
+          borderBottomColor: isOpen ? accentShadowColor : shadowColor,
+          color: textColor
+        }}
+      >
+        <span className="truncate flex-1 text-right">
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+          style={{ color: accentColor }}
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute ${
+            openDirection === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } right-0 z-[85] w-full min-w-[min(200px,calc(100vw-2.5rem))] max-h-64 overflow-hidden rounded-2xl border-2 border-b-4 shadow-2xl p-1.5 space-y-1`}
+          style={{
+            backgroundColor: cardColor,
+            borderColor: accentColor,
+            borderBottomColor: accentShadowColor
+          }}
+        >
+          {options.length > 7 && (
+            <div className="p-1 mb-1 border-b border-white/10 sticky top-0 z-10" style={{ backgroundColor: cardColor }}>
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 absolute right-2.5 text-slate-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="بحث سريع..."
+                  className="w-full pr-8 pl-2 py-1.5 text-xs rounded-xl border-2 text-white placeholder-slate-400 focus:outline-none font-bold text-right"
+                  style={{
+                    backgroundColor: primaryColor,
+                    borderColor: borderColor
+                  }}
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+            </div>
+          )}
+
+          <div ref={listContainerRef} className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+            {filteredOptions.length === 0 ? (
+              <div className="py-3 text-center text-xs text-slate-400 font-bold">لا توجد نتائج مطابقة</div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isSelected = opt.value === value;
+                return (
+                  <button
+                    key={opt.value}
+                    ref={isSelected ? selectedItemRef : undefined}
+                    type="button"
+                    onClick={() => {
+                      onChange(opt.value);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                    className="w-full text-right px-3 py-2 rounded-xl border-2 border-b-[3px] text-xs font-black transition-all flex items-center justify-between gap-2 cursor-pointer active:translate-y-[1px] active:border-b-2"
+                    style={
+                      isSelected
+                        ? {
+                            backgroundColor: accentColor,
+                            borderColor: accentColor,
+                            borderBottomColor: accentShadowColor,
+                            color: accentTextColor
+                          }
+                        : {
+                            backgroundColor: secondaryColor,
+                            borderColor: 'transparent',
+                            borderBottomColor: 'transparent',
+                            color: textColor
+                          }
+                    }
+                  >
+                    <div className="min-w-0 flex-1 text-right">
+                      <div className="truncate">{opt.label}</div>
+                      {opt.subLabel && (
+                        <div className={`text-[10px] truncate ${isSelected ? 'opacity-80' : 'text-slate-400'}`}>
+                          {opt.subLabel}
+                        </div>
+                      )}
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface DuoTimeSelectorProps {
+  value: string;
+  onChange: (value: string) => void;
+  primaryColor: string;
+  secondaryColor: string;
+  cardColor: string;
+  accentColor: string;
+  borderColor: string;
+  shadowColor: string;
+  accentShadowColor: string;
+  accentTextColor: string;
+  textColor?: string;
+}
+
+const DuoTimeSelector: React.FC<DuoTimeSelectorProps> = ({
+  value,
+  onChange,
+  ...themeProps
+}) => {
+  const [rawH, rawM] = (value || '16:00').split(':');
+  const currentH = String(Math.min(23, Math.max(0, parseInt(rawH || '16', 10) || 0))).padStart(2, '0');
+  const parsedMin = Math.min(55, Math.max(0, Math.round((parseInt(rawM || '0', 10) || 0) / 5) * 5));
+  const currentM = String(parsedMin).padStart(2, '0');
+
+  const hourOptions: DuoSettingsSelectOption[] = Array.from({ length: 24 }, (_, h) => {
+    const hh = String(h).padStart(2, '0');
+    const period = h < 12 ? 'ص' : 'م';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return {
+      value: hh,
+      label: `${h12} ${period} (${hh})`
+    };
+  });
+
+  const minuteOptions: DuoSettingsSelectOption[] = Array.from({ length: 12 }, (_, idx) => {
+    const mm = String(idx * 5).padStart(2, '0');
+    return { value: mm, label: `:${mm} د` };
+  });
+
+  return (
+    <div className="grid grid-cols-2 gap-2" dir="rtl">
+      <DuoSettingsSelect
+        value={currentH}
+        onChange={newH => onChange(`${newH}:${currentM}`)}
+        options={hourOptions}
+        compact
+        {...themeProps}
+      />
+      <DuoSettingsSelect
+        value={currentM}
+        onChange={newM => onChange(`${currentH}:${newM}`)}
+        options={minuteOptions}
+        compact
+        {...themeProps}
+      />
+    </div>
+  );
+};
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -617,12 +892,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     halaqahName: settings.halaqahName || '',
     complexName: activeComplex?.name || settings.complexName || '',
     allowStudentRegistration: settings.allowStudentRegistration ?? true,
-    workDaysPerWeek: settings.workDaysPerWeek ?? 5,
-    presentPoints: settings.attendancePointsSettings?.presentPoints ?? 1,
-    latePoints: settings.attendancePointsSettings?.latePoints ?? 0,
-    excusedPoints: settings.attendancePointsSettings?.excusedPoints ?? 0,
-    absentPointsDeduction: settings.attendancePointsSettings?.absentPointsDeduction ?? 1,
-    enableAttendancePoints: settings.attendancePointsSettings?.enableAttendancePoints ?? true
+    workDaysPerWeek: settings.workDaysPerWeek ?? 5
   });
 
   const [customApiUrl, setCustomApiUrl] = useState(() => ApiConfig.getBaseUrl());
@@ -653,12 +923,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         halaqahName: settings.halaqahName || '',
         complexName: activeComplex?.name || settings.complexName || '',
         allowStudentRegistration: settings.allowStudentRegistration ?? true,
-        workDaysPerWeek: settings.workDaysPerWeek ?? 5,
-        presentPoints: settings.attendancePointsSettings?.presentPoints ?? 1,
-        latePoints: settings.attendancePointsSettings?.latePoints ?? 0,
-        excusedPoints: settings.attendancePointsSettings?.excusedPoints ?? 0,
-        absentPointsDeduction: settings.attendancePointsSettings?.absentPointsDeduction ?? 1,
-        enableAttendancePoints: settings.attendancePointsSettings?.enableAttendancePoints ?? true
+        workDaysPerWeek: settings.workDaysPerWeek ?? 5
       });
       const effTheme = activeComplex?.theme || settings?.theme;
       if (effTheme) {
@@ -778,20 +1043,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       setIsSubmitting(true);
 
-      const attPoints: AttendancePointsSettings = {
-        presentPoints: Number(generalForm.presentPoints),
-        latePoints: Number(generalForm.latePoints),
-        excusedPoints: Number(generalForm.excusedPoints),
-        absentPointsDeduction: Number(generalForm.absentPointsDeduction),
-        enableAttendancePoints: Boolean(generalForm.enableAttendancePoints)
-      };
-
       await onUpdateSettings({
         halaqahName: generalForm.halaqahName.trim(),
         complexName: generalForm.complexName.trim() || activeComplex?.name || settings.complexName,
         allowStudentRegistration: generalForm.allowStudentRegistration,
         workDaysPerWeek: Number(generalForm.workDaysPerWeek) || 5,
-        attendancePointsSettings: attPoints,
         theme: themeColors
       });
 
@@ -820,221 +1076,207 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Dynamic Duolingo 3D Complex Theme Tokens (Live Reactive)
+  const tBg = themeColors.backgroundColor || '#131f24';
+  const tPrimary = themeColors.primaryColor || '#131f24';
+  const tSecondary = themeColors.secondaryColor || '#1b2e35';
+  const tCard = themeColors.cardColor || tSecondary || '#203843';
+  const tAccent = themeColors.accentColor || '#ffc800';
+  const tText = themeColors.textColor || '#ffffff';
+  const tBorder = lightenHex(tCard, 0.16);
+  const tShadow = darkenHex(tCard, 0.35);
+  const tSecondaryShadow = darkenHex(tSecondary, 0.35);
+  const tAccentShadow = darkenHex(tAccent, 0.28);
+  const tAccentText = getContrastTextColor(tAccent);
+  const tSelectProps = {
+    primaryColor: tPrimary,
+    secondaryColor: tSecondary,
+    cardColor: tCard,
+    accentColor: tAccent,
+    borderColor: tBorder,
+    shadowColor: tShadow,
+    accentShadowColor: tAccentShadow,
+    accentTextColor: tAccentText,
+    textColor: tText
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-black/80 backdrop-blur-sm animate-fade-in"
       dir="rtl"
     >
       <div
-        className="border rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden transition-colors"
+        className="border-2 border-b-[6px] rounded-[28px] w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden transition-colors"
         data-complex-themed="true"
         style={{
-          '--complex-bg': themeColors.backgroundColor,
-          '--complex-primary': themeColors.primaryColor,
-          '--complex-secondary': themeColors.secondaryColor,
-          '--complex-card': themeColors.cardColor || themeColors.secondaryColor,
-          '--complex-accent': themeColors.accentColor,
-          '--complex-border': themeColors.secondaryColor,
-          '--complex-text': themeColors.textColor || '#f0f9f6',
-          '--complex-subtext': `${themeColors.textColor || '#f0f9f6'}cc`,
-          backgroundColor: themeColors.cardColor || themeColors.backgroundColor,
-          borderColor: themeColors.secondaryColor || '#065f46',
-          color: themeColors.textColor || '#f0f9f6'
+          '--complex-bg': tBg,
+          '--complex-primary': tPrimary,
+          '--complex-secondary': tSecondary,
+          '--complex-secondary-shadow': tSecondaryShadow,
+          '--complex-card': tCard,
+          '--complex-card-shadow': tShadow,
+          '--complex-accent': tAccent,
+          '--complex-accent-shadow': tAccentShadow,
+          '--complex-border': tBorder,
+          '--complex-text': tText,
+          '--complex-subtext': `${tText}cc`,
+          backgroundColor: tCard,
+          borderColor: tBorder,
+          borderBottomColor: tShadow,
+          color: tText
         } as React.CSSProperties}
       >
         {/* Modal Header */}
         <div
-          className="p-4 sm:p-5 border-b flex items-center justify-between shrink-0 z-20"
+          className="p-4 sm:p-5 border-b-2 flex items-center justify-between gap-3 shrink-0 z-20"
           style={{
-            backgroundColor: themeColors.primaryColor || '#022c22',
-            borderColor: themeColors.secondaryColor || '#065f46'
+            backgroundColor: tPrimary,
+            borderColor: tBorder
           }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div
-              className="w-10 h-10 rounded-xl border flex items-center justify-center shadow-sm"
+              className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center shadow-md shrink-0"
               style={{
-                backgroundColor: `${themeColors.accentColor}25`,
-                borderColor: `${themeColors.accentColor}50`,
-                color: themeColors.accentColor || '#fbbf24'
+                backgroundColor: tCard,
+                borderColor: tAccent,
+                borderBottomColor: tAccentShadow,
+                color: tAccent
               }}
             >
               <Settings className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-xl font-black font-heading text-white truncate">
                 إعدادات المنظومة والحلقات
               </h2>
-              <p className="text-xs opacity-80" style={{ color: themeColors.textColor || '#86efac' }}>
-                إدارة المعلمين والحلقات ونقل الطلاب وضبط قواعد المنظومة
+              <p className="text-xs font-bold opacity-85 truncate" style={{ color: tText }}>
+                إدارة المعلمين والحلقات ونقل الطلاب وضبط هوية المنظومة
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg opacity-70 hover:opacity-100 transition cursor-pointer"
-            style={{ color: themeColors.textColor || '#86efac' }}
+            className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 shrink-0"
+            style={{
+              backgroundColor: tSecondary,
+              borderColor: tBorder,
+              borderBottomColor: tShadow,
+              color: tText
+            }}
+            title="إغلاق النافذة"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Navigation (Sticky & Prominent) */}
+        {/* Tab Navigation (Duolingo 3D Tactile Tabs) */}
         <div
-          className="flex border-b px-3 overflow-x-auto gap-1 shrink-0 z-10 sticky top-0 shadow-sm"
+          className="flex items-center p-2.5 sm:px-4 border-b-2 overflow-x-auto gap-2 shrink-0 z-10 sticky top-0 custom-scrollbar"
           style={{
-            backgroundColor: themeColors.primaryColor || '#022c22',
-            borderColor: themeColors.secondaryColor || '#065f46'
+            backgroundColor: tSecondary,
+            borderColor: tBorder
           }}
         >
-          <button
-            type="button"
-            onClick={() => setActiveTab('teachers')}
-            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
-            style={
-              activeTab === 'teachers'
-                ? {
-                    borderColor: themeColors.accentColor,
-                    color: themeColors.accentColor,
-                    backgroundColor: `${themeColors.secondaryColor}80`,
-                    fontWeight: 900
-                  }
-                : {
-                    borderColor: 'transparent',
-                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
-                  }
-            }
-          >
-            <Users className="w-4 h-4" />
-            <span>المعلمون والمحفظون ({teachers.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('halaqahs')}
-            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
-            style={
-              activeTab === 'halaqahs'
-                ? {
-                    borderColor: themeColors.accentColor,
-                    color: themeColors.accentColor,
-                    backgroundColor: `${themeColors.secondaryColor}80`,
-                    fontWeight: 900
-                  }
-                : {
-                    borderColor: 'transparent',
-                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
-                  }
-            }
-          >
-            <Layers className="w-4 h-4" />
-            <span>الحلقات القرآنية ({halaqahs.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('transfers')}
-            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
-            style={
-              activeTab === 'transfers'
-                ? {
-                    borderColor: themeColors.accentColor,
-                    color: themeColors.accentColor,
-                    backgroundColor: `${themeColors.secondaryColor}80`,
-                    fontWeight: 900
-                  }
-                : {
-                    borderColor: 'transparent',
-                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
-                  }
-            }
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            <span>نقل وتوزيع الطلاب</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('general')}
-            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
-            style={
-              activeTab === 'general'
-                ? {
-                    borderColor: themeColors.accentColor,
-                    color: themeColors.accentColor,
-                    backgroundColor: `${themeColors.secondaryColor}80`,
-                    fontWeight: 900
-                  }
-                : {
-                    borderColor: 'transparent',
-                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
-                  }
-            }
-          >
-            <Sliders className="w-4 h-4" />
-            <span>الإعدادات العامة والثيم</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('mail')}
-            className="px-4 py-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap cursor-pointer"
-            style={
-              activeTab === 'mail'
-                ? {
-                    borderColor: themeColors.accentColor,
-                    color: themeColors.accentColor,
-                    backgroundColor: `${themeColors.secondaryColor}80`,
-                    fontWeight: 900
-                  }
-                : {
-                    borderColor: 'transparent',
-                    color: themeColors.textColor ? `${themeColors.textColor}B3` : '#86efac'
-                  }
-            }
-          >
-            <Mail className="w-4 h-4" />
-            <span>البريد الإلكتروني وGmail</span>
-            {mailConfigStatus?.isConfigured && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm"></span>
-            )}
-          </button>
+          {(
+            [
+              { id: 'teachers' as const, label: `المعلمون والمحفظون (${teachers.length})`, icon: Users },
+              { id: 'halaqahs' as const, label: `الحلقات القرآنية (${halaqahs.length})`, icon: Layers },
+              { id: 'transfers' as const, label: 'نقل وتوزيع الطلاب', icon: ArrowRightLeft },
+              { id: 'general' as const, label: 'الإعدادات العامة والثيم', icon: Sliders },
+              { id: 'mail' as const, label: 'البريد الإلكتروني وGmail', icon: Mail }
+            ]
+          ).map(tab => {
+            const Icon = tab.icon;
+            const isTabActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black flex items-center gap-2 transition-all whitespace-nowrap cursor-pointer active:translate-y-[2px] active:border-b-2 hover:brightness-110 shrink-0"
+                style={
+                  isTabActive
+                    ? {
+                        backgroundColor: tAccent,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccentText
+                      }
+                    : {
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow,
+                        color: tText
+                      }
+                }
+              >
+                <Icon className="w-4 h-4 shrink-0" style={{ color: isTabActive ? tAccentText : tAccent }} />
+                <span>{tab.label}</span>
+                {tab.id === 'mail' && mailConfigStatus?.isConfigured && (
+                  <CheckCircle2
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={{ color: isTabActive ? tAccentText : '#58cc02' }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Status Message */}
         {statusMsg && (
           <div
-            className={`mx-4 mt-3 p-3 rounded-xl border flex items-center gap-2 text-sm ${
+            className="mx-4 mt-3 p-3.5 rounded-2xl border-2 border-b-4 flex items-center gap-2.5 text-xs sm:text-sm font-black shadow-md animate-fadeIn"
+            style={
               statusMsg.type === 'success'
-                ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
-                : 'bg-red-950/80 border-red-500 text-red-200'
-            }`}
+                ? {
+                    backgroundColor: '#58cc0218',
+                    borderColor: '#58cc02',
+                    borderBottomColor: '#46a302',
+                    color: '#d9f99d'
+                  }
+                : {
+                    backgroundColor: '#ff4b4b18',
+                    borderColor: '#ff4b4b',
+                    borderBottomColor: '#cc2e2e',
+                    color: '#fecdd3'
+                  }
+            }
           >
             {statusMsg.type === 'success' ? (
-              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-[#89e219] shrink-0" />
             ) : (
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <AlertTriangle className="w-4 h-4 text-[#ff6b6b] shrink-0" />
             )}
             <span>{statusMsg.text}</span>
           </div>
         )}
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
           {/* TAB 1: TEACHERS */}
           {activeTab === 'teachers' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="font-bold text-white text-base">قائمة المعلمين والمشرفين</h3>
-                  <p className="text-xs text-[#86efac]/80">إدارة حسابات المعلمين وصلاحياتهم في المجمع</p>
+                  <h3 className="font-black text-white text-base font-heading">قائمة المعلمين والمشرفين</h3>
+                  <p className="text-xs font-bold opacity-80" style={{ color: tText }}>
+                    إدارة حسابات المعلمين وصلاحياتهم في المجمع
+                  </p>
                 </div>
                 {!editingTeacher && (
                   <button
                     type="button"
                     onClick={handleStartAddTeacher}
-                    className="flex items-center gap-2 bg-[#fbbf24] text-[#064e3b] font-bold px-3.5 py-2 rounded-xl hover:bg-amber-300 transition text-sm cursor-pointer shadow-sm"
+                    className="flex items-center gap-2 font-black px-4 py-2.5 rounded-2xl border-2 border-b-4 transition-all text-xs sm:text-sm cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                    style={{
+                      backgroundColor: tAccent,
+                      borderColor: tAccent,
+                      borderBottomColor: tAccentShadow,
+                      color: tAccentText
+                    }}
                   >
                     <Plus className="w-4 h-4" />
                     <span>إضافة معلم جديد</span>
@@ -1044,11 +1286,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {editingTeacher ? (
                 /* Teacher Form / Code Lookup Container */
-                <div className="bg-[#022c22]/70 border border-[#065f46] rounded-xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-                    <h4 className="font-bold text-amber-300 text-sm flex items-center gap-2">
+                <div
+                  className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-4 shadow-md"
+                  style={{
+                    backgroundColor: tSecondary,
+                    borderColor: tBorder,
+                    borderBottomColor: tSecondaryShadow
+                  }}
+                >
+                  <div className="flex items-center justify-between pb-3 border-b-2" style={{ borderColor: tBorder }}>
+                    <h4 className="font-black text-sm flex items-center gap-2" style={{ color: tAccent }}>
                       <UserCheck className="w-4 h-4" />
-                      {isNewTeacher ? 'إضافة حساب معلم' : 'تعديل بيانات المعلم'}
+                      <span>{isNewTeacher ? 'إضافة حساب معلم' : 'تعديل بيانات المعلم'}</span>
                     </h4>
                     <button
                       type="button"
@@ -1057,7 +1306,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         setFoundTeacherByCode(null);
                         setSearchTeacherCode('');
                       }}
-                      className="text-xs text-[#86efac]/70 hover:text-white"
+                      className="px-3 py-1.5 rounded-xl border-2 border-b-[3px] text-xs font-black cursor-pointer transition-all active:translate-y-[1px] active:border-b-2"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow,
+                        color: tText
+                      }}
                     >
                       إلغاء
                     </button>
@@ -1065,7 +1320,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {/* Mode Switcher when adding a new teacher */}
                   {isNewTeacher && (
-                    <div className="grid grid-cols-2 gap-2 bg-[#064e3b]/60 p-1 rounded-2xl border border-[#065f46]">
+                    <div
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1.5 rounded-2xl border-2 border-b-4"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -1073,11 +1335,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           setFoundTeacherByCode(null);
                           setCodeSearchError('');
                         }}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className="py-2.5 px-3 rounded-xl border-2 border-b-[3px] text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 active:translate-y-[1px] active:border-b-2"
+                        style={
                           addMode === 'new'
-                            ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
-                            : 'text-[#86efac] hover:text-white'
-                        }`}
+                            ? {
+                                backgroundColor: tAccent,
+                                borderColor: tAccent,
+                                borderBottomColor: tAccentShadow,
+                                color: tAccentText
+                              }
+                            : {
+                                backgroundColor: 'transparent',
+                                borderColor: 'transparent',
+                                borderBottomColor: 'transparent',
+                                color: tText
+                              }
+                        }
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>إنشاء حساب جديد</span>
@@ -1088,11 +1361,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           setAddMode('code');
                           setCodeSearchError('');
                         }}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className="py-2.5 px-3 rounded-xl border-2 border-b-[3px] text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 active:translate-y-[1px] active:border-b-2"
+                        style={
                           addMode === 'code'
-                            ? 'bg-[#fbbf24] text-[#064e3b] font-black shadow-md'
-                            : 'text-[#86efac] hover:text-white'
-                        }`}
+                            ? {
+                                backgroundColor: tAccent,
+                                borderColor: tAccent,
+                                borderBottomColor: tAccentShadow,
+                                color: tAccentText
+                              }
+                            : {
+                                backgroundColor: 'transparent',
+                                borderColor: 'transparent',
+                                borderBottomColor: 'transparent',
+                                color: tText
+                              }
+                        }
                       >
                         <KeyRound className="w-3.5 h-3.5" />
                         <span>مسجل بالفعل (بالرمز الفريد)</span>
@@ -1103,21 +1387,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {isNewTeacher && addMode === 'code' ? (
                     /* Search & Attach by 6-Digit Code */
                     <div className="space-y-4 text-xs">
-                      <div className="p-3.5 rounded-2xl bg-[#011a14] border border-amber-400/40 text-[#86efac] space-y-1.5">
-                        <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
-                          <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div
+                        className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1.5"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tAccent,
+                          borderBottomColor: tAccentShadow
+                        }}
+                      >
+                        <div className="flex items-center gap-2 font-black text-xs" style={{ color: tAccent }}>
+                          <KeyRound className="w-4 h-4 shrink-0" />
                           <span>كيفية الحصول على الرمز الفريد للمعلم:</span>
                         </div>
-                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                        <p className="text-[11px] text-slate-300 font-bold leading-relaxed">
                           يقوم المعلم بالضغط على زر <strong>(الحساب)</strong> في أعلى شاشة المنظومة، وسيظهر رمزه الفريد المكون من 6 أرقام في أعلى النافذة ليقوم بنسخه ومشاركته معك.
                         </p>
                       </div>
 
                       <div>
-                        <label className="block font-bold mb-1.5" style={{ color: themeColors.textColor || '#86efac' }}>
+                        <label className="block font-black mb-1.5" style={{ color: tText }}>
                           أدخل الرمز الفريد للمعلم (6 أرقام) أو اسم المستخدم أو رقم الهاتف:
                         </label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <input
                             type="text"
                             maxLength={30}
@@ -1140,21 +1431,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 handleSearchTeacherByCode();
                               }
                             }}
-                            className="flex-1 rounded-xl px-3.5 py-2.5 text-base font-mono font-bold tracking-widest text-center outline-none"
+                            className="flex-1 rounded-2xl border-2 border-b-4 px-3.5 py-2.5 text-base font-mono font-black tracking-widest text-center outline-none"
                             style={{
-                              backgroundColor: `${themeColors.primaryColor}CC`,
-                              border: `1.5px solid ${themeColors.secondaryColor}`,
-                              color: themeColors.accentColor || '#fbbf24'
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow,
+                              color: tAccent
                             }}
                             dir="ltr"
                           />
                           <button
                             type="button"
                             onClick={() => handleSearchTeacherByCode()}
-                            className="px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer shrink-0 transition-all flex items-center gap-1.5 shadow"
+                            className="px-5 py-2.5 rounded-2xl border-2 border-b-4 font-black text-xs cursor-pointer shrink-0 transition-all flex items-center justify-center gap-1.5 shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
                             style={{
-                              backgroundColor: themeColors.accentColor || '#fbbf24',
-                              color: themeColors.primaryColor || '#022c22'
+                              backgroundColor: tAccent,
+                              borderColor: tAccent,
+                              borderBottomColor: tAccentShadow,
+                              color: tAccentText
                             }}
                           >
                             <Search className="w-4 h-4" />
@@ -1162,33 +1456,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </button>
                         </div>
                         {codeSearchError && (
-                          <div className="mt-2 p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 text-xs flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <div className="mt-2 p-3 rounded-2xl bg-[#ff4b4b]/15 border-2 border-b-[3px] border-[#ff4b4b] border-b-[#cc2e2e] text-rose-200 text-xs font-bold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-[#ff6b6b] shrink-0" />
                             <span>{codeSearchError}</span>
                           </div>
                         )}
                       </div>
 
                       {foundTeacherByCode && (
-                        <div className="p-4 rounded-2xl bg-[#01221a] border-2 border-emerald-500/60 shadow-lg space-y-3.5 animate-fadeIn">
-                          <div className="flex items-center justify-between border-b border-[#065f46] pb-2.5">
+                        <div
+                          className="p-4 rounded-2xl border-2 border-b-4 shadow-lg space-y-3.5 animate-fadeIn"
+                          style={{
+                            backgroundColor: tPrimary,
+                            borderColor: '#58cc02',
+                            borderBottomColor: '#46a302'
+                          }}
+                        >
+                          <div className="flex items-center justify-between border-b-2 pb-2.5 flex-wrap gap-2" style={{ borderColor: tBorder }}>
                             <div className="flex items-center gap-2.5">
-                              <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-[#fbbf24] border border-amber-400/30 flex items-center justify-center font-bold text-sm">
-                                {foundTeacherByCode.name.charAt(0)}
+                              <div
+                                className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-sm shrink-0"
+                                style={{
+                                  backgroundColor: tCard,
+                                  borderColor: tAccent,
+                                  borderBottomColor: tAccentShadow,
+                                  color: tAccent
+                                }}
+                              >
+                                {(foundTeacherByCode.name || 'م').charAt(0)}
                               </div>
                               <div>
-                                <div className="font-bold text-white text-sm flex items-center gap-1.5">
-                                  <span>{foundTeacherByCode.name}</span>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                <div className="font-black text-white text-sm flex items-center gap-1.5 flex-wrap">
+                                  <span>{foundTeacherByCode.name || 'معلم'}</span>
+                                  <span className="text-[10px] px-2.5 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#89e219] border-2 border-b-2 border-[#58cc02] border-b-[#46a302] font-black">
                                     معلم مسجل
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-[#86efac]/80 font-mono">
-                                  @{foundTeacherByCode.username} {foundTeacherByCode.phone ? `• ${foundTeacherByCode.phone}` : ''}
+                                <div className="text-[11px] text-slate-300 font-mono font-bold">
+                                  @{foundTeacherByCode.username || 'teacher'} {foundTeacherByCode.phone ? `• ${foundTeacherByCode.phone}` : ''}
                                 </div>
                               </div>
                             </div>
-                            <span className="text-xs font-mono font-bold text-[#fbbf24] bg-black/30 px-2 py-1 rounded-lg border border-amber-400/30" dir="ltr">
+                            <span
+                              className="text-xs font-mono font-black px-2.5 py-1 rounded-xl border-2 border-b-[3px]"
+                              style={{
+                                backgroundColor: tCard,
+                                borderColor: tAccent,
+                                borderBottomColor: tAccentShadow,
+                                color: tAccent
+                              }}
+                              dir="ltr"
+                            >
                               {foundTeacherByCode.teacherCode || getTeacherSixDigitCode(foundTeacherByCode)}
                             </span>
                           </div>
@@ -1196,20 +1514,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           {/* Halaqah selector */}
                           {halaqahs.length > 0 && (
                             <div>
-                              <label className="block text-emerald-200 font-bold mb-1">
+                              <label className="block font-black mb-1.5" style={{ color: tText }}>
                                 تعيين الحلقة في هذا المجمع:
                               </label>
-                              <select
+                              <DuoSettingsSelect
                                 value={selectedHalaqahIdForAttach}
-                                onChange={e => setSelectedHalaqahIdForAttach(e.target.value)}
-                                className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-[#fbbf24] text-xs"
-                              >
-                                {halaqahs.map(h => (
-                                  <option key={h.id} value={h.id} className="bg-[#022c22] text-white">
-                                    {h.name}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={val => setSelectedHalaqahIdForAttach(val)}
+                                options={halaqahs.map(h => ({
+                                  value: h.id,
+                                  label: h.name,
+                                  subLabel: h.primaryTeacherName ? `المعلم: ${h.primaryTeacherName}` : undefined
+                                }))}
+                                placeholder="-- اختر الحلقة --"
+                                {...tSelectProps}
+                              />
                             </div>
                           )}
 
@@ -1217,9 +1535,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             type="button"
                             onClick={handleAttachTeacherByCode}
                             disabled={isSubmitting}
-                            className="w-full py-2.5 rounded-xl bg-[#fbbf24] hover:bg-[#f59e0b] text-[#064e3b] font-black cursor-pointer shadow-lg transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50"
+                            className="w-full py-3 rounded-2xl border-2 border-b-4 font-black cursor-pointer shadow-lg transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                            style={{
+                              backgroundColor: tAccent,
+                              borderColor: tAccent,
+                              borderBottomColor: tAccentShadow,
+                              color: tAccentText
+                            }}
                           >
-                            <CheckCircle2 className="w-4 h-4 text-[#064e3b]" />
+                            <CheckCircle2 className="w-4 h-4" />
                             <span>{isSubmitting ? 'جاري الإلحاق...' : 'إلحاق المعلم بهذا المجمع والحلقة'}</span>
                           </button>
                         </div>
@@ -1229,8 +1553,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <form onSubmit={handleSaveTeacherSubmit} className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                            الاسم الثلاثي للمعلم <span className="text-red-400">*</span>
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                            الاسم الثلاثي للمعلم <span className="text-rose-400">*</span>
                           </label>
                           <input
                             type="text"
@@ -1238,13 +1562,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={editingTeacher.name || ''}
                             onChange={e => setEditingTeacher({ ...editingTeacher, name: e.target.value })}
                             placeholder="مثال: عبد الله أحمد المنصور"
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                            className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow
+                            }}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                            اسم المستخدم للدخول <span className="text-red-400">*</span>
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                            اسم المستخدم للدخول <span className="text-rose-400">*</span>
                           </label>
                           <input
                             type="text"
@@ -1252,12 +1581,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={editingTeacher.username || ''}
                             onChange={e => setEditingTeacher({ ...editingTeacher, username: e.target.value })}
                             placeholder="مثال: abdullah"
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                            className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow
+                            }}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                             كلمة المرور للدخول
                           </label>
                           <input
@@ -1265,12 +1599,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={editingTeacher.password || ''}
                             onChange={e => setEditingTeacher({ ...editingTeacher, password: e.target.value })}
                             placeholder="كلمة المرور (الافتراضي 123)"
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                            className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow
+                            }}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                             رقم هاتف المعلم (واتساب)
                           </label>
                           <input
@@ -1278,12 +1617,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={editingTeacher.phone || ''}
                             onChange={e => setEditingTeacher({ ...editingTeacher, phone: e.target.value })}
                             placeholder="05XXXXXXXX"
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                            className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow
+                            }}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                             المسمى والصفة
                           </label>
                           <input
@@ -1291,38 +1635,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={editingTeacher.title || ''}
                             onChange={e => setEditingTeacher({ ...editingTeacher, title: e.target.value })}
                             placeholder="مثال: معلم ومحفظ / المشرف الإداري"
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                            className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: tBorder,
+                              borderBottomColor: tShadow
+                            }}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                          <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                             الرتبة والصلاحية
                           </label>
-                          <select
+                          <DuoSettingsSelect
                             value={editingTeacher.role || 'teacher'}
-                            onChange={e => setEditingTeacher({ ...editingTeacher, role: e.target.value as any })}
-                            className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
-                          >
-                            <option value="teacher">معلم حلقة</option>
-                            <option value="supervisor">مشرف مجمع</option>
-                            {isDeveloper && <option value="developer">مبرمج ومطور المنظومة</option>}
-                          </select>
+                            onChange={val => setEditingTeacher({ ...editingTeacher, role: val as any })}
+                            options={[
+                              { value: 'teacher', label: 'معلم حلقة', subLabel: 'صلاحيات التقييم والحضور لطلابه' },
+                              { value: 'supervisor', label: 'مشرف مجمع', subLabel: 'إدارة الحلقات والمعلمين والتقارير' },
+                              ...(isDeveloper
+                                ? [{ value: 'developer', label: 'مبرمج ومطور المنظومة', subLabel: 'صلاحيات المطور الكاملة' }]
+                                : [])
+                            ]}
+                            {...tSelectProps}
+                          />
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#065f46]">
+                      <div className="flex items-center justify-end gap-2.5 pt-3 border-t-2" style={{ borderColor: tBorder }}>
                         <button
                           type="button"
                           onClick={() => setEditingTeacher(null)}
-                          className="px-4 py-2 rounded-xl bg-[#064e3b] text-[#86efac] hover:bg-[#064e3b]/80 text-sm font-medium transition cursor-pointer"
+                          className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+                          style={{
+                            backgroundColor: tPrimary,
+                            borderColor: tBorder,
+                            borderBottomColor: tShadow,
+                            color: tText
+                          }}
                         >
                           إلغاء
                         </button>
                         <button
                           type="submit"
                           disabled={isSubmitting}
-                          className="px-5 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] font-bold text-sm hover:bg-amber-300 transition cursor-pointer flex items-center gap-2"
+                          className="px-5 py-2.5 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
+                          style={{
+                            backgroundColor: tAccent,
+                            borderColor: tAccent,
+                            borderBottomColor: tAccentShadow,
+                            color: tAccentText
+                          }}
                         >
                           {isSubmitting ? 'جاري الحفظ...' : 'حفظ بيانات المعلم'}
                         </button>
@@ -1332,64 +1696,104 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               ) : (
                 /* Teachers List */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {teachers.filter(t => isDeveloper || !isTeacherDeveloper(t)).map(t => (
                     <div
                       key={t.id}
                       id={`teacher-item-${t.id}`}
                       data-item-id={t.id}
-                      className="bg-[#022c22]/60 border border-[#065f46] rounded-xl p-3.5 flex items-center justify-between gap-3 hover:border-amber-400/40 transition"
+                      className="border-2 border-b-4 rounded-2xl p-4 flex items-center justify-between gap-3 transition-all shadow-sm"
+                      style={{
+                        backgroundColor: tSecondary,
+                        borderColor: tBorder,
+                        borderBottomColor: tSecondaryShadow
+                      }}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[#064e3b] border border-amber-400/20 flex items-center justify-center font-bold text-amber-300 text-sm shrink-0">
-                          {t.name.slice(0, 1)}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black text-sm shrink-0 shadow-sm"
+                          style={{
+                            backgroundColor: tPrimary,
+                            borderColor: tAccent,
+                            borderBottomColor: tAccentShadow,
+                            color: tAccent
+                          }}
+                        >
+                          {(t.name || 'م').slice(0, 1)}
                         </div>
-                        <div>
-                          <div className="font-bold text-white text-sm flex items-center gap-2">
-                            <span>{t.name}</span>
+                        <div className="min-w-0">
+                          <div className="font-black text-white text-sm flex items-center gap-2 flex-wrap">
+                            <span className="truncate">{t.name || 'معلم'}</span>
                             {t.role === 'developer' ? (
-                              <span className="text-[10px] bg-purple-900/60 border border-purple-400/40 text-purple-200 px-1.5 py-0.5 rounded">
+                              <span
+                                className="text-[10px] px-2.5 py-0.5 rounded-xl border-2 border-b-2 font-black"
+                                style={{
+                                  backgroundColor: tPrimary,
+                                  borderColor: '#a855f7',
+                                  color: '#e9d5ff'
+                                }}
+                              >
                                 مبرمج ومطور
                               </span>
                             ) : t.role === 'supervisor' ? (
-                              <span className="text-[10px] bg-amber-900/60 border border-amber-400/40 text-amber-200 px-1.5 py-0.5 rounded">
+                              <span
+                                className="text-[10px] px-2.5 py-0.5 rounded-xl border-2 border-b-2 font-black"
+                                style={{
+                                  backgroundColor: `${tAccent}20`,
+                                  borderColor: tAccent,
+                                  color: tAccent
+                                }}
+                              >
                                 مشرف
                               </span>
                             ) : (
-                              <span className="text-[10px] bg-emerald-900/60 border border-emerald-400/40 text-emerald-200 px-1.5 py-0.5 rounded">
+                              <span className="text-[10px] bg-[#58cc02]/15 border-2 border-b-2 border-[#58cc02] text-[#89e219] px-2.5 py-0.5 rounded-xl font-black">
                                 معلم
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-[#86efac]/70 flex items-center gap-2 mt-0.5">
-                            <span>@{t.username}</span>
-                            {t.phone && <span>• {t.phone}</span>}
+                          <div className="text-xs text-slate-300 font-bold flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="font-mono">@{t.username || 'user'}</span>
+                            {t.phone && <span className="font-mono">• {t.phone}</span>}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => handleStartEditTeacher(t)}
-                          className="p-1.5 text-amber-300 hover:bg-[#064e3b] rounded-lg transition cursor-pointer"
+                          className="w-9 h-9 rounded-xl border-2 border-b-[3px] flex items-center justify-center transition-all cursor-pointer active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                          style={{
+                            backgroundColor: tPrimary,
+                            borderColor: tBorder,
+                            borderBottomColor: tShadow,
+                            color: tAccent
+                          }}
                           title="تعديل"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         {deleteTeacherId === t.id ? (
-                          <div className="flex items-center gap-1 bg-red-950/80 px-2 py-1 rounded-lg border border-red-500">
+                          <div
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-b-[3px]"
+                            style={{
+                              backgroundColor: '#ff4b4b20',
+                              borderColor: '#ff4b4b',
+                              borderBottomColor: '#cc2e2e'
+                            }}
+                          >
                             <button
                               type="button"
                               onClick={() => handleConfirmDeleteTeacher(t.id)}
-                              className="text-xs text-red-300 font-bold hover:underline cursor-pointer"
+                              className="text-xs text-[#ff6b6b] font-black hover:underline cursor-pointer"
                             >
                               تأكيد
                             </button>
                             <button
                               type="button"
                               onClick={() => setDeleteTeacherId(null)}
-                              className="text-xs text-white hover:underline cursor-pointer"
+                              className="text-xs text-white font-bold hover:underline cursor-pointer"
                             >
                               إلغاء
                             </button>
@@ -1398,7 +1802,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setDeleteTeacherId(t.id)}
-                            className="p-1.5 text-red-400 hover:bg-[#064e3b] rounded-lg transition cursor-pointer"
+                            className="w-9 h-9 rounded-xl border-2 border-b-[3px] flex items-center justify-center text-rose-400 transition-all cursor-pointer active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                            style={{
+                              backgroundColor: tPrimary,
+                              borderColor: '#ff4b4b55',
+                              borderBottomColor: '#cc2e2e88'
+                            }}
                             title="حذف"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1415,16 +1824,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 2: HALAQAHS */}
           {activeTab === 'halaqahs' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="font-bold text-white text-base">قائمة الحلقات القرآنية</h3>
-                  <p className="text-xs text-[#86efac]/80">إضافة وتعديل الحلقات وتعيين المعلم المشرف</p>
+                  <h3 className="font-black text-white text-base font-heading">قائمة الحلقات القرآنية</h3>
+                  <p className="text-xs font-bold opacity-80" style={{ color: tText }}>
+                    إضافة وتعديل الحلقات وتعيين المعلم المشرف
+                  </p>
                 </div>
                 {!editingHalaqah && (
                   <button
                     type="button"
                     onClick={handleStartAddHalaqah}
-                    className="flex items-center gap-2 bg-[#fbbf24] text-[#064e3b] font-bold px-3.5 py-2 rounded-xl hover:bg-amber-300 transition text-sm cursor-pointer shadow-sm"
+                    className="flex items-center gap-2 font-black px-4 py-2.5 rounded-2xl border-2 border-b-4 transition-all text-xs sm:text-sm cursor-pointer shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                    style={{
+                      backgroundColor: tAccent,
+                      borderColor: tAccent,
+                      borderBottomColor: tAccentShadow,
+                      color: tAccentText
+                    }}
                   >
                     <Plus className="w-4 h-4" />
                     <span>إضافة حلقة جديدة</span>
@@ -1434,16 +1851,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {editingHalaqah ? (
                 /* Halaqah Form */
-                <form onSubmit={handleSaveHalaqahSubmit} className="bg-[#022c22]/70 border border-[#065f46] rounded-xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#065f46]">
-                    <h4 className="font-bold text-amber-300 text-sm flex items-center gap-2">
+                <form
+                  onSubmit={handleSaveHalaqahSubmit}
+                  className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-4 shadow-md"
+                  style={{
+                    backgroundColor: tSecondary,
+                    borderColor: tBorder,
+                    borderBottomColor: tSecondaryShadow
+                  }}
+                >
+                  <div className="flex items-center justify-between pb-3 border-b-2" style={{ borderColor: tBorder }}>
+                    <h4 className="font-black text-sm flex items-center gap-2" style={{ color: tAccent }}>
                       <Layers className="w-4 h-4" />
-                      {isNewHalaqah ? 'إضافة حلقة قرآنية جديدة' : 'تعديل بيانات الحلقة'}
+                      <span>{isNewHalaqah ? 'إضافة حلقة قرآنية جديدة' : 'تعديل بيانات الحلقة'}</span>
                     </h4>
                     <button
                       type="button"
                       onClick={() => setEditingHalaqah(null)}
-                      className="text-xs text-[#86efac]/70 hover:text-white"
+                      className="px-3 py-1.5 rounded-xl border-2 border-b-[3px] text-xs font-black cursor-pointer transition-all active:translate-y-[1px] active:border-b-2"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow,
+                        color: tText
+                      }}
                     >
                       إلغاء
                     </button>
@@ -1451,8 +1882,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                        اسم الحلقة القرآنية <span className="text-red-400">*</span>
+                      <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                        اسم الحلقة القرآنية <span className="text-rose-400">*</span>
                       </label>
                       <input
                         type="text"
@@ -1460,37 +1891,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={editingHalaqah.name || ''}
                         onChange={e => setEditingHalaqah({ ...editingHalaqah, name: e.target.value })}
                         placeholder="مثال: حلقة ابن كثير"
-                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                        className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tBorder,
+                          borderBottomColor: tShadow
+                        }}
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                         المعلم المشرف على الحلقة
                       </label>
-                      <select
+                      <DuoSettingsSelect
                         value={editingHalaqah.primaryTeacherName || ''}
-                        onChange={e => setEditingHalaqah({ ...editingHalaqah, primaryTeacherName: e.target.value })}
-                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
-                      >
-                        <option value="">-- اختر المعلم --</option>
-                        {teachers.map(t => (
-                          <option key={t.id} value={t.name}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={val => setEditingHalaqah({ ...editingHalaqah, primaryTeacherName: val })}
+                        options={[
+                          { value: '', label: '-- اختر المعلم --' },
+                          ...teachers.map(t => ({
+                            value: t.name || '',
+                            label: t.name || 'معلم',
+                            subLabel: t.username ? `@${t.username}` : undefined
+                          }))
+                        ]}
+                        placeholder="-- اختر المعلم --"
+                        {...tSelectProps}
+                      />
                     </div>
 
                     {complexes.length > 0 && (
                       <div>
-                        <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                        <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                           المجمع القرآني التابعة له الحلقة
                         </label>
-                        <select
+                        <DuoSettingsSelect
                           value={editingHalaqah.complexId || activeComplex?.id || complexes[0]?.id || ''}
-                          onChange={e => {
-                            const cId = e.target.value;
+                          onChange={cId => {
                             const targetC = complexes.find(c => c.id === cId);
                             setEditingHalaqah({
                               ...editingHalaqah,
@@ -1498,21 +1935,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               complexName: targetC?.name || editingHalaqah.complexName
                             });
                           }}
-                          className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-[#fbbf24] font-bold focus:outline-none focus:border-amber-400 cursor-pointer"
-                        >
-                          {complexes.map(c => (
-                            <option key={c.id} value={c.id} className="bg-[#064e3b] text-white">
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                          options={complexes.map(c => ({
+                            value: c.id,
+                            label: c.name
+                          }))}
+                          {...tSelectProps}
+                        />
                       </div>
                     )}
 
-                    {/* Halaqah Capacity (السعة الاستيعابية للطلاب) */}
+                    {/* Halaqah Capacity */}
                     <div>
-                      <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                        السعة الاستيعابية للحلقة (الحد الأقصى للطلاب) <span className="text-amber-300">*</span>
+                      <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                        السعة الاستيعابية للحلقة (الحد الأقصى للطلاب) <span style={{ color: tAccent }}>*</span>
                       </label>
                       <input
                         type="number"
@@ -1521,9 +1956,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={editingHalaqah.capacity !== undefined ? editingHalaqah.capacity : 15}
                         onChange={e => setEditingHalaqah({ ...editingHalaqah, capacity: Math.max(1, parseInt(e.target.value) || 15) })}
                         placeholder="15"
-                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-amber-400"
+                        className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-mono font-black focus:outline-none"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tBorder,
+                          borderBottomColor: tShadow
+                        }}
                       />
-                      <span className="text-[10px] text-slate-300 mt-1 block">
+                      <span className="text-[10px] text-slate-300 font-bold mt-1 block">
                         إذا اكتمل عدد الطلاب سيظهر تنبيه التعبئة الكاملة وتوجيه الطلاب لقائمة الانتظار.
                       </span>
                     </div>
@@ -1531,13 +1971,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {/* Mosque Selection for Multi-Mosque System */}
                     {activeComplex?.mosques && activeComplex.mosques.length > 0 && (
                       <div>
-                        <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                        <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                           المسجد التابعة له الحلقة في المنظومة
                         </label>
-                        <select
+                        <DuoSettingsSelect
                           value={editingHalaqah.mosqueId || ''}
-                          onChange={e => {
-                            const mId = e.target.value;
+                          onChange={mId => {
                             const mObj = activeComplex.mosques?.find(m => m.id === mId);
                             setEditingHalaqah({
                               ...editingHalaqah,
@@ -1545,20 +1984,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               mosqueName: mObj?.name
                             });
                           }}
-                          className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-amber-400 cursor-pointer"
-                        >
-                          <option value="">-- اختياري: غير محدد بمسجد معين --</option>
-                          {activeComplex.mosques.map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.name} {m.address ? `(${m.address})` : ''}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: '', label: '-- اختياري: غير محدد بمسجد معين --' },
+                            ...activeComplex.mosques.map(m => ({
+                              value: m.id,
+                              label: m.name,
+                              subLabel: m.address || undefined
+                            }))
+                          ]}
+                          placeholder="-- اختياري: غير محدد بمسجد معين --"
+                          {...tSelectProps}
+                        />
                       </div>
                     )}
 
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                      <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                         وصف أو ملاحظات عن الحلقة
                       </label>
                       <input
@@ -1566,52 +2007,72 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={editingHalaqah.description || ''}
                         onChange={e => setEditingHalaqah({ ...editingHalaqah, description: e.target.value })}
                         placeholder="مثال: حلقة المتقدمين في الحفظ والمراجعة"
-                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                        className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tBorder,
+                          borderBottomColor: tShadow
+                        }}
                       />
                     </div>
 
                     {/* Online Halaqah Settings */}
-                    <div className="bg-[#022c22]/90 border border-[#065f46] rounded-2xl p-4 space-y-3 sm:col-span-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                    <div
+                      className="border-2 border-b-4 rounded-2xl p-4 space-y-3 sm:col-span-2"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: editingHalaqah.isOnline ? tAccent : tBorder,
+                        borderBottomColor: editingHalaqah.isOnline ? tAccentShadow : tShadow
+                      }}
+                    >
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={editingHalaqah.isOnline || false}
                           onChange={e => setEditingHalaqah({ ...editingHalaqah, isOnline: e.target.checked })}
-                          className="w-4 h-4 rounded text-amber-400 focus:ring-amber-400"
+                          className="w-4 h-4 rounded-lg cursor-pointer"
+                          style={{ accentColor: tAccent }}
                         />
-                        <span className="text-xs font-black text-amber-300">هذه الحلقة أونلاين / عن بعد عبر Google Meet</span>
+                        <span className="text-xs font-black" style={{ color: tAccent }}>
+                          هذه الحلقة أونلاين / عن بعد عبر Google Meet
+                        </span>
                       </label>
 
                       {editingHalaqah.isOnline && (
-                        <div className="space-y-3 pt-2 border-t border-[#065f46]">
-                          <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-3 pt-3 border-t-2" style={{ borderColor: tBorder }}>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت بدء الحلقة اليومي:</label>
-                              <input
-                                type="time"
+                              <label className="text-[11px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: tText }}>
+                                <Clock className="w-3.5 h-3.5" style={{ color: tAccent }} />
+                                <span>وقت بدء الحلقة اليومي:</span>
+                              </label>
+                              <DuoTimeSelector
                                 value={editingHalaqah.onlineStartTime || '16:00'}
-                                onChange={e => setEditingHalaqah({ ...editingHalaqah, onlineStartTime: e.target.value })}
-                                className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                                onChange={val => setEditingHalaqah({ ...editingHalaqah, onlineStartTime: val })}
+                                {...tSelectProps}
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] text-emerald-200 font-bold mb-1">وقت انتهاء الحلقة اليومي:</label>
-                              <input
-                                type="time"
+                              <label className="text-[11px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: tText }}>
+                                <Clock className="w-3.5 h-3.5" style={{ color: tAccent }} />
+                                <span>وقت انتهاء الحلقة اليومي:</span>
+                              </label>
+                              <DuoTimeSelector
                                 value={editingHalaqah.onlineEndTime || '18:00'}
-                                onChange={e => setEditingHalaqah({ ...editingHalaqah, onlineEndTime: e.target.value })}
-                                className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                                onChange={val => setEditingHalaqah({ ...editingHalaqah, onlineEndTime: val })}
+                                {...tSelectProps}
                               />
                             </div>
                           </div>
                           <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-[11px] text-emerald-200 font-bold">رابط Google Meet المباشر:</label>
+                            <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                              <label className="text-[11px] font-black" style={{ color: tText }}>رابط Google Meet المباشر:</label>
                               <a
                                 href="https://meet.google.com/new"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[10px] text-amber-300 hover:underline font-bold flex items-center gap-1"
+                                className="text-[11px] hover:underline font-black flex items-center gap-1"
+                                style={{ color: tAccent }}
                                 title="فتح صفحة إنشاء اجتماع في Google Meet مباشرة"
                               >
                                 إنشاء في Google Meet مباشرة ↗
@@ -1622,14 +2083,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               placeholder="https://meet.google.com/abc-defg-hij"
                               value={editingHalaqah.meetingUri || ''}
                               onChange={e => setEditingHalaqah({ ...editingHalaqah, meetingUri: e.target.value })}
-                              className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400 ltr text-left"
+                              className="w-full border-2 border-b-4 rounded-2xl px-3 py-2 text-xs text-white font-mono outline-none ltr text-left"
+                              style={{
+                                backgroundColor: tSecondary,
+                                borderColor: tBorder,
+                                borderBottomColor: tShadow
+                              }}
                             />
                           </div>
 
                           {/* Review Links inside Settings Modal */}
-                          <div className="pt-2 border-t border-[#065f46] space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-sky-300">
+                          <div className="pt-3 border-t-2 space-y-2.5" style={{ borderColor: tBorder }}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-xs font-black" style={{ color: tAccent }}>
                                 روابط المراجعة الإضافية ({(editingHalaqah.reviewLinks || []).length})
                               </span>
                               <button
@@ -1653,7 +2119,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     ]
                                   });
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-sky-500 text-slate-950 font-black text-[11px] cursor-pointer hover:bg-sky-400"
+                                className="px-3 py-1.5 rounded-xl border-2 border-b-[3px] font-black text-[11px] cursor-pointer transition-all active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                                style={{
+                                  backgroundColor: tAccent,
+                                  borderColor: tAccent,
+                                  borderBottomColor: tAccentShadow,
+                                  color: tAccentText
+                                }}
                               >
                                 + أضف رابط مراجعة
                               </button>
@@ -1662,8 +2134,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             {(editingHalaqah.reviewLinks || []).map((link, idx) => {
                               const isEnabled = link.isEnabled !== false;
                               return (
-                                <div key={link.id || idx} className="p-2.5 rounded-xl bg-black/25 border border-white/10 space-y-2">
-                                  <div className="flex items-center gap-2">
+                                <div
+                                  key={link.id || idx}
+                                  className="p-3 rounded-2xl border-2 border-b-[3px] space-y-2"
+                                  style={{
+                                    backgroundColor: tSecondary,
+                                    borderColor: tBorder,
+                                    borderBottomColor: tShadow
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                                     <label className="flex items-center gap-1.5 text-[11px] font-black cursor-pointer shrink-0">
                                       <input
                                         type="checkbox"
@@ -1679,7 +2159,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         }}
                                         className="w-4 h-4 rounded accent-[#58cc02]"
                                       />
-                                      <span className={isEnabled ? 'text-[#58cc02]' : 'text-slate-400'}>
+                                      <span className={isEnabled ? 'text-[#89e219]' : 'text-slate-400'}>
                                         {isEnabled ? 'مفعل' : 'غير مفعل'}
                                       </span>
                                     </label>
@@ -1695,7 +2175,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         })
                                       }
                                       placeholder={`رابط المراجعة ${idx + 1}`}
-                                      className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2 py-1 text-xs text-white font-bold outline-none focus:border-sky-400"
+                                      className="flex-1 min-w-[140px] border-2 rounded-xl px-2.5 py-1.5 text-xs text-white font-bold outline-none"
+                                      style={{
+                                        backgroundColor: tPrimary,
+                                        borderColor: tBorder
+                                      }}
                                     />
                                     <button
                                       type="button"
@@ -1705,7 +2189,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                           reviewLinks: (editingHalaqah.reviewLinks || []).filter((_, i) => i !== idx)
                                         })
                                       }
-                                      className="px-2 py-1 rounded-lg bg-red-500/20 text-red-300 text-[10px] font-bold hover:bg-red-500/30 cursor-pointer"
+                                      className="px-2.5 py-1.5 rounded-xl border-2 border-b-[3px] bg-[#ff4b4b]/15 border-[#ff4b4b] border-b-[#cc2e2e] text-rose-200 text-[10px] font-black cursor-pointer active:translate-y-[1px] active:border-b-2"
                                     >
                                       حذف
                                     </button>
@@ -1723,13 +2207,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         })
                                       }
                                       placeholder="https://meet.google.com/abc-defg-hij"
-                                      className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-sky-400 ltr text-left"
+                                      className="flex-1 border-2 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none ltr text-left"
+                                      style={{
+                                        backgroundColor: tPrimary,
+                                        borderColor: tBorder
+                                      }}
                                     />
                                     <a
                                       href="https://meet.google.com/new"
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-400/50 text-sky-300 text-[10px] font-bold hover:bg-sky-500/30 shrink-0"
+                                      className="px-3 py-1.5 rounded-xl border-2 border-b-[3px] text-[10px] font-black shrink-0 hover:brightness-110"
+                                      style={{
+                                        backgroundColor: tPrimary,
+                                        borderColor: tAccent,
+                                        borderBottomColor: tAccentShadow,
+                                        color: tAccent
+                                      }}
                                     >
                                       Google Meet ↗
                                     </a>
@@ -1743,18 +2237,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#065f46]">
+                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t-2" style={{ borderColor: tBorder }}>
                     <button
                       type="button"
                       onClick={() => setEditingHalaqah(null)}
-                      className="px-4 py-2 rounded-xl bg-[#064e3b] text-[#86efac] hover:bg-[#064e3b]/80 text-sm font-medium transition cursor-pointer"
+                      className="px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs sm:text-sm font-black transition-all cursor-pointer active:translate-y-[2px] active:border-b-2"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow,
+                        color: tText
+                      }}
                     >
                       إلغاء
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-5 py-2 rounded-xl bg-[#fbbf24] text-[#064e3b] font-bold text-sm hover:bg-amber-300 transition cursor-pointer flex items-center gap-2"
+                      className="px-5 py-2.5 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
+                      style={{
+                        backgroundColor: tAccent,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccentText
+                      }}
                     >
                       {isSubmitting ? 'جاري الحفظ...' : 'حفظ بيانات الحلقة'}
                     </button>
@@ -1762,7 +2268,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </form>
               ) : (
                 /* Halaqahs List */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {halaqahs.map(h => {
                     const halaqahStudentsCount = students.filter(s => s.halaqahId === h.id).length;
                     const isActive = activeHalaqahId === h.id;
@@ -1772,71 +2278,107 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         key={h.id}
                         id={`halaqah-item-${h.id}`}
                         data-item-id={h.id}
-                        className={`bg-[#022c22]/60 border rounded-xl p-4 flex flex-col justify-between gap-3 transition ${
-                          isActive
-                            ? 'border-amber-400 bg-[#064e3b]/50 shadow-md'
-                            : 'border-[#065f46] hover:border-amber-400/40'
-                        }`}
+                        className="border-2 border-b-4 rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all shadow-sm"
+                        style={{
+                          backgroundColor: tSecondary,
+                          borderColor: isActive ? tAccent : tBorder,
+                          borderBottomColor: isActive ? tAccentShadow : tSecondaryShadow
+                        }}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="font-bold text-white text-base flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-black text-white text-base flex items-center gap-2 flex-wrap">
                               <span>{h.name}</span>
                               {isActive && (
-                                <span className="text-[10px] bg-amber-400 text-[#064e3b] font-extrabold px-2 py-0.5 rounded-full">
+                                <span
+                                  className="text-[10px] font-black px-2.5 py-0.5 rounded-xl border-2 border-b-2"
+                                  style={{
+                                    backgroundColor: tAccent,
+                                    borderColor: tAccent,
+                                    borderBottomColor: tAccentShadow,
+                                    color: tAccentText
+                                  }}
+                                >
                                   الحلقة النشطة حالياً
                                 </span>
                               )}
                             </div>
                             {h.description && (
-                              <p className="text-xs text-[#86efac]/70 mt-1">{h.description}</p>
+                              <p className="text-xs text-slate-300 font-bold mt-1">{h.description}</p>
                             )}
-                            <div className="text-xs text-amber-200/90 mt-2 flex items-center flex-wrap gap-2">
-                              <span className="bg-[#065f46]/80 text-[#86efac] text-[11px] px-2 py-0.5 rounded-md border border-[#065f46]">
+                            <div className="text-xs mt-2.5 flex items-center flex-wrap gap-2">
+                              <span
+                                className="text-[11px] px-2.5 py-1 rounded-xl border-2 border-b-2 font-black"
+                                style={{
+                                  backgroundColor: tPrimary,
+                                  borderColor: tBorder,
+                                  color: tText
+                                }}
+                              >
                                 المجمع: {h.complexName || activeComplex?.name || 'المجمع الرئيسي'}
                               </span>
                               {h.mosqueName && (
-                                <span className="bg-[#fbbf24]/20 text-[#fbbf24] text-[11px] px-2 py-0.5 rounded-md border border-[#fbbf24]/30 font-bold">
+                                <span
+                                  className="text-[11px] px-2.5 py-1 rounded-xl border-2 border-b-2 font-black"
+                                  style={{
+                                    backgroundColor: `${tAccent}20`,
+                                    borderColor: tAccent,
+                                    color: tAccent
+                                  }}
+                                >
                                   جامع: {h.mosqueName}
                                 </span>
                               )}
-                              <span>المعلم: {h.primaryTeacherName || 'غير محدد'}</span>
-                              <span className="font-bold">
+                              <span className="text-slate-200 font-bold">المعلم: {h.primaryTeacherName || 'غير محدد'}</span>
+                              <span className="font-black" style={{ color: tAccent }}>
                                 • الطلاب: {halaqahStudentsCount} / {h.capacity || 15}
                               </span>
                             </div>
 
                             {/* Full Capacity Warning Banner */}
                             {halaqahStudentsCount >= (h.capacity || 15) && (
-                              <div className="mt-2.5 p-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-black flex items-center gap-1.5 shadow-sm">
-                                <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                              <div className="mt-2.5 p-2.5 rounded-2xl bg-[#ff4b4b]/15 border-2 border-b-[3px] border-[#ff4b4b] border-b-[#cc2e2e] text-rose-200 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                                <AlertCircle className="w-4 h-4 text-[#ff6b6b] shrink-0" />
                                 <span>لقد وصلت الحلقة إلى التعبئة الكاملة للطلاب</span>
                               </div>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               type="button"
                               onClick={() => handleStartEditHalaqah(h)}
-                              className="p-1.5 text-amber-300 hover:bg-[#064e3b] rounded-lg transition cursor-pointer"
+                              className="w-9 h-9 rounded-xl border-2 border-b-[3px] flex items-center justify-center transition-all cursor-pointer active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: tPrimary,
+                                borderColor: tBorder,
+                                borderBottomColor: tShadow,
+                                color: tAccent
+                              }}
                               title="تعديل"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             {deleteHalaqahId === h.id ? (
-                              <div className="flex items-center gap-1 bg-red-950/80 px-2 py-1 rounded-lg border border-red-500">
+                              <div
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-b-[3px]"
+                                style={{
+                                  backgroundColor: '#ff4b4b20',
+                                  borderColor: '#ff4b4b',
+                                  borderBottomColor: '#cc2e2e'
+                                }}
+                              >
                                 <button
                                   type="button"
                                   onClick={() => handleConfirmDeleteHalaqah(h.id)}
-                                  className="text-xs text-red-300 font-bold hover:underline cursor-pointer"
+                                  className="text-xs text-[#ff6b6b] font-black hover:underline cursor-pointer"
                                 >
                                   تأكيد
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setDeleteHalaqahId(null)}
-                                  className="text-xs text-white hover:underline cursor-pointer"
+                                  className="text-xs text-white font-bold hover:underline cursor-pointer"
                                 >
                                   إلغاء
                                 </button>
@@ -1845,7 +2387,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setDeleteHalaqahId(h.id)}
-                                className="p-1.5 text-red-400 hover:bg-[#064e3b] rounded-lg transition cursor-pointer"
+                                className="w-9 h-9 rounded-xl border-2 border-b-[3px] flex items-center justify-center text-rose-400 transition-all cursor-pointer active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                                style={{
+                                  backgroundColor: tPrimary,
+                                  borderColor: '#ff4b4b55',
+                                  borderBottomColor: '#cc2e2e88'
+                                }}
                                 title="حذف"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1855,11 +2402,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
 
                         {onSwitchActiveHalaqah && !isActive && (
-                          <div className="pt-2 border-t border-[#065f46]/50 flex justify-end">
+                          <div className="pt-2.5 border-t-2 flex justify-end" style={{ borderColor: tBorder }}>
                             <button
                               type="button"
                               onClick={() => onSwitchActiveHalaqah(h.id)}
-                              className="text-xs bg-[#064e3b] hover:bg-amber-400 hover:text-[#064e3b] text-amber-300 font-semibold px-3 py-1.5 rounded-lg border border-amber-400/30 transition cursor-pointer"
+                              className="text-xs font-black px-3.5 py-2 rounded-xl border-2 border-b-[3px] transition-all cursor-pointer active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                              style={{
+                                backgroundColor: tPrimary,
+                                borderColor: tAccent,
+                                borderBottomColor: tAccentShadow,
+                                color: tAccent
+                              }}
                             >
                               التبديل إلى هذه الحلقة
                             </button>
@@ -1876,70 +2429,103 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 3: STUDENT TRANSFERS */}
           {activeTab === 'transfers' && (
             <div className="space-y-4">
-              <div className="bg-[#022c22]/70 border border-[#065f46] rounded-xl p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div
+                className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-4 shadow-md"
+                style={{
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
+                }}
+              >
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                   <div>
-                    <h3 className="font-bold text-white text-base">نقل الطلاب وتوزيعهم بين الحلقات</h3>
-                    <p className="text-xs text-[#86efac]/80">حدد الطلاب واختر الحلقة الوجهة للنقل الفوري</p>
+                    <h3 className="font-black text-white text-base font-heading">نقل الطلاب وتوزيعهم بين الحلقات</h3>
+                    <p className="text-xs font-bold opacity-80" style={{ color: tText }}>
+                      حدد الطلاب واختر الحلقة الوجهة للنقل الفوري
+                    </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={targetDestinationHalaqahId}
-                      onChange={e => setTargetDestinationHalaqahId(e.target.value)}
-                      className="bg-[#064e3b] border border-amber-400/40 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none"
-                    >
-                      <option value="">-- اختر الحلقة الوجهة --</option>
-                      {halaqahs.map(h => (
-                        <option key={h.id} value={h.id}>
-                          {h.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto md:min-w-[260px]">
+                    <div className="flex-1 sm:min-w-[180px]">
+                      <DuoSettingsSelect
+                        value={targetDestinationHalaqahId}
+                        onChange={val => setTargetDestinationHalaqahId(val)}
+                        options={[
+                          { value: '', label: '-- اختر الحلقة الوجهة --' },
+                          ...halaqahs.map(h => ({
+                            value: h.id,
+                            label: h.name,
+                            subLabel: h.primaryTeacherName ? `المعلم: ${h.primaryTeacherName}` : undefined
+                          }))
+                        ]}
+                        placeholder="-- اختر الحلقة الوجهة --"
+                        {...tSelectProps}
+                      />
+                    </div>
 
                     <button
                       type="button"
                       disabled={isSubmitting || selectedStudentIds.length === 0 || !targetDestinationHalaqahId}
                       onClick={handleExecuteTransfer}
-                      className="flex items-center gap-1.5 bg-[#fbbf24] disabled:bg-gray-600 disabled:text-gray-400 text-[#064e3b] font-bold px-4 py-2 rounded-xl text-xs hover:bg-amber-300 transition cursor-pointer shadow-sm shrink-0"
+                      className="flex items-center justify-center gap-1.5 font-black px-4 py-2.5 rounded-2xl border-2 border-b-4 text-xs transition-all cursor-pointer shadow-md shrink-0 active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: tAccent,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccentText
+                      }}
                     >
-                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      <ArrowRightLeft className="w-4 h-4" />
                       <span>نقل ({selectedStudentIds.length}) طالب</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Filter and Search */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#065f46]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t-2" style={{ borderColor: tBorder }}>
                   <div className="relative">
-                    <Search className="w-4 h-4 text-[#86efac]/60 absolute right-3 top-1/2 -translate-y-1/2" />
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       value={transferSearch}
                       onChange={e => setTransferSearch(e.target.value)}
                       placeholder="بحث باسم الطالب..."
-                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl pr-9 pl-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl pr-10 pl-3 py-2.5 text-xs text-white font-bold focus:outline-none"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
+                      }}
                     />
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <select
-                      value={transferFilterHalaqah}
-                      onChange={e => setTransferFilterHalaqah(e.target.value)}
-                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
-                    >
-                      <option value="all">كل الحلقات المصدر</option>
-                      {halaqahs.map(h => (
-                        <option key={h.id} value={h.id}>
-                          {h.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex-1">
+                      <DuoSettingsSelect
+                        value={transferFilterHalaqah}
+                        onChange={val => setTransferFilterHalaqah(val)}
+                        options={[
+                          { value: 'all', label: 'كل الحلقات المصدر' },
+                          ...halaqahs.map(h => ({
+                            value: h.id,
+                            label: h.name
+                          }))
+                        ]}
+                        compact
+                        {...tSelectProps}
+                      />
+                    </div>
 
                     <button
                       type="button"
                       onClick={toggleSelectAllFiltered}
-                      className="px-3 py-2 bg-[#064e3b] hover:bg-[#064e3b]/80 rounded-xl text-xs text-amber-300 font-semibold border border-[#065f46] whitespace-nowrap cursor-pointer"
+                      className="px-3.5 py-2 rounded-2xl border-2 border-b-4 text-xs font-black whitespace-nowrap cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccent
+                      }}
                     >
                       {selectedStudentIds.length === filteredTransferStudents.length && filteredTransferStudents.length > 0
                         ? 'إلغاء التحديد'
@@ -1950,37 +2536,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* Students Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[45vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-[45vh] overflow-y-auto pr-1 custom-scrollbar">
                 {filteredTransferStudents.map(st => {
                   const isSelected = selectedStudentIds.includes(st.id);
                   const currentHalaqah = halaqahs.find(h => h.id === st.halaqahId);
 
                   return (
-                    <div
+                    <button
                       key={st.id}
+                      type="button"
                       onClick={() => toggleSelectStudent(st.id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition ${
+                      className="p-3.5 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-2 cursor-pointer transition-all text-right active:translate-y-[2px] active:border-b-2 hover:brightness-110"
+                      style={
                         isSelected
-                          ? 'bg-amber-400/20 border-amber-400 text-white'
-                          : 'bg-[#022c22]/60 border-[#065f46] hover:border-amber-400/30'
-                      }`}
+                          ? {
+                              backgroundColor: `${tAccent}22`,
+                              borderColor: tAccent,
+                              borderBottomColor: tAccentShadow,
+                              color: '#ffffff'
+                            }
+                          : {
+                              backgroundColor: tSecondary,
+                              borderColor: tBorder,
+                              borderBottomColor: tSecondaryShadow,
+                              color: tText
+                            }
+                      }
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="text-amber-300">
-                          {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-amber-400" />
-                          ) : (
-                            <Square className="w-4 h-4 text-[#86efac]/50" />
-                          )}
+                        <div className="shrink-0" style={{ color: isSelected ? tAccent : '#94a3b8' }}>
+                          {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                         </div>
                         <div className="truncate">
-                          <div className="font-bold text-xs truncate">{st.name}</div>
-                          <div className="text-[11px] text-[#86efac]/70 truncate">
+                          <div className="font-black text-xs text-white truncate">{st.name}</div>
+                          <div className="text-[11px] text-slate-300 font-bold truncate">
                             الحلقة الحالية: {currentHalaqah?.name || 'غير محدد'}
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -1992,17 +2586,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <form onSubmit={handleSaveGeneralSettings} className="space-y-5">
               {/* Basic Organization Info */}
               <div
-                className="border rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm"
+                className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-4 shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.cardColor || '#064e3b'}80`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
                 }}
               >
                 <h3
-                  className="font-bold text-base flex items-center gap-2 pb-2 border-b"
+                  className="font-black text-base font-heading flex items-center gap-2 pb-2.5 border-b-2"
                   style={{
-                    color: themeColors.accentColor || '#fbbf24',
-                    borderColor: `${themeColors.secondaryColor || '#065f46'}80`
+                    color: tAccent,
+                    borderColor: tBorder
                   }}
                 >
                   <Sliders className="w-4 h-4" />
@@ -2011,7 +2606,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                       اسم المجمع القرآني
                     </label>
                     <input
@@ -2019,16 +2614,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={generalForm.complexName}
                       onChange={e => setGeneralForm({ ...generalForm, complexName: e.target.value })}
                       placeholder="مثال: مجمع النور القرآني"
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
                       style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                       اسم الحلقة الافتراضية
                     </label>
                     <input
@@ -2036,190 +2632,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={generalForm.halaqahName}
                       onChange={e => setGeneralForm({ ...generalForm, halaqahName: e.target.value })}
                       placeholder="مثال: حلقة الإمام الشاطبي"
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none"
+                      className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
                       style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                       أيام العمل الأسبوعية
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={7}
-                      value={generalForm.workDaysPerWeek}
-                      onChange={e => setGeneralForm({ ...generalForm, workDaysPerWeek: Number(e.target.value) })}
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none"
-                      style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
-                      }}
+                    <DuoSettingsSelect
+                      value={String(generalForm.workDaysPerWeek)}
+                      onChange={val => setGeneralForm({ ...generalForm, workDaysPerWeek: Number(val) })}
+                      options={[1, 2, 3, 4, 5, 6, 7].map(d => ({
+                        value: String(d),
+                        label: d === 1 ? 'يوم واحد أسبوعياً' : d === 2 ? 'يومان أسبوعياً' : `${d} أيام أسبوعياً`
+                      }))}
+                      {...tSelectProps}
                     />
                   </div>
 
                   {/* ONLY DEVELOPER CAN TOGGLE PUBLIC STUDENT REGISTRATION */}
                   {isDeveloper && (
-                    <div className="flex items-center gap-3 pt-4 sm:pt-6">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={generalForm.allowStudentRegistration}
-                          onChange={e => setGeneralForm({ ...generalForm, allowStudentRegistration: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-400"></div>
-                        <span className="mr-3 text-xs font-bold" style={{ color: themeColors.textColor || '#86efac' }}>
-                          إتاحة تسجيل الطلاب الجدد من البوابة العامة (صلاحية المبرمج)
+                    <div className="flex items-center gap-3 pt-2 sm:pt-6">
+                      <button
+                        type="button"
+                        onClick={() => setGeneralForm({ ...generalForm, allowStudentRegistration: !generalForm.allowStudentRegistration })}
+                        className="w-full p-3 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 cursor-pointer transition-all active:translate-y-[2px] active:border-b-2"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: generalForm.allowStudentRegistration ? tAccent : tBorder,
+                          borderBottomColor: generalForm.allowStudentRegistration ? tAccentShadow : tShadow
+                        }}
+                      >
+                        <span className="text-xs font-black text-right" style={{ color: tText }}>
+                          إتاحة تسجيل الطلاب الجدد من البوابة العامة
                         </span>
-                      </label>
+                        <span
+                          className="px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0"
+                          style={
+                            generalForm.allowStudentRegistration
+                              ? { backgroundColor: '#58cc02', color: '#ffffff' }
+                              : { backgroundColor: tSecondary, color: '#94a3b8' }
+                          }
+                        >
+                          {generalForm.allowStudentRegistration ? 'مفعل' : 'مغلق'}
+                        </span>
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Attendance & Absence Points Configuration (نقاط الحضور والغياب) */}
-              <div
-                className="border rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm"
-                style={{
-                  backgroundColor: `${themeColors.cardColor || '#064e3b'}80`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
-                }}
-              >
-                <div
-                  className="flex items-center justify-between pb-2 border-b flex-wrap gap-2"
-                  style={{ borderColor: `${themeColors.secondaryColor || '#065f46'}80` }}
-                >
-                  <h3
-                    className="font-bold text-base flex items-center gap-2"
-                    style={{ color: themeColors.accentColor || '#fbbf24' }}
-                  >
-                    <Award className="w-4 h-4" />
-                    <span>قواعد واحتساب نقاط الحضور والغياب للطلاب</span>
-                  </h3>
-                  <span className="text-[11px] opacity-80" style={{ color: themeColors.textColor || '#86efac' }}>
-                    تُحسب هذه النقاط تلقائياً في رصيد الطالب التراكمي وتظهر في لوحة الشرف
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={generalForm.enableAttendancePoints}
-                      onChange={e => setGeneralForm({ ...generalForm, enableAttendancePoints: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-400"></div>
-                    <span className="mr-3 text-xs font-bold" style={{ color: themeColors.textColor || '#86efac' }}>
-                      تفعيل احتساب نقاط الحضور والغياب في رصيد الطالب
-                    </span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
-                      نقاط الحضور اليومي:
-                    </label>
-                    <input
-                      type="number"
-                      value={generalForm.presentPoints}
-                      onChange={e => setGeneralForm({ ...generalForm, presentPoints: Number(e.target.value) })}
-                      className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-                      style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
-                      }}
-                    />
-                    <span className="text-[10px] text-emerald-300/70 block mt-0.5">عادة +1 نقطة لكل يوم حضور</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
-                      نقاط التأخر:
-                    </label>
-                    <input
-                      type="number"
-                      value={generalForm.latePoints}
-                      onChange={e => setGeneralForm({ ...generalForm, latePoints: Number(e.target.value) })}
-                      className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-                      style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
-                      }}
-                    />
-                    <span className="text-[10px] text-amber-300/70 block mt-0.5">0 أو -1 عند التأخر</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
-                      نقاط الاستئذان بعذر:
-                    </label>
-                    <input
-                      type="number"
-                      value={generalForm.excusedPoints}
-                      onChange={e => setGeneralForm({ ...generalForm, excusedPoints: Number(e.target.value) })}
-                      className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-                      style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
-                      }}
-                    />
-                    <span className="text-[10px] text-blue-300/70 block mt-0.5">عادة 0 نقاط (لا خصم بعذر)</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
-                      خصم الغياب بدون عذر:
-                    </label>
-                    <input
-                      type="number"
-                      value={generalForm.absentPointsDeduction}
-                      onChange={e => setGeneralForm({ ...generalForm, absentPointsDeduction: Number(e.target.value) })}
-                      className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-                      style={{
-                        backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                        border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
-                      }}
-                    />
-                    <span className="text-[10px] text-rose-300/70 block mt-0.5">يُخصم من رصيد الطالب (مثلاً 1)</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Dual-Deployment & External API Server Configuration */}
               <div
-                className="border rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm"
+                className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-3 shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.cardColor || '#064e3b'}80`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
                 }}
               >
                 <div
-                  className="flex items-center justify-between pb-2 border-b flex-wrap gap-2"
-                  style={{ borderColor: `${themeColors.secondaryColor || '#065f46'}80` }}
+                  className="flex items-center justify-between pb-2.5 border-b-2 flex-wrap gap-2"
+                  style={{ borderColor: tBorder }}
                 >
                   <h3
-                    className="font-bold text-base flex items-center gap-2"
-                    style={{ color: themeColors.accentColor || '#fbbf24' }}
+                    className="font-black text-base font-heading flex items-center gap-2"
+                    style={{ color: tAccent }}
                   >
                     <Globe className="w-4 h-4" />
                     <span>معمارية النشر وربط الخادم (GitHub Pages & API Server)</span>
                   </h3>
-                  <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-600/50">
+                  <span
+                    className="text-[11px] px-3 py-1 rounded-xl border-2 border-b-2 font-black"
+                    style={{
+                      backgroundColor: tPrimary,
+                      borderColor: '#58cc02',
+                      color: '#89e219'
+                    }}
+                  >
                     {ApiConfig.isGitHubPages() ? 'نشر ثابت على GitHub Pages' : 'خادم متكامل محلي/سحابي'}
                   </span>
                 </div>
-                <p className="text-xs" style={{ color: themeColors.textColor || '#86efac' }}>
-                  تدعم منظومة عُمْرَان الوضع الثنائي: واجهة ثابتة جاهزة للنشر على GitHub Pages مع ربط خادم API مستقل لمعالجة الذكاء الاصطناعي والتكاملات الخارجية.
+                <p className="text-xs font-bold opacity-85" style={{ color: tText }}>
+                  تدعم منظومة عُمْرَان الوضع الثنائي: واجهة ثابتة جاهزة للنشر على GitHub Pages مع ربط خادم API مستقل لمعالجة التكاملات الخارجية.
                 </p>
                 <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: themeColors.textColor || '#86efac' }}>
+                  <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                     رابط خادم الواجهة البرمجية (API Base URL):
                   </label>
                   <input
@@ -2227,13 +2731,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="https://api.omran.example.com أو اتركه فارغاً لاستخدام الخادم الافتراضي"
                     value={customApiUrl}
                     onChange={e => setCustomApiUrl(e.target.value)}
-                    className="w-full rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none font-mono"
+                    className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white focus:outline-none font-mono"
                     style={{
-                      backgroundColor: `${themeColors.primaryColor || '#022c22'}CC`,
-                      border: `1px solid ${themeColors.secondaryColor || '#065f46'}`
+                      backgroundColor: tPrimary,
+                      borderColor: tBorder,
+                      borderBottomColor: tShadow
                     }}
                   />
-                  <span className="text-[10px] text-emerald-300/70 block mt-1">
+                  <span className="text-[10px] text-slate-300 font-bold block mt-1.5">
                     في حال تشغيل الواجهة على GitHub Pages، أدخل رابط خادم Express السحابي هنا. في وضع التطوير المحلي أو الاستضافة الكاملة، يُكتشف الخادم تلقائياً.
                   </span>
                 </div>
@@ -2241,25 +2746,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Dynamic Quran Complex Theme Customizer with LIVE PREVIEW */}
               <div
-                className="border rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm"
+                className="border-2 border-b-4 rounded-[24px] p-4 sm:p-5 space-y-4 shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.cardColor || '#064e3b'}80`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
                 }}
               >
                 <div
-                  className="flex items-center justify-between pb-2 border-b flex-wrap gap-2"
-                  style={{ borderColor: `${themeColors.secondaryColor || '#065f46'}80` }}
+                  className="flex items-center justify-between pb-3 border-b-2 flex-wrap gap-2.5"
+                  style={{ borderColor: tBorder }}
                 >
                   <div>
                     <h3
-                      className="font-bold text-base flex items-center gap-2"
-                      style={{ color: themeColors.accentColor || '#fbbf24' }}
+                      className="font-black text-base font-heading flex items-center gap-2"
+                      style={{ color: tAccent }}
                     >
                       <Palette className="w-4 h-4" />
                       <span>تخصيص ثيم وألوان المجمع القرآني (معاينة حية فورية)</span>
                     </h3>
-                    <p className="text-[11px] opacity-80" style={{ color: themeColors.textColor || '#86efac' }}>
+                    <p className="text-[11px] font-bold opacity-85 mt-0.5" style={{ color: tText }}>
                       ارفع صورة لاستخراج الهوية، أو اختر من الباقات، وبدّل بين الألوان بضغطة زر
                     </p>
                   </div>
@@ -2277,11 +2783,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       disabled={isExtractingColors}
                       onClick={() => themeImageInputRef.current?.click()}
-                      className="px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all border disabled:opacity-50"
+                      className="px-4 py-2 rounded-2xl border-2 border-b-4 font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
                       style={{
-                        backgroundColor: themeColors.accentColor || '#fbbf24',
-                        color: themeColors.primaryColor || '#022c22',
-                        borderColor: `${themeColors.primaryColor || '#022c22'}40`
+                        backgroundColor: tAccent,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccentText
                       }}
                       title="ارفع أي صورة أو شعار للمجمع لاستخراج الألوان منها آلياً"
                     >
@@ -2301,49 +2808,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 {/* 10 Master Duolingo & Islamic Theme Presets Selection Grid */}
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold" style={{ color: themeColors.accentColor || '#ffc800' }}>
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-black" style={{ color: tAccent }}>
                       اختر ثيم وهوية المجمع القرآني (تطبيق فوري لجميع الألوان والبطاقات والأزرار):
                     </span>
                     <span
-                      className="text-[10px] px-2.5 py-0.5 rounded-full font-black border"
+                      className="text-[10px] px-3 py-1 rounded-xl font-black border-2 border-b-2"
                       style={{
-                        borderColor: `${themeColors.accentColor || '#ffc800'}50`,
-                        color: themeColors.accentColor || '#ffc800',
-                        backgroundColor: `${themeColors.accentColor || '#ffc800'}15`
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tAccent,
+                        backgroundColor: tPrimary
                       }}
                     >
-                      10 باقات متناسقة
+                      {ISLAMIC_THEME_PRESETS.length} باقات متناسقة
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
                     {ISLAMIC_THEME_PRESETS.map(preset => {
                       const isSelected =
                         (themeColors.backgroundColor || '').toLowerCase() === preset.colors.backgroundColor.toLowerCase() &&
                         (themeColors.accentColor || '').toLowerCase() === preset.colors.accentColor.toLowerCase();
+                      const pAccent = preset.colors.accentColor || '#ffc800';
+                      const pShadow = darkenHex(preset.colors.cardColor || preset.colors.secondaryColor, 0.35);
 
                       return (
                         <button
                           key={preset.id}
                           type="button"
                           onClick={() => handleApplyThemePreset(preset.colors)}
-                          className={`p-2.5 rounded-2xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between gap-2 active:translate-y-0.5 ${
-                            isSelected
-                              ? 'border-b-4 shadow-lg ring-2 ring-white/50'
-                              : 'hover:brightness-110 shadow-xs'
-                          }`}
+                          className="p-3 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer flex flex-col justify-between gap-2 active:translate-y-[2px] active:border-b-2 hover:brightness-110 shadow-sm"
                           style={{
                             backgroundColor: preset.colors.cardColor || preset.colors.secondaryColor,
-                            borderColor: isSelected ? (preset.colors.accentColor || '#ffc800') : 'rgba(255,255,255,0.18)',
-                            borderBottomColor: preset.colors.accentColor || '#ffc800'
+                            borderColor: isSelected ? pAccent : lightenHex(preset.colors.cardColor || preset.colors.secondaryColor, 0.16),
+                            borderBottomColor: isSelected ? darkenHex(pAccent, 0.28) : pShadow
                           }}
                         >
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.backgroundColor }} />
-                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.cardColor || preset.colors.secondaryColor }} />
-                            <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0 shadow-inner" style={{ backgroundColor: preset.colors.accentColor }} />
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1">
+                              <span className="w-3.5 h-3.5 rounded-md border border-white/30 shrink-0" style={{ backgroundColor: preset.colors.backgroundColor }} />
+                              <span className="w-3.5 h-3.5 rounded-md border border-white/30 shrink-0" style={{ backgroundColor: preset.colors.cardColor || preset.colors.secondaryColor }} />
+                              <span className="w-3.5 h-3.5 rounded-md border border-white/30 shrink-0" style={{ backgroundColor: pAccent }} />
+                            </div>
+                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: pAccent }} />}
                           </div>
                           <span className="text-xs font-black text-white block truncate">{preset.name}</span>
                         </button>
@@ -2351,20 +2860,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     })}
                   </div>
                 </div>
+
                 {extractedPalette.length > 0 && (
                   <div
-                    className="p-3 rounded-xl border space-y-1.5"
+                    className="p-3.5 rounded-2xl border-2 border-b-4 space-y-2"
                     style={{
-                      backgroundColor: `${themeColors.primaryColor || '#022c22'}90`,
-                      borderColor: themeColors.secondaryColor || '#065f46'
+                      backgroundColor: tPrimary,
+                      borderColor: tBorder,
+                      borderBottomColor: tShadow
                     }}
                   >
-                    <div className="flex items-center justify-between text-xs font-bold" style={{ color: themeColors.accentColor || '#fbbf24' }}>
+                    <div className="flex items-center justify-between text-xs font-black flex-wrap gap-2" style={{ color: tAccent }}>
                       <span className="flex items-center gap-1.5">
                         <Wand2 className="w-3.5 h-3.5" />
                         <span>الألوان المستخرجة من الصورة ({extractedPalette.length} درجات):</span>
                       </span>
-                      <span className="text-[10px] opacity-75 font-normal" style={{ color: themeColors.textColor }}>
+                      <span className="text-[10px] opacity-80 font-bold" style={{ color: tText }}>
                         {swapFirstRole
                           ? `اضغط على أي لون لتطبيقه على (${getRoleArabicName(swapFirstRole)})`
                           : 'اضغط على دور لوني أدناه ثم اختر لوناً من هنا'}
@@ -2388,7 +2899,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               setSwapFirstRole(null);
                             }
                           }}
-                          className="group relative w-7 h-7 rounded-lg border border-white/30 shadow transition-transform hover:scale-110 cursor-pointer flex items-center justify-center"
+                          className="group relative w-8 h-8 rounded-xl border-2 border-b-[3px] border-white/40 border-b-black/40 shadow transition-transform hover:scale-110 cursor-pointer flex items-center justify-center"
                           style={{ backgroundColor: colorHex }}
                           title={`تطبيق ${colorHex}`}
                         >
@@ -2401,23 +2912,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* Interactive Color Role Swapping Panel */}
                 <div
-                  className="p-3.5 rounded-xl border space-y-2.5"
+                  className="p-4 rounded-2xl border-2 border-b-4 space-y-3"
                   style={{
-                    backgroundColor: `${themeColors.primaryColor || '#022c22'}70`,
-                    borderColor: themeColors.secondaryColor || '#065f46'
+                    backgroundColor: tPrimary,
+                    borderColor: tBorder,
+                    borderBottomColor: tShadow
                   }}
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: themeColors.accentColor || '#fbbf24' }}>
+                    <span className="text-xs font-black flex items-center gap-1.5" style={{ color: tAccent }}>
                       <ArrowLeftRight className="w-3.5 h-3.5" />
                       <span>التبديل التفاعلي بين الألوان (اضغط على أي لونين للتبديل بينهما):</span>
                     </span>
                     {swapFirstRole && (
                       <span
-                        className="text-[11px] px-2.5 py-0.5 rounded-full font-bold animate-pulse"
+                        className="text-[11px] px-3 py-1 rounded-xl border-2 border-b-2 font-black"
                         style={{
-                          backgroundColor: `${themeColors.accentColor}30`,
-                          color: themeColors.accentColor
+                          backgroundColor: `${tAccent}22`,
+                          borderColor: tAccent,
+                          color: tAccent
                         }}
                       >
                         تم تحديد: {getRoleArabicName(swapFirstRole)} • اضغط على اللون الثاني لإتمام التبديل
@@ -2426,7 +2939,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {/* 5 Color Roles Clickable Chips */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                     {(
                       [
                         { key: 'backgroundColor', label: 'لون الخلفية' },
@@ -2443,27 +2956,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           key={item.key}
                           type="button"
                           onClick={() => handleSelectRoleForSwap(item.key)}
-                          className={`p-2 rounded-xl border text-right transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
-                            isFirst
-                              ? 'ring-2 ring-amber-400 scale-105 shadow-lg font-black'
-                              : 'hover:scale-[1.02] shadow-sm'
-                          }`}
+                          className="p-2.5 rounded-2xl border-2 border-b-4 text-right transition-all cursor-pointer flex items-center justify-between gap-1.5 active:translate-y-[2px] active:border-b-2 hover:brightness-110"
                           style={{
-                            backgroundColor: `${themeColors.secondaryColor || '#064e3b'}90`,
-                            borderColor: isFirst ? (themeColors.accentColor || '#fbbf24') : `${themeColors.secondaryColor || '#065f46'}`
+                            backgroundColor: tSecondary,
+                            borderColor: isFirst ? tAccent : tBorder,
+                            borderBottomColor: isFirst ? tAccentShadow : tSecondaryShadow
                           }}
                           title="اضغط للتبديل مع لون آخر"
                         >
                           <div className="flex flex-col min-w-0">
-                            <span className="text-[10px] opacity-75 line-clamp-1" style={{ color: themeColors.textColor }}>
+                            <span className="text-[10px] opacity-80 font-bold line-clamp-1" style={{ color: tText }}>
                               {item.label}
                             </span>
-                            <span className="text-[11px] font-mono font-bold line-clamp-1" style={{ color: themeColors.textColor }}>
+                            <span className="text-[11px] font-mono font-black line-clamp-1" style={{ color: tText }}>
                               {val}
                             </span>
                           </div>
                           <span
-                            className="w-6 h-6 rounded-lg border border-white/30 shrink-0 shadow"
+                            className="w-6 h-6 rounded-xl border-2 border-white/30 shrink-0 shadow"
                             style={{ backgroundColor: val }}
                           />
                         </button>
@@ -2472,16 +2982,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {/* Quick Swap Shortcuts */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                    <span className="text-[10px] opacity-70 ml-1" style={{ color: themeColors.textColor }}>تبديل سريع:</span>
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <span className="text-[10px] font-bold opacity-80 ml-1" style={{ color: tText }}>تبديل سريع:</span>
                     <button
                       type="button"
                       onClick={() => handleQuickSwap('textColor', 'backgroundColor')}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 hover:brightness-110"
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-black border-2 border-b-[3px] transition-all cursor-pointer flex items-center gap-1 active:translate-y-[1px] active:border-b-2 hover:brightness-110"
                       style={{
-                        backgroundColor: `${themeColors.secondaryColor}60`,
-                        borderColor: `${themeColors.accentColor}50`,
-                        color: themeColors.textColor
+                        backgroundColor: tSecondary,
+                        borderColor: tBorder,
+                        borderBottomColor: tSecondaryShadow,
+                        color: tAccent
                       }}
                     >
                       <ArrowLeftRight className="w-2.5 h-2.5" />
@@ -2490,11 +3001,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleQuickSwap('primaryColor', 'accentColor')}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 hover:brightness-110"
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-black border-2 border-b-[3px] transition-all cursor-pointer flex items-center gap-1 active:translate-y-[1px] active:border-b-2 hover:brightness-110"
                       style={{
-                        backgroundColor: `${themeColors.secondaryColor}60`,
-                        borderColor: `${themeColors.accentColor}50`,
-                        color: themeColors.textColor
+                        backgroundColor: tSecondary,
+                        borderColor: tBorder,
+                        borderBottomColor: tSecondaryShadow,
+                        color: tAccent
                       }}
                     >
                       <ArrowLeftRight className="w-2.5 h-2.5" />
@@ -2503,11 +3015,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleQuickSwap('cardColor', 'backgroundColor')}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 hover:brightness-110"
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-black border-2 border-b-[3px] transition-all cursor-pointer flex items-center gap-1 active:translate-y-[1px] active:border-b-2 hover:brightness-110"
                       style={{
-                        backgroundColor: `${themeColors.secondaryColor}60`,
-                        borderColor: `${themeColors.accentColor}50`,
-                        color: themeColors.textColor
+                        backgroundColor: tSecondary,
+                        borderColor: tBorder,
+                        borderBottomColor: tSecondaryShadow,
+                        color: tAccent
                       }}
                     >
                       <ArrowLeftRight className="w-2.5 h-2.5" />
@@ -2518,20 +3031,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* Interactive Live Preview Box */}
                 <div
-                  className="rounded-2xl p-4 border transition-all duration-300 space-y-3 shadow-md"
+                  className="rounded-2xl p-4 border-2 border-b-4 transition-all duration-300 space-y-3 shadow-md"
                   style={{
-                    backgroundColor: themeColors.backgroundColor,
-                    borderColor: themeColors.primaryColor,
-                    color: themeColors.textColor
+                    backgroundColor: tBg,
+                    borderColor: tBorder,
+                    borderBottomColor: tShadow,
+                    color: tText
                   }}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <div
-                        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shadow"
+                        className="w-8 h-8 rounded-xl border-2 border-b-2 flex items-center justify-center font-black text-xs shadow"
                         style={{
-                          backgroundColor: themeColors.cardColor,
-                          color: themeColors.accentColor
+                          backgroundColor: tCard,
+                          borderColor: tAccent,
+                          color: tAccent
                         }}
                       >
                         <Eye className="w-4 h-4" />
@@ -2541,10 +3056,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
                     <span
-                      className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                      className="text-[10px] px-2.5 py-1 rounded-xl border-2 font-black"
                       style={{
-                        backgroundColor: `${themeColors.accentColor}25`,
-                        color: themeColors.accentColor
+                        backgroundColor: tCard,
+                        borderColor: tAccent,
+                        color: tAccent
                       }}
                     >
                       ثيم نشط
@@ -2553,16 +3069,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div
-                      className="p-3 rounded-xl border space-y-1 shadow-sm"
+                      className="p-3.5 rounded-2xl border-2 border-b-4 space-y-1 shadow-sm"
                       style={{
-                        backgroundColor: themeColors.cardColor,
-                        borderColor: themeColors.primaryColor
+                        backgroundColor: tCard,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
                       }}
                     >
-                      <div className="text-xs font-bold" style={{ color: themeColors.textColor }}>
+                      <div className="text-xs font-black" style={{ color: tText }}>
                         بطاقة الحلقة القرآنية
                       </div>
-                      <div className="text-[11px] opacity-80" style={{ color: themeColors.textColor }}>
+                      <div className="text-[11px] opacity-85 font-bold" style={{ color: tText }}>
                         متابعة الحفظ والتسميع اليومي (14 طالب مسجل)
                       </div>
                     </div>
@@ -2570,21 +3087,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        className="flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                        className="flex-1 py-2.5 px-3 rounded-2xl border-2 border-b-4 font-black text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                         style={{
-                          backgroundColor: themeColors.accentColor,
-                          color: themeColors.primaryColor
+                          backgroundColor: tAccent,
+                          borderColor: tAccent,
+                          borderBottomColor: tAccentShadow,
+                          color: tAccentText
                         }}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>زر رئيسي</span>
                       </button>
                       <div
-                        className="p-2 rounded-xl border text-xs font-bold"
+                        className="px-3.5 py-2.5 rounded-2xl border-2 border-b-4 text-xs font-black"
                         style={{
-                          backgroundColor: themeColors.secondaryColor,
-                          borderColor: themeColors.primaryColor,
-                          color: themeColors.textColor
+                          backgroundColor: tSecondary,
+                          borderColor: tBorder,
+                          borderBottomColor: tSecondaryShadow,
+                          color: tText
                         }}
                       >
                         زر ثانوي
@@ -2593,117 +3113,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Preset Themes List */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-emerald-200">
-                    اختر من باقات الثيمات الإسلامية المعتمدة:
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {ISLAMIC_THEME_PRESETS.map(preset => {
-                      const isSelected =
-                        themeColors.backgroundColor === preset.colors.backgroundColor &&
-                        themeColors.accentColor === preset.colors.accentColor;
-
-                      return (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => handleApplyThemePreset(preset.colors)}
-                          className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 ${
-                            isSelected
-                              ? 'border-amber-400 ring-2 ring-amber-400/50 shadow-md scale-[1.02]'
-                              : 'border-[#065f46] hover:border-amber-400/50 bg-[#064e3b]/50'
-                          }`}
-                          style={{
-                            backgroundColor: preset.colors.backgroundColor
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span
-                              className="text-[11px] font-black line-clamp-1"
-                              style={{ color: preset.colors.textColor }}
-                            >
-                              {preset.name.split(' ')[0]}
-                            </span>
-                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
-                          </div>
-                          <div className="flex items-center gap-1 mt-1">
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-white/20"
-                              style={{ backgroundColor: preset.colors.cardColor }}
-                            />
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-white/20"
-                              style={{ backgroundColor: preset.colors.secondaryColor }}
-                            />
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-white/20"
-                              style={{ backgroundColor: preset.colors.accentColor }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 {/* Custom Hex Pickers */}
-                <div className="pt-2 border-t border-[#065f46]">
-                  <label className="block text-xs font-bold text-emerald-200 mb-2">
-                    أو حدد الألوان المخصصة يدوياً:
+                <div className="pt-3 border-t-2" style={{ borderColor: tBorder }}>
+                  <label className="block text-xs font-black mb-2.5" style={{ color: tAccent }}>
+                    تعديل قيم الألوان المخصصة يدوياً (Hex):
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <span className="block text-[11px] text-[#86efac]/90 mb-1">اللون الأساسي:</span>
-                      <div className="flex items-center gap-2 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
-                        <input
-                          type="color"
-                          value={themeColors.primaryColor}
-                          onChange={e => setThemeColors({ ...themeColors, primaryColor: e.target.value })}
-                          className="w-6 h-6 rounded cursor-pointer border-none bg-transparent"
-                        />
-                        <span className="text-xs font-mono font-bold text-white">{themeColors.primaryColor}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {[
+                      { key: 'primaryColor' as const, label: 'اللون الأساسي' },
+                      { key: 'secondaryColor' as const, label: 'لون البطاقات' },
+                      { key: 'accentColor' as const, label: 'لون التمييز والذهب' },
+                      { key: 'backgroundColor' as const, label: 'لون الخلفية' }
+                    ].map(cField => (
+                      <div
+                        key={cField.key}
+                        className="p-2.5 rounded-2xl border-2 border-b-4 space-y-1.5"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tBorder,
+                          borderBottomColor: tShadow
+                        }}
+                      >
+                        <span className="block text-[11px] font-black" style={{ color: tText }}>{cField.label}:</span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-7 h-7 rounded-xl border-2 border-white/30 shrink-0 shadow-inner"
+                            style={{ backgroundColor: themeColors[cField.key] || '#131f24' }}
+                          />
+                          <input
+                            type="text"
+                            value={themeColors[cField.key] || ''}
+                            onChange={e => {
+                              const nextVal = e.target.value;
+                              if (cField.key === 'secondaryColor') {
+                                setThemeColors({ ...themeColors, secondaryColor: nextVal, cardColor: nextVal });
+                              } else {
+                                setThemeColors({ ...themeColors, [cField.key]: nextVal });
+                              }
+                            }}
+                            className="w-full rounded-xl border px-2 py-1 text-xs font-mono font-black text-white outline-none ltr text-left"
+                            style={{
+                              backgroundColor: tSecondary,
+                              borderColor: tBorder
+                            }}
+                            dir="ltr"
+                          />
+                        </div>
                       </div>
-                    </div>
-
-                    <div>
-                      <span className="block text-[11px] text-[#86efac]/90 mb-1">اللون الثانوي/البطاقات:</span>
-                      <div className="flex items-center gap-2 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
-                        <input
-                          type="color"
-                          value={themeColors.secondaryColor}
-                          onChange={e => setThemeColors({ ...themeColors, secondaryColor: e.target.value, cardColor: e.target.value })}
-                          className="w-6 h-6 rounded cursor-pointer border-none bg-transparent"
-                        />
-                        <span className="text-xs font-mono font-bold text-white">{themeColors.secondaryColor}</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="block text-[11px] text-[#86efac]/90 mb-1">لون التمييز والذهب:</span>
-                      <div className="flex items-center gap-2 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
-                        <input
-                          type="color"
-                          value={themeColors.accentColor}
-                          onChange={e => setThemeColors({ ...themeColors, accentColor: e.target.value })}
-                          className="w-6 h-6 rounded cursor-pointer border-none bg-transparent"
-                        />
-                        <span className="text-xs font-mono font-bold text-white">{themeColors.accentColor}</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="block text-[11px] text-[#86efac]/90 mb-1">لون الخلفية:</span>
-                      <div className="flex items-center gap-2 bg-[#064e3b] p-1.5 rounded-xl border border-[#065f46]">
-                        <input
-                          type="color"
-                          value={themeColors.backgroundColor}
-                          onChange={e => setThemeColors({ ...themeColors, backgroundColor: e.target.value })}
-                          className="w-6 h-6 rounded cursor-pointer border-none bg-transparent"
-                        />
-                        <span className="text-xs font-mono font-bold text-white">{themeColors.backgroundColor}</span>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -2712,10 +3169,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-6 py-2.5 rounded-xl font-black text-sm transition cursor-pointer flex items-center gap-2 shadow-lg disabled:opacity-50"
+                  className="px-6 py-3 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shadow-lg active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
                   style={{
-                    backgroundColor: themeColors.accentColor || '#fbbf24',
-                    color: themeColors.primaryColor || '#022c22'
+                    backgroundColor: tAccent,
+                    borderColor: tAccent,
+                    borderBottomColor: tAccentShadow,
+                    color: tAccentText
                   }}
                 >
                   {isSubmitting ? (
@@ -2736,40 +3195,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* 5. Real Mail & Gmail Service Tab */}
           {activeTab === 'mail' && (
-            <div className="space-y-6 animate-fade-in p-1">
+            <div className="space-y-5 animate-fade-in p-1">
               {/* Header Banner */}
               <div
-                className="p-4 sm:p-5 rounded-2xl border-2 space-y-2 relative overflow-hidden"
+                className="p-4 sm:p-5 rounded-[24px] border-2 border-b-4 space-y-2 relative overflow-hidden shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.primaryColor}80`,
-                  borderColor: themeColors.accentColor || '#fbbf24'
+                  backgroundColor: tSecondary,
+                  borderColor: tAccent,
+                  borderBottomColor: tAccentShadow
                 }}
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center font-black shrink-0 border"
+                    className="w-11 h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center font-black shrink-0 shadow-sm"
                     style={{
-                      backgroundColor: `${themeColors.accentColor}25`,
-                      borderColor: themeColors.accentColor,
-                      color: themeColors.accentColor || '#fbbf24'
+                      backgroundColor: tPrimary,
+                      borderColor: tAccent,
+                      borderBottomColor: tAccentShadow,
+                      color: tAccent
                     }}
                   >
                     <Mail className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-black text-white font-heading flex items-center gap-2 flex-wrap">
                       <span>خدمة إرسال البريد الإلكتروني الحقيقي (Gmail)</span>
                       {mailConfigStatus?.isConfigured ? (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-xl bg-[#58cc02]/15 text-[#89e219] border-2 border-b-2 border-[#58cc02] border-b-[#46a302] font-black">
                           مفعلة ومتصلة ✓
                         </span>
                       ) : (
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                        <span
+                          className="text-[11px] px-2.5 py-0.5 rounded-xl border-2 border-b-2 font-black"
+                          style={{
+                            backgroundColor: `${tAccent}20`,
+                            borderColor: tAccent,
+                            color: tAccent
+                          }}
+                        >
                           بانتظار الإعداد
                         </span>
                       )}
                     </h3>
-                    <p className="text-xs text-slate-300 leading-relaxed mt-0.5">
+                    <p className="text-xs text-slate-300 font-bold leading-relaxed mt-1">
                       إرسال رسائل بريد إلكتروني حقيقية مباشرة إلى البريد الشخصي للطلاب وأولياء الأمور (رموز التحقق OTP، إشعارات استلام الطلب، وبشرى القبول والاعتماد).
                     </p>
                   </div>
@@ -2778,18 +3246,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Status Indicator */}
               <div
-                className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                className="p-4 rounded-2xl border-2 border-b-4 flex items-center justify-between gap-3 text-xs font-black flex-wrap"
+                style={
                   mailConfigStatus?.isConfigured
-                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
-                    : 'bg-amber-950/60 border-amber-500/50 text-amber-200'
-                }`}
+                    ? {
+                        backgroundColor: '#58cc0218',
+                        borderColor: '#58cc02',
+                        borderBottomColor: '#46a302',
+                        color: '#d9f99d'
+                      }
+                    : {
+                        backgroundColor: tSecondary,
+                        borderColor: tAccent,
+                        borderBottomColor: tAccentShadow,
+                        color: tText
+                      }
+                }
               >
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      mailConfigStatus?.isConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                    }`}
-                  />
+                <div className="flex items-center gap-2.5">
+                  {mailConfigStatus?.isConfigured ? (
+                    <CheckCircle2 className="w-4 h-4 text-[#89e219] shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0" style={{ color: tAccent }} />
+                  )}
                   <span>
                     {mailConfigStatus?.isConfigured
                       ? `خدمة البريد نشطة وجاهزة للإرسال الفعلي عبر الحساب: (${mailConfigStatus.user})`
@@ -2799,9 +3278,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={fetchMailConfig}
-                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold transition cursor-pointer flex items-center gap-1 shrink-0"
+                  className="px-3.5 py-1.5 rounded-xl border-2 border-b-[3px] font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 active:translate-y-[1px] active:border-b-2 hover:brightness-110"
+                  style={{
+                    backgroundColor: tPrimary,
+                    borderColor: tBorder,
+                    borderBottomColor: tShadow,
+                    color: tText
+                  }}
                 >
-                  <RefreshCw className="w-3 h-3" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                   <span>تحديث الحالة</span>
                 </button>
               </div>
@@ -2844,18 +3329,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setIsSavingMailConfig(false);
                   }
                 }}
-                className="p-5 rounded-2xl border space-y-4"
+                className="p-5 rounded-[24px] border-2 border-b-4 space-y-4 shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.secondaryColor}40`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
                 }}
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Key className="w-4 h-4 text-amber-400" />
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b-2" style={{ borderColor: tBorder }}>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Key className="w-4 h-4" style={{ color: tAccent }} />
                     <span>بيانات حساب Gmail والمفتاح المحفوظة في قاعدة البيانات</span>
                   </h4>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-black px-3 py-1 rounded-xl bg-[#58cc02]/15 border-2 border-b-2 border-[#58cc02] text-[#89e219]">
                     <Database className="w-3.5 h-3.5" />
                     <span>يُحفظ للأبد لبوابة المجمع • قابل للتعديل بأي وقت</span>
                   </span>
@@ -2863,8 +3349,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                      بريد Gmail الشخصي أو الرسمي <span className="text-red-400">*</span>
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                      بريد Gmail الشخصي أو الرسمي <span className="text-rose-400">*</span>
                     </label>
                     <input
                       type="email"
@@ -2872,14 +3358,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder="مثال: ikmhhg68@gmail.com"
                       value={gmailUser}
                       onChange={e => setGmailUser(e.target.value)}
-                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
+                      }}
                       dir="ltr"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
-                      مفتاح مرور التطبيقات (Google App Password - 16 حرفاً) <span className="text-red-400">*</span>
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
+                      مفتاح مرور التطبيقات (Google App Password - 16 حرفاً) <span className="text-rose-400">*</span>
                     </label>
                     <div className="relative flex items-center">
                       <input
@@ -2888,7 +3379,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         placeholder="16 حرفاً من Google (مثال: abcd efgh ijkl mnop)"
                         value={gmailAppPass}
                         onChange={e => setGmailAppPass(e.target.value)}
-                        className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl pl-20 pr-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                        className="w-full border-2 border-b-4 rounded-2xl pl-20 pr-3.5 py-2.5 text-sm text-white font-bold focus:outline-none font-mono"
+                        style={{
+                          backgroundColor: tPrimary,
+                          borderColor: tBorder,
+                          borderBottomColor: tShadow
+                        }}
                         dir="ltr"
                       />
                       <div className="absolute left-2 flex items-center gap-1">
@@ -2900,16 +3396,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               setCopiedMailPass(true);
                               setTimeout(() => setCopiedMailPass(false), 2000);
                             }}
-                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-amber-300 transition cursor-pointer"
+                            className="p-1.5 rounded-xl border transition cursor-pointer"
+                            style={{
+                              backgroundColor: tSecondary,
+                              borderColor: tBorder,
+                              color: tAccent
+                            }}
                             title="نسخ المفتاح المحفوظ"
                           >
-                            {copiedMailPass ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedMailPass ? <Check className="w-3.5 h-3.5 text-[#89e219]" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => setShowMailPass(prev => !prev)}
-                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition cursor-pointer"
+                          className="p-1.5 rounded-xl border transition cursor-pointer text-slate-200"
+                          style={{
+                            backgroundColor: tSecondary,
+                            borderColor: tBorder
+                          }}
                           title={showMailPass ? 'إخفاء المفتاح' : 'إظهار المفتاح المحفوظ للتعديل أو المراجعة'}
                         >
                           {showMailPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -2919,7 +3424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                       اسم المرسل الذي يظهر في عنوان البريد
                     </label>
                     <input
@@ -2927,12 +3432,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={mailFromName}
                       onChange={e => setMailFromName(e.target.value)}
                       placeholder="مثال: مجمع عُمران القرآني"
-                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
+                      }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#86efac] mb-1">
+                    <label className="block text-xs font-black mb-1.5" style={{ color: tText }}>
                       عنوان بريد الرد (Reply-To)
                     </label>
                     <input
@@ -2940,15 +3450,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={mailFromEmail}
                       onChange={e => setMailFromEmail(e.target.value)}
                       placeholder="اتركه فارغاً لاستخدام بريد Gmail نفسه"
-                      className="w-full bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
+                      className="w-full border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none"
+                      style={{
+                        backgroundColor: tPrimary,
+                        borderColor: tBorder,
+                        borderBottomColor: tShadow
+                      }}
                       dir="ltr"
                     />
                   </div>
                 </div>
 
                 {/* Google App Password Guide */}
-                <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs text-slate-300 space-y-1.5 leading-relaxed">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                <div
+                  className="p-4 rounded-2xl border-2 border-b-4 text-xs text-slate-300 font-bold space-y-1.5 leading-relaxed"
+                  style={{
+                    backgroundColor: tPrimary,
+                    borderColor: tBorder,
+                    borderBottomColor: tShadow
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 font-black" style={{ color: tAccent }}>
                     <Sparkles className="w-4 h-4" />
                     <span>كيف تحصل على كلمة مرور التطبيقات من Google خلال دقيقة؟</span>
                   </div>
@@ -2959,7 +3481,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         href="https://myaccount.google.com/apppasswords"
                         target="_blank"
                         rel="noreferrer"
-                        className="text-amber-400 underline font-mono inline-flex items-center gap-0.5"
+                        className="underline font-mono inline-flex items-center gap-0.5"
+                        style={{ color: tAccent }}
                       >
                         myaccount.google.com/apppasswords <ExternalLink className="w-3 h-3 inline" />
                       </a>
@@ -2973,10 +3496,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="submit"
                     disabled={isSavingMailConfig}
-                    className="px-6 py-2.5 rounded-xl font-black text-sm transition cursor-pointer flex items-center gap-2 shadow-lg disabled:opacity-50"
+                    className="px-6 py-3 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shadow-lg active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
                     style={{
-                      backgroundColor: themeColors.accentColor || '#fbbf24',
-                      color: themeColors.primaryColor || '#022c22'
+                      backgroundColor: tAccent,
+                      borderColor: tAccent,
+                      borderBottomColor: tAccentShadow,
+                      color: tAccentText
                     }}
                   >
                     {isSavingMailConfig ? (
@@ -2996,21 +3521,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Live Test Email Section */}
               <div
-                className="p-5 rounded-2xl border space-y-4"
+                className="p-5 rounded-[24px] border-2 border-b-4 space-y-4 shadow-md"
                 style={{
-                  backgroundColor: `${themeColors.secondaryColor}30`,
-                  borderColor: themeColors.secondaryColor || '#065f46'
+                  backgroundColor: tSecondary,
+                  borderColor: tBorder,
+                  borderBottomColor: tSecondaryShadow
                 }}
               >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Send className="w-4 h-4 text-emerald-400" />
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <Send className="w-4 h-4 text-[#89e219]" />
                     <span>تجربة إرسال بريد حقيقي فوري للتأكد</span>
                   </h4>
-                  <span className="text-[11px] text-slate-400">إرسال فوري إلى صندوق الوارد</span>
+                  <span className="text-[11px] font-bold text-slate-300">إرسال فوري إلى صندوق الوارد</span>
                 </div>
 
-                <p className="text-xs text-slate-300">
+                <p className="text-xs font-bold text-slate-300">
                   أدخل بريدك الإلكتروني الشخصي واضغط إرسال، وسيقوم النظام فوراً بإرسال رسالة تجريبية حقيقية لصندوق واردك لتتأكد بنفسك من عمل الخدمة.
                 </p>
 
@@ -3020,7 +3546,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={testEmailTo}
                     onChange={e => setTestEmailTo(e.target.value)}
                     placeholder="أدخل بريدك الشخصي (مثال: ikmhhg68@gmail.com)"
-                    className="flex-1 bg-[#064e3b]/80 border border-[#065f46] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                    className="flex-1 border-2 border-b-4 rounded-2xl px-3.5 py-2.5 text-sm text-white font-bold focus:outline-none font-mono"
+                    style={{
+                      backgroundColor: tPrimary,
+                      borderColor: tBorder,
+                      borderBottomColor: tShadow
+                    }}
                     dir="ltr"
                   />
                   <button
@@ -3083,10 +3614,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       }
                     }}
                     disabled={isTestingMail}
-                    className="px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shrink-0 shadow disabled:opacity-50"
+                    className="px-5 py-2.5 rounded-2xl border-2 border-b-4 font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 shadow-md active:translate-y-[2px] active:border-b-2 hover:brightness-110 disabled:opacity-50"
                     style={{
-                      backgroundColor: themeColors.accentColor || '#fbbf24',
-                      color: themeColors.primaryColor || '#022c22'
+                      backgroundColor: tAccent,
+                      borderColor: tAccent,
+                      borderBottomColor: tAccentShadow,
+                      color: tAccentText
                     }}
                   >
                     {isTestingMail ? (
@@ -3105,16 +3638,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {mailTestResult && (
                   <div
-                    className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+                    className="p-3.5 rounded-2xl border-2 border-b-4 text-xs font-black flex items-center gap-2"
+                    style={
                       mailTestResult.success
-                        ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
-                        : 'bg-red-950/80 border-red-500 text-red-200'
-                    }`}
+                        ? {
+                            backgroundColor: '#58cc0218',
+                            borderColor: '#58cc02',
+                            borderBottomColor: '#46a302',
+                            color: '#d9f99d'
+                          }
+                        : {
+                            backgroundColor: '#ff4b4b18',
+                            borderColor: '#ff4b4b',
+                            borderBottomColor: '#cc2e2e',
+                            color: '#fecdd3'
+                          }
+                    }
                   >
                     {mailTestResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-[#89e219] shrink-0" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                      <AlertCircle className="w-4 h-4 text-[#ff6b6b] shrink-0" />
                     )}
                     <span>{mailTestResult.msg}</span>
                   </div>

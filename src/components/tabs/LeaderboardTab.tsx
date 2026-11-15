@@ -189,11 +189,22 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
       const logsListeningPoints = stLogs.length * 5;
       const finalListeningPoints = Math.max(logsListeningPoints, st.listeningPoints || 0);
 
-      // 4. Attendance & Absence points (+1 for present, -1 for absent)
+      // 4. Attendance & Absence points (strictly follows user-configured rules in AttendanceTab)
+      const attSettings = settings?.attendancePointsSettings;
+      const attEnabled = attSettings?.enableAttendancePoints !== false;
+      const presentPtsRule = typeof attSettings?.presentPoints === 'number' ? attSettings.presentPoints : 1;
+      const latePtsRule = typeof attSettings?.latePoints === 'number' ? attSettings.latePoints : 0;
+      const excusedPtsRule = typeof attSettings?.excusedPoints === 'number' ? attSettings.excusedPoints : 0;
+      const absentDeductRule = typeof attSettings?.absentPointsDeduction === 'number' ? attSettings.absentPointsDeduction : 1;
+
       const stAttRecords = attendance.filter((a: any) => a.studentId === st.id);
       const presentCount = stAttRecords.filter((a: any) => a.status === 'حاضر').length;
       const absentCount = stAttRecords.filter((a: any) => a.status === 'غائب').length;
-      const attendancePoints = (presentCount * 1) - (absentCount * 1);
+      const lateCount = stAttRecords.filter((a: any) => a.status === 'متأخر').length;
+      const excusedCount = stAttRecords.filter((a: any) => a.status === 'معتذر').length;
+      const attendancePoints = attEnabled
+        ? Math.round(((presentCount * presentPtsRule) + (lateCount * latePtsRule) + (excusedCount * excusedPtsRule) - (absentCount * absentDeductRule)) * 10) / 10
+        : 0;
 
       // 5. Total points: master student points balance
       const totalPagePoints = Number(st.totalPagePoints) || 0;
@@ -225,7 +236,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         stLogs
       };
     }).sort((a, b) => b.totalPoints - a.totalPoints || b.bestPercentage - a.bestPercentage);
-  }, [filteredPool, submissions, evaluations, listeningLogs, halaqahs]);
+  }, [filteredPool, submissions, evaluations, listeningLogs, halaqahs, attendance, settings?.attendancePointsSettings]);
 
   // Selected student breakdown details
   const breakdownData = useMemo(() => {
@@ -797,7 +808,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
             </div>
 
             {/* Point Sources Summary Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div
                 className="p-3 rounded-2xl border-2 text-center space-y-1"
                 style={{ backgroundColor: themeSecondary, borderColor: themeBorder }}
@@ -1148,7 +1159,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   <label className="text-xs font-bold block" style={{ color: themeSubtext }}>
                     {pointsActionType === 'award' ? 'اختر مقدار النقاط المراد إضافتها:' : 'اختر مقدار النقاط المراد خصمها:'}
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {(pointsActionType === 'award'
                       ? [5, 10, 15, 20, 25, 50, 100]
                       : [1, 2, 3, 5, 10, 15, 20]

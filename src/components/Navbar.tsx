@@ -154,14 +154,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header
-      className="sticky top-0 z-50 backdrop-blur-xl border-b-4 px-3 sm:px-4 lg:px-8 py-2.5 sm:py-3 shadow-xl transition-all w-full max-w-full overflow-visible"
+      className="sticky top-0 z-50 backdrop-blur-xl border-b-4 px-2.5 sm:px-4 lg:px-8 py-2 sm:py-3 shadow-xl transition-all w-full max-w-full overflow-visible"
       style={{
         backgroundColor: `${themeSecondary}f6`,
         borderColor: themeBorder,
         borderBottomColor: themeBorderBottom
       }}
     >
-      <div className="max-w-7xl mx-auto flex flex-col gap-2 w-full max-w-full overflow-visible">
+      <div className="max-w-7xl mx-auto flex flex-col gap-1.5 sm:gap-2 w-full max-w-full overflow-visible">
         {/* ROW 1: Brand (Logo + Complex Name) & Quick User Actions */}
         <div className="flex items-center justify-between gap-2 sm:gap-3 w-full min-w-0">
           {/* Brand & Logo: Complex Name and Logo */}
@@ -219,7 +219,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 منظومة عُمْرَان
               </h1>
               <p
-                className="text-[10px] sm:text-xs font-bold truncate hidden sm:block"
+                className="text-[10px] sm:text-xs font-bold truncate block"
                 style={{ color: themeAccent }}
               >
                 {displayComplexName}
@@ -479,9 +479,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* ROW 2: Header Selectors & Quick Info */}
-        <div className="relative z-40 flex items-center justify-between gap-1.5 sm:gap-2 py-1.5 px-0.5 w-full border-t border-white/10 shrink-0 overflow-x-auto scrollbar-none slider-horizontal">
+        <div className="relative z-40 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 py-1 sm:py-1.5 px-0.5 w-full border-t border-white/10 shrink-0 overflow-visible">
           {/* Selectors Group */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
             {/* Complex Switcher / Badge with Platform Theme & Duolingo 3D style */}
             {canSwitchComplex && availableComplexes.length > 1 && onSwitchComplex ? (
             <div
@@ -534,7 +534,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setIsComplexMenuOpen(prev => !prev);
                     setIsHalaqahMenuOpen(false);
                   }}
-                  className="flex items-center gap-2 text-xs text-white font-black rounded-xl px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[170px] sm:max-w-xs"
+                  className="flex items-center gap-1.5 sm:gap-2 text-xs text-white font-black rounded-xl px-2 sm:px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[calc(100vw-8.5rem)] sm:max-w-xs"
                   style={{
                     backgroundColor: themeSecondary,
                     borderColor: isComplexMenuOpen ? themeAccent : `${themeAccent}80`,
@@ -558,7 +558,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       onClick={() => setIsComplexMenuOpen(false)}
                     />
                     <div
-                      className="absolute top-full mt-2 right-0 z-[70] min-w-[280px] max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
+                      className="fixed inset-x-3 top-28 sm:inset-x-auto sm:absolute sm:top-full sm:mt-2 sm:right-0 z-[70] w-auto sm:min-w-[280px] sm:max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
                       style={{
                         backgroundColor: themeCard,
                         borderColor: themeBorder,
@@ -754,7 +754,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setIsHalaqahMenuOpen(prev => !prev);
                           setIsComplexMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 text-xs text-white font-black rounded-xl px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[160px] sm:max-w-[220px]"
+                        className="flex items-center gap-1.5 sm:gap-2 text-xs text-white font-black rounded-xl px-2 sm:px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[calc(100vw-8.5rem)] sm:max-w-[220px]"
                         style={{
                           backgroundColor: themeSecondary,
                           borderColor: isHalaqahMenuOpen ? themeAccent : themeBorder,
@@ -778,7 +778,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             onClick={() => setIsHalaqahMenuOpen(false)}
                           />
                           <div
-                            className="absolute top-full mt-2 right-0 z-[70] min-w-[280px] max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
+                            className="fixed inset-x-3 top-28 sm:inset-x-auto sm:absolute sm:top-full sm:mt-2 sm:right-0 z-[70] w-auto sm:min-w-[280px] sm:max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
                             style={{
                               backgroundColor: themeCard,
                               borderColor: themeBorder,
@@ -986,7 +986,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setIsHalaqahMenuOpen(prev => !prev);
                           setIsComplexMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 text-xs text-white font-black rounded-xl px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[180px] sm:max-w-[250px]"
+                        className="flex items-center gap-1.5 sm:gap-2 text-xs text-white font-black rounded-xl px-2 sm:px-2.5 py-1.5 cursor-pointer focus:outline-none border-2 border-b-4 transition-all active:translate-y-[1px] active:border-b-2 font-heading shadow-inner max-w-[calc(100vw-8.5rem)] sm:max-w-[250px]"
                         style={{
                           backgroundColor: themeSecondary,
                           borderColor: isHalaqahMenuOpen ? themeAccent : themeBorder,
@@ -1010,7 +1010,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             onClick={() => setIsHalaqahMenuOpen(false)}
                           />
                           <div
-                            className="absolute top-full mt-2 right-0 z-[70] min-w-[280px] max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
+                            className="fixed inset-x-3 top-28 sm:inset-x-auto sm:absolute sm:top-full sm:mt-2 sm:right-0 z-[70] w-auto sm:min-w-[280px] sm:max-w-[340px] rounded-2xl border-2 border-b-4 shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-150"
                             style={{
                               backgroundColor: themeCard,
                               borderColor: themeBorder,
@@ -1244,7 +1244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Modal / Sheet Container */}
           <div
-            className="relative z-10 w-full max-w-md rounded-t-3xl sm:rounded-3xl border-2 border-b-[6px] shadow-2xl p-4 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto"
+            className="relative z-10 w-full max-w-md rounded-t-3xl sm:rounded-3xl border-2 border-b-[6px] shadow-2xl p-4 sm:p-6 space-y-4 max-h-[85vh] max-h-[85dvh] overflow-y-auto"
             style={{
               backgroundColor: themeCard,
               borderColor: `${themeAccent}70`,

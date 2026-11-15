@@ -1112,7 +1112,7 @@ export const ComplexManagementModal: React.FC<ComplexManagementModalProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 pt-1">
                   {ISLAMIC_THEME_PRESETS.map(preset => {
                     const currentThemeBg = editingComplex.theme?.backgroundColor || '#021e17';
                     const isSelected = currentThemeBg === preset.colors.backgroundColor;

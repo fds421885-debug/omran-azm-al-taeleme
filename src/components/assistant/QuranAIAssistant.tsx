@@ -68,7 +68,8 @@ import {
   CustomCertificateTemplate,
   SurahRecording,
   StudentListeningLog,
-  AIUsageMetrics
+  AIUsageMetrics,
+  AppSettings
 } from '../../types';
 import { READY_MADE_TEMPLATES } from '../tabs/CertificatesTab';
 import { OmranDataService } from '../../lib/firebase';
@@ -173,6 +174,7 @@ interface QuranAIAssistantProps {
   submissions?: any[];
   libraryDocs?: any[];
   leaderboardSettings?: any;
+  settings?: AppSettings;
   onAddStudent: (studentData: Partial<Student>) => Promise<boolean>;
   onDeleteStudent?: (studentId: string) => Promise<boolean>;
   onTransferStudent?: (studentId: string, targetHalaqahId: string, targetHalaqahName: string) => Promise<void>;
@@ -233,6 +235,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
   submissions = [],
   libraryDocs = [],
   leaderboardSettings,
+  settings,
   onAddStudent,
   onDeleteStudent,
   onTransferStudent,
@@ -1008,10 +1011,21 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
         const stLogs = (listeningLogs || []).filter((l: any) => l.studentId === st.id && l.isFullyCompleted);
         const logsListeningPoints = stLogs.length * 5;
         const finalListeningPoints = Math.max(logsListeningPoints, Number(st.listeningPoints) || 0);
+        const attSettings = settings?.attendancePointsSettings;
+        const attEnabled = attSettings?.enableAttendancePoints !== false;
+        const presentPtsRule = typeof attSettings?.presentPoints === 'number' ? attSettings.presentPoints : 1;
+        const latePtsRule = typeof attSettings?.latePoints === 'number' ? attSettings.latePoints : 0;
+        const excusedPtsRule = typeof attSettings?.excusedPoints === 'number' ? attSettings.excusedPoints : 0;
+        const absentDeductRule = typeof attSettings?.absentPointsDeduction === 'number' ? attSettings.absentPointsDeduction : 1;
+
         const stAttRecords = (attendance || []).filter((a: any) => a.studentId === st.id);
         const presentCount = stAttRecords.filter((a: any) => a.status === 'حاضر').length;
         const absentCount = stAttRecords.filter((a: any) => a.status === 'غائب').length;
-        const attendancePoints = (presentCount * 1) - (absentCount * 1);
+        const lateCount = stAttRecords.filter((a: any) => a.status === 'متأخر').length;
+        const excusedCount = stAttRecords.filter((a: any) => a.status === 'معتذر').length;
+        const attendancePoints = attEnabled
+          ? Math.round(((presentCount * presentPtsRule) + (lateCount * latePtsRule) + (excusedCount * excusedPtsRule) - (absentCount * absentDeductRule)) * 10) / 10
+          : 0;
         const computedTotal = examPoints + finalEvalPoints + finalListeningPoints + attendancePoints;
         const totalPoints = typeof st.points === 'number' && st.points > 0
           ? st.points
@@ -3116,12 +3130,12 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
             style={{
               position: 'fixed',
               left: isExpanded ? '0' : (typeof window !== 'undefined' && window.innerWidth < 640 ? '10px' : `${chatPosition.x}px`),
-              top: isExpanded ? '0' : (typeof window !== 'undefined' && window.innerWidth < 640 ? '16px' : `${chatPosition.y}px`),
+              top: isExpanded ? '0' : (typeof window !== 'undefined' && window.innerWidth < 640 ? '12px' : `${chatPosition.y}px`),
               zIndex: 100000,
               touchAction: isDraggingChat ? 'none' : 'auto',
             }}
             className={`select-text ${
-              isExpanded ? 'w-screen h-screen' : 'w-[95vw] sm:w-[520px] h-[85vh] sm:h-[640px] max-h-[95vh]'
+              isExpanded ? 'w-screen h-screen h-[100dvh]' : 'w-[calc(100vw-20px)] sm:w-[520px] h-[calc(100dvh-24px)] sm:h-[640px] sm:max-h-[92dvh]'
             }`}
           >
             {/* Animated Card Container strictly styled in platform theme */}
@@ -4543,7 +4557,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                                 <span className="text-[10px] text-emerald-200 block">وجهاً معتمداً</span>
                               </div>
 
-                              <div className="p-3 rounded-xl bg-black/40 border border-emerald-700/60 space-y-1 sm:col-span-2 grid grid-cols-3 gap-1 items-center">
+                              <div className="p-3 rounded-xl bg-black/40 border border-emerald-700/60 space-y-2 sm:space-y-1 sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-1 items-center">
                                 <div>
                                   <span className="text-[10px] text-emerald-300 font-bold block">حفظ جديد</span>
                                   <div className="text-lg font-black text-white font-mono">{msg.action.data?.lifetimeNewFaces ?? 0}</div>
@@ -6110,7 +6124,7 @@ export const QuranAIAssistant: React.FC<QuranAIAssistantProps> = ({
                             </div>
 
                             {/* Breakdown Grid */}
-                            <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center text-[11px]">
                               <div className="p-2 rounded-lg bg-emerald-950/70 border border-emerald-700/50">
                                 <span className="text-emerald-300 font-bold block text-sm">{msg.action.data?.presentWeek || 0}</span>
                                 <span className="text-[10px] text-emerald-200">أيام الحضور (أسبوعي)</span>

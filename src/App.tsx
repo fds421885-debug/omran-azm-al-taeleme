@@ -3797,7 +3797,7 @@ export function App() {
   return (
     <div
       data-complex-themed={activeComplex?.theme ? "true" : undefined}
-      className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] pb-12 transition-colors duration-300 w-full max-w-full overflow-x-hidden"
+      className="min-h-screen min-h-[100dvh] bg-[#022c22] text-[#f0f9f6] font-sans selection:bg-[#fbbf24] selection:text-[#064e3b] pb-12 transition-colors duration-300 w-full max-w-full overflow-x-clip"
       style={activeComplex?.theme ? {
         backgroundColor: activeComplex.theme.backgroundColor || '#022c22',
         color: activeComplex.theme.textColor || '#f0f9f6'
@@ -3847,7 +3847,7 @@ export function App() {
         }}
       />
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 pt-4 sm:pt-6 relative space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 pt-3.5 sm:pt-6 relative space-y-4 sm:space-y-6 w-full max-w-full overflow-x-clip">
         {/* Active Halaqah Header & Switcher Banner with smooth motion.div workspace transition */}
         <AnimatePresence mode="wait">
           <motion.div
@@ -3856,7 +3856,7 @@ export function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.99 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
+            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
             style={{
               backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
               borderColor: activeComplex?.theme?.cardColor || '#203843',
@@ -4087,7 +4087,7 @@ export function App() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x"
+          className="flex items-center gap-1.5 overflow-x-auto xl:flex-wrap xl:overflow-visible pb-2 xl:pb-1.5 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x snap-x"
           style={{
             backgroundColor: `${activeComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
             borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
@@ -4479,15 +4479,15 @@ export function App() {
       </main>
 
       {/* Platform Global Footer */}
-      <footer className="max-w-7xl mx-auto px-4 mt-12 pt-6 border-t border-[#065f46]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#86efac]/70">
-        <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-[#fbbf24]" />
+      <footer className="max-w-7xl mx-auto px-3 sm:px-4 mt-10 sm:mt-12 pt-6 pb-6 border-t border-[#065f46]/60 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-[#86efac]/70 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <BookOpen className="w-4 h-4 text-[#fbbf24] shrink-0" />
           <span className="font-bold text-white">{activeComplex?.name || settings.complexName || 'مجمع تحفيظ القرآن الكريم'}</span>
         </div>
         <div className="flex items-center gap-2 text-center text-xs text-[#fbbf24] font-bold bg-[#064e3b]/80 px-3.5 py-1.5 rounded-full border border-amber-400/30 shadow-sm">
           <span>مشغل بواسطة منصة عمران</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
           <button
             type="button"
             onClick={() => navigatePublic('privacy')}
@@ -4495,7 +4495,7 @@ export function App() {
           >
             وثيقة سياسة الخصوصية (Privacy Policy)
           </button>
-          <span>•</span>
+          <span className="hidden xs:inline">•</span>
           <button
             type="button"
             onClick={() => navigatePublic('landing')}
@@ -4624,6 +4624,7 @@ export function App() {
         submissions={submissions}
         libraryDocs={libraryDocs}
         leaderboardSettings={leaderboardSettings}
+        settings={scopedSettings}
         onSaveEvaluation={handleSaveEvaluation}
         onSaveComplex={handleSaveComplex}
         chatMessages={chatHistory}
@@ -4801,7 +4802,7 @@ export function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 25, scale: 0.9 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-5 right-5 z-[9990] flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
+            className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-5 sm:right-5 max-w-[calc(100vw-1.5rem)] z-[9990] flex items-center justify-center sm:justify-start gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold pointer-events-none select-none transition-all"
             style={{
               backgroundColor: `${activeComplex?.theme?.cardColor || '#1b2e35'}fa`,
               borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}80`,

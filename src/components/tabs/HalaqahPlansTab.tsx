@@ -414,7 +414,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
           {/* Hours Picker */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 block">مدة جلسة التسميع اليومية:</label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[1.0, 1.5, 2.0, 3.0].map(h => (
                 <button
                   key={h}
@@ -610,7 +610,7 @@ export const HalaqahPlansTab: React.FC<HalaqahPlansTabProps> = ({
                   }}
                 >
                   {/* Student Basic Info */}
-                  <div className="flex items-center gap-3 min-w-[220px]">
+                  <div className="flex items-center gap-3 min-w-0 sm:min-w-[200px]">
                     <div
                       className="w-10 h-10 rounded-2xl border-2 flex items-center justify-center font-black text-sm shrink-0 shadow-sm"
                       style={{

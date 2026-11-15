@@ -1146,7 +1146,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
       {/* Preview Modal (In-App Safe Iframe without window.open) */}
       {previewDoc && (
         <div className="fixed inset-0 z-[200] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[var(--complex-accent,#ffc800)] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-4xl rounded-2xl sm:rounded-[32px] bg-[var(--complex-card,#203843)] border-2 border-b-[6px] border-[var(--complex-accent,#ffc800)] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] max-h-[90dvh]">
             <div className="px-6 py-4 bg-[var(--complex-secondary,#1b2e35)] border-b-2 border-[var(--complex-border,#2b4550)] flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="font-black text-base sm:text-lg text-white truncate">
@@ -1176,7 +1176,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 bg-white overflow-hidden min-h-[420px]">
+            <div className="flex-1 bg-white overflow-hidden min-h-[260px] sm:min-h-[420px]">
               <iframe
                 ref={previewIframeRef}
                 title={previewDoc.title}
