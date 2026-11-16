@@ -76,6 +76,7 @@ import {
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { Navbar } from './components/Navbar';
 import { GoogleWorkspaceService, normalizeArabicText } from './lib/googleWorkspace';
+import { FirebaseAuthService } from './lib/firebaseAuthService';
 import { LoginModal } from './components/LoginModal';
 import { PublicLandingPage } from './components/PublicLandingPage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
@@ -153,6 +154,68 @@ function playGentleApplicationChime() {
   } catch {}
 }
 
+function parseDirectLinkParamsFromWindow(): {
+  portalStudentId: string | null;
+  directAccountQuery: string | null;
+  portalComplexId: string | null;
+  hasExplicitComplexAction: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return {
+      portalStudentId: null,
+      directAccountQuery: null,
+      portalComplexId: null,
+      hasExplicitComplexAction: false
+    };
+  }
+  const urlParams = new URLSearchParams(window.location.search);
+  const hashRaw = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+  const hashParams = new URLSearchParams(hashRaw);
+
+  const pickParam = (keys: string[]): string | null => {
+    for (const k of keys) {
+      const val = urlParams.get(k);
+      if (val && val.trim()) return decodeURIComponent(val).trim();
+    }
+    for (const k of keys) {
+      const val = hashParams.get(k);
+      if (val && val.trim()) return decodeURIComponent(val).trim();
+    }
+    for (const k of keys) {
+      if (hashRaw.startsWith(`${k}=`)) {
+        const val = hashRaw.slice(k.length + 1).split('&')[0];
+        if (val && val.trim()) return decodeURIComponent(val).trim();
+      }
+    }
+    return null;
+  };
+
+  const portalStudentId = pickParam(['portal', 'id', 'student', 'studentId', 's']);
+  const directAccountQuery = pickParam(['u', 'teacher', 'teacherId', 'user', 'account', 't']);
+  const portalComplexId = pickParam(['complexPortal', 'complex']);
+  const tabParam = (urlParams.get('tab') || hashParams.get('tab') || '').toLowerCase();
+  const hasExplicitComplexAction = Boolean(
+    tabParam === 'register' ||
+      tabParam === 'login' ||
+      tabParam === 'track' ||
+      urlParams.get('track') ||
+      urlParams.get('trackCode') ||
+      urlParams.get('register') === 'true' ||
+      urlParams.get('apply') === 'true'
+  );
+
+  return { portalStudentId, directAccountQuery, portalComplexId, hasExplicitComplexAction };
+}
+
+function clearSavedSessionStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem('omran_session');
+    sessionStorage.removeItem('omran_session');
+  } catch {}
+  FirebaseAuthService.signOut().catch(() => {});
+}
+
 export function App() {
   // Authentication State
   const [currentUser, setCurrentUser] = useState<{
@@ -163,54 +226,94 @@ export function App() {
     complexId?: string;
     displayName?: string;
   } | null>(() => {
-    // If a direct student portal link is opened (?portal=... or ?student=...),
-    // check if an old student account was previously logged in. If it does not match
-    // the requested student, log it out completely so the new profile opens 100% reliably!
     if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      let p =
-        urlParams.get('portal') ||
-        urlParams.get('id') ||
-        urlParams.get('student') ||
-        urlParams.get('studentId');
-      if (!p && window.location.hash) {
-        const hash = window.location.hash.replace(/^#\/?/, '');
-        const hashParams = new URLSearchParams(hash);
-        p =
-          hashParams.get('portal') ||
-          hashParams.get('id') ||
-          hashParams.get('student') ||
-          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
-          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
-      }
-      if (p) {
-        const cleanPortal = decodeURIComponent(p).trim();
-        const saved = localStorage.getItem('omran_session');
+      const {
+        portalStudentId: linkStudent,
+        directAccountQuery: linkAccount,
+        portalComplexId: linkComplex,
+        hasExplicitComplexAction
+      } = parseDirectLinkParamsFromWindow();
+
+      const saved = localStorage.getItem('omran_session');
+
+      // 1. Direct student short/portal link (?portal=, ?id=, ?student=, ?studentId=, ?s=)
+      // Always log out any non-matching session (teacher, supervisor, developer, OR another student)!
+      if (linkStudent) {
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
-            if (parsed && (parsed.role === 'student' || parsed.studentId)) {
-              if (parsed.studentId !== cleanPortal && parsed.username !== cleanPortal) {
-                console.log('🔄 Old student account logged out for new portal link:', cleanPortal);
-                localStorage.removeItem('omran_session');
-                sessionStorage.removeItem('omran_session');
-                return null;
-              }
+            const matchesTargetStudent =
+              parsed &&
+              parsed.role === 'student' &&
+              (parsed.studentId === linkStudent || parsed.username === linkStudent);
+            if (!matchesTargetStudent) {
+              console.log('🔄 Logging out previous session for direct student link:', linkStudent);
+              clearSavedSessionStorage();
+              return null;
             }
-          } catch {}
+          } catch {
+            clearSavedSessionStorage();
+            return null;
+          }
         }
       }
-    }
-    const saved = localStorage.getItem('omran_session');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && (parsed.role === 'teacher' || parsed.role === 'supervisor' || parsed.role === 'developer')) {
-          return { ...parsed, role: 'admin' as UserRole };
+
+      // 2. Direct teacher/account link (?u=, ?teacher=, ?teacherId=, ?user=, ?account=, ?t=)
+      // Always log out any previous session unless it already matches the exact target account!
+      if (linkAccount) {
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const matchesTargetAccount =
+              parsed &&
+              (parsed.teacherId === linkAccount ||
+                parsed.studentId === linkAccount ||
+                parsed.username === linkAccount);
+            if (!matchesTargetAccount) {
+              console.log('🔄 Logging out previous session for direct account link:', linkAccount);
+              clearSavedSessionStorage();
+              return null;
+            }
+          } catch {
+            clearSavedSessionStorage();
+            return null;
+          }
         }
-        return parsed;
-      } catch (e) {
-        return null;
+      }
+
+      // 3. Direct complex portal link (?complexPortal=, ?complex=)
+      // Force logout if previously logged in as a student, from a different complex, or opening login/register/track link
+      if (linkComplex) {
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const shouldLogout =
+              !parsed ||
+              parsed.role === 'student' ||
+              hasExplicitComplexAction ||
+              (parsed.complexId && parsed.complexId !== linkComplex);
+            if (shouldLogout) {
+              console.log('🔄 Logging out previous session for dedicated complex portal link:', linkComplex);
+              clearSavedSessionStorage();
+              return null;
+            }
+          } catch {
+            clearSavedSessionStorage();
+            return null;
+          }
+        }
+      }
+
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && (parsed.role === 'teacher' || parsed.role === 'supervisor' || parsed.role === 'developer')) {
+            return { ...parsed, role: 'admin' as UserRole };
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
       }
     }
     return null;
@@ -219,6 +322,10 @@ export function App() {
   // Public Route State ('landing' | 'login' | 'privacy')
   const [publicRoute, setPublicRoute] = useState<'landing' | 'login' | 'privacy'>(() => {
     if (typeof window !== 'undefined') {
+      const { portalStudentId: ls, directAccountQuery: la, portalComplexId: lc } = parseDirectLinkParamsFromWindow();
+      if (ls || la || lc) {
+        return 'landing';
+      }
       const p = window.location.pathname.toLowerCase();
       const s = window.location.search.toLowerCase();
       const h = window.location.hash.toLowerCase();
@@ -255,7 +362,7 @@ export function App() {
     setPublicRoute(route);
     if (typeof window !== 'undefined') {
       const target = route === 'privacy' ? '/privacy' : route === 'login' ? '/login' : '/';
-      if (window.location.pathname !== target) {
+      if (window.location.pathname !== target || window.location.search || window.location.hash) {
         window.history.pushState(null, '', target);
       }
     }
@@ -263,43 +370,25 @@ export function App() {
 
   // Check URL portal query param for direct parent portal link (?portal=std-1 or ?id=std-1 or ?student=std-1)
   const [portalStudentId, setPortalStudentId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      let p =
-        urlParams.get('portal') ||
-        urlParams.get('id') ||
-        urlParams.get('student') ||
-        urlParams.get('studentId');
-      if (!p && window.location.hash) {
-        const hash = window.location.hash.replace(/^#\/?/, '');
-        const hashParams = new URLSearchParams(hash);
-        p =
-          hashParams.get('portal') ||
-          hashParams.get('id') ||
-          hashParams.get('student') ||
-          (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
-          (hash.startsWith('id=') ? hash.split('id=')[1] : null);
-      }
-      return p ? decodeURIComponent(p).trim() : null;
-    }
-    return null;
+    return parseDirectLinkParamsFromWindow().portalStudentId;
+  });
+
+  // Direct teacher/account query param (?u=..., ?teacher=..., ?user=...)
+  const [directAccountQuery, setDirectAccountQuery] = useState<string | null>(() => {
+    return parseDirectLinkParamsFromWindow().directAccountQuery;
+  });
+  const [isResolvingDirectAccount, setIsResolvingDirectAccount] = useState<boolean>(() => {
+    return Boolean(parseDirectLinkParamsFromWindow().directAccountQuery);
+  });
+  const [directAccountResolveAttempted, setDirectAccountResolveAttempted] = useState<boolean>(() => {
+    return !parseDirectLinkParamsFromWindow().directAccountQuery;
   });
 
   const [directPortalStudent, setDirectPortalStudent] = useState<Student | null>(null);
 
   // Track active portal student resolution to prevent any premature "not found" screen flashes
   const [isResolvingPortalStudent, setIsResolvingPortalStudent] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const p =
-        urlParams.get('portal') ||
-        urlParams.get('id') ||
-        urlParams.get('student') ||
-        urlParams.get('studentId') ||
-        (window.location.hash && (window.location.hash.includes('portal=') || window.location.hash.includes('id=')));
-      return Boolean(p);
-    }
-    return false;
+    return Boolean(parseDirectLinkParamsFromWindow().portalStudentId);
   });
   const [portalResolveAttempted, setPortalResolveAttempted] = useState<boolean>(false);
 
@@ -323,6 +412,9 @@ export function App() {
   const [complexes, setComplexes] = useState<QuranComplex[]>([]);
   const [isComplexModalOpen, setIsComplexModalOpen] = useState(false);
   const [selectedComplexId, setSelectedComplexId] = useState<string>(() => {
+    const { portalComplexId: lc, portalStudentId: ls, directAccountQuery: la } = parseDirectLinkParamsFromWindow();
+    if (lc) return lc;
+    if (ls || la) return '';
     if (currentUser?.complexId && currentUser.complexId !== 'complex-main') {
       return currentUser.complexId;
     }
@@ -370,15 +462,8 @@ export function App() {
   const [libraryLinkModalError, setLibraryLinkModalError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const hasPortal = Boolean(
-        params.get('portal') ||
-        params.get('id') ||
-        params.get('student') ||
-        params.get('studentId') ||
-        (window.location.hash && (window.location.hash.includes('portal=') || window.location.hash.includes('id=')))
-      );
-      if (hasPortal) return true;
+      const { portalStudentId: ls, directAccountQuery: la, portalComplexId: lc } = parseDirectLinkParamsFromWindow();
+      if (ls || la || lc) return true;
       const hasSession = Boolean(localStorage.getItem('omran_session'));
       if (hasSession) return true;
     }
@@ -389,8 +474,8 @@ export function App() {
     if (sessionStorage.getItem('omran_splash_shown') === 'true') {
       return false;
     }
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('portal') || params.get('id') || params.get('complexPortal') || params.get('complex')) {
+    const { portalStudentId: ls, directAccountQuery: la, portalComplexId: lc } = parseDirectLinkParamsFromWindow();
+    if (ls || la || lc) {
       return false;
     }
     return true;
@@ -412,6 +497,7 @@ export function App() {
   const skippedComplexWelcomeRef = useRef<Set<string>>(new Set());
   const isCloudRefreshingRef = useRef(false);
   const lastFocusRefreshRef = useRef(0);
+  const lastDomainRefreshMapRef = useRef<Record<string, number>>({});
 
   // Immediately purge any stale legacy local data caches on startup (preserving only login token)
   useEffect(() => {
@@ -429,70 +515,101 @@ export function App() {
 
   // Dedicated Complex Portal ID parsed from shareable link (e.g. ?complexPortal=xxx)
   const [portalComplexId, setPortalComplexId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const p = new URLSearchParams(window.location.search);
-      const cp = p.get('complexPortal') || p.get('complex');
-      if (cp) return decodeURIComponent(cp);
-      if (window.location.hash) {
-        const hash = window.location.hash.replace(/^#\/?/, '');
-        const hashParams = new URLSearchParams(hash);
-        const hcp = hashParams.get('complexPortal') || hashParams.get('complex');
-        if (hcp) return decodeURIComponent(hcp);
-      }
-    }
-    return null;
+    return parseDirectLinkParamsFromWindow().portalComplexId;
   });
 
-  // Parse URL on initial load and handle direct login links
+  // Parse URL on initial load and handle direct login / portal links dynamically
   useEffect(() => {
     const parseUrlParams = () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      let portalId =
-        urlParams.get('portal') ||
-        urlParams.get('id') ||
-        urlParams.get('student') ||
-        urlParams.get('studentId');
+      const {
+        portalStudentId: nextPortalId,
+        directAccountQuery: nextAccountQuery,
+        portalComplexId: nextComplexId,
+        hasExplicitComplexAction
+      } = parseDirectLinkParamsFromWindow();
 
-      let complexParam = urlParams.get('complexPortal') || urlParams.get('complex');
+      if (nextPortalId) {
+        setPortalStudentId(nextPortalId);
+        setDirectAccountQuery(null);
+        setPortalComplexId(null);
 
-      if ((!portalId || !complexParam) && window.location.hash) {
-        const hash = window.location.hash.replace(/^#\/?/, '');
-        const hashParams = new URLSearchParams(hash);
-        if (!portalId) {
-          portalId =
-            hashParams.get('portal') ||
-            hashParams.get('id') ||
-            hashParams.get('student') ||
-            (hash.startsWith('portal=') ? hash.split('portal=')[1] : null) ||
-            (hash.startsWith('id=') ? hash.split('id=')[1] : null);
-        }
-        if (!complexParam) {
-          complexParam = hashParams.get('complexPortal') || hashParams.get('complex');
-        }
-      }
-
-      if (portalId) {
-        const decoded = decodeURIComponent(portalId).trim();
-        setPortalStudentId(decoded);
-
-        // Check if an old student session is stored or active that doesn't match the new link
         try {
           const rawSession = localStorage.getItem('omran_session');
           if (rawSession) {
             const parsed = JSON.parse(rawSession);
-            if (parsed && (parsed.role === 'student' || parsed.studentId)) {
-              if (parsed.studentId !== decoded && parsed.username !== decoded) {
-                console.log('🔄 Logging out old student session for link:', decoded);
-                localStorage.removeItem('omran_session');
-                sessionStorage.removeItem('omran_session');
-                setCurrentUser(null);
-              }
+            const matchesTargetStudent =
+              parsed &&
+              parsed.role === 'student' &&
+              (parsed.studentId === nextPortalId || parsed.username === nextPortalId);
+            if (!matchesTargetStudent) {
+              console.log('🔄 Logging out conflicting session for student portal link:', nextPortalId);
+              clearSavedSessionStorage();
+              setCurrentUser(null);
+              setDirectPortalStudent(null);
+              setSelectedComplexId('');
+              setActiveHalaqahId('all');
+              setActiveTab('home');
             }
           }
         } catch {}
+        return;
       }
-      if (complexParam) {
-        setPortalComplexId(decodeURIComponent(complexParam));
+
+      if (nextAccountQuery) {
+        setDirectAccountQuery(nextAccountQuery);
+        setPortalStudentId(null);
+        setDirectPortalStudent(null);
+        setPortalComplexId(null);
+
+        try {
+          const rawSession = localStorage.getItem('omran_session');
+          if (rawSession) {
+            const parsed = JSON.parse(rawSession);
+            const matchesTargetAccount =
+              parsed &&
+              (parsed.teacherId === nextAccountQuery ||
+                parsed.studentId === nextAccountQuery ||
+                parsed.username === nextAccountQuery);
+            if (!matchesTargetAccount) {
+              console.log('🔄 Logging out conflicting session for direct account link:', nextAccountQuery);
+              clearSavedSessionStorage();
+              setCurrentUser(null);
+              setSelectedComplexId('');
+              setActiveHalaqahId('all');
+              setActiveTab('home');
+            }
+          }
+        } catch {}
+        setIsResolvingDirectAccount(true);
+        setDirectAccountResolveAttempted(false);
+        return;
+      }
+
+      if (nextComplexId) {
+        setPortalComplexId(nextComplexId);
+        setPortalStudentId(null);
+        setDirectPortalStudent(null);
+        setDirectAccountQuery(null);
+
+        try {
+          const rawSession = localStorage.getItem('omran_session');
+          if (rawSession) {
+            const parsed = JSON.parse(rawSession);
+            const shouldLogout =
+              !parsed ||
+              parsed.role === 'student' ||
+              hasExplicitComplexAction ||
+              (parsed.complexId && parsed.complexId !== nextComplexId);
+            if (shouldLogout) {
+              console.log('🔄 Logging out conflicting session for complex portal link:', nextComplexId);
+              clearSavedSessionStorage();
+              setCurrentUser(null);
+              setSelectedComplexId(nextComplexId);
+              setActiveHalaqahId('all');
+              setActiveTab('home');
+            }
+          }
+        } catch {}
       }
     };
 
@@ -527,7 +644,129 @@ export function App() {
     }
   }, [portalComplexId]);
 
-  // Dedicated effect to resolve portal student securely
+  // Dedicated effect to resolve direct teacher/account link (?u=..., ?teacher=..., etc.),
+  // log out any previous session, and automatically sign in as the target account!
+  useEffect(() => {
+    if (!directAccountQuery) {
+      setIsResolvingDirectAccount(false);
+      setDirectAccountResolveAttempted(true);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const resolveDirectAccount = async () => {
+      setIsResolvingDirectAccount(true);
+      const clean = decodeURIComponent(directAccountQuery).trim();
+      const cleanLower = clean.toLowerCase();
+      const normClean = normalizeArabicText(clean);
+
+      const activateTeacherSession = (matchedTeacher: TeacherAccount) => {
+        if (isCancelled) return;
+        const targetComplexId = matchedTeacher.complexId || matchedTeacher.complexIds?.[0] || '';
+        const nextUser = {
+          username: matchedTeacher.name || matchedTeacher.username || 'المعلم',
+          role: 'admin' as UserRole,
+          teacherId: matchedTeacher.id,
+          complexId: targetComplexId || undefined
+        };
+        try {
+          localStorage.setItem('omran_session', JSON.stringify(nextUser));
+        } catch {}
+        setCurrentUser(nextUser);
+        setSelectedComplexId(targetComplexId);
+        setActiveHalaqahId('all');
+        setActiveTab('home');
+        setTeachers(prev => (prev.some(t => t.id === matchedTeacher.id) ? prev : [...prev, matchedTeacher]));
+        if (targetComplexId) {
+          const targetComp = complexes.find(c => c.id === targetComplexId);
+          if (targetComp) {
+            OmranDataService.setActiveComplex(targetComp);
+          }
+        }
+        setDirectAccountQuery(null);
+        setIsResolvingDirectAccount(false);
+        setDirectAccountResolveAttempted(true);
+        if (typeof window !== 'undefined') {
+          try {
+            const cleanPath = window.location.pathname === '/login' || window.location.pathname === '/privacy'
+              ? '/'
+              : (window.location.pathname || '/');
+            window.history.replaceState({}, '', cleanPath);
+          } catch {}
+        }
+        loadAllData(false).catch(() => {});
+      };
+
+      // 1. Check loaded teachers in memory first
+      const memTeacher = teachers.find(
+        t =>
+          t?.id === clean ||
+          (t?.id || '').toLowerCase() === cleanLower ||
+          (t?.username || '').trim().toLowerCase() === cleanLower ||
+          normalizeArabicText(t?.username || '') === normClean ||
+          (t?.name || '').trim().toLowerCase() === cleanLower ||
+          normalizeArabicText(t?.name || '') === normClean ||
+          (t?.teacherCode && t.teacherCode === clean)
+      );
+      if (memTeacher) {
+        activateTeacherSession(memTeacher);
+        return;
+      }
+
+      // 2. Fetch teacher directly from Firestore across all databases
+      try {
+        const fetchedTeacher = await OmranDataService.findTeacherByIdOrQuery(clean);
+        if (fetchedTeacher) {
+          activateTeacherSession(fetchedTeacher);
+          return;
+        }
+      } catch (err) {
+        console.warn('Direct teacher fetch notice:', err);
+      }
+
+      // 3. Fallback: if ?u= points to a student account instead of a teacher
+      try {
+        const fetchedStudent = await OmranDataService.findStudentByIdOrQuery(clean);
+        if (fetchedStudent && !isCancelled) {
+          setDirectPortalStudent(fetchedStudent);
+          setPortalStudentId(fetchedStudent.id);
+          setDirectAccountQuery(null);
+          setIsResolvingDirectAccount(false);
+          setDirectAccountResolveAttempted(true);
+          if (typeof window !== 'undefined') {
+            try {
+              window.history.replaceState({}, '', `/?portal=${encodeURIComponent(fetchedStudent.id)}`);
+            } catch {}
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Direct student fallback fetch notice:', err);
+      }
+
+      if (!isCancelled) {
+        setIsResolvingDirectAccount(false);
+        setDirectAccountResolveAttempted(true);
+      }
+    };
+
+    resolveDirectAccount();
+
+    const timeoutId = setTimeout(() => {
+      if (!isCancelled) {
+        setIsResolvingDirectAccount(false);
+        setDirectAccountResolveAttempted(true);
+      }
+    }, 6000);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [directAccountQuery]);
+
+  // Dedicated effect to resolve portal student securely and bind session to the target student
   useEffect(() => {
     if (!portalStudentId) {
       setDirectPortalStudent(null);
@@ -537,6 +776,43 @@ export function App() {
     }
 
     let isCancelled = false;
+
+    const bindStudentSessionAndComplex = (resolved: Student) => {
+      if (isCancelled) return;
+      const targetStudentSession = {
+        username: resolved.name,
+        role: 'student' as UserRole,
+        studentId: resolved.id,
+        complexId: resolved.complexId
+      };
+      setCurrentUser(prev => {
+        if (
+          prev &&
+          prev.role === 'student' &&
+          prev.studentId === resolved.id &&
+          prev.username === resolved.name &&
+          prev.complexId === resolved.complexId
+        ) {
+          return prev;
+        }
+        try {
+          localStorage.setItem('omran_session', JSON.stringify(targetStudentSession));
+        } catch {}
+        return targetStudentSession;
+      });
+
+      const resolvedComplexId =
+        resolved.complexId ||
+        halaqahs.find(h => h.id === resolved.halaqahId)?.complexId ||
+        '';
+      if (resolvedComplexId) {
+        setSelectedComplexId(prev => (prev !== resolvedComplexId ? resolvedComplexId : prev));
+        const targetComp = complexes.find(c => c.id === resolvedComplexId);
+        if (targetComp) {
+          OmranDataService.setActiveComplex(targetComp);
+        }
+      }
+    };
 
     const resolvePortalStudent = async () => {
       const clean = decodeURIComponent(portalStudentId).trim();
@@ -552,6 +828,7 @@ export function App() {
       if (match) {
         if (!isCancelled) {
           setDirectPortalStudent(match);
+          bindStudentSessionAndComplex(match);
           setIsResolvingPortalStudent(false);
           setPortalResolveAttempted(true);
         }
@@ -567,6 +844,7 @@ export function App() {
         if (!isCancelled) {
           if (fetched) {
             setDirectPortalStudent(fetched);
+            bindStudentSessionAndComplex(fetched);
             setStudents(prev => (prev.some(s => s.id === fetched.id) ? prev : [...prev, fetched]));
           }
           setIsResolvingPortalStudent(false);
@@ -742,9 +1020,9 @@ export function App() {
     );
   }, [currentUser, currentTeacher]);
 
-  // STRICT IMMUNITY: Protect teachers and supervisors from demotion, without hijacking other teachers' accounts
+  // STRICT IMMUNITY: Protect teachers and supervisors from demotion, without hijacking students or direct links
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || currentUser.role === 'student' || portalStudentId || directAccountQuery) return;
     const cleanUser = (currentUser.username || '').trim().toLowerCase();
     const isMontaserOrDev =
       cleanUser === 'admin' ||
@@ -998,24 +1276,34 @@ export function App() {
     }
   }, [isSyncing]);
 
-  // Synchronize OmranDataService active database whenever activeComplex changes,
-  // and bind real-time subscriptions to the active database instance!
+  // Split DB connection key so switching complexes on Central DB never tears down all 18 collection listeners
+  const activeDbKey = useMemo(() => {
+    const cfg = activeComplex?.databaseConfig;
+    if (cfg?.isCustom && cfg.projectId) {
+      return `custom:${activeComplex?.id || ''}:${cfg.projectId}:${cfg.databaseId || '(default)'}`;
+    }
+    return 'central';
+  }, [activeComplex?.id, activeComplex?.databaseConfig?.isCustom, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+
+  const activeComplexRef = useRef<QuranComplex | null>(activeComplex);
+  activeComplexRef.current = activeComplex;
+  const activeComplexIdRef = useRef<string | undefined>(activeComplex?.id);
+  activeComplexIdRef.current = activeComplex?.id;
+  const prevComplexScopedIdRef = useRef<string | undefined>(activeComplex?.id);
+
+  // Synchronize OmranDataService active database on boot or when DB target changes (central vs custom DB)
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Tell OmranDataService to set active complex and resolve its Firestore instance
-    OmranDataService.setActiveComplex(activeComplex);
+    // 1. Tell OmranDataService to resolve the target Firestore instance
+    OmranDataService.setActiveComplex(activeComplexRef.current);
 
-    // Immediately reset Google OAuth & Library state when switching complexes to guarantee zero cross-complex leakage
-    setGoogleAuthConfig({ isLinked: false, complexId: activeComplex?.id });
-    setLibraryDocs([]);
-
-    // 2. Load all data from the active database
+    // 2. Load all data from the active database once per DB target
     loadAllData();
 
-    // 4. Attach Firestore real-time subscriptions for the active database
+    // 3. Attach Firestore real-time subscriptions for the active database
     let isInitialSnapshotSkipped = false;
-    setTimeout(() => { isInitialSnapshotSkipped = true; }, 1800);
+    const initTimer = setTimeout(() => { isInitialSnapshotSkipped = true; }, 1800);
 
     const notifyBackgroundSync = () => {
       if (isInitialSnapshotSkipped) {
@@ -1082,18 +1370,6 @@ export function App() {
         notifyBackgroundSync();
       }
     });
-    const unsubPlanConfig = OmranDataService.subscribePlanScheduleConfig(cfg => {
-      if (!isMounted || !cfg) return;
-      setComplexes(prev =>
-        prev.map(c => {
-          if (!activeComplex?.id || c.id === activeComplex.id) {
-            return { ...c, planScheduleConfig: cfg };
-          }
-          return c;
-        })
-      );
-      notifyBackgroundSync();
-    }, activeComplex?.id);
     const unsubExams = OmranDataService.subscribeExams(newExams => {
       if (isMounted) {
         setExams(newExams);
@@ -1112,21 +1388,6 @@ export function App() {
         notifyBackgroundSync();
       }
     });
-    const unsubGoogle = OmranDataService.subscribeGoogleOAuthConfig(newGoogle => {
-      if (!isMounted) return;
-      setGoogleAuthConfig(prev => {
-        if (
-          prev.isLinked === newGoogle.isLinked &&
-          prev.connectedEmail === newGoogle.connectedEmail &&
-          prev.complexId === newGoogle.complexId &&
-          prev.driveRootFolderId === newGoogle.driveRootFolderId
-        ) {
-          return prev;
-        }
-        return newGoogle;
-      });
-      notifyBackgroundSync();
-    }, activeComplex?.id);
     const unsubRecordings = OmranDataService.subscribeRecordings(newRecordings => {
       if (isMounted) {
         setRecordings(newRecordings);
@@ -1151,12 +1412,6 @@ export function App() {
         notifyBackgroundSync();
       }
     });
-    const unsubLibraryDocs = OmranDataService.subscribeLibraryDocuments(newDocs => {
-      if (isMounted) {
-        setLibraryDocs(newDocs);
-        notifyBackgroundSync();
-      }
-    }, activeComplex?.id);
     const unsubTombstones = OmranDataService.subscribeTombstones(tombstones => {
       if (!isMounted) return;
       setStudents(prev => prev.filter(s => s?.id && !tombstones.deletedStudents.has(s.id)));
@@ -1175,13 +1430,10 @@ export function App() {
     // Real-time synchronization of active halaqah across all devices and browser tabs
     const unsubActiveHalaqah = OmranDataService.subscribeActiveHalaqah(data => {
       if (!isMounted || !data?.activeHalaqahId) return;
-      // CRITICAL: Only sync if this update came from the same authenticated user or session,
-      // and within the same active complex! Never allow a remote update from another user or
-      // complex to hijack the active halaqah while the user is using the app!
       if (data.updatedBy && currentUser?.username && data.updatedBy !== currentUser.username) {
         return;
       }
-      if (data.complexId && activeComplex?.id && data.complexId !== activeComplex.id) {
+      if (data.complexId && activeComplexIdRef.current && data.complexId !== activeComplexIdRef.current) {
         return;
       }
       const remoteHId = data.activeHalaqahId;
@@ -1192,6 +1444,9 @@ export function App() {
     const handleBroadcastUpdate = (e: any) => {
       const type = e.detail?.type;
       const payload = e.detail?.payload;
+      const curComplexId = activeComplexIdRef.current;
+      const curComplex = activeComplexRef.current;
+
       if (type === 'student' && payload) {
         setStudents(prev =>
           prev.some(s => s.id === payload.id)
@@ -1201,7 +1456,7 @@ export function App() {
       } else if (type === 'student-deleted' && payload) {
         setStudents(prev => prev.filter(s => s.id !== payload));
       } else if (type === 'library' && payload) {
-        if (!activeComplex?.id || !payload.complexId || payload.complexId === activeComplex.id) {
+        if (!curComplexId || !payload.complexId || payload.complexId === curComplexId) {
           setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
         }
       } else if (type === 'library-deleted' && payload) {
@@ -1233,12 +1488,11 @@ export function App() {
           }
           return [payload, ...prev];
         });
-        if (payload.theme && (!activeComplex || activeComplex.id === payload.id)) {
+        if (payload.theme && (!curComplex || curComplex.id === payload.id)) {
           applyComplexThemeToDOM(payload.theme, true);
           setSettings(prev => ({ ...prev, theme: payload.theme }));
         }
       } else if (type === 'complex-deleted' && payload) {
-
         setComplexes(prev => prev.filter(c => c.id !== payload));
       } else if (type === 'settings' && payload) {
         setSettings(prev => ({ ...prev, ...payload }));
@@ -1249,32 +1503,12 @@ export function App() {
           for (const a of payload) if (a?.id) map.set(a.id, a);
           return Array.from(map.values());
         });
-      } else if (type === 'library' && payload) {
-        if (!activeComplex?.id || !payload.complexId || payload.complexId === activeComplex.id) {
-          setLibraryDocs(prev => [payload, ...prev.filter(d => d.id !== payload.id)]);
-        }
-      } else if (type === 'library-deleted' && payload) {
-        setLibraryDocs(prev => prev.filter(d => d.id !== payload));
-      } else if (type === 'certificate' && payload) {
-        setCertificates(prev => [payload, ...prev.filter(c => c.id !== payload.id)]);
-      } else if (type === 'student' && payload) {
-        setStudents(prev =>
-          prev.some(s => s.id === payload.id)
-            ? prev.map(s => (s.id === payload.id ? payload : s))
-            : [payload, ...prev]
-        );
-      } else if (type === 'student-deleted' && payload) {
-        setStudents(prev => prev.filter(s => s.id !== payload));
       } else if (type === 'halaqah' && payload) {
         setHalaqahs(prev => [payload, ...prev.filter(h => h.id !== payload.id)]);
-      } else if (type === 'exam' && payload) {
-        setExams(prev => [payload, ...prev.filter(e => e.id !== payload.id)]);
-      } else if (type === 'exam-deleted' && payload) {
-        setExams(prev => prev.filter(e => e.id !== payload));
       } else if (type === 'plan_schedule' && payload) {
         setComplexes(prev =>
           prev.map(c => {
-            if (!activeComplex?.id || c.id === activeComplex.id) {
+            if (!curComplexId || c.id === curComplexId) {
               return { ...c, planScheduleConfig: payload };
             }
             return c;
@@ -1300,6 +1534,7 @@ export function App() {
 
     return () => {
       isMounted = false;
+      clearTimeout(initTimer);
       window.removeEventListener('omran:data-updated', handleBroadcastUpdate);
       window.removeEventListener('omran:students-updated', handleDirectStudentUpdated);
       unsubStudents();
@@ -1311,24 +1546,86 @@ export function App() {
       unsubViolations();
       unsubHalaqahs();
       unsubComplexes();
-      unsubPlanConfig();
       unsubExams();
       unsubSubmissions();
       unsubLeaderboard();
-      unsubGoogle();
       unsubRecordings();
       unsubRecordingsConfig();
       unsubCertificates();
       unsubListeningLogs();
-      unsubLibraryDocs();
       unsubTombstones();
       unsubActiveHalaqah();
     };
-  }, [activeComplex?.id, activeComplex?.databaseConfig?.projectId, activeComplex?.databaseConfig?.databaseId]);
+  }, [activeDbKey]);
+
+  // Lightweight secondary effect for complex-scoped resources (Plan Schedule, Google OAuth, Library Docs)
+  useEffect(() => {
+    let isMounted = true;
+    const complexId = activeComplex?.id;
+    OmranDataService.setActiveComplex(activeComplex);
+
+    if (prevComplexScopedIdRef.current !== complexId) {
+      prevComplexScopedIdRef.current = complexId;
+      setGoogleAuthConfig({ isLinked: false, complexId });
+      setLibraryDocs([]);
+    }
+
+    let isInitialSkipped = false;
+    const timer = setTimeout(() => { isInitialSkipped = true; }, 1200);
+    const notifyScopedSync = () => {
+      if (isInitialSkipped) {
+        triggerCloudSyncIndicator('تم استقبال تحديث جديد من السحابة ✓');
+      }
+    };
+
+    const unsubPlanConfig = OmranDataService.subscribePlanScheduleConfig(cfg => {
+      if (!isMounted || !cfg) return;
+      setComplexes(prev =>
+        prev.map(c => (!complexId || c.id === complexId ? { ...c, planScheduleConfig: cfg } : c))
+      );
+      notifyScopedSync();
+    }, complexId);
+
+    const unsubGoogle = OmranDataService.subscribeGoogleOAuthConfig(newGoogle => {
+      if (!isMounted) return;
+      setGoogleAuthConfig(prev => {
+        if (
+          prev.isLinked === newGoogle.isLinked &&
+          prev.connectedEmail === newGoogle.connectedEmail &&
+          prev.complexId === newGoogle.complexId &&
+          prev.driveRootFolderId === newGoogle.driveRootFolderId
+        ) {
+          return prev;
+        }
+        return newGoogle;
+      });
+      notifyScopedSync();
+    }, complexId);
+
+    const unsubLibraryDocs = OmranDataService.subscribeLibraryDocuments(newDocs => {
+      if (isMounted) {
+        setLibraryDocs(newDocs);
+        notifyScopedSync();
+      }
+    }, complexId);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      unsubPlanConfig();
+      unsubGoogle();
+      unsubLibraryDocs();
+    };
+  }, [activeComplex?.id, activeDbKey]);
 
   // Verify & Fetch Live Cloud Data from Firestore Server per Domain/Tab/Action
-  const refreshDomainFromCloud = useCallback(async (domain: string = 'all', customMessage?: string) => {
+  const refreshDomainFromCloud = useCallback(async (domain: string = 'all', customMessage?: string, force = false) => {
+    const nowMs = Date.now();
+    const cacheKey = `${activeComplex?.id || 'central'}:${domain}`;
+    const lastRan = lastDomainRefreshMapRef.current[cacheKey] || 0;
+    if (!force && nowMs - lastRan < 12000) return;
     if (isCloudRefreshingRef.current) return;
+    lastDomainRefreshMapRef.current[cacheKey] = nowMs;
     isCloudRefreshingRef.current = true;
     const syncingText = customMessage || 'جاري التحقق وجلب أحدث البيانات من قاعدة البيانات...';
     triggerCloudSyncIndicator(syncingText, 6000);
@@ -1610,13 +1907,13 @@ export function App() {
     };
 
     const handleRequestRefreshBus = (e: Event) => {
-      const detail = (e as CustomEvent<{ domain?: string; message?: string }>).detail;
-      refreshDomainFromCloud(detail?.domain || 'all', detail?.message);
+      const detail = (e as CustomEvent<{ domain?: string; message?: string; force?: boolean }>).detail;
+      refreshDomainFromCloud(detail?.domain || 'all', detail?.message, detail?.force ?? true);
     };
 
     const handleWindowFocusOrOnline = () => {
       const now = Date.now();
-      if (now - lastFocusRefreshRef.current < 4000) return;
+      if (now - lastFocusRefreshRef.current < 30000) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       lastFocusRefreshRef.current = now;
       const targetDomain = (portalStudentId || currentUser?.role === 'student') ? 'portal' : (activeTab || 'all');
@@ -2088,16 +2385,24 @@ export function App() {
     };
   }, [settings, isDeveloper, supervisedComplex, scopedHalaqahs, activeHalaqahId, assignedHalaqahs, currentTeacher, currentUser, activeComplex]);
 
-  // Scoped criteria: Specific to active complex if set
+  // Scoped criteria: Merge unscoped defaults with complex-specific overrides
   const scopedCriteria = useMemo(() => {
     const complexId = activeComplex?.id;
     if (!complexId) return criteria;
 
-    const matched = criteria.filter(c => c.complexId === complexId);
-    if (matched.length > 0) return matched;
-
-    return criteria.filter(c => !c.complexId);
-  }, [criteria, activeComplex]);
+    const map = new Map<string, EvaluationCriteria>();
+    for (const c of criteria) {
+      if (!c?.id || c.complexId) continue;
+      map.set(c.id, c);
+    }
+    for (const c of criteria) {
+      if (!c?.id || c.complexId !== complexId) continue;
+      const baseId = c.id.includes('__') ? c.id.split('__')[0] : c.id;
+      map.delete(baseId);
+      map.set(c.id, c);
+    }
+    return Array.from(map.values());
+  }, [criteria, activeComplex?.id]);
 
   // Auto-switch to assigned halaqah for teacher or valid complex halaqah for supervisor
   useEffect(() => {
@@ -2311,9 +2616,20 @@ export function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('omran_session');
+    clearSavedSessionStorage();
     setPortalStudentId(null);
-    navigatePublic('landing');
+    setDirectPortalStudent(null);
+    setDirectAccountQuery(null);
+    setPortalComplexId(null);
+    setSelectedComplexId('');
+    setActiveHalaqahId('all');
+    setActiveTab('home');
+    setPublicRoute('landing');
+    if (typeof window !== 'undefined') {
+      try {
+        window.history.replaceState({}, '', '/');
+      } catch {}
+    }
   };
 
   // Teacher Google Account Linking Handlers
@@ -2854,19 +3170,59 @@ export function App() {
     });
   };
 
-  // 8. Update Criteria (scoped to active complex)
+  // 8. Update Criteria (scoped to active complex & synced with points settings)
   const handleSaveCriteria = async (list: EvaluationCriteria[]) => {
     const complexId = activeComplex?.id || 'default-complex';
-    const taggedList = list.map(c => ({
-      ...c,
-      complexId: c.complexId || complexId
-    }));
+    const taggedList = list.map(c => {
+      if (c.id.startsWith('crit-points-')) {
+        return { ...c, complexId: c.complexId || complexId };
+      }
+      return c.complexId ? c : c;
+    });
 
-    const otherComplexCriteria = criteria.filter(c => c.complexId && c.complexId !== complexId);
-    const fullList = [...otherComplexCriteria, ...taggedList];
+    const replacedIds = new Set(taggedList.map(c => c.id));
+    const untouchedOthers = criteria.filter(
+      c => c?.id && !replacedIds.has(c.id) && (c.complexId ? c.complexId !== complexId : false)
+    );
+    const fullList = [...untouchedOthers, ...taggedList];
 
     setCriteria(fullList);
-    await OmranDataService.saveCriteriaList(fullList);
+    await OmranDataService.saveCriteriaList(taggedList);
+
+    const findCritVal = (baseId: string) => {
+      const exactScoped = taggedList.find(c => c.id === `${baseId}__${complexId}`);
+      if (typeof exactScoped?.pointsWeight === 'number') return exactScoped.pointsWeight;
+      const byComplex = taggedList.find(
+        c => (c.id === baseId || c.id.startsWith(`${baseId}__`)) && c.complexId === complexId
+      );
+      if (typeof byComplex?.pointsWeight === 'number') return byComplex.pointsWeight;
+      const plain = taggedList.find(c => c.id === baseId);
+      return typeof plain?.pointsWeight === 'number' ? plain.pointsWeight : undefined;
+    };
+
+    const newPageVal = findCritVal('crit-points-new-page');
+    const reviewPageVal = findCritVal('crit-points-review-page');
+    const listeningVal = findCritVal('crit-points-listening');
+
+    if (newPageVal !== undefined || reviewPageVal !== undefined || listeningVal !== undefined) {
+      const updatedSettings: AppSettings = {
+        ...settings,
+        ...(newPageVal !== undefined ? { newPagePoints: newPageVal } : {}),
+        ...(reviewPageVal !== undefined ? { reviewPagePoints: reviewPageVal } : {}),
+        ...(listeningVal !== undefined ? { dailyListeningPoints: listeningVal } : {})
+      };
+      setSettings(updatedSettings);
+      await OmranDataService.saveSettings(updatedSettings);
+
+      if (listeningVal !== undefined) {
+        const updatedRecCfg: RecordingsConfig = {
+          ...recordingsConfig,
+          listeningPointsReward: listeningVal
+        };
+        setRecordingsConfig(updatedRecCfg);
+        await OmranDataService.saveRecordingsConfig(updatedRecCfg);
+      }
+    }
   };
 
   const handleDeleteCriteria = async (id: string) => {
@@ -3441,20 +3797,15 @@ export function App() {
       const targetId = meta.highlightId || meta.itemId || meta.studentId;
       setTimeout(() => {
         triggerComplexThemePulse(targetId);
-      }, 300);
+      }, 250);
       setTimeout(() => {
         triggerComplexThemePulse(targetId);
-      }, 700);
+      }, 650);
     }
     refreshDomainFromCloud(tab, 'جاري التحقق وجلب أحدث البيانات من قاعدة البيانات...');
-    if (tab === activeTab) {
-      setIsTabLoading(true);
-      setTimeout(() => setIsTabLoading(false), 300);
-      return;
+    if (tab !== activeTab) {
+      setActiveTab(tab);
     }
-    setIsTabLoading(true);
-    setActiveTab(tab);
-    setTimeout(() => setIsTabLoading(false), 400);
   };
 
   const handleOpenThemeCustomizer = (targetComplex?: any) => {
@@ -3628,6 +3979,7 @@ export function App() {
               onRefresh={loadAllData}
               isCloudSyncing={isCloudSyncing}
               cloudSyncText={cloudSyncText}
+              criteria={scopedCriteria}
             />
           </motion.div>
         </div>
@@ -3676,6 +4028,106 @@ export function App() {
         </div>
       );
     }
+  }
+
+  // Priority 0B: Direct teacher/account link (?u=..., ?teacher=..., ?user=...)
+  if (directAccountQuery) {
+    if (isResolvingDirectAccount || !directAccountResolveAttempted) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex items-center justify-center p-6" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="relative z-10 text-center space-y-4">
+            <ModernQuranLoader
+              title="جارٍ تبديل الحساب وتسجيل الدخول المباشر..."
+              subtitle="يتم تسجيل الخروج من الجلسة السابقة وجلب بيانات الحساب المقرر من الرابط سحابياً"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] font-sans flex flex-col items-center justify-center p-6" dir="rtl">
+        <AnimatedBackground />
+        <div className="relative z-10 text-center space-y-5 max-w-md bg-[#064e3b]/90 border-2 border-b-4 border-amber-500/40 p-8 rounded-[32px] backdrop-blur-md shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-[#fbbf24] flex items-center justify-center mx-auto border-2 border-b-4 border-amber-500/30">
+            <UserCog className="w-8 h-8" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold font-heading text-white">لم يتم العثور على الحساب المطلوب</h2>
+            <p className="text-xs text-[#86efac]/90 mt-2 leading-relaxed">
+              تعذر العثور على بيانات الحساب المرتبط بهذا الرابط المباشر. قد يكون تم حذفه أو تعديل معرّفه.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleLogout}
+              className="flex-1 py-3 px-4 rounded-2xl bg-[#fbbf24] text-[#064e3b] font-black text-xs hover:bg-[#f59e0b] shadow-lg cursor-pointer transition-all"
+            >
+              العودة للبوابة الرئيسية
+            </button>
+            <button
+              onClick={() => {
+                setIsResolvingDirectAccount(true);
+                setDirectAccountResolveAttempted(false);
+                const retryVal = directAccountQuery;
+                setDirectAccountQuery(null);
+                setTimeout(() => setDirectAccountQuery(retryVal), 50);
+              }}
+              className="py-3 px-4 rounded-2xl bg-[#022c22] text-[#86efac] font-bold text-xs border border-[#065f46] hover:text-white cursor-pointer"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Priority 0C: Direct complex portal link (?complexPortal=xxx or ?complex=xxx)
+  // Placed BEFORE student session check so opening a dedicated complex link never gets trapped in an old student session
+  if (portalComplexId) {
+    const targetComplex = complexes.find(c => c.id === portalComplexId) || (complexes.length > 0 ? complexes[0] : null);
+    if (!targetComplex) {
+      return (
+        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] flex items-center justify-center p-6" dir="rtl">
+          <TopProgressBar isLoading={true} />
+          <AnimatedBackground />
+          <div className="relative z-10 text-center space-y-4">
+            <ModernQuranLoader title="جارٍ فتح بوابة المجمع..." subtitle="يتم مزامنة واسترجاع بيانات المجمع المخصص سحابياً..." />
+          </div>
+        </div>
+      );
+    }
+
+    const complexHalaqahs = halaqahs.filter(h => isHalaqahInComplex(h, targetComplex, complexes, students, teachers));
+
+    return (
+      <ComplexCustomPortalPage
+        complex={targetComplex}
+        halaqahs={complexHalaqahs}
+        canManagePortalMail={Boolean(isDeveloper || isSupervisor || currentUser?.role === 'admin')}
+        onUpdateComplex={handleSaveComplex}
+        onLoginSuccess={(user, teacher, student) => {
+          handleLoginSuccess(user);
+          if (student) {
+            setPortalStudentId(student.id);
+            setDirectPortalStudent(student);
+          }
+          setPortalComplexId(null);
+        }}
+        onExitPortal={() => {
+          setPortalComplexId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('complexPortal');
+            url.searchParams.delete('complex');
+            window.history.pushState({}, '', url.pathname);
+          } catch {}
+        }}
+      />
+    );
   }
 
   // 1. Strict Student Portal Handling: If user is authenticated as STUDENT, MUST NEVER leak to admin dashboard
@@ -3746,6 +4198,7 @@ export function App() {
               onRefresh={loadAllData}
               isCloudSyncing={isCloudSyncing}
               cloudSyncText={cloudSyncText}
+              criteria={scopedCriteria}
             />
           </motion.div>
         </div>
@@ -3785,8 +4238,6 @@ export function App() {
     );
   }
 
-
-
   // Priority 1: If user navigated to /privacy or clicked Privacy Policy link
   if (publicRoute === 'privacy') {
     return (
@@ -3807,50 +4258,6 @@ export function App() {
         activeComplex={targetPortalComplex || activeComplex}
         onFinish={handleFinishInitialBoot}
         minDurationMs={500}
-      />
-    );
-  }
-
-  // Priority 1.8: If a direct complex portal link was accessed (e.g. ?complexPortal=xxx)
-  if (portalComplexId) {
-    const targetComplex = complexes.find(c => c.id === portalComplexId) || (complexes.length > 0 ? complexes[0] : null);
-    if (!targetComplex) {
-      return (
-        <div className="min-h-screen bg-[#022c22] text-[#f0f9f6] flex items-center justify-center p-6" dir="rtl">
-          <TopProgressBar isLoading={true} />
-          <AnimatedBackground />
-          <div className="relative z-10 text-center space-y-4">
-            <ModernQuranLoader title="جارٍ فتح بوابة المجمع..." subtitle="يتم مزامنة واسترجاع بيانات المجمع المخصص سحابياً..." />
-          </div>
-        </div>
-      );
-    }
-
-    const complexHalaqahs = halaqahs.filter(h => isHalaqahInComplex(h, targetComplex, complexes, students, teachers));
-
-    return (
-      <ComplexCustomPortalPage
-        complex={targetComplex}
-        halaqahs={complexHalaqahs}
-        canManagePortalMail={Boolean(isDeveloper || isSupervisor || currentUser?.role === 'admin')}
-        onUpdateComplex={handleSaveComplex}
-        onLoginSuccess={(user, teacher, student) => {
-          handleLoginSuccess(user);
-          if (student) {
-            setPortalStudentId(student.id);
-            setDirectPortalStudent(student);
-          }
-          setPortalComplexId(null);
-        }}
-        onExitPortal={() => {
-          setPortalComplexId(null);
-          try {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('complexPortal');
-            url.searchParams.delete('complex');
-            window.history.pushState({}, '', url.pathname);
-          } catch {}
-        }}
       />
     );
   }
@@ -3984,21 +4391,15 @@ export function App() {
       />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 pt-3.5 sm:pt-6 relative space-y-4 sm:space-y-6 w-full max-w-full overflow-x-clip">
-        {/* Active Halaqah Header & Switcher Banner with smooth motion.div workspace transition */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeHalaqahId || 'default'}
-            initial={{ opacity: 0, y: 10, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.99 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 relative overflow-hidden transition-all w-full max-w-full"
-            style={{
-              backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
-              borderColor: activeComplex?.theme?.cardColor || '#203843',
-              borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
-            }}
-          >
+        {/* Active Halaqah Header & Switcher Banner */}
+        <div
+          className="p-3.5 sm:p-4 rounded-2xl border-2 border-b-4 shadow-md flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 relative overflow-hidden transition-colors w-full max-w-full"
+          style={{
+            backgroundColor: activeComplex?.theme?.secondaryColor || '#1b2e35',
+            borderColor: activeComplex?.theme?.cardColor || '#203843',
+            borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
+          }}
+        >
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div
                 className="w-10 h-10 rounded-2xl border-2 border-b-4 flex items-center justify-center shrink-0 shadow-sm"
@@ -4214,18 +4615,14 @@ export function App() {
                   </div>
                 )
               )}
-            </div>
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        </div>
 
         {/* Navigation Tabs Bar */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-center gap-1.5 overflow-x-auto xl:flex-wrap xl:overflow-visible pb-2 xl:pb-1.5 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 backdrop-blur-md shadow-lg relative transition-all w-full max-w-full touch-pan-x snap-x"
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto xl:flex-wrap xl:overflow-visible pb-2 xl:pb-1.5 scrollbar-none slider-horizontal p-1.5 rounded-2xl border-2 border-b-4 shadow-lg relative transition-colors w-full max-w-full touch-pan-x snap-x"
           style={{
-            backgroundColor: `${activeComplex?.theme?.secondaryColor || '#1b2e35'}f0`,
+            backgroundColor: `${activeComplex?.theme?.secondaryColor || '#1b2e35'}f5`,
             borderColor: lightenHex(activeComplex?.theme?.cardColor || '#203843', 0.18),
             borderBottomColor: darkenHex(activeComplex?.theme?.primaryColor || '#131f24', 0.35)
           }}
@@ -4281,22 +4678,14 @@ export function App() {
               </button>
             );
           })}
-        </motion.div>
+        </div>
 
-        {/* Tab Views with Buttery Smooth Animated Transitions (مثل المنصات العالمية) */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10, scale: 0.995 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.995 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full space-y-6"
-          >
-            {isTabLoading || (isInitialAppBoot && students.length === 0) ? (
-              <TabSkeleton activeTab={activeTab} activeComplex={activeComplex} />
-            ) : (
-              <>
+        {/* Instant Tab Views (zero blocking transition stalls) */}
+        <div className="w-full space-y-6">
+          {isInitialAppBoot && students.length === 0 ? (
+            <TabSkeleton activeTab={activeTab} activeComplex={activeComplex} />
+          ) : (
+            <>
                 {activeTab === 'home' && (
                   <HomeTab
                     students={displayedStudents}
@@ -4608,10 +4997,9 @@ export function App() {
                 teachers={teachers}
               />
             )}
-              </>
-            )}
-          </motion.div>
-        </AnimatePresence>
+            </>
+          )}
+        </div>
       </main>
 
       {/* Platform Global Footer */}
@@ -4952,9 +5340,9 @@ export function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 25, scale: 0.92 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            onClick={() => refreshDomainFromCloud(portalStudentId || currentUser?.role === 'student' ? 'portal' : (activeTab || 'all'), 'جاري التحديث المباشر من قاعدة البيانات...')}
+            onClick={() => refreshDomainFromCloud(portalStudentId || currentUser?.role === 'student' ? 'portal' : (activeTab || 'all'), 'جاري التحديث المباشر من قاعدة البيانات...', true)}
             title="انقر للتحقق وتحديث البيانات الآن من قاعدة البيانات"
-            className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-5 sm:right-5 max-w-[calc(100vw-1.5rem)] z-[9990] flex items-center justify-center sm:justify-start gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] backdrop-blur-md text-xs font-bold cursor-pointer select-none active:translate-y-0.5 transition-all"
+            className="fixed bottom-3 right-3 left-3 sm:left-auto sm:bottom-5 sm:right-5 max-w-[calc(100vw-1.5rem)] z-[9990] flex items-center justify-center sm:justify-start gap-2.5 px-4 py-2.5 rounded-2xl border-2 border-b-4 shadow-[0_10px_35px_rgba(0,0,0,0.65)] text-xs font-bold cursor-pointer select-none active:translate-y-0.5 transition-colors"
             style={{
               backgroundColor: `${activeComplex?.theme?.cardColor || '#1b2e35'}fa`,
               borderColor: `${activeComplex?.theme?.accentColor || '#fbbf24'}85`,

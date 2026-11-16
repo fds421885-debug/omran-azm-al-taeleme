@@ -671,11 +671,37 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   }
   const activeStudent = rawFoundStudent || (activeStudentId && lastStableStudentRef.current?.id === activeStudentId ? lastStableStudentRef.current : undefined);
 
+  // Memoized maps for O(1) lookup of attendance & evaluation on selectedDate
+  const selectedDateAttendanceMap = useMemo(() => {
+    const map = new Map<string, AttendanceRecord>();
+    for (const a of attendance) {
+      if (a.date === selectedDate && a.studentId) {
+        map.set(a.studentId, a);
+      }
+    }
+    return map;
+  }, [attendance, selectedDate]);
+
+  const selectedDateEvaluationsMap = useMemo(() => {
+    const map = new Map<string, StudentEvaluation>();
+    for (const e of evaluations) {
+      if (e.date === selectedDate && e.studentId) {
+        map.set(e.studentId, e);
+      }
+    }
+    return map;
+  }, [evaluations, selectedDate]);
+
   // Memoized evaluation for the currently selected student on the currently selected date
   const selectedDateEvaluation = useMemo(() => {
     if (!activeStudent) return null;
-    return evaluations.find(e => e.date === selectedDate && e.studentId === activeStudent.id) || null;
-  }, [evaluations, selectedDate, activeStudent?.id]);
+    return selectedDateEvaluationsMap.get(activeStudent.id) || null;
+  }, [selectedDateEvaluationsMap, activeStudent]);
+
+  const activeStudentPagesInfo = useMemo(() => {
+    if (!activeStudent) return null;
+    return calculateStudentCompletedPages(activeStudent, evaluations);
+  }, [activeStudent, evaluations]);
 
   // Session listening state (allows teacher to actively mark/toggle listening status & reps in real time)
   const [sessionListeningStatus, setSessionListeningStatus] = useState<{
@@ -825,23 +851,38 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   const [criteriaValues, setCriteriaValues] = useState<Record<string, any>>({});
   const [teacherNotes, setTeacherNotes] = useState<string>('أداء طيب ومتقن ما شاء الله، نسأل الله له التوفيق والرفعة.');
 
-  // Configured Points for Pages & Listening (from criteria or default)
+  // Configured Points for Pages & Listening (per-complex scoped criteria -> unscoped criteria -> settings -> default)
+  const resolvePointWeight = useMemo(() => {
+    return (baseId: string, settingsFallback: number | undefined, defaultVal: number): number => {
+      const scopedId = activeComplexId && activeComplexId !== 'default-complex'
+        ? `${baseId}__${activeComplexId}`
+        : baseId;
+      const exactScoped = criteria.find(c => c.id === scopedId);
+      if (typeof exactScoped?.pointsWeight === 'number') return exactScoped.pointsWeight;
+      if (activeComplexId) {
+        const byComplex = criteria.find(
+          c => (c.id === baseId || c.id.startsWith(`${baseId}__`)) && c.complexId === activeComplexId
+        );
+        if (typeof byComplex?.pointsWeight === 'number') return byComplex.pointsWeight;
+      }
+      const unscoped = criteria.find(c => c.id === baseId);
+      if (typeof unscoped?.pointsWeight === 'number') return unscoped.pointsWeight;
+      if (typeof settingsFallback === 'number') return settingsFallback;
+      return defaultVal;
+    };
+  }, [criteria, activeComplexId]);
+
   const pointsPerNewPage = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-new-page');
-    return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 5;
-  }, [criteria]);
+    return resolvePointWeight('crit-points-new-page', settings?.newPagePoints, 5);
+  }, [resolvePointWeight, settings?.newPagePoints]);
 
   const pointsPerReviewPage = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-review-page');
-    return typeof found?.pointsWeight === 'number' ? found.pointsWeight : 1;
-  }, [criteria]);
+    return resolvePointWeight('crit-points-review-page', settings?.reviewPagePoints, 1);
+  }, [resolvePointWeight, settings?.reviewPagePoints]);
 
   const pointsPerListening = useMemo(() => {
-    const found = criteria.find(c => c.id === 'crit-points-listening');
-    if (typeof found?.pointsWeight === 'number') return found.pointsWeight;
-    if (typeof settings?.dailyListeningPoints === 'number') return settings.dailyListeningPoints;
-    return 5;
-  }, [criteria, settings]);
+    return resolvePointWeight('crit-points-listening', settings?.dailyListeningPoints, 5);
+  }, [resolvePointWeight, settings?.dailyListeningPoints]);
 
   // Live calculation of listening points earned today:
   // When student is a listener (مستمع), they receive the exact configured listening points
@@ -906,15 +947,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
   }, [todayReviews]);
 
   // Attendance status of active student on the selected date
-  const selectedDateAtt = attendance.find(
-    a => a.date === selectedDate && a.studentId === activeStudentId
-  );
+  const selectedDateAtt = activeStudentId ? selectedDateAttendanceMap.get(activeStudentId) : undefined;
   const isAbsent = selectedDateAtt?.status === 'غائب';
   const isExcused = selectedDateAtt?.status === 'معتذر';
 
-  // Point multipliers taken from settings (لوحة الشرف وإعدادات المجمع)
-  const newPageMultiplier = typeof settings?.newPagePoints === 'number' ? settings.newPagePoints : 5;
-  const reviewPageMultiplier = typeof settings?.reviewPagePoints === 'number' ? settings.reviewPagePoints : 1;
+  // Point multipliers from the resolved per-complex/global point criteria
+  const newPageMultiplier = pointsPerNewPage;
+  const reviewPageMultiplier = pointsPerReviewPage;
 
   // Attendance points calculation for selected date
   const attendancePoints = useMemo(() => {
@@ -2869,40 +2908,46 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
 
   const handleSavePagePointsConfig = async () => {
     const complexId = activeComplexId || undefined;
+    const suffix = complexId && complexId !== 'default-complex' ? `__${complexId}` : '';
     const baseList = criteria.filter(c => !c.id.startsWith('crit-points-'));
 
+    const cleanNewPts = Math.max(0, Number(newPagePtsState) || 0);
+    const cleanReviewPts = Math.max(0, Number(reviewPagePtsState) || 0);
+    const cleanListeningPts = Math.max(0, Number(listeningPtsState) || 0);
+
     const newPageCrit: EvaluationCriteria = {
-      id: 'crit-points-new-page',
+      id: `crit-points-new-page${suffix}`,
       name: 'معيار نقاط الوجه الجديد',
       type: 'score',
-      pointsWeight: newPagePtsState,
-      maxScore: newPagePtsState,
+      pointsWeight: cleanNewPts,
+      maxScore: cleanNewPts,
       hasPoints: true,
       complexId
     };
 
     const revPageCrit: EvaluationCriteria = {
-      id: 'crit-points-review-page',
+      id: `crit-points-review-page${suffix}`,
       name: 'معيار نقاط وجه المراجعة',
       type: 'score',
-      pointsWeight: reviewPagePtsState,
-      maxScore: reviewPagePtsState,
+      pointsWeight: cleanReviewPts,
+      maxScore: cleanReviewPts,
       hasPoints: true,
       complexId
     };
 
     const listeningCrit: EvaluationCriteria = {
-      id: 'crit-points-listening',
+      id: `crit-points-listening${suffix}`,
       name: 'معيار نقاط الاستماع اليومي',
       type: 'score',
-      pointsWeight: listeningPtsState,
-      maxScore: listeningPtsState,
+      pointsWeight: cleanListeningPts,
+      maxScore: cleanListeningPts,
       hasPoints: true,
       complexId
     };
 
     const updatedList = [...baseList, newPageCrit, revPageCrit, listeningCrit];
     await onSaveCriteria(updatedList);
+    setIsManualPointsModified(false);
     setPointsSavedNotice('تم حفظ وتحديث معايير نقاط الأوجه والاستماع للمجمع بنجاح!');
     setTimeout(() => setPointsSavedNotice(null), 3000);
   };
@@ -2911,7 +2956,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     <div className="space-y-6">
       {/* Top Banner & Date / Criteria Controls */}
       <div
-        className="rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-xl backdrop-blur-md flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-2 border-b-4"
+        className="rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-2 border-b-4"
         style={{
           backgroundColor: 'var(--complex-card, #203843)',
           borderColor: 'var(--complex-border, #2b4550)',
@@ -3511,7 +3556,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Students List */}
         <div 
-          className="lg:col-span-4 rounded-[32px] p-5 space-y-4 shadow-xl backdrop-blur-md border-2 border-b-4"
+          className="lg:col-span-4 rounded-[32px] p-5 space-y-4 shadow-xl border-2 border-b-4"
           style={{
             backgroundColor: 'var(--complex-card, #203843)',
             borderColor: 'var(--complex-border, #2b4550)',
@@ -3542,14 +3587,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             ) : (
               students.map(student => {
                 const isSelected = student.id === activeStudentId;
-                const studentAtt = attendance.find(
-                  a => a.date === selectedDate && a.studentId === student.id
-                );
+                const studentAtt = selectedDateAttendanceMap.get(student.id);
                 const isStudentAbsent = studentAtt?.status === 'غائب';
                 const isStudentExcused = studentAtt?.status === 'معتذر';
-                const hasEvaluatedOnSelectedDate = evaluations.some(
-                  e => e.date === selectedDate && e.studentId === student.id
-                );
+                const evalForDate = selectedDateEvaluationsMap.get(student.id);
+                const hasEvaluatedOnSelectedDate = Boolean(evalForDate);
 
                 return (
                   <button
@@ -3654,7 +3696,6 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </span>
                       )}
                       {(() => {
-                        const evalForDate = evaluations.find(e => e.date === selectedDate && e.studentId === student.id);
                         const todayIsoStr = new Date().toISOString().split('T')[0];
                         const useCurrentActiveWird = !evalForDate || (selectedDate >= todayIsoStr && Boolean(student.activeListeningAssignment));
                         const lStatus = getStudentListeningStatus(student, useCurrentActiveWird ? null : evalForDate);
@@ -3711,7 +3752,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         <div className="lg:col-span-8">
           {!activeStudent ? (
             <div
-              className="border-2 border-b-4 rounded-[32px] p-12 text-center text-slate-400 backdrop-blur-md"
+              className="border-2 border-b-4 rounded-[32px] p-12 text-center text-slate-400"
               style={{
                 backgroundColor: 'var(--complex-card, #203843)',
                 borderColor: 'var(--complex-border, #2b4550)',
@@ -3722,7 +3763,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
             </div>
           ) : (
             <div
-              className="border-2 border-b-4 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl backdrop-blur-md"
+              className="border-2 border-b-4 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-xl"
               style={{
                 backgroundColor: 'var(--complex-card, #203843)',
                 borderColor: 'var(--complex-border, #2b4550)',
@@ -3836,7 +3877,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                 const isCompleted = currentAyah >= totalAyahs;
                 const isNearing = percent >= 75 && !isCompleted;
                 const isHalfway = percent >= 50 && percent < 75;
-                const pagesInfo = calculateStudentCompletedPages(activeStudent, evaluations);
+                const pagesInfo = activeStudentPagesInfo || calculateStudentCompletedPages(activeStudent, evaluations);
 
                 const triggerCelebrationConfetti = () => {
                   try {
@@ -3854,18 +3895,13 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                    className="p-5 sm:p-6 rounded-[28px] border-2 border-b-4 transition-all shadow-xl backdrop-blur-md relative overflow-hidden"
+                    className="p-5 sm:p-6 rounded-[28px] border-2 border-b-4 transition-colors shadow-xl relative overflow-hidden"
                     style={{
                       backgroundColor: 'var(--complex-card, #203843)',
                       borderColor: 'var(--complex-border, #2b4550)',
                       borderBottomColor: 'var(--complex-card-shadow, #16262e)'
                     }}
                   >
-                    {/* Background subtle glow decoration */}
-                    <div 
-                      className="absolute -top-12 -left-12 w-36 h-36 rounded-full blur-2xl pointer-events-none opacity-20"
-                      style={{ backgroundColor: themeAccent }}
-                    />
 
                     {/* Progress Bar Header Info */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 relative z-10">
@@ -6191,10 +6227,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     >
                       <input
                         type="number"
+                        step="any"
                         min={0}
                         max={100}
                         value={newPagePtsState}
-                        onChange={e => setNewPagePtsState(Number(e.target.value))}
+                        onChange={e => setNewPagePtsState(Math.max(0, Number(e.target.value) || 0))}
                         className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
                       <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>
@@ -6218,10 +6255,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     >
                       <input
                         type="number"
+                        step="any"
                         min={0}
                         max={100}
                         value={reviewPagePtsState}
-                        onChange={e => setReviewPagePtsState(Number(e.target.value))}
+                        onChange={e => setReviewPagePtsState(Math.max(0, Number(e.target.value) || 0))}
                         className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
                       <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>
@@ -6245,10 +6283,11 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     >
                       <input
                         type="number"
+                        step="any"
                         min={0}
                         max={100}
                         value={listeningPtsState}
-                        onChange={e => setListeningPtsState(Number(e.target.value))}
+                        onChange={e => setListeningPtsState(Math.max(0, Number(e.target.value) || 0))}
                         className="w-full bg-transparent text-sm sm:text-base font-black text-white font-mono text-center outline-none"
                       />
                       <span className="text-xs font-black shrink-0" style={{ color: themeAccent }}>

@@ -152,23 +152,64 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
     return pool;
   }, [students, selectedHalaqahFilter, searchQuery]);
 
-  // Compute point breakdown for each student
+  // Compute point breakdown for each student using O(1) indexed maps
   const studentRankList = useMemo(() => {
+    const subMap = new Map<string, ExamSubmission[]>();
+    for (const sub of submissions) {
+      const arr = subMap.get(sub.studentId);
+      if (arr) arr.push(sub);
+      else subMap.set(sub.studentId, [sub]);
+    }
+
+    const evalMap = new Map<string, StudentEvaluation[]>();
+    for (const ev of evaluations) {
+      const arr = evalMap.get(ev.studentId);
+      if (arr) arr.push(ev);
+      else evalMap.set(ev.studentId, [ev]);
+    }
+
+    const logMap = new Map<string, StudentListeningLog[]>();
+    for (const l of listeningLogs) {
+      if (!l.isFullyCompleted) continue;
+      const arr = logMap.get(l.studentId);
+      if (arr) arr.push(l);
+      else logMap.set(l.studentId, [l]);
+    }
+
+    const attMap = new Map<string, any[]>();
+    for (const a of attendance) {
+      const arr = attMap.get(a.studentId);
+      if (arr) arr.push(a);
+      else attMap.set(a.studentId, [a]);
+    }
+
+    const halaqahNameMap = new Map<string, string>();
+    for (const h of halaqahs) {
+      if (h?.id) halaqahNameMap.set(h.id, h.name);
+    }
+
+    const attSettings = settings?.attendancePointsSettings;
+    const attEnabled = attSettings?.enableAttendancePoints !== false;
+    const presentPtsRule = typeof attSettings?.presentPoints === 'number' ? attSettings.presentPoints : 1;
+    const latePtsRule = typeof attSettings?.latePoints === 'number' ? attSettings.latePoints : 0;
+    const excusedPtsRule = typeof attSettings?.excusedPoints === 'number' ? attSettings.excusedPoints : 0;
+    const absentDeductRule = typeof attSettings?.absentPointsDeduction === 'number' ? attSettings.absentPointsDeduction : 1;
+    const listeningReward = typeof settings?.dailyListeningPoints === 'number' ? settings.dailyListeningPoints : 5;
+
     return filteredPool.map(st => {
       // 1. Exam points
-      const stSubmissions = submissions.filter(sub => sub.studentId === st.id);
-      const examPoints = stSubmissions.reduce(
-        (sum, s) => sum + (s.pointsGrantedForLeaderboard || 0),
-        0
-      );
-      const bestPercentage = stSubmissions.reduce(
-        (max, s) => Math.max(max, s.percentage || 0),
-        0
-      );
+      const stSubmissions = subMap.get(st.id) || [];
+      let examPoints = 0;
+      let bestPercentage = 0;
+      for (const s of stSubmissions) {
+        examPoints += s.pointsGrantedForLeaderboard || 0;
+        if ((s.percentage || 0) > bestPercentage) bestPercentage = s.percentage || 0;
+      }
 
       // 2. Evaluation / criteria & recitation points
-      const stEvaluations = evaluations.filter(ev => ev.studentId === st.id);
-      const evalPoints = stEvaluations.reduce((sum, ev) => {
+      const stEvaluations = evalMap.get(st.id) || [];
+      let evalPoints = 0;
+      for (const ev of stEvaluations) {
         const criteriaPts = Number(ev.recitationDetails?.criteriaPointsEarnedToday) || 0;
         const pagePts = Number(ev.recitationDetails?.pagesPointsEarnedToday) || 0;
         const listeningPts = Number(ev.recitationDetails?.listeningPointsEarnedToday) || 0;
@@ -177,31 +218,29 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         const dailyTotal = typeof pts === 'number'
           ? pts
           : (recitationOnly > 0 ? recitationOnly : 0);
-        return sum + dailyTotal;
-      }, 0);
+        evalPoints += dailyTotal;
+      }
 
-      // Fallback: If student has criteriaPoints stored on their profile
       const storedRecitationPoints = (Number(st.criteriaPoints) || 0) + (Number(st.totalPagePoints) || 0);
       const finalEvalPoints = Math.max(evalPoints, storedRecitationPoints);
 
       // 3. Listening points
-      const stLogs = listeningLogs.filter(l => l.studentId === st.id && l.isFullyCompleted);
-      const logsListeningPoints = stLogs.length * 5;
+      const stLogs = logMap.get(st.id) || [];
+      const logsListeningPoints = stLogs.length * listeningReward;
       const finalListeningPoints = Math.max(logsListeningPoints, st.listeningPoints || 0);
 
       // 4. Attendance & Absence points (strictly follows user-configured rules in AttendanceTab)
-      const attSettings = settings?.attendancePointsSettings;
-      const attEnabled = attSettings?.enableAttendancePoints !== false;
-      const presentPtsRule = typeof attSettings?.presentPoints === 'number' ? attSettings.presentPoints : 1;
-      const latePtsRule = typeof attSettings?.latePoints === 'number' ? attSettings.latePoints : 0;
-      const excusedPtsRule = typeof attSettings?.excusedPoints === 'number' ? attSettings.excusedPoints : 0;
-      const absentDeductRule = typeof attSettings?.absentPointsDeduction === 'number' ? attSettings.absentPointsDeduction : 1;
-
-      const stAttRecords = attendance.filter((a: any) => a.studentId === st.id);
-      const presentCount = stAttRecords.filter((a: any) => a.status === 'حاضر').length;
-      const absentCount = stAttRecords.filter((a: any) => a.status === 'غائب').length;
-      const lateCount = stAttRecords.filter((a: any) => a.status === 'متأخر').length;
-      const excusedCount = stAttRecords.filter((a: any) => a.status === 'معتذر').length;
+      const stAttRecords = attMap.get(st.id) || [];
+      let presentCount = 0;
+      let absentCount = 0;
+      let lateCount = 0;
+      let excusedCount = 0;
+      for (const a of stAttRecords) {
+        if (a.status === 'حاضر') presentCount++;
+        else if (a.status === 'غائب') absentCount++;
+        else if (a.status === 'متأخر') lateCount++;
+        else if (a.status === 'معتذر') excusedCount++;
+      }
       const attendancePoints = attEnabled
         ? Math.round(((presentCount * presentPtsRule) + (lateCount * latePtsRule) + (excusedCount * excusedPtsRule) - (absentCount * absentDeductRule)) * 10) / 10
         : 0;
@@ -214,7 +253,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         : Math.max(0, computedTotal + (Number(st.bonusPoints) || 0));
 
       const halaqahName =
-        st.halaqahName || halaqahs.find(h => h.id === st.halaqahId)?.name || 'الحلقة القرآنية';
+        st.halaqahName || (st.halaqahId ? halaqahNameMap.get(st.halaqahId) : undefined) || 'الحلقة القرآنية';
 
       return {
         student: st,
@@ -236,7 +275,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
         stLogs
       };
     }).sort((a, b) => b.totalPoints - a.totalPoints || b.bestPercentage - a.bestPercentage);
-  }, [filteredPool, submissions, evaluations, listeningLogs, halaqahs, attendance, settings?.attendancePointsSettings]);
+  }, [filteredPool, submissions, evaluations, listeningLogs, halaqahs, attendance, settings?.attendancePointsSettings, settings?.dailyListeningPoints]);
 
   // Selected student breakdown details
   const breakdownData = useMemo(() => {

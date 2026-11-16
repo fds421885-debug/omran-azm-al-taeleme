@@ -140,7 +140,10 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
   };
 
   const getOrigin = () => {
-    return window.location.origin + window.location.pathname;
+    const cleanPath = (window.location.pathname || '/')
+      .replace(/\/(login|privacy)\/?$/i, '/')
+      .replace(/\/+$/, '');
+    return `${window.location.origin}${cleanPath}/`;
   };
 
   // -------------------------------------------------------------

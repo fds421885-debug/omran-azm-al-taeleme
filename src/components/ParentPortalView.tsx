@@ -90,7 +90,8 @@ import {
   StoreItem,
   StorePurchase,
   StoreSettings,
-  DEFAULT_STORE_SETTINGS
+  DEFAULT_STORE_SETTINGS,
+  EvaluationCriteria
 } from '../types';
 import { StudentExamTaker } from './StudentExamTaker';
 import { QuranAyahAudioPlayer } from './quran/QuranAyahAudioPlayer';
@@ -162,6 +163,7 @@ interface ParentPortalViewProps {
   onRefresh?: () => Promise<void> | void;
   isCloudSyncing?: boolean;
   cloudSyncText?: string;
+  criteria?: EvaluationCriteria[];
 }
 
 export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
@@ -187,7 +189,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   onUpdateStudent,
   onRefresh,
   isCloudSyncing = false,
-  cloudSyncText = 'مزامنة سحابية مباشرة...'
+  cloudSyncText = 'مزامنة سحابية مباشرة...',
+  criteria = []
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'recitation' | 'errors' | 'store' | 'exams' | 'leaderboard' | 'certificates'>('home');
   const [activeTakingExam, setActiveTakingExam] = useState<Exam | null>(null);
@@ -206,14 +209,34 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   const [animatedStudentMinusOneIds, setAnimatedStudentMinusOneIds] = useState<Set<string>>(new Set());
   const [temporarilyHiddenSoldOutIds, setTemporarilyHiddenSoldOutIds] = useState<Set<string>>(new Set());
 
-  // High-precision synchronized clock ticker for store appearance and expiration (updates every 200ms)
+  // Dynamic listening reward points from complex criteria -> settings -> recordingsConfig -> default (5)
+  const effectiveListeningPointsReward = useMemo(() => {
+    const complexId = activeComplex?.id;
+    if (complexId && criteria.length > 0) {
+      const exact = criteria.find(c => c.id === `crit-points-listening__${complexId}`);
+      if (typeof exact?.pointsWeight === 'number') return exact.pointsWeight;
+      const byComplex = criteria.find(
+        c => (c.id === 'crit-points-listening' || c.id.startsWith('crit-points-listening__')) && c.complexId === complexId
+      );
+      if (typeof byComplex?.pointsWeight === 'number') return byComplex.pointsWeight;
+    }
+    const plain = criteria.find(c => c.id === 'crit-points-listening');
+    if (typeof plain?.pointsWeight === 'number') return plain.pointsWeight;
+    if (typeof settings?.dailyListeningPoints === 'number') return settings.dailyListeningPoints;
+    if (typeof recordingsConfig?.listeningPointsReward === 'number') return recordingsConfig.listeningPointsReward;
+    return 5;
+  }, [criteria, activeComplex?.id, settings?.dailyListeningPoints, recordingsConfig?.listeningPointsReward]);
+
+  // Store clock ticker: only tick while viewing the Store tab to avoid 5Hz full-tree re-renders
   const [syncedCurrentTime, setSyncedCurrentTime] = useState<number>(() => Date.now());
   useEffect(() => {
+    if (activeTab !== 'store') return;
+    setSyncedCurrentTime(Date.now());
     const timer = setInterval(() => {
       setSyncedCurrentTime(Date.now());
-    }, 200);
+    }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [activeTab]);
 
   const prevStudentExpiredStateRef = useRef<Map<string, boolean>>(new Map());
   const [soldOutModal, setSoldOutModal] = useState<{ title: string; message: string } | null>(null);
@@ -1123,7 +1146,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
 
   const handleRecordListening = async () => {
     const target = recordingsConfig?.dailyRepetitionTarget || 3;
-    const rewardPoints = recordingsConfig?.listeningPointsReward ?? settings?.dailyListeningPoints ?? 5;
+    const rewardPoints = effectiveListeningPointsReward;
 
     if (listensCount >= target) {
       // Reset counter
@@ -1213,7 +1236,11 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     if (onLogout) {
       onLogout();
     } else {
-      window.history.replaceState({}, '', window.location.pathname);
+      try {
+        localStorage.removeItem('omran_session');
+        sessionStorage.removeItem('omran_session');
+      } catch {}
+      window.history.replaceState({}, '', '/');
       window.location.reload();
     }
   };
@@ -2731,7 +2758,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                 initialIsCompleted={currentAssignedPassage.isCompleted}
                 selectedSheikhName={currentAssignedPassage.sheikhName}
                 requiredRepetitions={currentAssignedPassage.requiredRepetitions ?? 3}
-                listeningPointsReward={10}
+                listeningPointsReward={effectiveListeningPointsReward}
                 onRepetitionComplete={async (newCount, isFullyDone) => {
                   const wasAlreadyCompleted = Boolean(currentAssignedPassage.isCompleted);
                   const completedAtIso = new Date().toISOString();
@@ -2745,8 +2772,8 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
                   };
                   if (isFullyDone) {
                     if (!wasAlreadyCompleted) {
-                      updated.listeningPoints = (updated.listeningPoints || 0) + 10;
-                      updated.points = (updated.points || 0) + 10;
+                      updated.listeningPoints = (updated.listeningPoints || 0) + effectiveListeningPointsReward;
+                      updated.points = (updated.points || 0) + effectiveListeningPointsReward;
                     }
                     updated.dailyListeningCompletedDate = completedAtIso.split('T')[0];
                     updated.dailyListeningCompletedAt = completedAtIso;

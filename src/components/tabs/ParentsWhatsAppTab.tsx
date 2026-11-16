@@ -85,8 +85,10 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
   ): string => {
     let baseUrl = '';
     if (typeof window !== 'undefined') {
-      const cleanHref = window.location.origin + window.location.pathname;
-      baseUrl = cleanHref.replace(/\/+$/, '');
+      const cleanPath = (window.location.pathname || '')
+        .replace(/\/(login|privacy)\/?$/i, '')
+        .replace(/\/+$/, '');
+      baseUrl = `${window.location.origin}${cleanPath}`;
     }
     const portalUrl = baseUrl ? `${baseUrl}/?portal=${encodeURIComponent(student.id)}` : '';
 
@@ -279,33 +281,47 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
 
   // Re-sync messages whenever students, evaluations, attendance, or senderName change
   useEffect(() => {
+    const todayAttMap = new Map<string, AttendanceRecord>();
+    for (let i = 0; i < attendance.length; i++) {
+      const a = attendance[i];
+      if (a.date === todayStr) todayAttMap.set(a.studentId, a);
+    }
+    const todayEvalMap = new Map<string, StudentEvaluation>();
+    for (let i = 0; i < evaluations.length; i++) {
+      const e = evaluations[i];
+      if (e.date === todayStr) todayEvalMap.set(e.studentId, e);
+    }
+
     const updatedMap: Record<string, string> = {};
     students.forEach(student => {
-      const todayAtt = attendance.find(
-        a => a.date === todayStr && a.studentId === student.id
-      );
+      const todayAtt = todayAttMap.get(student.id);
       const status = todayAtt?.status || 'حاضر';
-      const evalData = evaluations.find(
-        e => e.date === todayStr && e.studentId === student.id
-      );
+      const evalData = todayEvalMap.get(student.id);
 
       updatedMap[student.id] = buildComprehensiveMessage(student, status, evalData, senderName);
     });
 
     setMessagesMap(updatedMap);
-  }, [students, attendance, evaluations, settings, senderName, activeComplex]);
+  }, [students, attendance, evaluations, settings, senderName, activeComplex, todayStr]);
 
   const handleUpdateSenderName = (newName: string) => {
     setSenderName(newName);
+    const todayAttMap = new Map<string, AttendanceRecord>();
+    for (let i = 0; i < attendance.length; i++) {
+      const a = attendance[i];
+      if (a.date === todayStr) todayAttMap.set(a.studentId, a);
+    }
+    const todayEvalMap = new Map<string, StudentEvaluation>();
+    for (let i = 0; i < evaluations.length; i++) {
+      const e = evaluations[i];
+      if (e.date === todayStr) todayEvalMap.set(e.studentId, e);
+    }
+
     const updatedMap: Record<string, string> = {};
     students.forEach(student => {
-      const todayAtt = attendance.find(
-        a => a.date === todayStr && a.studentId === student.id
-      );
+      const todayAtt = todayAttMap.get(student.id);
       const status = todayAtt?.status || 'حاضر';
-      const evalData = evaluations.find(
-        e => e.date === todayStr && e.studentId === student.id
-      );
+      const evalData = todayEvalMap.get(student.id);
 
       updatedMap[student.id] = buildComprehensiveMessage(student, status, evalData, newName);
     });
@@ -920,7 +936,7 @@ export const ParentsWhatsAppTab: React.FC<ParentsWhatsAppTabProps> = ({
                     >
                       <span style={{ color: themeSubtext }}>الرابط المرفق: بوابة المتابعة الحية للطالب</span>
                       <a
-                        href={`/?portal=${student.id}`}
+                        href={`/?portal=${encodeURIComponent(student.id)}`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-3 py-1.5 rounded-xl border-2 border-b-3 font-black text-xs flex items-center gap-1.5 transition-all active:translate-y-[1px] hover:brightness-110 shadow-sm"

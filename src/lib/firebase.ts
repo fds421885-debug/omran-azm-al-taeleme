@@ -187,19 +187,22 @@ export function requestCloudSyncRefresh(domain: string = 'all', message?: string
   } catch {}
 }
 
+let lastRealtimeToastAt = 0;
+
 function createSnapshotSyncNotifier(label: string) {
   let hasInitialSnapshot = false;
   return (snap?: any) => {
     const fromCache = Boolean(snap?.metadata?.fromCache);
     if (!hasInitialSnapshot) {
       hasInitialSnapshot = true;
-      if (!fromCache) {
-        emitCloudSyncEvent('realtime', `تم التحقق ومزامنة (${label}) مباشرة من قاعدة البيانات ✓`, label);
-      }
       return;
     }
     if (!fromCache) {
-      emitCloudSyncEvent('realtime', `تم استقبال تحديث مباشر لـ (${label}) من قاعدة البيانات ✓`, label);
+      const now = Date.now();
+      if (now - lastRealtimeToastAt > 1800) {
+        lastRealtimeToastAt = now;
+        emitCloudSyncEvent('realtime', `تم استقبال تحديث مباشر لـ (${label}) من قاعدة البيانات ✓`, label);
+      }
     }
   };
 }
@@ -1285,7 +1288,7 @@ export function broadcastDataUpdate(type: string, payload?: any) {
 }
 
 // Persistent Tombstone Helpers to ensure permanent and irreversible deletion directly from Cloud Firestore
-let inFlightTombstonesPromise: Promise<{
+interface TombstonesSnapshot {
   deletedStudents: Set<string>;
   deletedCertificates: Set<string>;
   deletedComplexes: Set<string>;
@@ -1293,17 +1296,21 @@ let inFlightTombstonesPromise: Promise<{
   deletedExams: Set<string>;
   deletedTeachers: Set<string>;
   deletedApplications: Set<string>;
-}> | null = null;
+}
+let inFlightTombstonesPromise: Promise<TombstonesSnapshot> | null = null;
+let lastTombstonesResult: TombstonesSnapshot | null = null;
+let lastTombstonesSyncAt = 0;
 
-export async function syncTombstonesFromCloud(_force = false): Promise<{
-  deletedStudents: Set<string>;
-  deletedCertificates: Set<string>;
-  deletedComplexes: Set<string>;
-  deletedHalaqahs: Set<string>;
-  deletedExams: Set<string>;
-  deletedTeachers: Set<string>;
-  deletedApplications: Set<string>;
-}> {
+export function invalidateTombstonesCache(): void {
+  lastTombstonesSyncAt = 0;
+  lastTombstonesResult = null;
+}
+
+export async function syncTombstonesFromCloud(_force = false): Promise<TombstonesSnapshot> {
+  const now = Date.now();
+  if (!_force && lastTombstonesResult && now - lastTombstonesSyncAt < 8000) {
+    return lastTombstonesResult;
+  }
   if (inFlightTombstonesPromise && !_force) {
     return inFlightTombstonesPromise;
   }
@@ -1357,7 +1364,7 @@ export async function syncTombstonesFromCloud(_force = false): Promise<{
     setLocalCache(OMRAN_CACHE_KEYS.DELETED_TEACHERS, Array.from(teacherSet));
     setLocalCache(OMRAN_CACHE_KEYS.DELETED_APPLICATIONS, Array.from(appSet));
 
-    return {
+    const result: TombstonesSnapshot = {
       deletedStudents: studentSet,
       deletedCertificates: certSet,
       deletedComplexes: complexSet,
@@ -1366,6 +1373,9 @@ export async function syncTombstonesFromCloud(_force = false): Promise<{
       deletedTeachers: teacherSet,
       deletedApplications: appSet
     };
+    lastTombstonesResult = result;
+    lastTombstonesSyncAt = Date.now();
+    return result;
   };
 
   inFlightTombstonesPromise = runSync().finally(() => {
@@ -1376,6 +1386,7 @@ export async function syncTombstonesFromCloud(_force = false): Promise<{
 }
 
 async function writeTombstoneToBothDbs(field: string, id: string): Promise<void> {
+  invalidateTombstonesCache();
   const dbs = [OmranDataService.getCentralDb()];
   if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
     dbs.push(OmranDataService.getActiveDb());
@@ -1395,6 +1406,7 @@ async function writeTombstoneToBothDbs(field: string, id: string): Promise<void>
 }
 
 async function removeTombstoneFromBothDbs(field: string, id: string): Promise<void> {
+  invalidateTombstonesCache();
   const dbs = [OmranDataService.getCentralDb()];
   if (OmranDataService.getActiveDb() !== OmranDataService.getCentralDb()) {
     dbs.push(OmranDataService.getActiveDb());
@@ -2219,6 +2231,98 @@ export class OmranDataService {
     }
 
     // 4. Check initial teachers
+    for (const t of INITIAL_TEACHERS) {
+      if (matchesTeacher(t)) return t;
+    }
+
+    return null;
+  }
+
+  // Find teacher account by ID, username, name, 6-digit code, or phone across Active, Central, and custom complex DBs
+  static async findTeacherByIdOrQuery(lookup: string): Promise<TeacherAccount | null> {
+    if (!lookup) return null;
+    const rawClean = decodeURIComponent(lookup).trim();
+    if (!rawClean) return null;
+
+    const normalizeAr = (txt: string) =>
+      (txt || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي')
+        .replace(/[\u064B-\u065F\u0670]/g, '');
+
+    const cleanLower = rawClean.toLowerCase();
+    const normClean = normalizeAr(rawClean);
+    const cleanDigits = rawClean
+      .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+      .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+      .replace(/\D/g, '');
+
+    const deletedTeacherIds = getDeletedTeacherIds();
+
+    const matchesTeacher = (t: TeacherAccount | null | undefined): boolean => {
+      if (!t || !t.id || deletedTeacherIds.has(t.id)) return false;
+      if (t.id === rawClean || t.id.toLowerCase() === cleanLower) return true;
+      if (t.username && (t.username.trim().toLowerCase() === cleanLower || normalizeAr(t.username) === normClean)) return true;
+      if (t.name && (t.name.trim().toLowerCase() === cleanLower || normalizeAr(t.name) === normClean)) return true;
+      const code = (t.teacherCode || getTeacherSixDigitCode(t) || '').trim();
+      const codeDigits = code.replace(/\D/g, '');
+      if (cleanDigits && codeDigits && (codeDigits === cleanDigits || (cleanDigits.length === 6 && codeDigits.slice(-6) === cleanDigits))) {
+        return true;
+      }
+      const phoneDigits = (t.phone || '').replace(/\D/g, '');
+      if (cleanDigits.length >= 7 && phoneDigits === cleanDigits) return true;
+      return false;
+    };
+
+    const probeDb = async (targetDb: Firestore): Promise<TeacherAccount | null> => {
+      try {
+        const directSnap = await safeGetDoc(doc(targetDb, 'teachers', rawClean));
+        if (directSnap.exists()) {
+          const data = directSnap.data() as TeacherAccount;
+          if (matchesTeacher(data)) return data;
+        }
+      } catch {}
+
+      try {
+        const snap = await safeGetDocs(collection(targetDb, 'teachers'));
+        for (const d of snap.docs) {
+          const t = d.data() as TeacherAccount;
+          if (matchesTeacher(t)) return t;
+        }
+      } catch {}
+
+      return null;
+    };
+
+    const dbs: Firestore[] = [this.getCentralDb()];
+    if (this.getActiveDb() !== this.getCentralDb()) {
+      dbs.unshift(this.getActiveDb());
+    }
+
+    for (const currentDb of dbs) {
+      const found = await probeDb(currentDb);
+      if (found) return found;
+    }
+
+    // Fallback: scan any isolated custom complex databases
+    try {
+      const allComplexes = await this.loadComplexes();
+      for (const comp of allComplexes) {
+        if (comp?.databaseConfig?.isCustom && comp.databaseConfig?.projectId) {
+          const compDb = this.getFirestoreInstanceForComplex(comp);
+          if (compDb && !dbs.includes(compDb)) {
+            dbs.push(compDb);
+            const found = await probeDb(compDb);
+            if (found) return found;
+          }
+        }
+      }
+    } catch {}
+
+    // Fallback to initial teachers
     for (const t of INITIAL_TEACHERS) {
       if (matchesTeacher(t)) return t;
     }
@@ -5452,48 +5556,90 @@ export class OmranDataService {
     }
   }
 
-  // Find student by ID or name or phone directly from Firestore (for live portal access)
+  // Find student by ID or name or phone directly from Firestore (for live portal access across all complexes)
   static async findStudentByIdOrQuery(lookup: string): Promise<Student | null> {
     if (!lookup) return null;
     const clean = decodeURIComponent(lookup).trim();
+    if (!clean) return null;
+
+    const normalizeAr = (txt: string) =>
+      (txt || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي')
+        .replace(/[\u064B-\u065F\u0670]/g, '');
+
+    const cleanLower = clean.toLowerCase();
+    const normClean = normalizeAr(clean);
     const cleanNoSpaces = clean.replace(/\s+/g, '');
+    const cleanDigits = clean.replace(/\D/g, '');
+    const deletedStudentIds = OmranDataService.getDeletedStudentIds();
 
-    const dbs = [this.getActiveDb()];
-    if (this.getCentralDb() !== this.getActiveDb()) {
-      dbs.push(this.getCentralDb());
-    }
+    const matchesStudent = (s: Student | null | undefined): boolean => {
+      if (!s || !s.id || deletedStudentIds.has(s.id)) return false;
+      return (
+        s.id === clean ||
+        s.id.toLowerCase() === cleanLower ||
+        (s.name || '').trim() === clean ||
+        normalizeAr(s.name || '') === normClean ||
+        (s.name || '').replace(/\s+/g, '') === cleanNoSpaces ||
+        (cleanDigits.length >= 6 && (s.phone || '').replace(/\D/g, '') === cleanDigits) ||
+        (cleanDigits.length >= 6 && Boolean(s.parentPhones && s.parentPhones.some(p => (p || '').replace(/\D/g, '') === cleanDigits)))
+      );
+    };
 
-    for (const currentDb of dbs) {
+    const probeDb = async (currentDb: Firestore): Promise<Student | null> => {
       // 1. Direct document fetch by ID
       try {
         const docSnap = await safeGetDoc(doc(currentDb, 'students', clean));
         if (docSnap.exists()) {
-          return docSnap.data() as Student;
+          const data = docSnap.data() as Student;
+          if (matchesStudent(data)) return data;
         }
-      } catch (e) {
-        // Continue to query
-      }
+      } catch {}
 
       // 2. Query Firestore entire collection
       try {
         const snap = await safeGetDocs(collection(currentDb, 'students'));
         for (const d of snap.docs) {
           const s = d.data() as Student;
-          if (
-            s.id === clean ||
-            s.id.toLowerCase() === clean.toLowerCase() ||
-            s.name.trim() === clean ||
-            s.name.replace(/\s+/g, '') === cleanNoSpaces ||
-            s.phone.replace(/\D/g, '') === clean.replace(/\D/g, '') ||
-            (s.parentPhones && s.parentPhones.some(p => p.replace(/\D/g, '') === clean.replace(/\D/g, '')))
-          ) {
+          if (matchesStudent(s)) {
             return s;
           }
         }
       } catch (e) {
         handleFirestoreError(e, OperationType.LIST, 'students');
       }
+
+      return null;
+    };
+
+    const dbs: Firestore[] = [this.getActiveDb()];
+    if (this.getCentralDb() !== this.getActiveDb()) {
+      dbs.push(this.getCentralDb());
     }
+
+    for (const currentDb of dbs) {
+      const found = await probeDb(currentDb);
+      if (found) return found;
+    }
+
+    // Fallback: scan any isolated custom complex databases
+    try {
+      const allComplexes = await this.loadComplexes();
+      for (const comp of allComplexes) {
+        if (comp?.databaseConfig?.isCustom && comp.databaseConfig?.projectId) {
+          const compDb = this.getFirestoreInstanceForComplex(comp);
+          if (compDb && !dbs.includes(compDb)) {
+            dbs.push(compDb);
+            const found = await probeDb(compDb);
+            if (found) return found;
+          }
+        }
+      }
+    } catch {}
 
     return null;
   }
