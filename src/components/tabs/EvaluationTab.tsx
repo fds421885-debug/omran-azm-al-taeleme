@@ -898,37 +898,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
     return 0;
   }, [currentStudentListeningStatus, pointsPerListening]);
 
-  // General evaluation criteria (excluding internal page point definitions)
-  const displayCriteria = useMemo(() => {
-    return criteria.filter(c => !c.id.startsWith('crit-points-'));
-  }, [criteria]);
-
-  // Live calculation of criteria points earned today
-  const liveCriteriaPoints = useMemo(() => {
-    let calculated = 0;
-    displayCriteria.forEach(crit => {
-      const val = criteriaValues[crit.id];
-      const weight = typeof crit.pointsWeight === 'number' ? crit.pointsWeight : 10;
-      if (val !== undefined && val !== null && val !== '') {
-        if (crit.type === 'stars') {
-          const stars = Number(val) || 0;
-          calculated += Math.round((stars / 5) * weight);
-        } else if (crit.type === 'score') {
-          const score = Number(val) || 0;
-          const maxScore = crit.maxScore || 10;
-          calculated += Math.round((score / maxScore) * weight);
-        } else if (crit.type === 'options') {
-          const opts = crit.options || [];
-          const idx = opts.indexOf(String(val));
-          if (idx === 0) calculated += weight;
-          else if (idx === 1) calculated += Math.round(weight * 0.75);
-          else if (idx === 2) calculated += Math.round(weight * 0.5);
-          else if (idx >= 3) calculated += Math.round(weight * 0.25);
-        }
-      }
-    });
-    return calculated;
-  }, [displayCriteria, criteriaValues]);
+  // No separate stars/options criteria sliders exist in the UI — do not inject phantom +40 default points
+  const liveCriteriaPoints = 0;
 
   // Live calculation of fractional faces recited today (0.25, 0.5, 0.75, 1.0, etc.)
   const liveNewFacesCount = useMemo(() => {
@@ -2013,15 +1984,8 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
         setTomReviews(adaptiveTomReviews.reviewItems);
       }
 
-      // Initialize criteria defaults
-      const defaults: Record<string, any> = {};
-      criteria.forEach(c => {
-        if (c.type === 'stars') defaults[c.id] = 5;
-        if (c.type === 'score') defaults[c.id] = c.maxScore || 10;
-        if (c.type === 'options' && c.options && c.options.length > 0) defaults[c.id] = c.options[0];
-        if (c.type === 'text') defaults[c.id] = '';
-      });
-      setCriteriaValues(defaults);
+      // Keep criteriaValues clean without auto-populating hidden default criteria points
+      setCriteriaValues({});
       setTeacherNotes('أداء طيب ومتقن ما شاء الله، نسأل الله له التوفيق والرفعة.');
 
     }
@@ -5706,7 +5670,7 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                         </span>
                       </h3>
                       <p className="text-xs text-slate-300 font-bold mt-0.5">
-                        تُحسب تلقائياً من أوجه التسميع (الجديد والمراجعات) + نقاط الاستماع للمستمع (+{pointsPerListening} نقطة) + معايير التقييم والحضور، مع إمكانية التعديل والخصم والزيادة من قبل المعلم.
+                        تُحسب تلقائياً من أوجه التسميع (الجديد والمراجعات) + نقاط الاستماع للمستمع (+{pointsPerListening} نقطة) + نقاط الحضور، مع إمكانية التعديل والخصم والزيادة من قبل المعلم.
                       </p>
                     </div>
                   </div>
@@ -6003,14 +5967,14 @@ export const EvaluationTab: React.FC<EvaluationTabProps> = ({
                     }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-200 font-black">معايير التقييم والنجوم:</span>
+                      <span className="text-slate-200 font-black">نقاط الحضور ({selectedDateAtt?.status || 'غير مسجل'}):</span>
                       <span className="font-mono font-black" style={{ color: themeAccent }}>
-                        +{liveCriteriaPoints} نقطة
+                        {attendancePoints >= 0 ? `+${attendancePoints}` : attendancePoints} نقطة
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-300 flex justify-between font-bold">
-                      <span>الحضور ({selectedDateAtt?.status || 'حاضر'}):</span>
-                      <strong className="text-white font-mono">{attendancePoints >= 0 ? `+${attendancePoints}` : attendancePoints} نقطة</strong>
+                      <span>مجموع نقاط الأوجه:</span>
+                      <strong className="text-white font-mono">+{livePagesTotalPoints.toFixed(2).replace(/\.00$/, '')} نقطة</strong>
                     </div>
                   </div>
 
